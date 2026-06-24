@@ -1,36 +1,43 @@
 package com.gradlewatcher
 
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
+import com.gradlewatcher.ui.common.AppScaffold
+import com.gradlewatcher.ui.common.EmptyState
+import com.gradlewatcher.ui.live.LiveMonitorScreen
 
 /**
- * Application entry point (U1 scaffold). The real UI shell (tabs, Live Monitor, Historical)
- * is introduced in U7/U8; for now this is a launchable empty window so the module assembles
- * and `./gradlew run` opens a window.
+ * Application entry point (U1 scaffold, wired in U7). Opens the database, starts the polling
+ * [WatcherService], and renders the tabbed UI. The Historical tab is wired in U8.
  */
 fun main() = application {
-    Window(
-        onCloseRequest = ::exitApplication,
-        title = "Gradle Watcher",
-    ) {
-        App()
-    }
-}
+    val service = remember { WatcherService.create() }
 
-@Composable
-fun App() {
-    MaterialTheme {
-        Surface(modifier = Modifier.fillMaxSize()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Gradle Watcher — starting up…")
+    Window(onCloseRequest = ::exitApplication, title = "Gradle Watcher") {
+        val scope = rememberCoroutineScope()
+        remember { service.start(scope); true }
+
+        MaterialTheme {
+            Surface {
+                val liveState by service.liveViewModel.state.collectAsState()
+                AppScaffold(
+                    liveContent = {
+                        LiveMonitorScreen(
+                            state = liveState,
+                            onSelect = service.liveViewModel::select,
+                            onClearSelection = service.liveViewModel::clearSelection,
+                        )
+                    },
+                    historyContent = {
+                        EmptyState("Historical view — wired in U8.")
+                    },
+                )
             }
         }
     }
