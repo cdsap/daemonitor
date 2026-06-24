@@ -1,7 +1,7 @@
 ---
 title: "feat: Gradle Process Watcher — Lean MVP"
 type: feat
-status: active
+status: completed
 date: 2026-06-24
 origin: requirements.md
 depth: deep
