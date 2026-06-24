@@ -10,8 +10,13 @@ import kotlin.test.assertTrue
 
 class BadgesTest {
 
-    private fun proc(pid: Long, rss: Long, project: String?) = GradleProcess(
-        pid = pid, parentPid = 1, type = ProcessType.GRADLE_DAEMON, commandLine = "java GradleDaemon",
+    private fun proc(
+        pid: Long,
+        rss: Long,
+        project: String?,
+        type: ProcessType = ProcessType.GRADLE_WRAPPER,
+    ) = GradleProcess(
+        pid = pid, parentPid = 1, type = type, commandLine = "java GradleDaemon",
         workingDirectory = project, projectPath = project, cpuPercent = null, rssMemoryMb = rss,
         maxHeapMb = null, minHeapMb = null, gc = null, startTimeMs = 1, status = "RUNNING",
     )
@@ -29,25 +34,37 @@ class BadgesTest {
     }
 
     @Test
-    fun `concurrent same-project pids are flagged`() {
+    fun `two wrapper invocations on one project flag that project`() {
         val procs = listOf(
-            proc(1, 100, "/x"),
-            proc(2, 100, "/x"),
-            proc(3, 100, "/y"),
+            proc(1, 100, "/x", ProcessType.GRADLE_WRAPPER),
+            proc(2, 100, "/x", ProcessType.GRADLE_WRAPPER),
+            proc(3, 100, "/y", ProcessType.GRADLE_WRAPPER),
         )
         assertEquals(setOf(1L, 2L), Badges.concurrentSameProjectPids(procs))
     }
 
     @Test
-    fun `badge state clears when condition no longer holds (derived recompute)`() {
-        // Two builds on /x → both flagged.
-        assertTrue(Badges.concurrentSameProjectPids(listOf(proc(1, 100, "/x"), proc(2, 100, "/x"))).isNotEmpty())
-        // Next poll: only one remains → no concurrency badge (auto-clear).
-        assertTrue(Badges.concurrentSameProjectPids(listOf(proc(1, 100, "/x"))).isEmpty())
+    fun `a single build's many processes sharing a cwd are NOT flagged`() {
+        // One build = one wrapper + its daemon + a java worker, all in /x. Not "multiple builds".
+        val procs = listOf(
+            proc(1, 100, "/x", ProcessType.GRADLE_WRAPPER),
+            proc(2, 500, "/x", ProcessType.GRADLE_DAEMON),
+            proc(3, 100, "/x", ProcessType.JAVA_GRADLE_RELATED),
+        )
+        assertTrue(Badges.concurrentSameProjectPids(procs).isEmpty())
     }
 
     @Test
-    fun `null project paths are not grouped as concurrent`() {
-        assertTrue(Badges.concurrentSameProjectPids(listOf(proc(1, 100, null), proc(2, 100, null))).isEmpty())
+    fun `badge clears when a second build is no longer present (derived recompute)`() {
+        val twoBuilds = listOf(proc(1, 100, "/x", ProcessType.GRADLE_WRAPPER), proc(2, 100, "/x", ProcessType.GRADLE_WRAPPER))
+        assertTrue(Badges.concurrentSameProjectPids(twoBuilds).isNotEmpty())
+        // Next poll: one wrapper left → no badge.
+        assertTrue(Badges.concurrentSameProjectPids(listOf(proc(1, 100, "/x", ProcessType.GRADLE_WRAPPER))).isEmpty())
+    }
+
+    @Test
+    fun `null project paths are never flagged`() {
+        val procs = listOf(proc(1, 100, null, ProcessType.GRADLE_WRAPPER), proc(2, 100, null, ProcessType.GRADLE_WRAPPER))
+        assertTrue(Badges.concurrentSameProjectPids(procs).isEmpty())
     }
 }

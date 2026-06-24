@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.gradlewatcher.Defaults
 import com.gradlewatcher.domain.model.GradleProcess
+import com.gradlewatcher.domain.model.ProcessType
 
 /** Severity of a highlight badge (U9). */
 enum class BadgeLevel { WARN, CRITICAL }
@@ -34,18 +35,27 @@ object Badges {
     }
 
     /**
-     * PIDs that share a project path with at least one other live process — "multiple concurrent
-     * builds for the same project". Live-only: concurrency is a point-in-time property, so this
-     * applies to the Live Monitor, not the Historical table.
+     * PIDs belonging to a project that genuinely has multiple concurrent builds.
+     *
+     * A single build fans out into several processes sharing one working directory (a `gradlew`
+     * wrapper, the daemon, test workers, the launcher JVM) — so counting raw processes per cwd
+     * over-reports massively (it tags every process of every multi-process build). Instead we count
+     * *build entry points*: a project has concurrent builds only when 2+ Gradle **wrapper**
+     * invocations target it (each build invocation is one wrapper). Live-only: concurrency is a
+     * point-in-time property, so this applies to the Live Monitor, not the Historical table.
      */
-    fun concurrentSameProjectPids(processes: List<GradleProcess>): Set<Long> =
-        processes
-            .filter { it.projectPath != null }
+    fun concurrentSameProjectPids(processes: List<GradleProcess>): Set<Long> {
+        val multiBuildProjects = processes
+            .filter { it.type == ProcessType.GRADLE_WRAPPER && it.projectPath != null }
             .groupBy { it.projectPath }
             .filterValues { it.size > 1 }
-            .values.flatten()
+            .keys
+        if (multiBuildProjects.isEmpty()) return emptySet()
+        return processes
+            .filter { it.projectPath != null && it.projectPath in multiBuildProjects }
             .map { it.pid }
             .toSet()
+    }
 }
 
 @Composable

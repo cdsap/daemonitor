@@ -1,5 +1,6 @@
 package com.gradlewatcher.ui.common
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,7 +22,10 @@ data class Col(val label: String, val weight: Float, val end: Boolean = false)
 @Composable
 fun TableHeader(cols: List<Col>) {
     Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
-        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.sm)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.sm),
+            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+        ) {
             cols.forEach { c ->
                 Text(
                     text = c.label.uppercase(),
