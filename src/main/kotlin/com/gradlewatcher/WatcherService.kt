@@ -5,10 +5,12 @@ import com.gradlewatcher.collect.DaemonLogWatcher
 import com.gradlewatcher.collect.ProcessCollector
 import com.gradlewatcher.domain.BuildAggregator
 import com.gradlewatcher.store.WatcherDatabase
+import com.gradlewatcher.ui.history.HistoryViewModel
 import com.gradlewatcher.ui.live.LiveViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -27,6 +29,7 @@ class WatcherService(
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
     val liveViewModel = LiveViewModel()
+    val historyViewModel = HistoryViewModel()
 
     private var knownDaemonPids = emptySet<Long>()
 
@@ -36,6 +39,17 @@ class WatcherService(
             while (isActive) {
                 runCatching { pollOnce() }
                 delay(Defaults.POLL_INTERVAL)
+            }
+        }
+        // Historical view: react to DB changes via SQLDelight Flows.
+        scope.launch(Dispatchers.IO) {
+            database.buildsFlow().collect { builds ->
+                withContext(Dispatchers.Main) { historyViewModel.onBuilds(builds) }
+            }
+        }
+        scope.launch(Dispatchers.IO) {
+            database.distinctProjectsFlow().collect { projects ->
+                withContext(Dispatchers.Main) { historyViewModel.onProjects(projects) }
             }
         }
     }

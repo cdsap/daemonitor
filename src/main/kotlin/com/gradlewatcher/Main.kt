@@ -9,7 +9,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import com.gradlewatcher.ui.common.AppScaffold
-import com.gradlewatcher.ui.common.EmptyState
+import com.gradlewatcher.ui.history.HistoryScreen
 import com.gradlewatcher.ui.live.LiveMonitorScreen
 
 /**
@@ -35,7 +35,12 @@ fun main() = application {
                         )
                     },
                     historyContent = {
-                        EmptyState("Historical view — wired in U8.")
+                        val historyState by service.historyViewModel.state.collectAsState()
+                        HistoryScreen(
+                            state = historyState,
+                            onProject = service.historyViewModel::setProject,
+                            onTimeRange = service.historyViewModel::setTimeRange,
+                        )
                     },
                 )
             }
