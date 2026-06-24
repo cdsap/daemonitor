@@ -8,7 +8,8 @@ import com.gradlewatcher.domain.model.DaemonContextEvent
 import com.gradlewatcher.domain.model.IdleMark
 import com.gradlewatcher.domain.model.Outcome
 import java.time.OffsetDateTime
-import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeFormatterBuilder
+import java.time.temporal.ChronoField
 
 /**
  * Pure parser for Gradle daemon `.out.log` lines (U3). Uses two grammars, because the outcome line
@@ -27,7 +28,12 @@ object DaemonLogParser {
     private val CONTEXT_UID = Regex("""uid=([^,]+)""")
     private val CONTEXT_OPTS = Regex("""daemonOpts=([^\]]*)""")
 
-    private val TS_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSZ")
+    // Tolerate 0..9 fractional-second digits (Gradle uses 3, but be defensive) and a numeric offset.
+    private val TS_FORMAT = DateTimeFormatterBuilder()
+        .appendPattern("yyyy-MM-dd'T'HH:mm:ss")
+        .optionalStart().appendFraction(ChronoField.NANO_OF_SECOND, 0, 9, true).optionalEnd()
+        .appendPattern("Z")
+        .toFormatter()
 
     /** Parse a full log (or an incremental chunk) into the events it contains, in order. */
     fun parse(lines: Sequence<String>): List<BuildEvent> =

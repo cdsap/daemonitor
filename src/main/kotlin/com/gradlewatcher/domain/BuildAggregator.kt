@@ -36,7 +36,14 @@ class BuildAggregator(
             when (event) {
                 is DaemonContextEvent -> event.uid?.let { state.uid = it }
 
-                is BusyMark -> state.window = Window(busyTimeMs = event.timestampMs)
+                is BusyMark -> {
+                    // If a prior qualified window never saw its idle marker (e.g. a missed line),
+                    // flush it now using this busy mark as the proxy end, rather than dropping it.
+                    state.window?.takeIf { it.qualified }?.let { w ->
+                        emitted += w.toBuild(daemonPid, state.uid, endMs = event.timestampMs, sampleProvider)
+                    }
+                    state.window = Window(busyTimeMs = event.timestampMs)
+                }
 
                 is BuildStart -> state.window?.let { w ->
                     w.qualified = true

@@ -28,6 +28,9 @@ class DaemonLogWatcher(
 ) {
     private val offsets = mutableMapOf<Path, Long>()
     private val tails = mutableMapOf<Path, ArrayDeque<String>>()
+    /** Bytes after the last newline of the previous read, carried so a line split across two
+     *  reads (or a multi-byte char split at the boundary) is reassembled, not lost. */
+    private val leftovers = mutableMapOf<Path, ByteArray>()
 
     /** Scan `<gradleUserHome>/daemon/<version>/daemon-<pid>.out.log` for current daemon logs. */
     fun discover(): List<DaemonLog> {
@@ -49,19 +52,35 @@ class DaemonLogWatcher(
         if (!path.exists()) return emptyList()
         val size = Files.size(path)
         val from = offsets[path] ?: 0L
-        if (size <= from) {
-            offsets[path] = size // file truncated/rotated → reset
+        if (size < from) {
+            // File truncated/rotated → reset and drop any stale partial.
+            offsets[path] = 0L
+            leftovers.remove(path)
             return emptyList()
         }
-        val newText = Files.newByteChannel(path).use { ch ->
+        if (size == from) return emptyList()
+
+        // Read the full new range (looping to handle short reads).
+        val fresh = Files.newByteChannel(path).use { ch ->
             ch.position(from)
             val buf = java.nio.ByteBuffer.allocate((size - from).toInt())
-            ch.read(buf)
-            String(buf.array(), Charsets.UTF_8)
+            while (buf.hasRemaining() && ch.read(buf) > 0) { /* keep reading */ }
+            buf.flip()
+            ByteArray(buf.remaining()).also { buf.get(it) }
         }
-        offsets[path] = size
+        offsets[path] = from + fresh.size
 
-        val redacted = newText.lineSequence()
+        // Prepend bytes carried from the previous read, then split off the trailing partial line.
+        val combined = (leftovers[path] ?: ByteArray(0)) + fresh
+        val lastNewline = combined.lastIndexOf('\n'.code.toByte())
+        if (lastNewline < 0) {
+            leftovers[path] = combined // no complete line yet
+            return emptyList()
+        }
+        leftovers[path] = combined.copyOfRange(lastNewline + 1, combined.size)
+        val completeText = String(combined, 0, lastNewline + 1, Charsets.UTF_8)
+
+        val redacted = completeText.lineSequence()
             .filter { it.isNotEmpty() }
             .map { Redactor.redactLogLine(it) }
             .toList()

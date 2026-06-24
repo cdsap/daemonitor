@@ -2,10 +2,10 @@ package com.gradlewatcher
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import com.gradlewatcher.ui.common.AppScaffold
@@ -20,8 +20,8 @@ fun main() = application {
     val service = remember { WatcherService.create() }
 
     Window(onCloseRequest = ::exitApplication, title = "Gradle Watcher") {
-        val scope = rememberCoroutineScope()
-        remember { service.start(scope); true }
+        // Start the polling service exactly once, tied to this composition's lifecycle.
+        LaunchedEffect(Unit) { service.start(this) }
 
         MaterialTheme {
             Surface {

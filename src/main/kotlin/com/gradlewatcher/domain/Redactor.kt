@@ -11,7 +11,10 @@ package com.gradlewatcher.domain
 object Redactor {
     const val MASK = "***"
 
-    private val DENY_TOKENS = listOf("password", "secret", "token", "credential", "apikey", "key")
+    // Multi-letter tokens match anywhere in a key; bare "key" must be a whole word so it does not
+    // over-redact benign keys like "monkey.count" or "keystore.path".
+    private val DENY_MULTI = listOf("password", "secret", "token", "credential", "apikey")
+    private val KEY_WORD = Regex("""(^|[^a-z])key([^a-z]|$)""")
 
     // -Pkey=value | -Dkey=value | --key=value
     private val PROP_FLAG = Regex("""^(--|-[PD])([^=\s]+)=(.*)$""")
@@ -29,14 +32,17 @@ object Redactor {
         return maskUrlCredentials(token)
     }
 
-    /** Redact a whole command line (space-delimited tokens). */
-    fun redactCommandLine(commandLine: String): String =
-        commandLine.split(" ").joinToString(" ") { if (it.isEmpty()) it else redactToken(it) }
+    /** Redact a whole command line (whitespace-delimited tokens; tabs and runs of spaces too). */
+    fun redactCommandLine(commandLine: String): String {
+        val trimmed = commandLine.trim()
+        if (trimmed.isEmpty()) return commandLine
+        return trimmed.split(Regex("""\s+""")).joinToString(" ") { redactToken(it) }
+    }
 
     /** Redact a daemon-log line: mask any credentialed URL and any inline `key=value` secret. */
     fun redactLogLine(line: String): String {
         val urlMasked = maskUrlCredentials(line)
-        return urlMasked.split(" ").joinToString(" ") { word ->
+        return urlMasked.split(Regex("""(?<=\s)|(?=\s)""")).joinToString("") { word ->
             val prop = PROP_FLAG.matchEntire(word)
             if (prop != null) {
                 val (prefix, key, _) = prop.destructured
@@ -48,7 +54,7 @@ object Redactor {
 
     private fun isSensitiveKey(key: String): Boolean {
         val lower = key.lowercase()
-        return DENY_TOKENS.any { lower.contains(it) }
+        return DENY_MULTI.any { lower.contains(it) } || KEY_WORD.containsMatchIn(lower)
     }
 
     private fun maskUrlCredentials(text: String): String =

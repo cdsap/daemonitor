@@ -99,6 +99,21 @@ class BuildAggregatorTest {
     }
 
     @Test
+    fun `a second busy mark with no intervening idle flushes the first build`() {
+        val agg = BuildAggregator()
+        // First build qualifies but its IdleMark is missing; a new BusyMark arrives.
+        val emitted = agg.onEvents(
+            pid,
+            listOf(
+                context(0),
+                BusyMark(1_000), start(1_010), Outcome(true, 1.0),
+                BusyMark(3_000), start(3_010), Outcome(true, 1.0), IdleMark(4_000),
+            ),
+        )
+        assertEquals(2, emitted.size, "first build must be flushed, not dropped")
+    }
+
+    @Test
     fun `one daemon serving two projects keeps a single identity`() {
         val agg = BuildAggregator()
         val emitted = agg.onEvents(

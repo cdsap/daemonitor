@@ -33,7 +33,7 @@ import androidx.compose.ui.unit.sp
 fun LogView(lines: List<String>, modifier: Modifier = Modifier, autoScroll: Boolean = true) {
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    val atBottom by remember {
+    val atBottom by remember(lines) {
         derivedStateOf {
             val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()
             last == null || last.index >= lines.lastIndex
@@ -41,7 +41,9 @@ fun LogView(lines: List<String>, modifier: Modifier = Modifier, autoScroll: Bool
     }
 
     if (autoScroll) {
-        LaunchedEffect(lines.size) {
+        // Key on the list itself (content equality), not its size — once the tail buffer is full
+        // the size stops changing but the content still does, and the live tail must keep following.
+        LaunchedEffect(lines) {
             if (atBottom && lines.isNotEmpty()) listState.scrollToItem(lines.lastIndex)
         }
     }

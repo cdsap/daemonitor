@@ -35,6 +35,19 @@ class DaemonLogWatcherTest {
     }
 
     @Test
+    fun `reassembles a line split across two reads`(@TempDirArg tmp: Path) {
+        val log = tmp.resolve("daemon-2.out.log")
+        val watcher = DaemonLogWatcher(gradleUserHome = tmp)
+        // First write: a partial outcome line with no trailing newline.
+        log.writeText("BUILD SUCCESSFUL i")
+        assertTrue(watcher.readNewEvents(log).isEmpty(), "partial line must not parse yet")
+        // Complete the line.
+        Files.writeString(log, "n 5s\n", java.nio.file.StandardOpenOption.APPEND)
+        val events = watcher.readNewEvents(log)
+        assertTrue(events.any { it is Outcome }, "completed line must parse exactly once")
+    }
+
+    @Test
     fun `reads only newly appended content and redacts it`(@TempDirArg tmp: Path) {
         val log = tmp.resolve("daemon-1.out.log")
         log.writeText("BUILD SUCCESSFUL in 3s\n")
