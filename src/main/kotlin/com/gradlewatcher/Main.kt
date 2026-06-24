@@ -1,14 +1,16 @@
 package com.gradlewatcher
 
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import com.gradlewatcher.ui.common.AppScaffold
+import com.gradlewatcher.ui.common.WatcherTheme
 import com.gradlewatcher.ui.history.HistoryScreen
 import com.gradlewatcher.ui.live.LiveMonitorScreen
 
@@ -23,8 +25,8 @@ fun main() = application {
         // Start the polling service exactly once, tied to this composition's lifecycle.
         LaunchedEffect(Unit) { service.start(this) }
 
-        MaterialTheme {
-            Surface {
+        WatcherTheme {
+            Surface(modifier = Modifier.fillMaxSize()) {
                 val liveState by service.liveViewModel.state.collectAsState()
                 AppScaffold(
                     liveContent = {
