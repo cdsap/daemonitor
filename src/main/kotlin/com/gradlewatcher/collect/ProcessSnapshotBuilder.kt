@@ -41,6 +41,7 @@ object ProcessSnapshotBuilder {
             gc = jvm.gc,
             startTimeMs = info.startTimeMs,
             status = info.state,
+            automated = InvocationFlags.isNonInteractive(info.commandLine),
         )
     }
 

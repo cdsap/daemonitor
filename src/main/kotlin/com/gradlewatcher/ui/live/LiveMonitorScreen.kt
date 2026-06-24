@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.gradlewatcher.domain.model.GradleProcess
 import com.gradlewatcher.domain.model.ProcessType
+import com.gradlewatcher.ui.common.AutomatedBadge
 import com.gradlewatcher.ui.common.Badges
 import com.gradlewatcher.ui.common.ConcurrentBadge
 import com.gradlewatcher.ui.common.EmptyState
@@ -105,6 +106,7 @@ private fun ProcessTable(
                 Text(p.cpuPercent?.let { "%.0f%%".format(it) } ?: "—", modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.bodySmall)
                 Badges.memoryBadge(p.rssMemoryMb)?.let { MemoryBadge(it) }
                 if (p.pid in concurrentPids) ConcurrentBadge()
+                if (p.automated) AutomatedBadge()
                 if (isDegraded(p)) Text("🔒", style = MaterialTheme.typography.bodySmall)
             }
             Divider()

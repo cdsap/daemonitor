@@ -328,6 +328,7 @@ Process scanning (current-user), daemon-log-driven per-build detection, RSS + pa
 - Standalone `daemon_logs` table with structured error/warning parsing (collapsed into a per-build snippet for v1).
 - The extra Historical filter presets (high-memory, long-running, unknown-source, AI-agent) **and the process-type filter** (v1 filters on project + time range only).
 - Cross-PID daemon-restart detection (the `daemon_identity` value is stored in v1, but the restart-detection logic and alert are deferred).
+- Per-build automation attribution. Gradle 9.6's `--non-interactive` flag (and `--console=plain`) is detected on live launcher/wrapper command lines and badged "AUTOMATED" in the Live Monitor (U2/U9). Threading this into the per-build `Source` record is deferred — the flag is not in the daemon log (only the launcher command line), so it needs the same launcher↔build correlation as named-agent detection.
 - SQLCipher database encryption (file-permission restriction + Time Machine backup exclusion only in v1).
 
 ### Out of scope (product non-goals, from origin)

@@ -55,4 +55,6 @@ data class GradleProcess(
     val gc: String?,
     val startTimeMs: Long,
     val status: String,
+    /** True when the invocation carries an automation marker like `--non-interactive` (Gradle 9.6+). */
+    val automated: Boolean = false,
 )

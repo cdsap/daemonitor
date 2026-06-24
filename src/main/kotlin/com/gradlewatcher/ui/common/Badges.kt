@@ -79,3 +79,18 @@ fun ConcurrentBadge(modifier: Modifier = Modifier) {
         style = MaterialTheme.typography.labelSmall,
     )
 }
+
+/** Marks an invocation run with `--non-interactive` / `--console=plain` (likely CI/script/agent). */
+@Composable
+fun AutomatedBadge(modifier: Modifier = Modifier) {
+    Text(
+        text = "AUTOMATED",
+        color = Color.White,
+        fontSize = 10.sp,
+        modifier = modifier
+            .clip(RoundedCornerShape(4.dp))
+            .background(Color(0xFF00796B))
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+        style = MaterialTheme.typography.labelSmall,
+    )
+}

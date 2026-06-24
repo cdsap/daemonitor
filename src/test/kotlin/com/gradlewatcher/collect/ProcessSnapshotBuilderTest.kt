@@ -66,6 +66,16 @@ class ProcessSnapshotBuilderTest {
     }
 
     @Test
+    fun `non-interactive invocation is flagged automated`() {
+        val interactive = ProcessSnapshotBuilder.build(FakeProcess(commandLine = DAEMON_CL), null, 2_000, 8)!!
+        assertTrue(!interactive.automated)
+        val auto = ProcessSnapshotBuilder.build(
+            FakeProcess(commandLine = "$DAEMON_CL --non-interactive"), null, 2_000, 8,
+        )!!
+        assertTrue(auto.automated)
+    }
+
+    @Test
     fun `command line is redacted in the snapshot`() {
         val cl = "$DAEMON_CL -Ptoken=supersecret"
         val snap = ProcessSnapshotBuilder.build(FakeProcess(commandLine = cl), null, 2_000, 8)!!
