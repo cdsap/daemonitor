@@ -1,0 +1,115 @@
+package com.gradlewatcher.domain
+
+import com.gradlewatcher.domain.model.BuildEnvNames
+import com.gradlewatcher.domain.model.BuildEvent
+import com.gradlewatcher.domain.model.BuildStart
+import com.gradlewatcher.domain.model.BusyMark
+import com.gradlewatcher.domain.model.DaemonContextEvent
+import com.gradlewatcher.domain.model.FinalStatus
+import com.gradlewatcher.domain.model.IdleMark
+import com.gradlewatcher.domain.model.Outcome
+import com.gradlewatcher.domain.model.Source
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+class BuildAggregatorTest {
+
+    private val pid = 75597L
+
+    private fun context(ts: Long) = DaemonContextEvent(ts, uid = "uid-abc", daemonOpts = "-Xmx512m")
+    private fun start(ts: Long, dir: String = "/proj/a") =
+        BuildStart(ts, buildId = "build-$ts", currentDir = dir)
+
+    @Test
+    fun `qualified build emits one record with window peaks`() {
+        // 3 samples in the window: rss 100,300,200 ; cpu 10,50,30
+        val samples = listOf(100L to 10.0, 300L to 50.0, 200L to 30.0) as List<Pair<Long, Double?>>
+        val agg = BuildAggregator(sampleProvider = { _, _, _ -> samples })
+
+        val emitted = agg.onEvents(
+            pid,
+            listOf(context(0), BusyMark(1_000), start(1_010),
+                BuildEnvNames(1_020, listOf("TERM_PROGRAM")), Outcome(true, 3.0), IdleMark(4_000)),
+        )
+
+        assertEquals(1, emitted.size)
+        val b = emitted.single()
+        assertEquals(300L, b.peakMemoryMb)
+        assertEquals(200L, b.avgMemoryMb)
+        assertEquals(50.0, b.peakCpuPercent)
+        assertEquals(FinalStatus.SUCCESS, b.finalStatus)
+        assertEquals(Source.TERMINAL, b.inferredSource)
+        assertEquals("uid-abc", b.daemonIdentity)
+        assertEquals("/proj/a", b.projectPath)
+    }
+
+    @Test
+    fun `two sequential builds on one daemon emit two records`() {
+        val agg = BuildAggregator()
+        val emitted = agg.onEvents(
+            pid,
+            listOf(
+                context(0),
+                BusyMark(1_000), start(1_010), Outcome(true, 1.0), IdleMark(2_000),
+                BusyMark(3_000), start(3_010), Outcome(true, 1.0), IdleMark(4_000),
+            ),
+        )
+        assertEquals(2, emitted.size)
+        assertEquals(2, emitted.map { it.buildId }.distinct().size)
+    }
+
+    @Test
+    fun `busy-idle bracket with no build-start marker emits nothing`() {
+        val agg = BuildAggregator()
+        val emitted = agg.onEvents(pid, listOf(context(0), BusyMark(1_000), IdleMark(1_500)))
+        assertTrue(emitted.isEmpty())
+    }
+
+    @Test
+    fun `bracket closing with no outcome yields completed-no-outcome`() {
+        val agg = BuildAggregator()
+        val emitted = agg.onEvents(pid, listOf(context(0), BusyMark(1_000), start(1_010), IdleMark(5_000)))
+        assertEquals(FinalStatus.COMPLETED_NO_OUTCOME, emitted.single().finalStatus)
+    }
+
+    @Test
+    fun `daemon disappearing mid-build emits interrupted`() {
+        val agg = BuildAggregator()
+        agg.onEvents(pid, listOf(context(0), BusyMark(1_000), start(1_010)))
+        val b = agg.onDaemonGone(pid)
+        assertEquals(FinalStatus.INTERRUPTED, b!!.finalStatus)
+    }
+
+    @Test
+    fun `zero in-window samples produce null peaks (sub-poll)`() {
+        val agg = BuildAggregator(sampleProvider = { _, _, _ -> emptyList() })
+        val b = agg.onEvents(pid, listOf(context(0), BusyMark(1_000), start(1_010), Outcome(true, 0.3), IdleMark(1_300))).single()
+        assertNull(b.peakMemoryMb)
+        assertNull(b.avgMemoryMb)
+        assertNull(b.peakCpuPercent)
+    }
+
+    @Test
+    fun `failed outcome maps to failed status`() {
+        val agg = BuildAggregator()
+        val b = agg.onEvents(pid, listOf(context(0), BusyMark(1_000), start(1_010), Outcome(false, 2.0), IdleMark(3_000))).single()
+        assertEquals(FinalStatus.FAILED, b.finalStatus)
+    }
+
+    @Test
+    fun `one daemon serving two projects keeps a single identity`() {
+        val agg = BuildAggregator()
+        val emitted = agg.onEvents(
+            pid,
+            listOf(
+                context(0),
+                BusyMark(1_000), start(1_010, "/proj/a"), Outcome(true, 1.0), IdleMark(2_000),
+                BusyMark(3_000), start(3_010, "/proj/b"), Outcome(true, 1.0), IdleMark(4_000),
+            ),
+        )
+        assertEquals(listOf("uid-abc", "uid-abc"), emitted.map { it.daemonIdentity })
+        assertEquals(listOf("/proj/a", "/proj/b"), emitted.map { it.projectPath })
+    }
+}
