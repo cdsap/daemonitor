@@ -24,7 +24,7 @@ object GradleProcessClassifier {
             cl.contains("org.gradle.wrapper.GradleWrapperMain") ||
                 containsGradlewInvocation(cl) -> ProcessType.GRADLE_WRAPPER
 
-            isJava(cl) && cl.contains("gradle") -> ProcessType.JAVA_GRADLE_RELATED
+            isJava(cl) && hasGradleRuntimeMarker(cl) -> ProcessType.JAVA_GRADLE_RELATED
 
             else -> null
         }
@@ -35,4 +35,14 @@ object GradleProcessClassifier {
 
     private fun isJava(cl: String): Boolean =
         Regex("""(^|[\s/])java(\s|$)""").containsMatchIn(cl)
+
+    // A genuine Gradle *runtime* signal — a Gradle system property, a Gradle launcher/worker/tooling
+    // class, or the worker main. Deliberately does NOT match a bare "~/.gradle/caches/…" classpath
+    // path: every JVM whose dependencies were fetched by Gradle has that, which over-detected any
+    // Gradle-built app (including this watcher itself).
+    private val GRADLE_RUNTIME_MARKER = Regex(
+        """(-Dorg\.gradle\.|org\.gradle\.(launcher|process|tooling|internal|api|workers)\.|GradleWorkerMain)""",
+    )
+
+    private fun hasGradleRuntimeMarker(cl: String): Boolean = GRADLE_RUNTIME_MARKER.containsMatchIn(cl)
 }

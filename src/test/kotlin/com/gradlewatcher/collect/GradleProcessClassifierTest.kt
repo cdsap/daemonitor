@@ -34,9 +34,23 @@ class GradleProcessClassifierTest {
     }
 
     @Test
-    fun `classifies generic java-with-gradle as java-gradle-related`() {
-        val cl = "java -cp /Users/dev/.gradle/caches/foo.jar com.example.Tool"
-        assertEquals(ProcessType.JAVA_GRADLE_RELATED, GradleProcessClassifier.classify(cl))
+    fun `classifies a java process with a real Gradle runtime marker`() {
+        assertEquals(
+            ProcessType.JAVA_GRADLE_RELATED,
+            GradleProcessClassifier.classify("java -Dorg.gradle.internal.worker=1 -cp /x/foo.jar com.example.Tool"),
+        )
+        assertEquals(
+            ProcessType.JAVA_GRADLE_RELATED,
+            GradleProcessClassifier.classify("java -cp /x/gradle-tooling-api.jar org.gradle.tooling.internal.Foo"),
+        )
+    }
+
+    @Test
+    fun `does NOT classify a Gradle-built app whose only gradle is the dependency cache path`() {
+        // The over-detection bug: any JVM whose deps resolve from ~/.gradle/caches contains
+        // "gradle" in its classpath — but that is not a Gradle process (e.g. this watcher itself).
+        val watcherLike = "java -Dcompose.application=true -cp /Users/dev/.gradle/caches/oshi-core.jar com.gradlewatcher.MainKt"
+        assertNull(GradleProcessClassifier.classify(watcherLike))
     }
 
     @Test

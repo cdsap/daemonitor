@@ -19,7 +19,8 @@ class ProcessCollector(
 ) {
     private val os = systemInfo.operatingSystem
     private val logicalProcessors = systemInfo.hardware.processor.logicalProcessorCount
-    private val selfUid: String? = runCatching { os.getProcess(os.processId).userID }.getOrNull()
+    private val selfPid: Int = os.processId
+    private val selfUid: String? = runCatching { os.getProcess(selfPid).userID }.getOrNull()
 
     /** Prior CPU sample per process, keyed by (pid, startTime) to survive PID reuse (KTD-4). */
     private val priorSamples = mutableMapOf<ProcessKey, PriorSample>()
@@ -30,6 +31,7 @@ class ProcessCollector(
         val result = mutableListOf<GradleProcess>()
 
         for (p in os.processes) {
+            if (p.processID == selfPid) continue // don't monitor ourselves
             if (selfUid != null && p.userID != selfUid) continue
             val info = p.toProcessInfo()
             val key = ProcessKey(info.pid, info.startTimeMs)
