@@ -10,7 +10,7 @@ plugins {
     id("app.cash.sqldelight") version "2.0.2"
 }
 
-group = "com.gradlewatcher"
+group = "io.github.cdsap.daemonitor"
 version = "0.1.0"
 
 dependencies {
@@ -31,12 +31,15 @@ dependencies {
 
     testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    // Compose UI-layer tests (mount screens, query/click nodes) — runs on the CI OS matrix.
+    @OptIn(org.jetbrains.compose.ExperimentalComposeLibrary::class)
+    testImplementation(compose.uiTest)
 }
 
 sqldelight {
     databases {
         create("WatcherDb") {
-            packageName.set("com.gradlewatcher.store.db")
+            packageName.set("io.github.cdsap.daemonitor.store.db")
             // Explicit dialect dependency — the common SQLDelight-on-JVM setup pitfall.
             dialect("app.cash.sqldelight:sqlite-3-38-dialect:2.0.2")
         }
@@ -53,10 +56,11 @@ tasks.test {
 
 compose.desktop {
     application {
-        mainClass = "com.gradlewatcher.MainKt"
+        mainClass = "io.github.cdsap.daemonitor.MainKt"
         nativeDistributions {
-            targetFormats(TargetFormat.Dmg)
-            packageName = "GradleWatcher"
+            // One format per OS; each is only buildable on its own platform (jpackage limitation).
+            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
+            packageName = "Daemonitor"
             packageVersion = "1.0.0"
         }
     }

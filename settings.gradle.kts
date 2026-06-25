@@ -1,4 +1,4 @@
-rootProject.name = "gradle-watcher"
+rootProject.name = "daemonitor"
 
 pluginManagement {
     repositories {
