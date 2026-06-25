@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+# Cancel superseded runs on the same ref to save runner minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        # Use bash everywhere so `./gradlew` (the shell wrapper) runs uniformly, including on
+        # Windows (Git Bash ships on the runner). Xvfb steps are still guarded to Linux only.
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # Compose Desktop UI tests render via Skia/AWT, which needs a display. macOS and Windows
+      # runners provide one; Linux is headless, so wrap the run in a virtual framebuffer.
+      - name: Run tests (Linux, virtual display)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a ./gradlew test --no-daemon --stacktrace
+
+      - name: Run tests (macOS / Windows)
+        if: runner.os != 'Linux'
+        run: ./gradlew test --no-daemon --stacktrace
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-${{ matrix.os }}
+          path: build/reports/tests/test
+          if-no-files-found: ignore

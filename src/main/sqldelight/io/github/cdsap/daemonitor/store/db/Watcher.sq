@@ -1,0 +1,80 @@
+-- Daemonitor local history (U4 / KTD-5).
+-- REDACTION INVARIANT (KTD-7): command_line and log_snippet values passed to the insert
+-- statements below MUST already be redacted by the caller. Nothing writes a raw command line
+-- or log line here. Peak columns are nullable; NULL encodes a sub-poll build (KTD-2).
+
+CREATE TABLE process_samples (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp         INTEGER NOT NULL,
+    pid               INTEGER NOT NULL,
+    parent_pid        INTEGER NOT NULL,
+    process_type      TEXT NOT NULL,
+    command_line      TEXT NOT NULL,      -- pre-redacted
+    working_directory TEXT,
+    project_path      TEXT,
+    cpu_percent       REAL,
+    rss_memory_mb     INTEGER NOT NULL,
+    max_heap_mb       INTEGER,
+    status            TEXT NOT NULL
+);
+
+CREATE INDEX process_samples_pid_ts ON process_samples(pid, timestamp);
+
+CREATE TABLE builds (
+    build_id         TEXT PRIMARY KEY,
+    daemon_pid       INTEGER NOT NULL,
+    daemon_identity  TEXT,
+    command_line     TEXT,                -- pre-redacted
+    working_directory TEXT,
+    project_path     TEXT,
+    start_time       INTEGER NOT NULL,
+    end_time         INTEGER,
+    duration_seconds REAL,
+    peak_memory_mb   INTEGER,
+    avg_memory_mb    INTEGER,
+    peak_cpu_percent REAL,
+    inferred_source  TEXT NOT NULL DEFAULT 'UNKNOWN',
+    final_status     TEXT NOT NULL,
+    log_snippet      TEXT,                -- pre-redacted
+    agent            TEXT,                -- named AI agent (env-name fingerprint), null if none
+    agent_provider   TEXT                 -- LLM provider / "configurable" / "unknown"; null if none
+);
+
+CREATE INDEX builds_start ON builds(start_time);
+CREATE INDEX builds_project ON builds(project_path);
+
+insertSample:
+INSERT INTO process_samples(timestamp, pid, parent_pid, process_type, command_line, working_directory, project_path, cpu_percent, rss_memory_mb, max_heap_mb, status)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+samplesInWindow:
+SELECT rss_memory_mb, cpu_percent
+FROM process_samples
+WHERE pid = ? AND timestamp >= ? AND timestamp <= ?;
+
+insertBuild:
+INSERT OR REPLACE INTO builds(build_id, daemon_pid, daemon_identity, command_line, working_directory, project_path, start_time, end_time, duration_seconds, peak_memory_mb, avg_memory_mb, peak_cpu_percent, inferred_source, final_status, log_snippet, agent, agent_provider)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+recentBuilds:
+SELECT *
+FROM builds
+ORDER BY start_time DESC;
+
+buildsSince:
+SELECT *
+FROM builds
+WHERE start_time >= ?
+ORDER BY start_time DESC;
+
+distinctProjects:
+SELECT DISTINCT project_path
+FROM builds
+WHERE project_path IS NOT NULL
+ORDER BY project_path;
+
+purgeSamplesOlderThan:
+DELETE FROM process_samples WHERE timestamp < ?;
+
+purgeBuildsOlderThan:
+DELETE FROM builds WHERE start_time < ?;
