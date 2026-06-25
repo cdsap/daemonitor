@@ -44,12 +44,13 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 private val COLS = listOf(
-    Col("Started", 1.2f),
-    Col("Project", 1.2f),
-    Col("Duration", 0.8f, end = true),
-    Col("Peak RSS", 1.1f, end = true),
+    Col("Started", 1.1f),
+    Col("Project", 1.1f),
+    Col("Duration", 0.7f, end = true),
+    Col("Peak RSS", 1.0f, end = true),
     Col("Status", 0.9f),
-    Col("Source", 0.8f),
+    Col("Source", 0.7f),
+    Col("Agent", 1.1f),
 )
 
 @Composable
@@ -138,6 +139,7 @@ private fun BuildRow(b: Build, selected: Boolean, onSelect: () -> Unit) {
         Cell(b.peakMemoryMb?.let { "$it MB" } ?: "not sampled", COLS[3], muted = b.peakMemoryMb == null)
         Cell(b.finalStatus.name.lowercase().replace('_', ' '), COLS[4])
         Cell(b.inferredSource.name.lowercase(), COLS[5], muted = b.inferredSource == Source.UNKNOWN)
+        Cell(b.agent ?: "—", COLS[6], muted = b.agent == null)
     }
 }
 
@@ -157,6 +159,8 @@ private fun HistoryDetail(build: Build?) {
         DetailRow("Peak CPU", build.peakCpuPercent?.let { "%.0f%%".format(it) } ?: "not sampled (<2s)")
         DetailRow("Final status", build.finalStatus.name.lowercase().replace('_', ' '))
         DetailRow("Source", build.inferredSource.name.lowercase())
+        DetailRow("Agent", build.agent ?: "not detected")
+        DetailRow("LLM provider", build.agent?.let { build.agentProvider ?: "unknown" } ?: "—")
         Spacer(Modifier.padding(Space.xs))
         Text(
             "Build log excerpt — captured during the build window",

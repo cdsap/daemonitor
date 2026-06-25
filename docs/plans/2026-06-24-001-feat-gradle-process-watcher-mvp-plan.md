@@ -321,7 +321,7 @@ Process scanning (current-user), daemon-log-driven per-build detection, RSS + pa
 
 ### Deferred to Follow-Up Work
 - JVM heap / max-heap occupancy via JMX/attach and heap-based alerts.
-- Named-AI-agent attribution (Claude Code, Codex, VS Code/Cursor) and the AI-agent filter presets.
+- ~~Named-AI-agent attribution (Claude Code, Codex, VS Code/Cursor)~~ — **shipped**: `AgentDetector` fingerprints the agent and LLM provider from the daemon-log env-var names (Claude Code→Anthropic confirmed from real logs), persisted on each `Build` and shown in the Historical view. The AI-agent *filter preset* is still deferred.
 - The full alert set (daemon restart, long-running, repeated agent builds, Kotlin daemon memory, test-worker limit) beyond the two shipped conditions.
 - Configuration UI and the 8-option settings surface (defaults hard-coded in v1).
 - Timeline chart and per-process/per-session memory & CPU trend charts.

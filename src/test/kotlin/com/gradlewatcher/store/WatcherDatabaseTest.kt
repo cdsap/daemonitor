@@ -33,6 +33,8 @@ class WatcherDatabaseTest {
         inferredSource = Source.TERMINAL,
         finalStatus = FinalStatus.SUCCESS,
         logSnippet = "BUILD SUCCESSFUL in 3s",
+        agent = "Claude Code",
+        agentProvider = "Anthropic",
     )
 
     @Test
@@ -44,6 +46,8 @@ class WatcherDatabaseTest {
         assertEquals(FinalStatus.SUCCESS, rows[0].finalStatus)
         assertEquals(Source.TERMINAL, rows[0].inferredSource)
         assertEquals(700L, rows[0].peakMemoryMb)
+        assertEquals("Claude Code", rows[0].agent)
+        assertEquals("Anthropic", rows[0].agentProvider)
     }
 
     @Test

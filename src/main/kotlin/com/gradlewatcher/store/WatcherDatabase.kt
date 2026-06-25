@@ -65,6 +65,8 @@ class WatcherDatabase private constructor(
             inferred_source = b.inferredSource.name,
             final_status = b.finalStatus.name,
             log_snippet = b.logSnippet,
+            agent = b.agent,
+            agent_provider = b.agentProvider,
         )
     }
 
@@ -106,8 +108,20 @@ class WatcherDatabase private constructor(
             if (isNew) {
                 WatcherDb.Schema.create(driver)
                 hardenFilePrivacy(path)
+            } else {
+                migrateInPlace(driver)
             }
             return WatcherDatabase(WatcherDb(driver), ioDispatcher)
+        }
+
+        /** Add columns introduced after a DB was first created. SQLite has no ADD COLUMN IF NOT
+         *  EXISTS, so each ALTER is attempted and the "duplicate column" error is ignored — keeps
+         *  a pre-existing local watcher.db working without a full migration framework. */
+        private fun migrateInPlace(driver: JdbcSqliteDriver) {
+            listOf(
+                "ALTER TABLE builds ADD COLUMN agent TEXT",
+                "ALTER TABLE builds ADD COLUMN agent_provider TEXT",
+            ).forEach { sql -> runCatching { driver.execute(null, sql, 0) } }
         }
 
         /** Owner-only file permissions + Time Machine exclusion (KTD-7/Privacy). Best-effort. */
@@ -138,6 +152,8 @@ class WatcherDatabase private constructor(
             finalStatus = runCatching { FinalStatus.valueOf(final_status) }
                 .getOrDefault(FinalStatus.COMPLETED_NO_OUTCOME),
             logSnippet = log_snippet,
+            agent = agent,
+            agentProvider = agent_provider,
         )
     }
 }

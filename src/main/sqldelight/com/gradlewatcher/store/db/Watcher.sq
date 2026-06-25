@@ -35,7 +35,9 @@ CREATE TABLE builds (
     peak_cpu_percent REAL,
     inferred_source  TEXT NOT NULL DEFAULT 'UNKNOWN',
     final_status     TEXT NOT NULL,
-    log_snippet      TEXT                 -- pre-redacted
+    log_snippet      TEXT,                -- pre-redacted
+    agent            TEXT,                -- named AI agent (env-name fingerprint), null if none
+    agent_provider   TEXT                 -- LLM provider / "configurable" / "unknown"; null if none
 );
 
 CREATE INDEX builds_start ON builds(start_time);
@@ -51,8 +53,8 @@ FROM process_samples
 WHERE pid = ? AND timestamp >= ? AND timestamp <= ?;
 
 insertBuild:
-INSERT OR REPLACE INTO builds(build_id, daemon_pid, daemon_identity, command_line, working_directory, project_path, start_time, end_time, duration_seconds, peak_memory_mb, avg_memory_mb, peak_cpu_percent, inferred_source, final_status, log_snippet)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO builds(build_id, daemon_pid, daemon_identity, command_line, working_directory, project_path, start_time, end_time, duration_seconds, peak_memory_mb, avg_memory_mb, peak_cpu_percent, inferred_source, final_status, log_snippet, agent, agent_provider)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 recentBuilds:
 SELECT *

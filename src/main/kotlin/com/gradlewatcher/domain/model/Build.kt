@@ -32,4 +32,8 @@ data class Build(
     val inferredSource: Source,
     val finalStatus: FinalStatus,
     val logSnippet: String?,
+    /** Named AI agent inferred from the build's env-var names, or null if none detected (U6). */
+    val agent: String? = null,
+    /** LLM provider for the agent: a concrete name, "configurable", or "unknown"; null if no agent. */
+    val agentProvider: String? = null,
 )

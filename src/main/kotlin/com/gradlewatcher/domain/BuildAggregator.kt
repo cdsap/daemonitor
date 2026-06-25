@@ -111,6 +111,7 @@ class BuildAggregator(
             }
             val duration = outcomeDurationSeconds
                 ?: endMs?.let { (it - busyTimeMs) / 1000.0 }
+            val agentAttr = AgentDetector.detect(envNames)
 
             return Build(
                 buildId = buildId ?: "$daemonPid-$busyTimeMs",
@@ -128,6 +129,8 @@ class BuildAggregator(
                 inferredSource = SourceDetector.detect(envNames),
                 finalStatus = status,
                 logSnippet = null, // wired with a redacted snippet when the watcher supplies one
+                agent = agentAttr?.agent,
+                agentProvider = agentAttr?.provider,
             )
         }
     }
