@@ -62,6 +62,11 @@ compose.desktop {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "Daemonitor"
             packageVersion = "1.0.0"
+
+            // Per-platform installer/app icons (jpackage requires the native format per OS).
+            macOS { iconFile.set(project.file("icons/daemonitor.icns")) }
+            windows { iconFile.set(project.file("icons/daemonitor.ico")) }
+            linux { iconFile.set(project.file("icons/daemonitor.png")) }
         }
     }
 }

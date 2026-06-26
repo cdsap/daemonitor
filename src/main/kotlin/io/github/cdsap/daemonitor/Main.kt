@@ -8,6 +8,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
@@ -31,7 +32,12 @@ fun main() = application {
         position = WindowPosition(Alignment.Center),
     )
 
-    Window(onCloseRequest = ::exitApplication, state = windowState, title = "Daemonitor") {
+    Window(
+        onCloseRequest = ::exitApplication,
+        state = windowState,
+        title = "Daemonitor",
+        icon = painterResource("icon/daemonitor.png"),
+    ) {
         // Start the polling service exactly once, tied to this composition's lifecycle.
         LaunchedEffect(Unit) { service.start(this) }
 

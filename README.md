@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="icons/daemonitor.png" width="128" alt="Daemonitor icon">
+</p>
+
 # Daemonitor
 
 > Activity Monitor for your Gradle daemons — see what's building right now, and what built recently.
