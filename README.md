@@ -52,13 +52,28 @@ is Claude."
 
 ## Requirements
 
-- **JDK 21** (the build uses a Kotlin toolchain pinned to 21)
 - macOS, Linux, or Windows
+- Permission to read your own process list and Gradle daemon logs
 
 Daemonitor reads Gradle daemon logs under `~/.gradle/daemon/<version>/` and enumerates processes
 owned by the current user.
 
-## Run
+## Install
+
+Daemonitor is distributed as a native desktop app per operating system:
+
+| OS | Package |
+|----|---------|
+| macOS | `.dmg` |
+| Windows | `.msi` |
+| Linux | `.deb` |
+
+The installed app does not require a project-local Gradle setup. It only reads local process
+metadata and Gradle daemon logs for the current user.
+
+## Run from source
+
+Source builds require **JDK 21** because the Kotlin build is pinned to a Java 21 toolchain.
 
 ```bash
 ./gradlew run
