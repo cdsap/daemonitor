@@ -23,6 +23,7 @@ class LiveViewModel {
             summary = summarize(processes),
             detail = detail,
             tail = if (detail is DetailState.Ended) current.tail else tailForSelected,
+            isLoading = false,
             isEmpty = processes.isEmpty(),
         )
     }

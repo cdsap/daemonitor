@@ -28,6 +28,7 @@ data class LiveUiState(
     val summary: LiveSummary = LiveSummary(0, 0, null, 0),
     val detail: DetailState = DetailState.NoSelection,
     val tail: List<String> = emptyList(),
+    val isLoading: Boolean = true,
     val isEmpty: Boolean = true,
 ) {
     /** A process row whose restricted fields (cwd/project) could not be read (KTD-6). */

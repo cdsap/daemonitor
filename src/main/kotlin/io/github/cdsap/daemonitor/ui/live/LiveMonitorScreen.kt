@@ -81,7 +81,9 @@ fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit, onClearSelec
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         SummaryHeader(state)
-        if (state.isEmpty) {
+        if (state.isLoading) {
+            EmptyState("Scanning for Gradle processes...", modifier = Modifier.weight(1f))
+        } else if (state.isEmpty) {
             EmptyState("No Gradle processes are running right now.", modifier = Modifier.weight(1f))
         } else {
             val concurrent = Badges.concurrentSameProjectPids(state.processes)
