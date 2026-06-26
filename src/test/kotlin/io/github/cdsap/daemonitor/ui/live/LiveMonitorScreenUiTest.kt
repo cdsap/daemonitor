@@ -29,6 +29,15 @@ class LiveMonitorScreenUiTest {
     )
 
     @Test
+    fun `first render shows scanning state before the first poll`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+
+        setContent { WatcherTheme { LiveMonitorScreen(LiveUiState(), onSelect = {}, onClearSelection = {}) } }
+
+        onNodeWithText("Scanning for Gradle processes...").assertExists()
+    }
+
+    @Test
     fun `process table shows the uptime column and the daemon row`() = runComposeUiTest {
         // The screen runs a 1s wall-clock ticker (infinite delay loop); freezing the test clock
         // keeps the composition idle so node queries don't spin.
@@ -37,6 +46,7 @@ class LiveMonitorScreenUiTest {
         val state = LiveUiState(
             processes = listOf(sampleProcess()),
             summary = LiveSummary(activeProcessCount = 1, totalRssMb = 1024, highestMemoryPid = 4321, activeProjectCount = 1),
+            isLoading = false,
             isEmpty = false,
         )
         setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }

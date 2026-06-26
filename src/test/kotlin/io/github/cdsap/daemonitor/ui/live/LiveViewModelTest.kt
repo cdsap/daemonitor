@@ -17,6 +17,17 @@ class LiveViewModelTest {
         )
 
     @Test
+    fun `initial state is loading until first poll completes`() {
+        val vm = LiveViewModel()
+
+        assertTrue(vm.state.value.isLoading)
+
+        vm.onPoll(emptyList())
+
+        assertTrue(!vm.state.value.isLoading)
+    }
+
+    @Test
     fun `poll populates rows and summary`() {
         val vm = LiveViewModel()
         vm.onPoll(listOf(proc(1, rss = 100, project = "/a"), proc(2, rss = 300, project = "/b"), proc(3, rss = 50, project = "/a")))
