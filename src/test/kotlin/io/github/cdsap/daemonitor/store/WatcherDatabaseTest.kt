@@ -66,6 +66,31 @@ class WatcherDatabaseTest {
     }
 
     @Test
+    fun `kotlin daemon samples are persisted by process type`(@TempDirArg tmp: Path) {
+        val db = WatcherDatabase.open(tmp.resolve("watcher.db"))
+        val p = GradleProcess(
+            pid = 9,
+            parentPid = 1,
+            type = ProcessType.KOTLIN_DAEMON,
+            commandLine = "java org.jetbrains.kotlin.daemon.KotlinCompileDaemon",
+            workingDirectory = "/p",
+            projectPath = "/p",
+            cpuPercent = 12.5,
+            rssMemoryMb = 512,
+            maxHeapMb = 1500,
+            minHeapMb = null,
+            gc = "G1",
+            startTimeMs = 1,
+            status = "RUNNING",
+        )
+
+        db.insertSample(p, timestampMs = 1_000)
+
+        assertEquals(1L, db.processSampleCount(ProcessType.KOTLIN_DAEMON))
+        assertEquals(0L, db.processSampleCount(ProcessType.GRADLE_DAEMON))
+    }
+
+    @Test
     fun `purge removes rows older than retention window`(@TempDirArg tmp: Path) = runTest {
         val db = WatcherDatabase.open(tmp.resolve("watcher.db"))
         val now = 100L * 24 * 60 * 60 * 1000 // day 100

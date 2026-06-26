@@ -52,6 +52,11 @@ SELECT rss_memory_mb, cpu_percent
 FROM process_samples
 WHERE pid = ? AND timestamp >= ? AND timestamp <= ?;
 
+countProcessSamplesByType:
+SELECT COUNT(*)
+FROM process_samples
+WHERE process_type = ?;
+
 insertBuild:
 INSERT OR REPLACE INTO builds(build_id, daemon_pid, daemon_identity, command_line, working_directory, project_path, start_time, end_time, duration_seconds, peak_memory_mb, avg_memory_mb, peak_cpu_percent, inferred_source, final_status, log_snippet, agent, agent_provider)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);

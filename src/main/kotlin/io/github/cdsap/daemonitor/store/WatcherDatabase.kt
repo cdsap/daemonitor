@@ -7,6 +7,7 @@ import io.github.cdsap.daemonitor.Defaults
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
+import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.domain.model.Source
 import io.github.cdsap.daemonitor.store.db.WatcherDb
 import kotlinx.coroutines.CoroutineDispatcher
@@ -75,6 +76,9 @@ class WatcherDatabase private constructor(
         db.watcherQueries.samplesInWindow(pid, startMs, endMs)
             .executeAsList()
             .map { it.rss_memory_mb to it.cpu_percent }
+
+    fun processSampleCount(type: ProcessType): Long =
+        db.watcherQueries.countProcessSamplesByType(type.name).executeAsOne()
 
     /** One-shot snapshot of all retained builds, newest first. Drives the explicit History refresh
      *  the poll loop triggers after inserting builds (reactive `asFlow` notifications proved
