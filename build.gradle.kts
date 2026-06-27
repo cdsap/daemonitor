@@ -56,7 +56,7 @@ tasks.test {
 
 compose.desktop {
     application {
-        mainClass = "io.github.cdsap.daemonitor.MainKt"
+        mainClass = "io.github.cdsap.daemonitor.Daemonitor"
         nativeDistributions {
             // One format per OS; each is only buildable on its own platform (jpackage limitation).
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
