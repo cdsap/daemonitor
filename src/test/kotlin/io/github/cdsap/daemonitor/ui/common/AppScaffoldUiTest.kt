@@ -1,0 +1,27 @@
+package io.github.cdsap.daemonitor.ui.common
+
+import androidx.compose.material3.Text
+import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.runComposeUiTest
+import io.github.cdsap.daemonitor.BuildInfo
+import kotlin.test.Test
+
+@OptIn(ExperimentalTestApi::class)
+class AppScaffoldUiTest {
+    @Test
+    fun `header shows application version and commit`() = runComposeUiTest {
+        setContent {
+            WatcherTheme {
+                AppScaffold(
+                    buildInfo = BuildInfo(version = "1.2.3", commit = "abc1234"),
+                    liveContent = { Text("Live") },
+                    historyContent = { Text("History") },
+                    settingsContent = { Text("Settings") },
+                )
+            }
+        }
+
+        onNodeWithText("v1.2.3 · abc1234").assertExists()
+    }
+}

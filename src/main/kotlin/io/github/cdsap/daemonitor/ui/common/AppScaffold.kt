@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -29,6 +30,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.cdsap.daemonitor.BuildInfo
 
 /** Top-level navigation: Live Monitor and Historical tabs (U7). Resolves the navigation-model gap. */
 @Composable
@@ -36,10 +38,11 @@ fun AppScaffold(
     liveContent: @Composable () -> Unit,
     historyContent: @Composable () -> Unit,
     settingsContent: @Composable () -> Unit,
+    buildInfo: BuildInfo = BuildInfo.current,
 ) {
     var selectedTab by remember { mutableStateOf(0) }
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        AppHeader()
+        AppHeader(buildInfo)
         TabRow(
             selectedTabIndex = selectedTab,
             containerColor = MaterialTheme.colorScheme.surface,
@@ -61,7 +64,7 @@ fun AppScaffold(
 
 /** A slim brand bar so the window reads as a product, not a bare tab strip. */
 @Composable
-private fun AppHeader() {
+private fun AppHeader(buildInfo: BuildInfo) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -80,6 +83,12 @@ private fun AppHeader() {
         Text(
             "live build & daemon insight",
             style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.weight(1f))
+        Text(
+            "v${buildInfo.version} · ${buildInfo.commit}",
+            style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
