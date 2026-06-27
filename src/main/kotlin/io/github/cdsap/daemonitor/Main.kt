@@ -1,3 +1,5 @@
+@file:JvmName("Daemonitor")
+
 package io.github.cdsap.daemonitor
 
 import androidx.compose.foundation.layout.fillMaxSize
