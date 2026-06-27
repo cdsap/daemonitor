@@ -13,6 +13,41 @@ plugins {
 group = "io.github.cdsap.daemonitor"
 version = "0.1.0"
 
+val buildInfoDirectory = layout.buildDirectory.dir("generated/build-info")
+val buildCommit = providers.environmentVariable("GITHUB_SHA")
+    .map { it.take(8) }
+    .orElse(providers.provider {
+        runCatching {
+            val process = ProcessBuilder("git", "rev-parse", "--short=8", "HEAD")
+                .directory(rootDir)
+                .redirectErrorStream(true)
+                .start()
+            val output = process.inputStream.bufferedReader().use { it.readText() }.trim()
+            if (process.waitFor() == 0) output else "unknown"
+        }.getOrDefault("unknown")
+    })
+val generateBuildInfo = tasks.register("generateBuildInfo") {
+    val appVersion = project.version.toString()
+    inputs.property("version", appVersion)
+    inputs.property("commit", buildCommit)
+    outputs.dir(buildInfoDirectory)
+
+    doLast {
+        buildInfoDirectory.get().file("daemonitor-build.properties").asFile.apply {
+            parentFile.mkdirs()
+            writeText("version=$appVersion\ncommit=${buildCommit.get()}\n")
+        }
+    }
+}
+
+sourceSets.main {
+    resources.srcDir(buildInfoDirectory)
+}
+
+tasks.processResources {
+    dependsOn(generateBuildInfo)
+}
+
 dependencies {
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
