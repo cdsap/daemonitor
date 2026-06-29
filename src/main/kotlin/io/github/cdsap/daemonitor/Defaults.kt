@@ -24,6 +24,9 @@ object Defaults {
     const val MIN_RETENTION_DAYS: Long = 1
     const val MAX_RETENTION_DAYS: Long = 90
 
+    /** Retention choices shared by Settings and the Historical view filter. */
+    val RETENTION_PRESETS: List<Long> = listOf(7, 15, 30, 60, 90)
+
     /** Memory highlight thresholds, in MiB of RSS (U9). */
     const val MEM_WARN_MB: Long = 4_096
     const val MEM_CRIT_MB: Long = 8_192

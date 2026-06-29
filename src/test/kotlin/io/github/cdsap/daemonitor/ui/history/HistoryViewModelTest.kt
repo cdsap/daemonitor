@@ -1,5 +1,6 @@
 package io.github.cdsap.daemonitor.ui.history
 
+import io.github.cdsap.daemonitor.Defaults
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.Source
@@ -25,41 +26,48 @@ class HistoryViewModelTest {
     @Test
     fun `project filter narrows to selected project`() {
         val vm = vm()
-        vm.setTimeRange(TimeRange.ALL)
         vm.onBuilds(listOf(build("a", now, "/x"), build("b", now, "/y"), build("c", now, "/x")))
         vm.setProject("/x")
         assertEquals(listOf("a", "c"), vm.state.value.builds.map { it.buildId })
     }
 
     @Test
-    fun `today preset excludes yesterday's build`() {
+    fun `time-range presets match retention choices and use rolling day cutoffs`() {
+        assertEquals(Defaults.RETENTION_PRESETS, TimeRange.entries.map(TimeRange::days))
+        assertEquals(Defaults.DEFAULT_RETENTION_DAYS, TimeRange.DEFAULT.days)
+        TimeRange.entries.forEach { range ->
+            assertEquals(now - range.days * dayMs, range.cutoffMs(now))
+        }
+    }
+
+    @Test
+    fun `seven-day preset excludes an older build`() {
         val vm = vm()
-        vm.setTimeRange(TimeRange.TODAY)
-        val yesterday = now - dayMs - 1000
-        vm.onBuilds(listOf(build("old", yesterday, "/x"), build("today", now, "/x")))
-        assertEquals(listOf("today"), vm.state.value.builds.map { it.buildId })
+        vm.setTimeRange(TimeRange.LAST_7_DAYS)
+        val olderThanSevenDays = now - 7 * dayMs - 1
+        vm.onBuilds(listOf(build("old", olderThanSevenDays, "/x"), build("recent", now, "/x")))
+        assertEquals(listOf("recent"), vm.state.value.builds.map { it.buildId })
     }
 
     @Test
     fun `project and time-range compound with AND`() {
         val vm = vm()
-        vm.setTimeRange(TimeRange.TODAY)
-        val yesterday = now - dayMs - 1000
+        vm.setTimeRange(TimeRange.LAST_7_DAYS)
+        val old = now - 7 * dayMs - 1
         vm.onBuilds(
             listOf(
-                build("x-today", now, "/x"),
-                build("y-today", now, "/y"),
-                build("x-old", yesterday, "/x"),
+                build("x-recent", now, "/x"),
+                build("y-recent", now, "/y"),
+                build("x-old", old, "/x"),
             ),
         )
         vm.setProject("/x")
-        assertEquals(listOf("x-today"), vm.state.value.builds.map { it.buildId })
+        assertEquals(listOf("x-recent"), vm.state.value.builds.map { it.buildId })
     }
 
     @Test
     fun `no matching builds sets empty-result flag`() {
         val vm = vm()
-        vm.setTimeRange(TimeRange.ALL)
         vm.onBuilds(listOf(build("a", now, "/x")))
         vm.setProject("/nonexistent")
         assertTrue(vm.state.value.isEmptyResult)

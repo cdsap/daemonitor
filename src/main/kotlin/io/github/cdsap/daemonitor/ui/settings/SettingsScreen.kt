@@ -24,8 +24,6 @@ import io.github.cdsap.daemonitor.Defaults
 import io.github.cdsap.daemonitor.ui.common.SectionCard
 import io.github.cdsap.daemonitor.ui.common.Space
 
-private val RETENTION_PRESETS = listOf(7L, 15L, 30L, 60L, 90L)
-
 @Composable
 fun SettingsScreen(state: SettingsUiState, onRetentionDays: (Long) -> Unit) {
     Column(
@@ -56,7 +54,7 @@ fun SettingsScreen(state: SettingsUiState, onRetentionDays: (Long) -> Unit) {
                 )
                 Spacer(Modifier.height(Space.md))
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                    RETENTION_PRESETS.forEach { days ->
+                    Defaults.RETENTION_PRESETS.forEach { days ->
                         FilterChip(
                             selected = state.retentionDays == days,
                             onClick = { onRetentionDays(days) },

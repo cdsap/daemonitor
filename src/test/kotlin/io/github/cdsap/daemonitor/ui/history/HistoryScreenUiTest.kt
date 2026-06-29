@@ -48,4 +48,17 @@ class HistoryScreenUiTest {
         setContent { WatcherTheme { HistoryScreen(state, onProject = {}, onTimeRange = {}) } }
         onNodeWithText("No builds match the current filters.").assertExists()
     }
+
+    @Test
+    fun `time filters show the retention presets`() = runComposeUiTest {
+        val state = HistoryUiState(builds = listOf(sampleBuild()), isEmptyResult = false)
+        setContent { WatcherTheme { HistoryScreen(state, onProject = {}, onTimeRange = {}) } }
+
+        listOf(7, 15, 30, 60, 90).forEach { days ->
+            onNodeWithText("$days days").assertExists()
+        }
+        onNodeWithText("All").assertDoesNotExist()
+        onNodeWithText("Today").assertDoesNotExist()
+        onNodeWithText("Last 24 hours").assertDoesNotExist()
+    }
 }
