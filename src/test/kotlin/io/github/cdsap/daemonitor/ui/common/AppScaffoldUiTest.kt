@@ -2,6 +2,7 @@ package io.github.cdsap.daemonitor.ui.common
 
 import androidx.compose.material3.Text
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.runComposeUiTest
 import io.github.cdsap.daemonitor.BuildInfo
@@ -9,6 +10,21 @@ import kotlin.test.Test
 
 @OptIn(ExperimentalTestApi::class)
 class AppScaffoldUiTest {
+    @Test
+    fun `header shows the Daemonitor logo`() = runComposeUiTest {
+        setContent {
+            WatcherTheme {
+                AppScaffold(
+                    liveContent = { Text("Live") },
+                    historyContent = { Text("History") },
+                    settingsContent = { Text("Settings") },
+                )
+            }
+        }
+
+        onNodeWithContentDescription("Daemonitor logo").assertExists()
+    }
+
     @Test
     fun `header shows application version and commit`() = runComposeUiTest {
         setContent {

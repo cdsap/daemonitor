@@ -1,5 +1,6 @@
 package io.github.cdsap.daemonitor.ui.common
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -27,9 +28,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import io.github.cdsap.daemonitor.BuildInfo
 
 /** Top-level navigation: Live Monitor and Historical tabs (U7). Resolves the navigation-model gap. */
@@ -73,7 +74,11 @@ private fun AppHeader(buildInfo: BuildInfo) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.sm),
     ) {
-        Text("◢◤", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        Image(
+            painter = painterResource("icon/daemonitor.png"),
+            contentDescription = "Daemonitor logo",
+            modifier = Modifier.size(32.dp),
+        )
         Text(
             "Daemonitor",
             style = MaterialTheme.typography.titleMedium,
