@@ -4,6 +4,7 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runComposeUiTest
 import io.github.cdsap.daemonitor.BuildInfo
 import kotlin.test.Test
@@ -39,5 +40,24 @@ class AppScaffoldUiTest {
         }
 
         onNodeWithText("v1.2.3 · abc1234").assertExists()
+    }
+
+    @Test
+    fun `segmented navigation switches between application screens`() = runComposeUiTest {
+        setContent {
+            WatcherTheme {
+                AppScaffold(
+                    liveContent = { Text("Live content") },
+                    historyContent = { Text("History content") },
+                    settingsContent = { Text("Settings content") },
+                )
+            }
+        }
+
+        onNodeWithText("Live content").assertExists()
+        onNodeWithText("History").performClick()
+        onNodeWithText("History content").assertExists()
+        onNodeWithText("Settings").performClick()
+        onNodeWithText("Settings content").assertExists()
     }
 }

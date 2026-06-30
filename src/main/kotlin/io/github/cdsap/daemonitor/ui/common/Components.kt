@@ -3,6 +3,7 @@ package io.github.cdsap.daemonitor.ui.common
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -37,17 +39,17 @@ fun StatTile(
     val tint = accent ?: MaterialTheme.colorScheme.primary
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(Radius.md),
+        shape = RoundedCornerShape(Radius.sm),
         color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 2.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Row(modifier = Modifier.height(IntrinsicSize.Min)) {
             // Slim accent rail on the leading edge gives each tile a quiet pop of color.
-            Box(modifier = Modifier.width(3.dp).fillMaxHeight().background(tint.copy(alpha = 0.85f)))
+            Box(modifier = Modifier.width(2.dp).fillMaxHeight().background(tint))
             Column(modifier = Modifier.padding(Space.md)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (icon != null) {
-                        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(14.dp))
+                        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(13.dp))
                         Spacer(Modifier.width(Space.xs))
                     }
                     Text(
@@ -57,7 +59,7 @@ fun StatTile(
                     )
                 }
                 Spacer(Modifier.height(Space.xs))
-                Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
             }
         }
     }
@@ -70,17 +72,34 @@ fun SectionCard(title: String, modifier: Modifier = Modifier, content: @Composab
         modifier = modifier,
         shape = RoundedCornerShape(Radius.md),
         color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
-        Column(modifier = Modifier.padding(Space.md)) {
-            Text(
-                title.uppercase(),
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.fillMaxWidth().padding(bottom = Space.sm),
-            )
-            Box(modifier = Modifier.weight(1f).fillMaxWidth()) { content() }
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth().height(38.dp).background(MaterialTheme.colorScheme.surfaceVariant).padding(horizontal = Space.md),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(title, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+            }
+            androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Box(modifier = Modifier.weight(1f).fillMaxWidth().padding(Space.md)) { content() }
         }
+    }
+}
+
+/** Compact screen toolbar used above data-heavy desktop views. */
+@Composable
+fun ScreenHeader(
+    title: String,
+    modifier: Modifier = Modifier,
+    trailing: @Composable () -> Unit = {},
+) {
+    Row(
+        modifier = modifier.fillMaxWidth().height(48.dp).padding(horizontal = Space.lg),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+        trailing()
     }
 }

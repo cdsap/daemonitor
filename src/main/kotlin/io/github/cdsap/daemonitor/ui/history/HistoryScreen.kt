@@ -1,6 +1,7 @@
 package io.github.cdsap.daemonitor.ui.history
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,7 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -44,7 +46,9 @@ import io.github.cdsap.daemonitor.ui.common.ProcessTypeIcon
 import io.github.cdsap.daemonitor.ui.common.EmptyState
 import io.github.cdsap.daemonitor.ui.common.LogView
 import io.github.cdsap.daemonitor.ui.common.PrivacyNotice
+import io.github.cdsap.daemonitor.ui.common.Radius
 import io.github.cdsap.daemonitor.ui.common.SectionCard
+import io.github.cdsap.daemonitor.ui.common.ScreenHeader
 import io.github.cdsap.daemonitor.ui.common.Space
 import io.github.cdsap.daemonitor.ui.common.SourcePill
 import io.github.cdsap.daemonitor.ui.common.StatusPill
@@ -75,9 +79,9 @@ fun HistoryScreen(state: HistoryUiState, onProject: (String?) -> Unit, onTimeRan
             Row(modifier = Modifier.weight(1f).padding(start = Space.lg, end = Space.lg, bottom = Space.lg)) {
                 Surface(
                     modifier = Modifier.weight(1.5f).fillMaxSize(),
-                    shape = RoundedCornerShape(Space.md),
+                    shape = RoundedCornerShape(Radius.md),
                     color = MaterialTheme.colorScheme.surface,
-                    tonalElevation = 1.dp,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 ) {
                     Column {
                         TableHeader(COLS)
@@ -101,19 +105,30 @@ fun HistoryScreen(state: HistoryUiState, onProject: (String?) -> Unit, onTimeRan
 
 @Composable
 private fun Filters(state: HistoryUiState, onProject: (String?) -> Unit, onTimeRange: (TimeRange) -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(Space.lg),
-        horizontalArrangement = Arrangement.spacedBy(Space.sm),
-    ) {
-        TimeRange.entries.forEach { range ->
-            FilterChip(
-                selected = state.filter.timeRange == range,
-                onClick = { onTimeRange(range) },
-                label = { Text(range.label) },
-            )
+    Column {
+        ScreenHeader("Build history")
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = Space.lg, end = Space.lg, bottom = Space.md),
+            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("RANGE", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TimeRange.entries.forEach { range ->
+                FilterChip(
+                    selected = state.filter.timeRange == range,
+                    onClick = { onTimeRange(range) },
+                    label = { Text(range.label) },
+                    shape = RoundedCornerShape(Radius.sm),
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    ),
+                )
+            }
+            Spacer(Modifier.width(Space.sm))
+            Text("PROJECT", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            ProjectDropdown(state.projects, state.filter.projectPath, onProject)
         }
-        Spacer(Modifier.width(Space.sm))
-        ProjectDropdown(state.projects, state.filter.projectPath, onProject)
     }
 }
 
@@ -123,6 +138,7 @@ private fun ProjectDropdown(projects: List<String>, selected: String?, onProject
     AssistChip(
         onClick = { expanded = true },
         label = { Text(selected?.substringAfterLast('/')?.let { "Project: $it" } ?: "All projects") },
+        shape = RoundedCornerShape(Radius.sm),
     )
     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
         DropdownMenuItem(text = { Text("All projects") }, onClick = { onProject(null); expanded = false })
@@ -134,13 +150,13 @@ private fun ProjectDropdown(projects: List<String>, selected: String?, onProject
 
 @Composable
 private fun BuildRow(b: Build, selected: Boolean, onSelect: () -> Unit) {
-    val bg = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surface
+    val bg = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f) else MaterialTheme.colorScheme.surface
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(bg)
             .clickable { onSelect() }
-            .padding(horizontal = Space.md, vertical = Space.sm),
+            .padding(horizontal = Space.md, vertical = 7.dp),
         horizontalArrangement = Arrangement.spacedBy(Space.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {

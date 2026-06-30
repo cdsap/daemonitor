@@ -29,8 +29,8 @@ fun PrivacyNotice(modifier: Modifier = Modifier) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-                .padding(horizontal = Space.md, vertical = 6.dp),
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(horizontal = Space.lg, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Space.xs),
         ) {

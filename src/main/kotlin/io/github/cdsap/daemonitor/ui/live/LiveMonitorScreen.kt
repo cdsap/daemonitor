@@ -1,6 +1,7 @@
 package io.github.cdsap.daemonitor.ui.live
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -46,8 +48,10 @@ import io.github.cdsap.daemonitor.ui.common.EmptyState
 import io.github.cdsap.daemonitor.ui.common.LogView
 import io.github.cdsap.daemonitor.ui.common.MemoryBadge
 import io.github.cdsap.daemonitor.ui.common.PrivacyNotice
+import io.github.cdsap.daemonitor.ui.common.Radius
 import io.github.cdsap.daemonitor.ui.common.ProcessTypeIcon
 import io.github.cdsap.daemonitor.ui.common.SectionCard
+import io.github.cdsap.daemonitor.ui.common.ScreenHeader
 import io.github.cdsap.daemonitor.ui.common.Space
 import io.github.cdsap.daemonitor.ui.common.StatTile
 import io.github.cdsap.daemonitor.ui.common.TableHeader
@@ -90,9 +94,9 @@ fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit, onClearSelec
             Row(modifier = Modifier.weight(1f).padding(Space.lg)) {
                 Surface(
                     modifier = Modifier.weight(1.6f).fillMaxSize(),
-                    shape = RoundedCornerShape(Space.md),
+                    shape = RoundedCornerShape(Radius.md),
                     color = MaterialTheme.colorScheme.surface,
-                    tonalElevation = 1.dp,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 ) {
                     Column {
                         TableHeader(COLS)
@@ -118,14 +122,24 @@ fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit, onClearSelec
 
 @Composable
 private fun SummaryHeader(state: LiveUiState) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(Space.lg),
-        horizontalArrangement = Arrangement.spacedBy(Space.md),
-    ) {
-        StatTile("Active processes", state.summary.activeProcessCount.toString(), Modifier.weight(1f), icon = Icons.Filled.Memory)
-        StatTile("Total RSS", "${state.summary.totalRssMb} MB", Modifier.weight(1f), icon = Icons.Filled.Storage, accent = Accent.info)
-        StatTile("Highest-mem PID", state.summary.highestMemoryPid?.toString() ?: "—", Modifier.weight(1f), icon = Icons.Filled.TrendingUp, accent = Accent.warn)
-        StatTile("Active projects", state.summary.activeProjectCount.toString(), Modifier.weight(1f), icon = Icons.Filled.FolderOpen, accent = Accent.brand)
+    Column {
+        ScreenHeader("Process monitor") {
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
+                androidx.compose.foundation.layout.Box(
+                    modifier = Modifier.size(7.dp).background(Accent.success, androidx.compose.foundation.shape.CircleShape),
+                )
+                Text("MONITORING", style = MaterialTheme.typography.labelSmall, color = Accent.success)
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = Space.lg, end = Space.lg, bottom = Space.md),
+            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+        ) {
+            StatTile("Processes", state.summary.activeProcessCount.toString(), Modifier.weight(1f), icon = Icons.Filled.Memory)
+            StatTile("Resident memory", "${state.summary.totalRssMb} MB", Modifier.weight(1f), icon = Icons.Filled.Storage, accent = Accent.info)
+            StatTile("Peak memory PID", state.summary.highestMemoryPid?.toString() ?: "—", Modifier.weight(1f), icon = Icons.Filled.TrendingUp, accent = Accent.warn)
+            StatTile("Projects", state.summary.activeProjectCount.toString(), Modifier.weight(1f), icon = Icons.Filled.FolderOpen, accent = Accent.brand)
+        }
     }
 }
 
@@ -138,13 +152,13 @@ private fun ProcessRow(
     isDegraded: (GradleProcess) -> Boolean,
     onSelect: (Long) -> Unit,
 ) {
-    val bg = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surface
+    val bg = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f) else MaterialTheme.colorScheme.surface
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(bg)
             .clickable { onSelect(p.pid) }
-            .padding(horizontal = Space.md, vertical = Space.sm),
+            .padding(horizontal = Space.md, vertical = 7.dp),
         horizontalArrangement = Arrangement.spacedBy(Space.sm),
         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
     ) {
