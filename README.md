@@ -79,6 +79,16 @@ Source builds require **JDK 21** because the Kotlin build is pinned to a Java 21
 ./gradlew run
 ```
 
+To collect and persist data without starting Compose or requiring a display server:
+
+```bash
+./gradlew runHeadless
+```
+
+Packaged launchers also accept `--headless`. Headless and desktop modes use the same local database
+and retention setting. Stop the collector with `Ctrl+C` or the service manager's normal termination
+signal.
+
 ## Build a native distribution
 
 The Compose Gradle plugin packages a platform-native installer via `jpackage` (must be built on the

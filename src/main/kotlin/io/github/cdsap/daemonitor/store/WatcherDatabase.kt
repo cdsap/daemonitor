@@ -3,6 +3,7 @@ package io.github.cdsap.daemonitor.store
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import app.cash.sqldelight.db.SqlDriver
 import io.github.cdsap.daemonitor.Defaults
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
@@ -30,8 +31,11 @@ import kotlin.io.path.exists
  */
 class WatcherDatabase private constructor(
     private val db: WatcherDb,
+    private val driver: SqlDriver,
     private val ioDispatcher: CoroutineDispatcher,
-) {
+) : AutoCloseable {
+
+    override fun close() = driver.close()
 
     fun insertSample(p: GradleProcess, timestampMs: Long) {
         db.watcherQueries.insertSample(
@@ -126,7 +130,7 @@ class WatcherDatabase private constructor(
             } else {
                 migrateInPlace(driver)
             }
-            return WatcherDatabase(WatcherDb(driver), ioDispatcher)
+            return WatcherDatabase(WatcherDb(driver), driver, ioDispatcher)
         }
 
         /** Add columns introduced after a DB was first created. SQLite has no ADD COLUMN IF NOT

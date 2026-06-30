@@ -89,6 +89,13 @@ tasks.test {
     useJUnitPlatform()
 }
 
+tasks.register<JavaExec>("runHeadless") {
+    group = "application"
+    description = "Runs Daemonitor without the desktop UI"
+    mainClass.set("io.github.cdsap.daemonitor.DaemonitorHeadless")
+    classpath = sourceSets.main.get().runtimeClasspath
+}
+
 compose.desktop {
     application {
         mainClass = "io.github.cdsap.daemonitor.Daemonitor"

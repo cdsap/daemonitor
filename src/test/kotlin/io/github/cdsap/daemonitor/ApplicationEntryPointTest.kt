@@ -13,4 +13,13 @@ class ApplicationEntryPointTest {
         assertTrue(Modifier.isPublic(entryPoint.modifiers))
         assertTrue(Modifier.isStatic(entryPoint.modifiers))
     }
+
+    @Test
+    fun `headless mode exposes a named static entry point`() {
+        val entryPoint = Class.forName("io.github.cdsap.daemonitor.DaemonitorHeadless")
+            .getMethod("main", Array<String>::class.java)
+
+        assertTrue(Modifier.isPublic(entryPoint.modifiers))
+        assertTrue(Modifier.isStatic(entryPoint.modifiers))
+    }
 }
