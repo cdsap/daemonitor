@@ -22,6 +22,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.github.cdsap.daemonitor.Defaults
 import io.github.cdsap.daemonitor.ui.common.SectionCard
+import io.github.cdsap.daemonitor.ui.common.ScreenHeader
+import io.github.cdsap.daemonitor.ui.common.Radius
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.FilterChipDefaults
 import io.github.cdsap.daemonitor.ui.common.Space
 
 @Composable
@@ -29,11 +33,13 @@ fun SettingsScreen(state: SettingsUiState, onRetentionDays: (Long) -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(Space.lg),
-        verticalArrangement = Arrangement.spacedBy(Space.lg),
+            .background(MaterialTheme.colorScheme.background),
     ) {
-        SectionCard("History retention", modifier = Modifier.fillMaxWidth().height(184.dp)) {
+        ScreenHeader("Settings")
+        SectionCard(
+            "History retention",
+            modifier = Modifier.fillMaxWidth().height(190.dp).padding(horizontal = Space.lg),
+        ) {
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
                     Icon(Icons.Filled.History, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
@@ -59,6 +65,11 @@ fun SettingsScreen(state: SettingsUiState, onRetentionDays: (Long) -> Unit) {
                             selected = state.retentionDays == days,
                             onClick = { onRetentionDays(days) },
                             label = { Text("$days days") },
+                            shape = RoundedCornerShape(Radius.sm),
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            ),
                         )
                     }
                 }

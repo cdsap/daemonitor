@@ -41,7 +41,7 @@ fun Pill(
 ) {
     Row(
         modifier = modifier
-            .clip(RoundedCornerShape(Radius.pill))
+            .clip(RoundedCornerShape(Radius.sm))
             .background(bg)
             .padding(horizontal = 8.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,

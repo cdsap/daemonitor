@@ -1,16 +1,7 @@
 package io.github.cdsap.daemonitor.ui.common
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import io.github.cdsap.daemonitor.Defaults
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
@@ -60,47 +51,20 @@ object Badges {
 
 @Composable
 fun MemoryBadge(level: BadgeLevel, modifier: Modifier = Modifier) {
-    val (bg, label) = when (level) {
-        BadgeLevel.WARN -> Color(0xFFB26A00) to "HIGH MEM"
-        BadgeLevel.CRITICAL -> Color(0xFFB00020) to "CRIT MEM"
+    val (fg, bg, label) = when (level) {
+        BadgeLevel.WARN -> Triple(Accent.warn, Accent.warnBg, "HIGH MEM")
+        BadgeLevel.CRITICAL -> Triple(Accent.danger, Accent.dangerBg, "CRIT MEM")
     }
-    Text(
-        text = label,
-        color = Color.White,
-        fontSize = 10.sp,
-        modifier = modifier
-            .clip(RoundedCornerShape(4.dp))
-            .background(bg)
-            .padding(horizontal = 6.dp, vertical = 2.dp),
-        style = MaterialTheme.typography.labelSmall,
-    )
+    Pill(label, fg, bg, modifier)
 }
 
 @Composable
 fun ConcurrentBadge(modifier: Modifier = Modifier) {
-    Text(
-        text = "MULTI-BUILD",
-        color = Color.White,
-        fontSize = 10.sp,
-        modifier = modifier
-            .clip(RoundedCornerShape(4.dp))
-            .background(Color(0xFF5E35B1))
-            .padding(horizontal = 6.dp, vertical = 2.dp),
-        style = MaterialTheme.typography.labelSmall,
-    )
+    Pill("MULTI-BUILD", Accent.info, Accent.infoBg, modifier)
 }
 
 /** Marks an invocation run with `--non-interactive` / `--console=plain` (likely CI/script/agent). */
 @Composable
 fun AutomatedBadge(modifier: Modifier = Modifier) {
-    Text(
-        text = "AUTOMATED",
-        color = Color.White,
-        fontSize = 10.sp,
-        modifier = modifier
-            .clip(RoundedCornerShape(4.dp))
-            .background(Color(0xFF00796B))
-            .padding(horizontal = 6.dp, vertical = 2.dp),
-        style = MaterialTheme.typography.labelSmall,
-    )
+    Pill("AUTOMATED", Accent.brand, Accent.brandBg, modifier)
 }

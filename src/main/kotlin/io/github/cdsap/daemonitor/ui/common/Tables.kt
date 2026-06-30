@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 
 /** A table column: a header label, a flex weight, and whether its cells are end-aligned (numbers). */
 data class Col(val label: String, val weight: Float, val end: Boolean = false)
@@ -23,7 +24,7 @@ data class Col(val label: String, val weight: Float, val end: Boolean = false)
 fun TableHeader(cols: List<Col>) {
     Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.sm),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = 7.dp),
             horizontalArrangement = Arrangement.spacedBy(Space.sm),
         ) {
             cols.forEach { c ->
