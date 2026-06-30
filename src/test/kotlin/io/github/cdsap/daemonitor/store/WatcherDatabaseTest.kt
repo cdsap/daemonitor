@@ -114,6 +114,17 @@ class WatcherDatabaseTest {
             assertTrue(perms.none { it.startsWith("GROUP") || it.startsWith("OTHERS") }, perms.toString())
         }
     }
+
+    @Test
+    fun `closed database releases its driver`(@TempDirArg tmp: Path) {
+        val path = tmp.resolve("watcher.db")
+        val db = WatcherDatabase.open(path)
+
+        db.close()
+        Files.delete(path)
+
+        assertTrue(!path.exists())
+    }
 }
 
 private typealias TempDirArg = org.junit.jupiter.api.io.TempDir

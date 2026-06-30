@@ -1,9 +1,5 @@
 package io.github.cdsap.daemonitor
 
-import io.github.cdsap.daemonitor.collect.DaemonLog
-import io.github.cdsap.daemonitor.collect.DaemonLogWatcher
-import io.github.cdsap.daemonitor.collect.ProcessCollector
-import io.github.cdsap.daemonitor.domain.BuildAggregator
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
 import io.github.cdsap.daemonitor.ui.history.HistoryViewModel
@@ -17,16 +13,9 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/**
- * Application coordinator (U7 wiring). Runs the periodic poll on [Dispatchers.IO]: collect
- * processes → persist samples; read daemon-log events → aggregate builds → persist; feed the
- * [LiveViewModel]. Build *existence* comes from the log (KTD-1); resource metrics from polling
- * (KTD-2). Heavy I/O stays off the UI thread (Compose best practice).
- */
+/** Desktop adapter that runs [WatcherRuntime] on [Dispatchers.IO] and projects results into UI state. */
 class WatcherService(
-    private val collector: ProcessCollector = ProcessCollector(),
-    private val logWatcher: DaemonLogWatcher = DaemonLogWatcher(),
-    private val aggregator: BuildAggregator,
+    private val runtime: WatcherRuntime,
     private val database: WatcherDatabase,
     private val settingsStore: SettingsStore = SettingsStore(),
     private val clock: () -> Long = System::currentTimeMillis,
@@ -43,8 +32,6 @@ class WatcherService(
     )
 
     private var serviceScope: CoroutineScope? = null
-    private var knownDaemonPids = emptySet<Long>()
-
     fun start(scope: CoroutineScope) {
         serviceScope = scope
         database.purgeOlderThan(clock(), retentionDays)
@@ -85,63 +72,32 @@ class WatcherService(
 
     /** One poll cycle, factored out for testability. */
     suspend fun pollOnce() {
-        val now = clock()
-        val processes = collector.poll()
-        processes.forEach { database.insertSample(it, now) }
-
-        val logs = logWatcher.discover()
-        val insertedBuilds = processForBuilds(logs)
+        val result = runtime.pollOnce()
 
         // Surface the selected daemon's tail, if any is selected.
-        val selectedTail = selectedDaemonTail(logs)
+        val selectedTail = selectedDaemonTail(result)
         withContext(Dispatchers.Main) {
-            liveViewModel.onPoll(processes, selectedTail)
+            liveViewModel.onPoll(result.processes, selectedTail)
         }
 
         // A new build landed → push it to the Historical tab immediately.
-        if (insertedBuilds) refreshHistory()
+        if (result.buildsChanged) refreshHistory()
     }
 
-    /** @return true if at least one build was inserted this cycle (drives the History refresh). */
-    private fun processForBuilds(logs: List<DaemonLog>): Boolean {
-        val currentPids = logs.map { it.pid }.toSet()
-        var inserted = false
-
-        for (log in logs) {
-            val events = logWatcher.readNewEvents(log.path)
-            if (events.isNotEmpty()) {
-                aggregator.onEvents(log.pid, events).forEach { database.insertBuild(it); inserted = true }
-            }
-        }
-
-        // Daemons that vanished since last poll → flush any in-flight build as interrupted.
-        (knownDaemonPids - currentPids).forEach { gonePid ->
-            aggregator.onDaemonGone(gonePid)?.let { database.insertBuild(it); inserted = true }
-        }
-        knownDaemonPids = currentPids
-        return inserted
-    }
-
-    private fun selectedDaemonTail(logs: List<DaemonLog>): List<String> {
+    private fun selectedDaemonTail(result: WatcherRuntime.PollResult): List<String> {
         val detail = liveViewModel.state.value.detail
         val pid = when (detail) {
             is io.github.cdsap.daemonitor.ui.live.DetailState.Selected -> detail.process.pid
             else -> return emptyList()
         }
-        val log = logs.firstOrNull { it.pid == pid } ?: return emptyList()
-        return logWatcher.tailFor(log.path)
+        return runtime.tailFor(result.daemonLogs, pid)
     }
 
     companion object {
         /** Build a fully wired service against the real database. */
         fun create(database: WatcherDatabase = WatcherDatabase.open()): WatcherService =
             WatcherService(
-                aggregator = BuildAggregator(
-                    sampleProvider = database::samplesInWindow,
-                    // The watcher's own env is the ambient baseline: any agent var already present
-                    // here is inherited by every build it observes, so it can't single out a build.
-                    ambientEnvNames = System.getenv().keys.toSet(),
-                ),
+                runtime = WatcherRuntime.create(database),
                 database = database,
             )
     }

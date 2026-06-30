@@ -27,7 +27,16 @@ import io.github.cdsap.daemonitor.ui.settings.SettingsScreen
  * Application entry point (U1 scaffold, wired in U7). Opens the database, starts the polling
  * [WatcherService], and renders the tabbed UI. The Historical tab is wired in U8.
  */
-fun main() = application {
+fun main(args: Array<String>) {
+    if (args.firstOrNull() == "--headless") {
+        val exitCode = HeadlessLauncher.run(args.drop(1).toTypedArray())
+        if (exitCode != 0) kotlin.system.exitProcess(exitCode)
+        return
+    }
+    launchDesktop()
+}
+
+private fun launchDesktop() = application {
     val service = remember { WatcherService.create() }
     val windowState = rememberWindowState(
         size = DpSize(1180.dp, 760.dp),
