@@ -65,10 +65,10 @@ fun Pill(
 @Composable
 fun StatusPill(status: FinalStatus, modifier: Modifier = Modifier) {
     val (fg, bg, label, glyph) = when (status) {
-        FinalStatus.SUCCESS -> StatusStyle(Accent.success, Accent.successBg, "success", "✓")
-        FinalStatus.FAILED -> StatusStyle(Accent.danger, Accent.dangerBg, "failed", "✗")
-        FinalStatus.INTERRUPTED -> StatusStyle(Accent.warn, Accent.warnBg, "interrupted", "⚠")
-        FinalStatus.COMPLETED_NO_OUTCOME -> StatusStyle(Accent.neutral, Accent.neutralBg, "completed", "◐")
+        FinalStatus.SUCCESS -> StatusStyle(LocalAccentColors.current.success, LocalAccentColors.current.successBg, "success", "✓")
+        FinalStatus.FAILED -> StatusStyle(LocalAccentColors.current.danger, LocalAccentColors.current.dangerBg, "failed", "✗")
+        FinalStatus.INTERRUPTED -> StatusStyle(LocalAccentColors.current.warn, LocalAccentColors.current.warnBg, "interrupted", "⚠")
+        FinalStatus.COMPLETED_NO_OUTCOME -> StatusStyle(LocalAccentColors.current.neutral, LocalAccentColors.current.neutralBg, "completed", "◐")
     }
     Pill(label, fg, bg, modifier, glyph = glyph)
 }
@@ -79,9 +79,9 @@ private data class StatusStyle(val fg: Color, val bg: Color, val label: String, 
 @Composable
 fun SourcePill(source: Source, modifier: Modifier = Modifier) {
     val style = when (source) {
-        Source.TERMINAL -> SourceStyle(Accent.info, Accent.infoBg, "terminal", Icons.Filled.Terminal)
-        Source.IDE -> SourceStyle(Accent.brand, Accent.brandBg, "IDE", Icons.Filled.Code)
-        Source.UNKNOWN -> SourceStyle(Accent.neutral, Accent.neutralBg, "unknown", Icons.Filled.HelpOutline)
+        Source.TERMINAL -> SourceStyle(LocalAccentColors.current.info, LocalAccentColors.current.infoBg, "terminal", Icons.Filled.Terminal)
+        Source.IDE -> SourceStyle(LocalAccentColors.current.brand, LocalAccentColors.current.brandBg, "IDE", Icons.Filled.Code)
+        Source.UNKNOWN -> SourceStyle(LocalAccentColors.current.neutral, LocalAccentColors.current.neutralBg, "unknown", Icons.Filled.HelpOutline)
     }
     Pill(style.label, style.fg, style.bg, modifier, icon = style.icon)
 }

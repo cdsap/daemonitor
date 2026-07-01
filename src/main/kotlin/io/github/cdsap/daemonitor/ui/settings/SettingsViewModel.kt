@@ -1,6 +1,7 @@
 package io.github.cdsap.daemonitor.ui.settings
 
 import io.github.cdsap.daemonitor.Defaults
+import io.github.cdsap.daemonitor.store.AppearancePreference
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -8,6 +9,7 @@ import kotlinx.coroutines.flow.asStateFlow
 /** Immutable state the Settings screen renders. */
 data class SettingsUiState(
     val retentionDays: Long = Defaults.DEFAULT_RETENTION_DAYS,
+    val appearance: AppearancePreference = AppearancePreference.SYSTEM,
 )
 
 /**
@@ -17,6 +19,7 @@ data class SettingsUiState(
 class SettingsViewModel(
     initial: SettingsUiState = SettingsUiState(),
     private val onRetentionChange: (Long) -> Unit = {},
+    private val onAppearanceChange: (AppearancePreference) -> Unit = {},
 ) {
     private val _state = MutableStateFlow(initial)
     val state: StateFlow<SettingsUiState> = _state.asStateFlow()
@@ -26,5 +29,11 @@ class SettingsViewModel(
         if (clamped == _state.value.retentionDays) return
         _state.value = _state.value.copy(retentionDays = clamped)
         onRetentionChange(clamped)
+    }
+
+    fun setAppearance(appearance: AppearancePreference) {
+        if (appearance == _state.value.appearance) return
+        _state.value = _state.value.copy(appearance = appearance)
+        onAppearanceChange(appearance)
     }
 }

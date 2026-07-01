@@ -108,7 +108,7 @@ private fun AppHeader(buildInfo: BuildInfo, selectedTab: Int, onSelectTab: (Int)
             if (!compact) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
                     androidx.compose.foundation.layout.Box(
-                        modifier = Modifier.size(7.dp).background(Accent.success, androidx.compose.foundation.shape.CircleShape),
+                        modifier = Modifier.size(7.dp).background(LocalAccentColors.current.success, androidx.compose.foundation.shape.CircleShape),
                     )
                     Text("LOCAL", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }

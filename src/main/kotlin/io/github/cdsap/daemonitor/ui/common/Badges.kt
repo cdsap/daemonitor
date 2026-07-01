@@ -52,19 +52,19 @@ object Badges {
 @Composable
 fun MemoryBadge(level: BadgeLevel, modifier: Modifier = Modifier) {
     val (fg, bg, label) = when (level) {
-        BadgeLevel.WARN -> Triple(Accent.warn, Accent.warnBg, "HIGH MEM")
-        BadgeLevel.CRITICAL -> Triple(Accent.danger, Accent.dangerBg, "CRIT MEM")
+        BadgeLevel.WARN -> Triple(LocalAccentColors.current.warn, LocalAccentColors.current.warnBg, "HIGH MEM")
+        BadgeLevel.CRITICAL -> Triple(LocalAccentColors.current.danger, LocalAccentColors.current.dangerBg, "CRIT MEM")
     }
     Pill(label, fg, bg, modifier)
 }
 
 @Composable
 fun ConcurrentBadge(modifier: Modifier = Modifier) {
-    Pill("MULTI-BUILD", Accent.info, Accent.infoBg, modifier)
+    Pill("MULTI-BUILD", LocalAccentColors.current.info, LocalAccentColors.current.infoBg, modifier)
 }
 
 /** Marks an invocation run with `--non-interactive` / `--console=plain` (likely CI/script/agent). */
 @Composable
 fun AutomatedBadge(modifier: Modifier = Modifier) {
-    Pill("AUTOMATED", Accent.brand, Accent.brandBg, modifier)
+    Pill("AUTOMATED", LocalAccentColors.current.brand, LocalAccentColors.current.brandBg, modifier)
 }
