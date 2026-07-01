@@ -4,10 +4,13 @@ package io.github.cdsap.daemonitor
 
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -18,10 +21,13 @@ import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import io.github.cdsap.daemonitor.ui.common.AppScaffold
+import io.github.cdsap.daemonitor.ui.common.StartupLoadingScreen
 import io.github.cdsap.daemonitor.ui.common.WatcherTheme
 import io.github.cdsap.daemonitor.ui.history.HistoryScreen
 import io.github.cdsap.daemonitor.ui.live.LiveMonitorScreen
 import io.github.cdsap.daemonitor.ui.settings.SettingsScreen
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Application entry point (U1 scaffold, wired in U7). Opens the database, starts the polling
@@ -37,7 +43,7 @@ fun main(args: Array<String>) {
 }
 
 private fun launchDesktop() = application {
-    val service = remember { WatcherService.create() }
+    var service by remember { mutableStateOf<WatcherService?>(null) }
     val windowState = rememberWindowState(
         size = DpSize(1180.dp, 760.dp),
         position = WindowPosition(Alignment.Center),
@@ -49,38 +55,55 @@ private fun launchDesktop() = application {
         title = "Daemonitor",
         icon = painterResource("icon/daemonitor.png"),
     ) {
-        // Start the polling service exactly once, tied to this composition's lifecycle.
-        LaunchedEffect(Unit) { service.start(this) }
+        LaunchedEffect(Unit) {
+            service = withContext(Dispatchers.IO) { WatcherService.create() }
+        }
+        DaemonitorContent(service)
+    }
+}
 
-        val settingsState by service.settingsViewModel.state.collectAsState()
-        WatcherTheme(appearance = settingsState.appearance) {
+@Composable
+internal fun DaemonitorContent(service: WatcherService?) {
+    if (service == null) {
+        WatcherTheme {
             Surface(modifier = Modifier.fillMaxSize()) {
-                val liveState by service.liveViewModel.state.collectAsState()
-                AppScaffold(
-                    liveContent = {
-                        LiveMonitorScreen(
-                            state = liveState,
-                            onSelect = service.liveViewModel::select,
-                            onClearSelection = service.liveViewModel::clearSelection,
-                        )
-                    },
-                    historyContent = {
-                        val historyState by service.historyViewModel.state.collectAsState()
-                        HistoryScreen(
-                            state = historyState,
-                            onProject = service.historyViewModel::setProject,
-                            onTimeRange = service.historyViewModel::setTimeRange,
-                        )
-                    },
-                    settingsContent = {
-                        SettingsScreen(
-                            state = settingsState,
-                            onRetentionDays = service.settingsViewModel::setRetentionDays,
-                            onAppearance = service.settingsViewModel::setAppearance,
-                        )
-                    },
-                )
+                StartupLoadingScreen()
             }
+        }
+        return
+    }
+
+    // Start the polling service exactly once, tied to this composition's lifecycle.
+    LaunchedEffect(service) { service.start(this) }
+
+    val settingsState by service.settingsViewModel.state.collectAsState()
+    WatcherTheme(appearance = settingsState.appearance) {
+        Surface(modifier = Modifier.fillMaxSize()) {
+            val liveState by service.liveViewModel.state.collectAsState()
+            AppScaffold(
+                liveContent = {
+                    LiveMonitorScreen(
+                        state = liveState,
+                        onSelect = service.liveViewModel::select,
+                        onClearSelection = service.liveViewModel::clearSelection,
+                    )
+                },
+                historyContent = {
+                    val historyState by service.historyViewModel.state.collectAsState()
+                    HistoryScreen(
+                        state = historyState,
+                        onProject = service.historyViewModel::setProject,
+                        onTimeRange = service.historyViewModel::setTimeRange,
+                    )
+                },
+                settingsContent = {
+                    SettingsScreen(
+                        state = settingsState,
+                        onRetentionDays = service.settingsViewModel::setRetentionDays,
+                        onAppearance = service.settingsViewModel::setAppearance,
+                    )
+                },
+            )
         }
     }
 }
