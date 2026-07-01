@@ -1,8 +1,20 @@
 package io.github.cdsap.daemonitor.ui.live
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.runComposeUiTest
+import androidx.compose.ui.test.swipeUp
+import androidx.compose.ui.unit.dp
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.store.AppearancePreference
@@ -12,11 +24,11 @@ import kotlin.test.Test
 @OptIn(ExperimentalTestApi::class)
 class LiveMonitorScreenUiTest {
 
-    private fun sampleProcess() = GradleProcess(
+    private fun sampleProcess(commandLine: String = "java org.gradle.launcher.daemon.bootstrap.GradleDaemon 9.5") = GradleProcess(
         pid = 4321,
         parentPid = 1,
         type = ProcessType.GRADLE_DAEMON,
-        commandLine = "java org.gradle.launcher.daemon.bootstrap.GradleDaemon 9.5",
+        commandLine = commandLine,
         workingDirectory = "/Users/dev/my-app",
         projectPath = "/Users/dev/my-app",
         cpuPercent = 12.0,
@@ -58,5 +70,47 @@ class LiveMonitorScreenUiTest {
 
         onNodeWithText("UPTIME").assertExists()        // new column header
         onNodeWithText("Gradle daemon").assertExists() // classified type label in the row
+    }
+
+    @Test
+    fun `overflowing process detail content can be scrolled to the end`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+
+        val longCommandLine = buildString {
+            append("java org.gradle.launcher.daemon.bootstrap.GradleDaemon")
+            repeat(120) { index -> append(" -Ddaemonitor.test.$index=value$index") }
+        }
+        val process = sampleProcess(commandLine = longCommandLine)
+        val state = LiveUiState(
+            processes = listOf(process),
+            summary = LiveSummary(activeProcessCount = 1, totalRssMb = 1024, highestMemoryPid = 4321, activeProjectCount = 1),
+            detail = DetailState.Selected(process),
+            isLoading = false,
+            isEmpty = false,
+        )
+
+        setContent {
+            WatcherTheme(appearance = AppearancePreference.DARK) {
+                Box(Modifier.size(width = 900.dp, height = 380.dp)) {
+                    LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+                }
+            }
+        }
+
+        val hasScrollableDetailContent = SemanticsMatcher("has overflowing vertical scroll range") { node ->
+            val range = node.config.getOrNull(SemanticsProperties.VerticalScrollAxisRange)
+            range != null && range.maxValue() > 0f
+        }
+        val hasScrolledDetailContent = SemanticsMatcher("has advanced vertical scroll range") { node ->
+            val range = node.config.getOrNull(SemanticsProperties.VerticalScrollAxisRange)
+            range != null && range.value() > 0f
+        }
+
+        val detailPane = onNodeWithTag("process-detail-scroll")
+        detailPane.assert(hasScrollableDetailContent)
+        detailPane.performTouchInput { swipeUp() }
+        detailPane.assert(hasScrolledDetailContent)
+        onNodeWithText("UPTIME").assertIsDisplayed()
+        onNodeWithText("Daemon log").assertIsDisplayed()
     }
 }
