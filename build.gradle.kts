@@ -13,6 +13,8 @@ plugins {
 group = "io.github.cdsap.daemonitor"
 version = "0.1.0"
 
+val nativePackageVersion = "1.0.0"
+
 val buildInfoDirectory = layout.buildDirectory.dir("generated/build-info")
 val buildCommit = providers.environmentVariable("GITHUB_SHA")
     .map { it.take(8) }
@@ -89,6 +91,11 @@ tasks.test {
     useJUnitPlatform()
 }
 
+tasks.register("printNativePackageVersion") {
+    description = "Prints the native installer version for CI artifact naming"
+    doLast { println(nativePackageVersion) }
+}
+
 tasks.register<JavaExec>("runHeadless") {
     group = "application"
     description = "Runs Daemonitor without the desktop UI"
@@ -103,7 +110,7 @@ compose.desktop {
             // One format per OS; each is only buildable on its own platform (jpackage limitation).
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "Daemonitor"
-            packageVersion = "1.0.0"
+            packageVersion = nativePackageVersion
 
             // Per-platform installer/app icons (jpackage requires the native format per OS).
             macOS { iconFile.set(project.file("icons/daemonitor.icns")) }

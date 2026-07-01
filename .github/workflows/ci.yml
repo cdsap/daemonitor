@@ -16,7 +16,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            package_task: packageDeb
+            package_glob: build/compose/binaries/main/deb/*.deb
+            launcher: build/compose/binaries/main/app/Daemonitor/bin/Daemonitor
+          - os: windows-latest
+            platform: windows
+            package_task: packageMsi
+            package_glob: build/compose/binaries/main/msi/*.msi
+            launcher: build/compose/binaries/main/app/Daemonitor/Daemonitor.exe
+          - os: macos-latest
+            platform: macos
+            package_task: packageDmg
+            package_glob: build/compose/binaries/main/dmg/*.dmg
+            launcher: build/compose/binaries/main/app/Daemonitor.app/Contents/MacOS/Daemonitor
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -44,6 +59,40 @@ jobs:
       - name: Run tests (macOS / Windows)
         if: runner.os != 'Linux'
         run: ./gradlew test --no-daemon --stacktrace
+
+      - name: Build native application and installer
+        run: ./gradlew createDistributable ${{ matrix.package_task }} --no-daemon --stacktrace
+
+      - name: Smoke test packaged launcher
+        run: |
+          output=$("${{ matrix.launcher }}" --headless --help)
+          printf '%s\n' "$output"
+          [[ "$output" == *"Usage: daemonitor --headless"* ]]
+
+      - name: Read package version
+        id: package-version
+        run: echo "value=$(./gradlew -q printNativePackageVersion --no-daemon)" >> "$GITHUB_OUTPUT"
+
+      - name: Verify native installer
+        run: |
+          shopt -s nullglob
+          packages=(${{ matrix.package_glob }})
+          if (( ${#packages[@]} != 1 )); then
+            echo "Expected one native installer, found ${#packages[@]}" >&2
+            exit 1
+          fi
+          test -s "${packages[0]}"
+          echo "### Native package" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Platform: ${{ matrix.platform }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Package: ${packages[0]}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload native installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Daemonitor-${{ steps.package-version.outputs.value }}-${{ matrix.platform }}-${{ github.sha }}
+          path: ${{ matrix.package_glob }}
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload test report
         if: always()
