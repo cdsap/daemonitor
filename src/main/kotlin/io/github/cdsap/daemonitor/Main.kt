@@ -52,7 +52,8 @@ private fun launchDesktop() = application {
         // Start the polling service exactly once, tied to this composition's lifecycle.
         LaunchedEffect(Unit) { service.start(this) }
 
-        WatcherTheme {
+        val settingsState by service.settingsViewModel.state.collectAsState()
+        WatcherTheme(appearance = settingsState.appearance) {
             Surface(modifier = Modifier.fillMaxSize()) {
                 val liveState by service.liveViewModel.state.collectAsState()
                 AppScaffold(
@@ -72,10 +73,10 @@ private fun launchDesktop() = application {
                         )
                     },
                     settingsContent = {
-                        val settingsState by service.settingsViewModel.state.collectAsState()
                         SettingsScreen(
                             state = settingsState,
                             onRetentionDays = service.settingsViewModel::setRetentionDays,
+                            onAppearance = service.settingsViewModel::setAppearance,
                         )
                     },
                 )

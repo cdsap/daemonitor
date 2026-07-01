@@ -1,6 +1,7 @@
 package io.github.cdsap.daemonitor.ui.settings
 
 import io.github.cdsap.daemonitor.Defaults
+import io.github.cdsap.daemonitor.store.AppearancePreference
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -31,5 +32,15 @@ class SettingsViewModelTest {
         val vm = SettingsViewModel()
         vm.setRetentionDays(9_999)
         assertEquals(Defaults.MAX_RETENTION_DAYS, vm.state.value.retentionDays)
+    }
+
+    @Test
+    fun `setting appearance updates state and notifies once`() {
+        val changes = mutableListOf<AppearancePreference>()
+        val vm = SettingsViewModel(onAppearanceChange = { changes += it })
+        vm.setAppearance(AppearancePreference.DARK)
+        vm.setAppearance(AppearancePreference.DARK)
+        assertEquals(AppearancePreference.DARK, vm.state.value.appearance)
+        assertEquals(listOf(AppearancePreference.DARK), changes)
     }
 }

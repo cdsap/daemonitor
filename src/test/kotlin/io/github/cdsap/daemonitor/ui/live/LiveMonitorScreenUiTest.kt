@@ -5,6 +5,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.runComposeUiTest
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
+import io.github.cdsap.daemonitor.store.AppearancePreference
 import io.github.cdsap.daemonitor.ui.common.WatcherTheme
 import kotlin.test.Test
 
@@ -49,7 +50,11 @@ class LiveMonitorScreenUiTest {
             isLoading = false,
             isEmpty = false,
         )
-        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
+        setContent {
+            WatcherTheme(appearance = AppearancePreference.DARK) {
+                LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+            }
+        }
 
         onNodeWithText("UPTIME").assertExists()        // new column header
         onNodeWithText("Gradle daemon").assertExists() // classified type label in the row

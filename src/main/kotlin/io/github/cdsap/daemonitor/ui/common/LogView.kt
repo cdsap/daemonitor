@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -18,7 +19,6 @@ import androidx.compose.runtime.derivedStateOf
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -48,10 +48,15 @@ fun LogView(lines: List<String>, modifier: Modifier = Modifier, autoScroll: Bool
         }
     }
 
-    Box(modifier = modifier.background(Color(0xFF1E1E1E))) {
+    Box(modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant)) {
         LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(8.dp)) {
             items(lines) { line ->
-                Text(line, color = Color(0xFFD4D4D4), fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                Text(
+                    line,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                )
             }
         }
         if (autoScroll && !atBottom) {

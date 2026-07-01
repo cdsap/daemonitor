@@ -11,7 +11,10 @@ import kotlin.io.path.outputStream
 /** User-configurable settings (KTD-9 deferred config, now partially realized). */
 data class Settings(
     val retentionDays: Long = Defaults.DEFAULT_RETENTION_DAYS,
+    val appearance: AppearancePreference = AppearancePreference.SYSTEM,
 )
+
+enum class AppearancePreference { SYSTEM, LIGHT, DARK }
 
 /**
  * Tiny properties-file settings store kept alongside the database. A full config table would be
@@ -28,18 +31,25 @@ class SettingsStore(private val path: Path = Defaults.SETTINGS_PATH) {
         val retention = props.getProperty(KEY_RETENTION)?.toLongOrNull()
             ?.coerceIn(Defaults.MIN_RETENTION_DAYS, Defaults.MAX_RETENTION_DAYS)
             ?: Defaults.DEFAULT_RETENTION_DAYS
-        return Settings(retentionDays = retention)
+        val appearance = props.getProperty(KEY_APPEARANCE)
+            ?.let { stored -> AppearancePreference.entries.firstOrNull { it.name.equals(stored, ignoreCase = true) } }
+            ?: AppearancePreference.SYSTEM
+        return Settings(retentionDays = retention, appearance = appearance)
     }
 
     fun save(settings: Settings) {
         runCatching {
             Files.createDirectories(path.parent)
-            val props = Properties().apply { setProperty(KEY_RETENTION, settings.retentionDays.toString()) }
+            val props = Properties().apply {
+                setProperty(KEY_RETENTION, settings.retentionDays.toString())
+                setProperty(KEY_APPEARANCE, settings.appearance.name.lowercase())
+            }
             path.outputStream().use { props.store(it, "Daemonitor settings") }
         }
     }
 
     private companion object {
         const val KEY_RETENTION = "retentionDays"
+        const val KEY_APPEARANCE = "appearance"
     }
 }

@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,12 +57,12 @@ private fun WrapperGlyph(size: Dp, modifier: Modifier = Modifier) {
         Icon(
             Icons.Filled.Build,
             contentDescription = null,
-            tint = Color.White,
+            tint = MaterialTheme.colorScheme.onPrimary,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .size(size * 0.55f)
                 .clip(CircleShape)
-                .background(Accent.brand)
+                .background(LocalAccentColors.current.brand)
                 .padding(1.dp),
         )
     }

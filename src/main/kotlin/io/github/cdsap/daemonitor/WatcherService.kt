@@ -1,5 +1,7 @@
 package io.github.cdsap.daemonitor
 
+import io.github.cdsap.daemonitor.store.AppearancePreference
+import io.github.cdsap.daemonitor.store.Settings
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
 import io.github.cdsap.daemonitor.ui.history.HistoryViewModel
@@ -24,11 +26,13 @@ class WatcherService(
     val historyViewModel = HistoryViewModel()
 
     /** Current retention window (days), loaded from settings and updated when the user changes it. */
-    @Volatile private var retentionDays: Long = settingsStore.load().retentionDays
+    private val initialSettings = settingsStore.load()
+    @Volatile private var retentionDays: Long = initialSettings.retentionDays
 
     val settingsViewModel = SettingsViewModel(
-        initial = SettingsUiState(retentionDays = retentionDays),
+        initial = SettingsUiState(retentionDays = retentionDays, appearance = initialSettings.appearance),
         onRetentionChange = ::onRetentionChanged,
+        onAppearanceChange = ::onAppearanceChanged,
     )
 
     private var serviceScope: CoroutineScope? = null
@@ -49,12 +53,25 @@ class WatcherService(
      *  the Historical tab so the shortened window takes effect immediately. */
     private fun onRetentionChanged(days: Long) {
         retentionDays = days
-        settingsStore.save(io.github.cdsap.daemonitor.store.Settings(retentionDays = days))
+        saveSettings()
         val scope = serviceScope ?: return
         scope.launch(Dispatchers.IO) {
             database.purgeOlderThan(clock(), days)
             refreshHistory()
         }
+    }
+
+    private fun onAppearanceChanged(appearance: AppearancePreference) {
+        saveSettings(appearance)
+    }
+
+    private fun saveSettings(appearance: AppearancePreference = settingsViewModel.state.value.appearance) {
+        settingsStore.save(
+            Settings(
+                retentionDays = retentionDays,
+                appearance = appearance,
+            ),
+        )
     }
 
     /** Pull the current builds + project list from the DB and push them to the History view model.

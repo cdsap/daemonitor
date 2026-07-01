@@ -37,7 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
-import io.github.cdsap.daemonitor.ui.common.Accent
+import io.github.cdsap.daemonitor.ui.common.LocalAccentColors
 import io.github.cdsap.daemonitor.ui.common.AutomatedBadge
 import io.github.cdsap.daemonitor.ui.common.Badges
 import io.github.cdsap.daemonitor.ui.common.Cell
@@ -126,9 +126,9 @@ private fun SummaryHeader(state: LiveUiState) {
         ScreenHeader("Process monitor") {
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
                 androidx.compose.foundation.layout.Box(
-                    modifier = Modifier.size(7.dp).background(Accent.success, androidx.compose.foundation.shape.CircleShape),
+                    modifier = Modifier.size(7.dp).background(LocalAccentColors.current.success, androidx.compose.foundation.shape.CircleShape),
                 )
-                Text("MONITORING", style = MaterialTheme.typography.labelSmall, color = Accent.success)
+                Text("MONITORING", style = MaterialTheme.typography.labelSmall, color = LocalAccentColors.current.success)
             }
         }
         Row(
@@ -136,9 +136,9 @@ private fun SummaryHeader(state: LiveUiState) {
             horizontalArrangement = Arrangement.spacedBy(Space.sm),
         ) {
             StatTile("Processes", state.summary.activeProcessCount.toString(), Modifier.weight(1f), icon = Icons.Filled.Memory)
-            StatTile("Resident memory", "${state.summary.totalRssMb} MB", Modifier.weight(1f), icon = Icons.Filled.Storage, accent = Accent.info)
-            StatTile("Peak memory PID", state.summary.highestMemoryPid?.toString() ?: "—", Modifier.weight(1f), icon = Icons.Filled.TrendingUp, accent = Accent.warn)
-            StatTile("Projects", state.summary.activeProjectCount.toString(), Modifier.weight(1f), icon = Icons.Filled.FolderOpen, accent = Accent.brand)
+            StatTile("Resident memory", "${state.summary.totalRssMb} MB", Modifier.weight(1f), icon = Icons.Filled.Storage, accent = LocalAccentColors.current.info)
+            StatTile("Peak memory PID", state.summary.highestMemoryPid?.toString() ?: "—", Modifier.weight(1f), icon = Icons.Filled.TrendingUp, accent = LocalAccentColors.current.warn)
+            StatTile("Projects", state.summary.activeProjectCount.toString(), Modifier.weight(1f), icon = Icons.Filled.FolderOpen, accent = LocalAccentColors.current.brand)
         }
     }
 }

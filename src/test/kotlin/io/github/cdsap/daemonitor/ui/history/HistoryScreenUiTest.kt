@@ -6,6 +6,7 @@ import androidx.compose.ui.test.runComposeUiTest
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.Source
+import io.github.cdsap.daemonitor.store.AppearancePreference
 import io.github.cdsap.daemonitor.ui.common.WatcherTheme
 import kotlin.test.Test
 
@@ -35,7 +36,11 @@ class HistoryScreenUiTest {
     @Test
     fun `a build row renders project, status pill and agent`() = runComposeUiTest {
         val state = HistoryUiState(builds = listOf(sampleBuild()), isEmptyResult = false)
-        setContent { WatcherTheme { HistoryScreen(state, onProject = {}, onTimeRange = {}) } }
+        setContent {
+            WatcherTheme(appearance = AppearancePreference.DARK) {
+                HistoryScreen(state, onProject = {}, onTimeRange = {})
+            }
+        }
 
         onNodeWithText("my-app").assertExists()      // project (leaf of the path)
         onNodeWithText("success").assertExists()     // colored status pill
