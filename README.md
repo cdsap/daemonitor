@@ -23,6 +23,11 @@ best-effort redacted before they're ever stored.
 ## Features
 
 ### Live Monitor
+
+![Daemonitor Live monitor showing active Gradle processes, metrics, status badges, and process details](docs/images/live-monitor.png)
+
+*Live monitor with concurrent Gradle activity and the selected daemon inspector.*
+
 - Every running Gradle-related JVM, classified by type with an at-a-glance icon:
   - 🐘 **Gradle daemon** · 🐘+🔧 **Gradle wrapper** · the **Kotlin** mark for the Kotlin daemon · 🧪 test worker · ☕ other Gradle-related JVM
 - Per-process **RSS, CPU, and live-ticking uptime**
@@ -31,6 +36,11 @@ best-effort redacted before they're ever stored.
 - Per-daemon detail with `-Xmx`, GC, working dir, full (redacted) command line, and a live tail of the daemon log
 
 ### Historical
+
+![Daemonitor build history showing status and source tags, agent attribution, metrics, and build details](docs/images/build-history.png)
+
+*Build history with outcomes, source and agent tags, resource peaks, and a captured log excerpt.*
+
 - Every reconstructed build, with start time, project, duration, peak RSS, **status** (✓ success / ✗ failed / ⚠ interrupted / ◐ completed), **source** (terminal / IDE), and **agent**
 - Filter by project and time range
 - Per-build detail with resource peaks and a captured log excerpt
@@ -109,6 +119,18 @@ target OS):
 The suite includes unit tests for the collection/classification/aggregation logic and **Compose UI
 tests** that mount the real screens and assert on rendered nodes. CI runs the full suite on
 **Linux, Windows, and macOS** (Linux uses a virtual display for the UI tests).
+
+### Updating README screenshots
+
+The checked-in screenshots are rendered from synthetic, privacy-safe sample state using the real
+Compose screens at the application's native 1180×760 window size. After a visible UI change, run:
+
+```bash
+./gradlew captureReadmeScreenshots test
+```
+
+Review both files in `docs/images/` before committing. Keep sample paths and logs synthetic; never
+capture a locally running instance with personal paths, environment values, or command-line secrets.
 
 ---
 

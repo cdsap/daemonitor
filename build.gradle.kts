@@ -88,7 +88,18 @@ kotlin {
 }
 
 tasks.test {
-    useJUnitPlatform()
+    useJUnitPlatform { excludeTags("documentation") }
+}
+
+tasks.register<Test>("captureReadmeScreenshots") {
+    group = "documentation"
+    description = "Renders privacy-safe README screenshots from deterministic sample UI state"
+    dependsOn(tasks.testClasses)
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform { includeTags("documentation") }
+    filter { includeTestsMatching("io.github.cdsap.daemonitor.docs.ReadmeScreenshotCapture") }
+    systemProperty("user.timezone", "UTC")
 }
 
 tasks.register("printNativePackageVersion") {
