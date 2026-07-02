@@ -9,6 +9,7 @@ import io.github.cdsap.daemonitor.ui.live.LiveViewModel
 import io.github.cdsap.daemonitor.ui.settings.SettingsUiState
 import io.github.cdsap.daemonitor.ui.settings.SettingsViewModel
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -21,6 +22,7 @@ class WatcherService(
     private val database: WatcherDatabase,
     private val settingsStore: SettingsStore = SettingsStore(),
     private val clock: () -> Long = System::currentTimeMillis,
+    private val pollAction: suspend () -> WatcherRuntime.PollResult = { runtime.pollOnce() },
 ) {
     val liveViewModel = LiveViewModel()
     val historyViewModel = HistoryViewModel()
@@ -43,7 +45,7 @@ class WatcherService(
         scope.launch(Dispatchers.IO) { refreshHistory() }
         scope.launch(Dispatchers.IO) {
             while (isActive) {
-                runCatching { pollOnce() }
+                pollSafely()
                 delay(Defaults.POLL_INTERVAL)
             }
         }
@@ -89,7 +91,7 @@ class WatcherService(
 
     /** One poll cycle, factored out for testability. */
     suspend fun pollOnce() {
-        val result = runtime.pollOnce()
+        val result = pollAction()
 
         // Surface the selected daemon's tail, if any is selected.
         val selectedTail = selectedDaemonTail(result)
@@ -99,6 +101,20 @@ class WatcherService(
 
         // A new build landed → push it to the Historical tab immediately.
         if (result.buildsChanged) refreshHistory()
+    }
+
+    /** Run one retryable desktop poll and expose only a non-sensitive failure classification. */
+    internal suspend fun pollSafely() {
+        try {
+            pollOnce()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            val errorType = error::class.simpleName ?: "UnknownError"
+            withContext(Dispatchers.Main) {
+                liveViewModel.onPollFailure(clock(), errorType)
+            }
+        }
     }
 
     private fun selectedDaemonTail(result: WatcherRuntime.PollResult): List<String> {
