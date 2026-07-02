@@ -1,5 +1,6 @@
 package io.github.cdsap.daemonitor.domain
 
+import io.github.cdsap.daemonitor.Defaults
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.BuildEnvNames
 import io.github.cdsap.daemonitor.domain.model.BuildEvent
@@ -32,10 +33,22 @@ class BuildAggregator(
     private val daemons = mutableMapOf<Long, DaemonState>()
 
     fun onEvents(daemonPid: Long, events: List<BuildEvent>): List<Build> {
+        return events.flatMap { processLogLine(daemonPid, line = null, event = it) }
+    }
+
+    /** Correlate one redacted log line with its event while preserving window boundaries. */
+    fun onLogLine(daemonPid: Long, line: String, event: BuildEvent?): List<Build> =
+        processLogLine(daemonPid, line, event)
+
+    private fun processLogLine(daemonPid: Long, line: String?, event: BuildEvent?): List<Build> {
         val state = daemons.getOrPut(daemonPid) { DaemonState() }
         val emitted = mutableListOf<Build>()
 
-        for (event in events) {
+        // A busy marker belongs to the window it opens. Every other line belongs to the currently
+        // open window, including the idle marker that closes it.
+        if (event !is BusyMark) state.window?.let { window -> line?.let(window::appendLogLine) }
+
+        if (event != null) {
             when (event) {
                 is DaemonContextEvent -> event.uid?.let { state.uid = it }
 
@@ -46,6 +59,7 @@ class BuildAggregator(
                         emitted += w.toBuild(daemonPid, state.uid, endMs = event.timestampMs, sampleProvider, ambientEnvNames)
                     }
                     state.window = Window(busyTimeMs = event.timestampMs)
+                    line?.let { state.window?.appendLogLine(it) }
                 }
 
                 is BuildStart -> state.window?.let { w ->
@@ -95,6 +109,19 @@ class BuildAggregator(
         var outcomeSuccess: Boolean? = null,
         var outcomeDurationSeconds: Double? = null,
     ) {
+        private val logLines = ArrayDeque<String>()
+        private var logChars = 0
+
+        fun appendLogLine(line: String) {
+            val boundedLine = line.takeLast(Defaults.LOG_SNIPPET_CHARS)
+            logLines.addLast(boundedLine)
+            logChars += boundedLine.length + if (logLines.size > 1) 1 else 0
+            while (logLines.size > Defaults.LOG_SNIPPET_LINES || logChars > Defaults.LOG_SNIPPET_CHARS) {
+                val removed = logLines.removeFirst()
+                logChars -= removed.length + if (logLines.isNotEmpty()) 1 else 0
+            }
+        }
+
         fun toBuild(
             daemonPid: Long,
             uid: String?,
@@ -132,7 +159,7 @@ class BuildAggregator(
                 peakCpuPercent = cpu.maxOrNull(),
                 inferredSource = SourceDetector.detect(envNames),
                 finalStatus = status,
-                logSnippet = null, // wired with a redacted snippet when the watcher supplies one
+                logSnippet = logLines.takeIf { it.isNotEmpty() }?.joinToString("\n"),
                 agent = agentAttr?.agent,
                 agentProvider = agentAttr?.provider,
             )

@@ -16,6 +16,10 @@ object Defaults {
     /** Number of daemon-log lines retained for the live tail. */
     const val LOG_TAIL_LINES: Int = 100
 
+    /** Maximum persisted build-log excerpt, independently bounded by lines and characters. */
+    const val LOG_SNIPPET_LINES: Int = 100
+    const val LOG_SNIPPET_CHARS: Int = 16_000
+
     /** Default history retention window, in days; user-configurable via Settings (KTD-5). Rows
      *  older than the configured window are purged on startup and whenever the setting changes. */
     const val DEFAULT_RETENTION_DAYS: Long = 15
