@@ -51,6 +51,20 @@ class LiveMonitorScreenUiTest {
     }
 
     @Test
+    fun `poll failure replaces monitoring status with degraded indicator`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val state = LiveUiState(
+            isLoading = false,
+            pollError = PollError(failedAtMs = 1234, errorType = "IOException"),
+        )
+
+        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
+
+        onNodeWithText("DEGRADED").assertExists()
+        onNodeWithText("MONITORING").assertDoesNotExist()
+    }
+
+    @Test
     fun `process table shows the uptime column and the daemon row`() = runComposeUiTest {
         // The screen runs a 1s wall-clock ticker (infinite delay loop); freezing the test clock
         // keeps the composition idle so node queries don't spin.

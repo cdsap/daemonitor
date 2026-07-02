@@ -22,6 +22,13 @@ data class LiveSummary(
     val activeProjectCount: Int,
 )
 
+/** Safe poll diagnostic. Exception messages are deliberately excluded because they may contain
+ * command lines, paths, or daemon-log content. */
+data class PollError(
+    val failedAtMs: Long,
+    val errorType: String,
+)
+
 /** Full immutable state the Live Monitor renders. */
 data class LiveUiState(
     val processes: List<GradleProcess> = emptyList(),
@@ -30,6 +37,7 @@ data class LiveUiState(
     val tail: List<String> = emptyList(),
     val isLoading: Boolean = true,
     val isEmpty: Boolean = true,
+    val pollError: PollError? = null,
 ) {
     /** A process row whose restricted fields (cwd/project) could not be read (KTD-6). */
     fun isPermissionDegraded(p: GradleProcess): Boolean = p.workingDirectory == null

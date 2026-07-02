@@ -4,6 +4,7 @@ import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class LiveViewModelTest {
@@ -67,5 +68,28 @@ class LiveViewModelTest {
         vm.onPoll(listOf(proc(1, cwd = null, project = null)))
         val s = vm.state.value
         assertTrue(s.isPermissionDegraded(s.processes.single()))
+    }
+
+    @Test
+    fun `poll failure records a safe diagnostic and timestamp without discarding stale data`() {
+        val vm = LiveViewModel()
+        vm.onPoll(listOf(proc(1)))
+
+        vm.onPollFailure(failedAtMs = 1234, errorType = "IllegalStateException")
+
+        val state = vm.state.value
+        assertEquals(listOf(1L), state.processes.map { it.pid })
+        assertEquals(1234, state.pollError?.failedAtMs)
+        assertEquals("IllegalStateException", state.pollError?.errorType)
+    }
+
+    @Test
+    fun `successful poll clears the latest poll failure`() {
+        val vm = LiveViewModel()
+        vm.onPollFailure(failedAtMs = 1234, errorType = "IOException")
+
+        vm.onPoll(emptyList())
+
+        assertNull(vm.state.value.pollError)
     }
 }

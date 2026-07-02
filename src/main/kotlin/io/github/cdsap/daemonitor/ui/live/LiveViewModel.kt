@@ -25,7 +25,13 @@ class LiveViewModel {
             tail = if (detail is DetailState.Ended) current.tail else tailForSelected,
             isLoading = false,
             isEmpty = processes.isEmpty(),
+            pollError = null,
         )
+    }
+
+    /** Mark the current data stale while retaining the last successful snapshot. */
+    fun onPollFailure(failedAtMs: Long, errorType: String) {
+        _state.value = _state.value.copy(pollError = PollError(failedAtMs, errorType))
     }
 
     fun select(pid: Long) {

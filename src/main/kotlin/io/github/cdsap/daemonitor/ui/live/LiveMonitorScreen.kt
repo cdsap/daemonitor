@@ -127,11 +127,17 @@ fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit, onClearSelec
 private fun SummaryHeader(state: LiveUiState) {
     Column {
         ScreenHeader("Process monitor") {
+            val degraded = state.pollError != null
+            val statusColor = if (degraded) LocalAccentColors.current.warn else LocalAccentColors.current.success
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
                 androidx.compose.foundation.layout.Box(
-                    modifier = Modifier.size(7.dp).background(LocalAccentColors.current.success, androidx.compose.foundation.shape.CircleShape),
+                    modifier = Modifier.size(7.dp).background(statusColor, androidx.compose.foundation.shape.CircleShape),
                 )
-                Text("MONITORING", style = MaterialTheme.typography.labelSmall, color = LocalAccentColors.current.success)
+                Text(
+                    if (degraded) "DEGRADED" else "MONITORING",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = statusColor,
+                )
             }
         }
         Row(
