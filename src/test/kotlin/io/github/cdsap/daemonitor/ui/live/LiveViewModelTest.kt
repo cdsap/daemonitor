@@ -41,6 +41,20 @@ class LiveViewModelTest {
     }
 
     @Test
+    fun `summary excludes processes without project attribution`() {
+        val vm = LiveViewModel()
+        vm.onPoll(
+            listOf(
+                proc(1, project = "/project"),
+                proc(2, project = null, cwd = "/Users/dev/.gradle/daemon/8.14.3"),
+                proc(3, project = null, cwd = "/Users/dev/.kotlin/daemon"),
+            ),
+        )
+
+        assertEquals(1, vm.state.value.summary.activeProjectCount)
+    }
+
+    @Test
     fun `selecting then disappearing transitions to ended`() {
         val vm = LiveViewModel()
         vm.onPoll(listOf(proc(1), proc(2)))
