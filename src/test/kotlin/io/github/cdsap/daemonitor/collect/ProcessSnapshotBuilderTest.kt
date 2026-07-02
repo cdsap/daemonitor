@@ -22,6 +22,8 @@ private class FakeProcess(
 
 private const val DAEMON_CL =
     "java -Xmx4g -XX:+UseG1GC org.gradle.launcher.daemon.bootstrap.GradleDaemon 8.14.3"
+private const val WRAPPER_CL = "java org.gradle.wrapper.GradleWrapperMain test"
+private const val KOTLIN_DAEMON_CL = "java org.jetbrains.kotlin.daemon.KotlinCompileDaemon"
 
 class ProcessSnapshotBuilderTest {
 
@@ -34,11 +36,60 @@ class ProcessSnapshotBuilderTest {
     }
 
     @Test
-    fun `builds snapshot with rss in mb and parsed heap`() {
+    fun `builds daemon snapshot with rss in mb and parsed heap`() {
         val snap = ProcessSnapshotBuilder.build(FakeProcess(commandLine = DAEMON_CL), null, 2_000, 8)!!
         assertEquals(512L, snap.rssMemoryMb)
         assertEquals(4096L, snap.maxHeapMb)
+    }
+
+    @Test
+    fun `gradle daemon working directory is not attributed as a project`() {
+        val snap = ProcessSnapshotBuilder.build(
+            FakeProcess(commandLine = DAEMON_CL, workingDirectory = "/Users/dev/.gradle/daemon/8.14.3"),
+            null,
+            2_000,
+            8,
+        )!!
+
+        assertEquals("/Users/dev/.gradle/daemon/8.14.3", snap.workingDirectory)
+        assertNull(snap.projectPath)
+    }
+
+    @Test
+    fun `kotlin daemon working directory is not attributed as a project`() {
+        val snap = ProcessSnapshotBuilder.build(
+            FakeProcess(commandLine = KOTLIN_DAEMON_CL, workingDirectory = "/Users/dev/.kotlin/daemon"),
+            null,
+            2_000,
+            8,
+        )!!
+
+        assertEquals("/Users/dev/.kotlin/daemon", snap.workingDirectory)
+        assertNull(snap.projectPath)
+    }
+
+    @Test
+    fun `gradle wrapper working directory is attributed as its project`() {
+        val snap = ProcessSnapshotBuilder.build(
+            FakeProcess(commandLine = WRAPPER_CL, workingDirectory = "/Users/dev/proj"),
+            null,
+            2_000,
+            8,
+        )!!
+
         assertEquals("/Users/dev/proj", snap.projectPath)
+    }
+
+    @Test
+    fun `gradle-related process without a project-specific signal has unknown project`() {
+        val snap = ProcessSnapshotBuilder.build(
+            FakeProcess(commandLine = "java worker.org.gradle.process.internal.worker.GradleWorkerMain"),
+            null,
+            2_000,
+            8,
+        )!!
+
+        assertNull(snap.projectPath)
     }
 
     @Test
@@ -59,7 +110,7 @@ class ProcessSnapshotBuilderTest {
     @Test
     fun `empty working directory becomes null project path`() {
         val snap = ProcessSnapshotBuilder.build(
-            FakeProcess(commandLine = DAEMON_CL, workingDirectory = ""), null, 2_000, 8,
+            FakeProcess(commandLine = WRAPPER_CL, workingDirectory = ""), null, 2_000, 8,
         )!!
         assertNull(snap.projectPath)
         assertNull(snap.workingDirectory)

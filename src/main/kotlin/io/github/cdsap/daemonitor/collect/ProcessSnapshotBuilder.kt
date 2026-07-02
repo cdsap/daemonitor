@@ -4,6 +4,7 @@ import io.github.cdsap.daemonitor.domain.Redactor
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.PriorSample
 import io.github.cdsap.daemonitor.domain.model.ProcessInfo
+import io.github.cdsap.daemonitor.domain.model.ProcessType
 
 /**
  * Pure, OS-independent construction of a [GradleProcess] snapshot from a [ProcessInfo] plus the
@@ -33,7 +34,9 @@ object ProcessSnapshotBuilder {
             type = type,
             commandLine = Redactor.redactCommandLine(info.commandLine),
             workingDirectory = cwd,
-            projectPath = cwd,
+            // Wrapper processes execute in the requested build directory. Daemon and worker
+            // working directories are runtime infrastructure and do not identify a project.
+            projectPath = cwd.takeIf { type == ProcessType.GRADLE_WRAPPER },
             cpuPercent = computeCpuPercent(info, prior, sampleWallClockMs, logicalProcessorCount),
             rssMemoryMb = info.rssBytes / (1024 * 1024),
             maxHeapMb = jvm.maxHeapMb,
