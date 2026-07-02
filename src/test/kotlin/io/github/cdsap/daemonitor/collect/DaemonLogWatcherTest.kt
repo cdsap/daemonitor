@@ -3,6 +3,7 @@ package io.github.cdsap.daemonitor.collect
 import io.github.cdsap.daemonitor.domain.model.Outcome
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardOpenOption
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
 import kotlin.test.Test
@@ -68,6 +69,61 @@ class DaemonLogWatcherTest {
         watcher.readNewEvents(log)
         assertTrue(watcher.tailFor(log).any { it.contains("-Ptoken=***") })
         assertTrue(watcher.tailFor(log).none { it.contains("topsecret") })
+    }
+
+    @Test
+    fun `initial scan reads only a bounded tail of a large existing log`(@TempDirArg tmp: Path) {
+        val log = tmp.resolve("daemon-large.out.log")
+        Files.newByteChannel(log, StandardOpenOption.CREATE, StandardOpenOption.WRITE).use { channel ->
+            channel.position(Int.MAX_VALUE.toLong() + 1024)
+            channel.write(java.nio.ByteBuffer.wrap("ignored fragment\nBUILD SUCCESSFUL in 2s\n".toByteArray()))
+        }
+        val watcher = DaemonLogWatcher(gradleUserHome = tmp, initialReadBytes = 64, readChunkBytes = 7)
+
+        val events = watcher.readNewEvents(log)
+
+        assertTrue(events.any { it is Outcome })
+        assertEquals(listOf("BUILD SUCCESSFUL in 2s"), watcher.tailFor(log))
+    }
+
+    @Test
+    fun `chunk boundaries preserve split utf8 and partial lines`(@TempDirArg tmp: Path) {
+        val log = tmp.resolve("daemon-chunks.out.log")
+        val watcher = DaemonLogWatcher(gradleUserHome = tmp, readChunkBytes = 2)
+        log.writeText("message café")
+
+        assertTrue(watcher.readNewEvents(log).isEmpty())
+        Files.writeString(log, "\nBUILD SUCCESSFUL in 1s\n", StandardOpenOption.APPEND)
+
+        assertTrue(watcher.readNewEvents(log).any { it is Outcome })
+        assertEquals(listOf("message café", "BUILD SUCCESSFUL in 1s"), watcher.tailFor(log))
+    }
+
+    @Test
+    fun `truncation clears stale partial content before reading replacement`(@TempDirArg tmp: Path) {
+        val log = tmp.resolve("daemon-truncated.out.log")
+        val watcher = DaemonLogWatcher(gradleUserHome = tmp, readChunkBytes = 3)
+        log.writeText("stale partial line that is substantially longer than its replacement")
+        assertTrue(watcher.readNewEvents(log).isEmpty())
+
+        log.writeText("BUILD FAILED in 1s\n")
+        assertTrue(watcher.readNewEvents(log).isEmpty(), "truncation is observed before replacement data")
+
+        val events = watcher.readNewEvents(log)
+        assertTrue(events.any { it is Outcome })
+        assertEquals(listOf("BUILD FAILED in 1s"), watcher.tailFor(log))
+    }
+
+    @Test
+    fun `appended event is read after bounded initialization`(@TempDirArg tmp: Path) {
+        val log = tmp.resolve("daemon-appended.out.log")
+        log.writeText("old line\n")
+        val watcher = DaemonLogWatcher(gradleUserHome = tmp, initialReadBytes = 4, readChunkBytes = 2)
+        watcher.readNewEvents(log)
+
+        Files.writeString(log, "BUILD SUCCESSFUL in 4s\n", StandardOpenOption.APPEND)
+
+        assertTrue(watcher.readNewEvents(log).any { it is Outcome })
     }
 }
 

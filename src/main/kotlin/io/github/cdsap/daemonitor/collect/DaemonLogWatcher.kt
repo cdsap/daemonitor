@@ -3,6 +3,9 @@ package io.github.cdsap.daemonitor.collect
 import io.github.cdsap.daemonitor.Defaults
 import io.github.cdsap.daemonitor.domain.Redactor
 import io.github.cdsap.daemonitor.domain.model.BuildEvent
+import java.io.ByteArrayOutputStream
+import java.nio.ByteBuffer
+import java.nio.channels.SeekableByteChannel
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.exists
@@ -25,7 +28,14 @@ data class DaemonLog(val pid: Long, val gradleVersion: String, val path: Path)
 class DaemonLogWatcher(
     private val gradleUserHome: Path = Defaults.GRADLE_USER_HOME,
     private val tailLines: Int = Defaults.LOG_TAIL_LINES,
+    private val initialReadBytes: Int = DEFAULT_INITIAL_READ_BYTES,
+    private val readChunkBytes: Int = DEFAULT_READ_CHUNK_BYTES,
 ) {
+    init {
+        require(initialReadBytes > 0) { "initialReadBytes must be positive" }
+        require(readChunkBytes > 0) { "readChunkBytes must be positive" }
+    }
+
     private val offsets = mutableMapOf<Path, Long>()
     private val tails = mutableMapOf<Path, ArrayDeque<String>>()
     /** Bytes after the last newline of the previous read, carried so a line split across two
@@ -46,12 +56,15 @@ class DaemonLogWatcher(
 
     /**
      * Read whatever has been appended to [path] since the last call, returning the parsed events.
-     * Lines are redacted before parsing and before being retained for the live tail.
+     * The first read of an existing file starts at a bounded tail and drops an initial partial
+     * line. Later reads consume all appended content in bounded chunks. Lines are redacted before
+     * parsing and before being retained for the live tail.
      */
     fun readNewEvents(path: Path): List<BuildEvent> {
         if (!path.exists()) return emptyList()
         val size = Files.size(path)
-        val from = offsets[path] ?: 0L
+        val initialized = offsets.containsKey(path)
+        val from = offsets[path] ?: (size - initialReadBytes.toLong()).coerceAtLeast(0L)
         if (size < from) {
             // File truncated/rotated → reset and drop any stale partial.
             offsets[path] = 0L
@@ -60,28 +73,38 @@ class DaemonLogWatcher(
         }
         if (size == from) return emptyList()
 
-        // Read the full new range (looping to handle short reads).
-        val fresh = Files.newByteChannel(path).use { ch ->
+        val lines = mutableListOf<String>()
+        val partial = ByteArrayOutputStream()
+        leftovers.remove(path)?.let(partial::write)
+
+        Files.newByteChannel(path).use { ch ->
             ch.position(from)
-            val buf = java.nio.ByteBuffer.allocate((size - from).toInt())
-            while (buf.hasRemaining() && ch.read(buf) > 0) { /* keep reading */ }
-            buf.flip()
-            ByteArray(buf.remaining()).also { buf.get(it) }
+            var discardInitialFragment = !initialized && from > 0L && !startsAtLineBoundary(ch, from)
+            val buffer = ByteBuffer.allocate(readChunkBytes)
+            while (ch.position() < size) {
+                buffer.clear()
+                buffer.limit(minOf(buffer.capacity().toLong(), size - ch.position()).toInt())
+                if (ch.read(buffer) <= 0) break
+                buffer.flip()
+                while (buffer.hasRemaining()) {
+                    val byte = buffer.get()
+                    if (discardInitialFragment) {
+                        if (byte == NEWLINE) discardInitialFragment = false
+                    } else if (byte == NEWLINE) {
+                        val bytes = partial.toByteArray()
+                        val lineLength = if (bytes.lastOrNull() == CARRIAGE_RETURN) bytes.size - 1 else bytes.size
+                        if (lineLength > 0) lines += String(bytes, 0, lineLength, Charsets.UTF_8)
+                        partial.reset()
+                    } else {
+                        partial.write(byte.toInt())
+                    }
+                }
+            }
+            offsets[path] = ch.position()
         }
-        offsets[path] = from + fresh.size
+        if (partial.size() > 0) leftovers[path] = partial.toByteArray()
 
-        // Prepend bytes carried from the previous read, then split off the trailing partial line.
-        val combined = (leftovers[path] ?: ByteArray(0)) + fresh
-        val lastNewline = combined.lastIndexOf('\n'.code.toByte())
-        if (lastNewline < 0) {
-            leftovers[path] = combined // no complete line yet
-            return emptyList()
-        }
-        leftovers[path] = combined.copyOfRange(lastNewline + 1, combined.size)
-        val completeText = String(combined, 0, lastNewline + 1, Charsets.UTF_8)
-
-        val redacted = completeText.lineSequence()
-            .filter { it.isNotEmpty() }
+        val redacted = lines.asSequence()
             .map { Redactor.redactLogLine(it) }
             .toList()
 
@@ -100,7 +123,20 @@ class DaemonLogWatcher(
         }
     }
 
+    private fun startsAtLineBoundary(channel: SeekableByteChannel, from: Long): Boolean {
+        val current = channel.position()
+        val previous = ByteBuffer.allocate(1)
+        channel.position(from - 1)
+        val atBoundary = channel.read(previous) == 1 && previous.array()[0] == NEWLINE
+        channel.position(current)
+        return atBoundary
+    }
+
     companion object {
+        private const val DEFAULT_INITIAL_READ_BYTES = 256 * 1024
+        private const val DEFAULT_READ_CHUNK_BYTES = 16 * 1024
+        private val NEWLINE = '\n'.code.toByte()
+        private val CARRIAGE_RETURN = '\r'.code.toByte()
         private val FILENAME = Regex("""^daemon-(\d+)\.out\.log$""")
 
         /** Pure: map a daemon log path to its PID + Gradle version (the parent directory name). */
