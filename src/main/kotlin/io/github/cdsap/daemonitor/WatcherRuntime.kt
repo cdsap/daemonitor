@@ -44,9 +44,9 @@ class WatcherRuntime(
         var inserted = false
 
         for (log in logs) {
-            val events = logWatcher.readNewEvents(log.path)
-            if (events.isNotEmpty()) {
-                aggregator.onEvents(log.pid, events).forEach {
+            val lines = logWatcher.readNewLines(log.path)
+            if (lines.isNotEmpty()) {
+                lines.flatMap { aggregator.onLogLine(log.pid, it.text, it.event) }.forEach {
                     database.insertBuild(it)
                     inserted = true
                 }

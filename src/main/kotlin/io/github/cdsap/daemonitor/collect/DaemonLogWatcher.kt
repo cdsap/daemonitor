@@ -13,6 +13,9 @@ import kotlin.io.path.name
 /** A discovered daemon log file with its PID and originating Gradle version. */
 data class DaemonLog(val pid: Long, val gradleVersion: String, val path: Path)
 
+/** One complete, redacted daemon-log line and the build event parsed from that same line. */
+data class DaemonLogLine(val text: String, val event: BuildEvent?)
+
 /**
  * Locates daemon logs, reads new content incrementally (offset-based, cheaper than re-tailing),
  * and parses build events (U3). Redaction (KTD-7) runs on every line before it enters the tail
@@ -48,7 +51,14 @@ class DaemonLogWatcher(
      * Read whatever has been appended to [path] since the last call, returning the parsed events.
      * Lines are redacted before parsing and before being retained for the live tail.
      */
-    fun readNewEvents(path: Path): List<BuildEvent> {
+    fun readNewEvents(path: Path): List<BuildEvent> =
+        readNewLines(path).mapNotNull { it.event }
+
+    /**
+     * Read newly appended complete lines while retaining their parsed-event association. This lets
+     * downstream build correlation assign each redacted line to the exact busy-to-idle window.
+     */
+    fun readNewLines(path: Path): List<DaemonLogLine> {
         if (!path.exists()) return emptyList()
         val size = Files.size(path)
         val from = offsets[path] ?: 0L
@@ -86,7 +96,7 @@ class DaemonLogWatcher(
             .toList()
 
         retainTail(path, redacted)
-        return DaemonLogParser.parse(redacted.asSequence())
+        return redacted.map { DaemonLogLine(it, DaemonLogParser.parseLine(it)) }
     }
 
     /** The last [tailLines] redacted lines seen for a log, for the live tail panel (U7). */
