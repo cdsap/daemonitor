@@ -16,12 +16,13 @@ internal object HeadlessModeSwitcher {
         executable: String?,
         javaHome: String,
         classpath: String,
+        osName: String = System.getProperty("os.name"),
     ): List<String> {
         if (executable != null && !executable.isJavaExecutable()) {
             return listOf(executable, "--headless")
         }
 
-        val javaExecutable = File(File(javaHome, "bin"), javaExecutableName()).absolutePath
+        val javaExecutable = javaExecutablePath(javaHome, javaExecutableName(osName))
         return listOf(
             javaExecutable,
             "-cp",
@@ -41,10 +42,17 @@ internal object HeadlessModeSwitcher {
     }
 
     private fun String.isJavaExecutable(): Boolean {
-        val name = File(this).name.lowercase()
+        val name = substringAfterLast('/').substringAfterLast('\\').lowercase()
         return name == "java" || name == "java.exe"
     }
 
-    private fun javaExecutableName(): String =
-        if (System.getProperty("os.name").lowercase().contains("windows")) "java.exe" else "java"
+    private fun javaExecutableName(osName: String): String =
+        if (osName.lowercase().contains("windows")) "java.exe" else "java"
+
+    private fun javaExecutablePath(javaHome: String, executableName: String): String =
+        if (javaHome.contains('\\')) {
+            "${javaHome.trimEnd('\\')}\\bin\\$executableName"
+        } else {
+            "${javaHome.trimEnd('/')}/bin/$executableName"
+        }
 }
