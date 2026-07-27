@@ -10,6 +10,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.runBlocking
 import java.io.PrintStream
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -32,18 +33,27 @@ internal object HeadlessLauncher {
         val runtime = WatcherRuntime.create(database)
         val retentionDays = SettingsStore().load().retentionDays
         val pollingThread = Thread.currentThread()
+        val running = AtomicBoolean(true)
         val cleanupFinished = CountDownLatch(1)
         val shutdownHook = Thread({
+            running.set(false)
             pollingThread.interrupt()
             cleanupFinished.await(SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         }, "daemonitor-headless-shutdown")
+        val tray = HeadlessTray.install(
+            onQuit = {
+                running.set(false)
+                pollingThread.interrupt()
+            },
+            error = error,
+        )
 
         return try {
             database.purgeOlderThan(System.currentTimeMillis(), retentionDays)
             Runtime.getRuntime().addShutdownHook(shutdownHook)
             output.println("Daemonitor headless collector started")
             runBlocking {
-                while (currentCoroutineContext().isActive) {
+                while (currentCoroutineContext().isActive && running.get()) {
                     runCatching { runtime.pollOnce() }
                         .onFailure { error.println("Daemonitor poll failed: ${it.message}") }
                     delay(Defaults.POLL_INTERVAL)
@@ -58,6 +68,7 @@ internal object HeadlessLauncher {
             try {
                 database.close()
             } finally {
+                tray.close()
                 cleanupFinished.countDown()
                 runCatching { Runtime.getRuntime().removeShutdownHook(shutdownHook) }
             }
