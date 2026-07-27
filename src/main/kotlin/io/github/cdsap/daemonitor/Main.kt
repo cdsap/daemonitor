@@ -58,12 +58,22 @@ private fun launchDesktop() = application {
         LaunchedEffect(Unit) {
             service = withContext(Dispatchers.IO) { WatcherService.create() }
         }
-        DaemonitorContent(service)
+        DaemonitorContent(
+            service = service,
+            onSwitchToHeadless = {
+                runCatching { HeadlessModeSwitcher.launch() }
+                    .onSuccess { exitApplication() }
+                    .onFailure { it.printStackTrace() }
+            },
+        )
     }
 }
 
 @Composable
-internal fun DaemonitorContent(service: WatcherService?) {
+internal fun DaemonitorContent(
+    service: WatcherService?,
+    onSwitchToHeadless: () -> Unit = {},
+) {
     if (service == null) {
         WatcherTheme {
             Surface(modifier = Modifier.fillMaxSize()) {
@@ -81,6 +91,7 @@ internal fun DaemonitorContent(service: WatcherService?) {
         Surface(modifier = Modifier.fillMaxSize()) {
             val liveState by service.liveViewModel.state.collectAsState()
             AppScaffold(
+                onSwitchToHeadless = onSwitchToHeadless,
                 liveContent = {
                     LiveMonitorScreen(
                         state = liveState,
