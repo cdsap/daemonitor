@@ -17,8 +17,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.SegmentedButton
@@ -44,11 +46,17 @@ fun AppScaffold(
     liveContent: @Composable () -> Unit,
     historyContent: @Composable () -> Unit,
     settingsContent: @Composable () -> Unit,
+    onSwitchToHeadless: () -> Unit = {},
     buildInfo: BuildInfo = BuildInfo.current,
 ) {
     var selectedTab by remember { mutableStateOf(0) }
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        AppHeader(buildInfo, selectedTab) { selectedTab = it }
+        AppHeader(
+            buildInfo = buildInfo,
+            selectedTab = selectedTab,
+            onSelectTab = { selectedTab = it },
+            onSwitchToHeadless = onSwitchToHeadless,
+        )
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         Column(modifier = Modifier.weight(1f)) {
             when (selectedTab) {
@@ -63,7 +71,12 @@ fun AppScaffold(
 /** A slim brand bar so the window reads as a product, not a bare tab strip. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AppHeader(buildInfo: BuildInfo, selectedTab: Int, onSelectTab: (Int) -> Unit) {
+private fun AppHeader(
+    buildInfo: BuildInfo,
+    selectedTab: Int,
+    onSelectTab: (Int) -> Unit,
+    onSwitchToHeadless: () -> Unit,
+) {
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
@@ -105,7 +118,19 @@ private fun AppHeader(buildInfo: BuildInfo, selectedTab: Int, onSelectTab: (Int)
                 }
             }
             Spacer(modifier = Modifier.weight(1f))
+            IconButton(
+                onClick = onSwitchToHeadless,
+                modifier = Modifier.size(40.dp),
+            ) {
+                Icon(
+                    Icons.Filled.Terminal,
+                    contentDescription = "Switch to headless mode",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
             if (!compact) {
+                Spacer(modifier = Modifier.width(Space.xs))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
                     androidx.compose.foundation.layout.Box(
                         modifier = Modifier.size(7.dp).background(LocalAccentColors.current.success, androidx.compose.foundation.shape.CircleShape),

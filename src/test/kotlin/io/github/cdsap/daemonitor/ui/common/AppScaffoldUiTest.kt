@@ -8,6 +8,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runComposeUiTest
 import io.github.cdsap.daemonitor.BuildInfo
 import kotlin.test.Test
+import kotlin.test.assertTrue
 
 @OptIn(ExperimentalTestApi::class)
 class AppScaffoldUiTest {
@@ -59,5 +60,25 @@ class AppScaffoldUiTest {
         onNodeWithText("History content").assertExists()
         onNodeWithText("Settings").performClick()
         onNodeWithText("Settings content").assertExists()
+    }
+
+    @Test
+    fun `header exposes switch to headless action`() = runComposeUiTest {
+        var switchedToHeadless = false
+
+        setContent {
+            WatcherTheme {
+                AppScaffold(
+                    liveContent = { Text("Live") },
+                    historyContent = { Text("History") },
+                    settingsContent = { Text("Settings") },
+                    onSwitchToHeadless = { switchedToHeadless = true },
+                )
+            }
+        }
+
+        onNodeWithContentDescription("Switch to headless mode").performClick()
+
+        assertTrue(switchedToHeadless)
     }
 }
