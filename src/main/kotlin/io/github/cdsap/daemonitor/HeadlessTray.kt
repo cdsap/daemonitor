@@ -16,6 +16,7 @@ internal object NoHeadlessTrayHandle : HeadlessTrayHandle {
 
 internal object HeadlessTray {
     fun install(
+        onOpen: () -> Unit,
         onQuit: () -> Unit,
         error: PrintStream = System.err,
         environment: TrayEnvironment = AwtTrayEnvironment,
@@ -25,6 +26,9 @@ internal object HeadlessTray {
         return runCatching {
             val image = environment.loadImage("icon/daemonitor.png")
             val popup = PopupMenu().apply {
+                add(MenuItem("Open Daemonitor").apply {
+                    addActionListener { onOpen() }
+                })
                 add(MenuItem("Quit Daemonitor").apply {
                     addActionListener { onQuit() }
                 })

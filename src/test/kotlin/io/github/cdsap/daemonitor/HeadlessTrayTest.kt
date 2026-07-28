@@ -14,6 +14,7 @@ class HeadlessTrayTest {
         val error = ByteArrayOutputStream()
 
         val handle = HeadlessTray.install(
+            onOpen = {},
             onQuit = {},
             error = PrintStream(error),
             environment = UnsupportedTrayEnvironment,

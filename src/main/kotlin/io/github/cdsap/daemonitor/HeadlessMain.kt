@@ -29,6 +29,7 @@ internal object HeadlessLauncher {
             return 2
         }
 
+        HeadlessMacMode.configure()
         val database = WatcherDatabase.open()
         val runtime = WatcherRuntime.create(database)
         val retentionDays = SettingsStore().load().retentionDays
@@ -41,6 +42,14 @@ internal object HeadlessLauncher {
             cleanupFinished.await(SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         }, "daemonitor-headless-shutdown")
         val tray = HeadlessTray.install(
+            onOpen = {
+                runCatching { DesktopModeSwitcher.launch() }
+                    .onSuccess {
+                        running.set(false)
+                        pollingThread.interrupt()
+                    }
+                    .onFailure { error.println("Daemonitor desktop launch failed: ${it.message}") }
+            },
             onQuit = {
                 running.set(false)
                 pollingThread.interrupt()
