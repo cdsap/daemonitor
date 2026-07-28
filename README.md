@@ -24,7 +24,7 @@ best-effort redacted before they're ever stored.
 
 ### Live Monitor
 
-![Daemonitor Live monitor showing active Gradle processes, metrics, status badges, and process details](docs/images/live-monitor.png)
+![Daemonitor Live monitor showing active Gradle processes, metrics, status badges, process details, and the headless toolbar action](docs/images/live-monitor.png)
 
 *Live monitor with concurrent Gradle activity and the selected daemon inspector.*
 
@@ -34,6 +34,7 @@ best-effort redacted before they're ever stored.
 - Headline stats: active processes, total RSS, highest-memory PID, active projects
 - Highlight badges: high/critical memory, `MULTI-BUILD` (a project with concurrent build invocations), `AUTOMATED` (CI/script/agent flags)
 - Per-daemon detail with `-Xmx`, GC, working dir, full (redacted) command line, and a live tail of the daemon log
+- One-click switch to headless mode from the toolbar when you want collection to continue without the desktop window
 
 ### Historical
 
@@ -47,6 +48,14 @@ best-effort redacted before they're ever stored.
 
 ### Settings
 - Configurable **history retention** (default **15 days**, range 1–90). Lowering it purges out-of-range entries immediately.
+
+### Headless collection
+
+Daemonitor can keep collecting in the background without the desktop window. Use the toolbar action
+to switch from desktop to headless mode, or start it directly with `--headless`. Packaged headless
+mode uses the same local database and settings as the desktop app, shows a system tray/menu-bar icon
+when the OS supports it, and offers **Open Daemonitor** and **Quit Daemonitor** actions from that
+menu.
 
 ### AI-agent attribution
 Daemonitor fingerprints the coding agent behind a build from the environment-variable *names* the
@@ -62,6 +71,8 @@ is Claude."
 
 ## Requirements
 
+- **JDK 17+** to run Gradle from source. The build uses a Java 21 toolchain, which Gradle
+  auto-provisions when a local Java 21 installation is unavailable.
 - macOS, Linux, or Windows
 - Permission to read your own process list and Gradle daemon logs
 
@@ -83,7 +94,8 @@ metadata and Gradle daemon logs for the current user.
 
 ## Run from source
 
-Source builds require **JDK 21** because the Kotlin build is pinned to a Java 21 toolchain.
+Source builds require **JDK 17+** to launch Gradle; the pinned Java 21 toolchain is provisioned
+automatically when it is not installed locally.
 
 ```bash
 ./gradlew run
@@ -96,8 +108,9 @@ To collect and persist data without starting Compose or requiring a display serv
 ```
 
 Packaged launchers also accept `--headless`. Headless and desktop modes use the same local database
-and retention setting. Stop the collector with `Ctrl+C` or the service manager's normal termination
-signal.
+and retention setting. On desktop operating systems, the tray/menu-bar icon can reopen Daemonitor or
+quit the collector. Stop source-run headless mode with `Ctrl+C` or the service manager's normal
+termination signal.
 
 ## Build a native distribution
 
@@ -168,5 +181,5 @@ permissions. Daemonitor never makes network requests.
 
 ## Status
 
-Early (v0.1.0). The data model and detection heuristics are evolving; see `requirements.md` for the
+Early (v0.1.1). The data model and detection heuristics are evolving; see `requirements.md` for the
 original specification.
