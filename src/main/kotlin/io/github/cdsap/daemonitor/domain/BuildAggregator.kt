@@ -87,12 +87,20 @@ class BuildAggregator(
         return emitted
     }
 
-    /** Daemon PID disappeared: emit an interrupted build if one was in flight. */
+    /** Daemon PID disappeared: emit a qualified open build instead of leaving it stuck forever. */
     fun onDaemonGone(daemonPid: Long): Build? {
         val state = daemons.remove(daemonPid) ?: return null
         val w = state.window ?: return null
         if (!w.qualified) return null
-        return w.toBuild(daemonPid, state.uid, endMs = null, sampleProvider, ambientEnvNames, interrupted = true)
+        val inferredEndMs = w.outcomeDurationSeconds?.let { w.busyTimeMs + (it * 1000).toLong() }
+        return w.toBuild(
+            daemonPid,
+            state.uid,
+            endMs = inferredEndMs,
+            sampleProvider,
+            ambientEnvNames,
+            interrupted = w.outcomeSuccess == null,
+        )
     }
 
     private class DaemonState(

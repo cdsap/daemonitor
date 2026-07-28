@@ -2,6 +2,7 @@ package io.github.cdsap.daemonitor
 
 import io.github.cdsap.daemonitor.collect.DaemonLogWatcher
 import io.github.cdsap.daemonitor.domain.BuildAggregator
+import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.store.WatcherDatabase
 import java.nio.file.Files
 import java.nio.file.Path
@@ -54,6 +55,37 @@ class WatcherRuntimeTest {
             assertFalse(snippet.contains("outside before window"))
             assertFalse(snippet.contains("outside after window"))
             assertEquals(5, snippet.lines().size)
+        }
+    }
+
+    @Test
+    fun `inactive daemon log with outcome but no idle is persisted`(
+        @org.junit.jupiter.api.io.TempDir tmp: Path,
+    ) {
+        val versionDir = tmp.resolve("gradle/daemon/9.6.1").also { it.createDirectories() }
+        val log = versionDir.resolve("daemon-75597.out.log")
+        log.writeText(
+            buildString {
+                appendLine("2026-07-28T10:20:45.687-0700 [INFO] [org.gradle.launcher.daemon.server.DaemonRegistryUpdater] Marking the daemon as busy, address: []")
+                appendLine("2026-07-28T10:20:45.689-0700 [INFO] [org.gradle.launcher.daemon.server.exec.StartBuildOrRespondWithBusy] Daemon is about to start building Build{id=build-96, currentDir=/project}")
+                appendLine("BUILD SUCCESSFUL in 2s")
+            },
+        )
+
+        WatcherDatabase.open(tmp.resolve("watcher.db")).use { database ->
+            val logWatcher = DaemonLogWatcher(gradleUserHome = tmp.resolve("gradle"))
+            val runtime = WatcherRuntime(
+                logWatcher = logWatcher,
+                aggregator = BuildAggregator(sampleProvider = database::samplesInWindow),
+                database = database,
+            )
+
+            val changed = runtime.processForBuilds(logWatcher.discover(), activeDaemonPids = emptySet())
+
+            assertTrue(changed)
+            val build = database.recentBuilds().single()
+            assertEquals("build-96", build.buildId)
+            assertEquals(FinalStatus.SUCCESS, build.finalStatus)
         }
     }
 }

@@ -5,7 +5,7 @@ import kotlin.test.assertEquals
 
 class DesktopModeSwitcherTest {
     @Test
-    fun `packaged application relaunches the current executable without headless mode`() {
+    fun `packaged mac application relaunches the bundle without headless mode`() {
         val command = DesktopModeSwitcher.commandForCurrentProcess(
             executable = "/Applications/Daemonitor.app/Contents/MacOS/Daemonitor",
             javaHome = "/unused/java",
@@ -13,7 +13,19 @@ class DesktopModeSwitcherTest {
             osName = "Mac OS X",
         )
 
-        assertEquals(listOf("/Applications/Daemonitor.app/Contents/MacOS/Daemonitor"), command)
+        assertEquals(listOf("/usr/bin/open", "-n", "/Applications/Daemonitor.app"), command)
+    }
+
+    @Test
+    fun `packaged non-mac application relaunches the current executable without headless mode`() {
+        val command = DesktopModeSwitcher.commandForCurrentProcess(
+            executable = "/opt/Daemonitor/bin/Daemonitor",
+            javaHome = "/unused/java",
+            classpath = "/unused/classpath",
+            osName = "Linux",
+        )
+
+        assertEquals(listOf("/opt/Daemonitor/bin/Daemonitor"), command)
     }
 
     @Test

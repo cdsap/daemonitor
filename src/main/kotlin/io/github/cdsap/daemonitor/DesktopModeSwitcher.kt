@@ -19,6 +19,9 @@ internal object DesktopModeSwitcher {
         osName: String = System.getProperty("os.name"),
     ): List<String> {
         if (executable != null && !executable.isJavaExecutable()) {
+            if (osName.isMacOs()) {
+                executable.macAppBundlePath()?.let { return listOf("/usr/bin/open", "-n", it) }
+            }
             return listOf(executable)
         }
 
@@ -43,6 +46,15 @@ internal object DesktopModeSwitcher {
         val name = substringAfterLast('/').substringAfterLast('\\').lowercase()
         return name == "java" || name == "java.exe"
     }
+
+    private fun String.macAppBundlePath(): String? {
+        val marker = ".app/Contents/MacOS/"
+        val index = indexOf(marker)
+        if (index < 0) return null
+        return substring(0, index + ".app".length)
+    }
+
+    private fun String.isMacOs(): Boolean = lowercase().contains("mac")
 
     private fun javaExecutableName(osName: String): String =
         if (osName.lowercase().contains("windows")) "java.exe" else "java"
