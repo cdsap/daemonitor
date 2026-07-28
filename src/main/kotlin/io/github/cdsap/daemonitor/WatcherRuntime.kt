@@ -5,6 +5,7 @@ import io.github.cdsap.daemonitor.collect.DaemonLogWatcher
 import io.github.cdsap.daemonitor.collect.ProcessCollector
 import io.github.cdsap.daemonitor.domain.BuildAggregator
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
+import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.store.WatcherDatabase
 
 /** UI-independent collection and persistence runtime shared by desktop and headless launchers. */
@@ -32,15 +33,14 @@ class WatcherRuntime(
         return PollResult(
             processes = processes,
             daemonLogs = logs,
-            buildsChanged = processForBuilds(logs),
+            buildsChanged = processForBuilds(logs, activeDaemonPids = processes.activeDaemonPids()),
         )
     }
 
     fun tailFor(logs: List<DaemonLog>, pid: Long): List<String> =
         logs.firstOrNull { it.pid == pid }?.let { logWatcher.tailFor(it.path) }.orEmpty()
 
-    private fun processForBuilds(logs: List<DaemonLog>): Boolean {
-        val currentPids = logs.map { it.pid }.toSet()
+    internal fun processForBuilds(logs: List<DaemonLog>, activeDaemonPids: Set<Long>): Boolean {
         var inserted = false
 
         for (log in logs) {
@@ -51,17 +51,26 @@ class WatcherRuntime(
                     inserted = true
                 }
             }
+            if (log.pid !in activeDaemonPids) {
+                aggregator.onDaemonGone(log.pid)?.let {
+                    database.insertBuild(it)
+                    inserted = true
+                }
+            }
         }
 
-        (knownDaemonPids - currentPids).forEach { gonePid ->
+        (knownDaemonPids - activeDaemonPids).forEach { gonePid ->
             aggregator.onDaemonGone(gonePid)?.let {
                 database.insertBuild(it)
                 inserted = true
             }
         }
-        knownDaemonPids = currentPids
+        knownDaemonPids = activeDaemonPids
         return inserted
     }
+
+    private fun List<GradleProcess>.activeDaemonPids(): Set<Long> =
+        filter { it.type == ProcessType.GRADLE_DAEMON }.map { it.pid }.toSet()
 
     companion object {
         fun create(database: WatcherDatabase): WatcherRuntime = WatcherRuntime(

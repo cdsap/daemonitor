@@ -39,6 +39,7 @@ fun main(args: Array<String>) {
         if (exitCode != 0) kotlin.system.exitProcess(exitCode)
         return
     }
+    DesktopDockIcon.configure()
     launchDesktop()
 }
 

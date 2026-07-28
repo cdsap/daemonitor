@@ -84,6 +84,21 @@ class BuildAggregatorTest {
     }
 
     @Test
+    fun `daemon disappearing after outcome emits completed build`() {
+        val samples = listOf(100L to 20.0, 140L to 50.0)
+        val agg = BuildAggregator(sampleProvider = { _, _, _ -> samples })
+        agg.onEvents(pid, listOf(context(0), BusyMark(1_000), start(1_010), Outcome(true, 2.0)))
+
+        val b = agg.onDaemonGone(pid)!!
+
+        assertEquals(FinalStatus.SUCCESS, b.finalStatus)
+        assertEquals(3_000, b.endTimeMs)
+        assertEquals(2.0, b.durationSeconds)
+        assertEquals(140L, b.peakMemoryMb)
+        assertEquals(50.0, b.peakCpuPercent)
+    }
+
+    @Test
     fun `interrupted build retains its bounded in-window log excerpt`() {
         val agg = BuildAggregator()
         agg.onLogLine(pid, "busy", BusyMark(1_000))
