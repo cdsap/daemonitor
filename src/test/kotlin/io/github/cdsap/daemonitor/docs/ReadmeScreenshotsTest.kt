@@ -15,7 +15,7 @@ class ReadmeScreenshotsTest {
     @Test
     fun `README screenshots are native-size PNGs with meaningful alt text`() {
         val screenshots = mapOf(
-            "docs/images/live-monitor.png" to "Daemonitor Live monitor showing active Gradle processes, metrics, status badges, and process details",
+            "docs/images/live-monitor.png" to "Daemonitor Live monitor showing active Gradle processes, metrics, status badges, process details, and the headless toolbar action",
             "docs/images/build-history.png" to "Daemonitor build history showing status and source tags, agent attribution, metrics, and build details",
         )
 
