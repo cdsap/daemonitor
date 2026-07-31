@@ -122,7 +122,7 @@ compose.desktop {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "Daemonitor"
             packageVersion = nativePackageVersion
-            modules("java.sql")
+            modules("java.sql", "java.net.http")
 
             // Per-platform installer/app icons (jpackage requires the native format per OS).
             macOS { iconFile.set(project.file("icons/daemonitor.icns")) }

@@ -9,12 +9,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -35,6 +41,8 @@ fun SettingsScreen(
     state: SettingsUiState,
     onRetentionDays: (Long) -> Unit,
     onAppearance: (AppearancePreference) -> Unit = {},
+    onCheckForUpdates: () -> Unit = {},
+    onOpenUpdate: (io.github.cdsap.daemonitor.update.UpdateCandidate) -> Unit = {},
 ) {
     Column(
         modifier = Modifier
@@ -70,6 +78,47 @@ fun SettingsScreen(
                                 selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
                             ),
                         )
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(Space.md))
+        SectionCard(
+            "Updates",
+            modifier = Modifier.fillMaxWidth().height(180.dp).padding(horizontal = Space.lg),
+        ) {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
+                    Icon(Icons.Filled.SystemUpdate, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Text("Application updates", style = MaterialTheme.typography.bodyMedium)
+                }
+                Spacer(Modifier.height(Space.sm))
+                Text(
+                    state.updateState.message,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(Space.md))
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(
+                        onClick = onCheckForUpdates,
+                        enabled = state.updateState != UpdateUiState.Checking,
+                        shape = RoundedCornerShape(Radius.sm),
+                    ) {
+                        Icon(Icons.Filled.Refresh, contentDescription = null)
+                        Spacer(Modifier.width(Space.xs))
+                        Text(if (state.updateState == UpdateUiState.Checking) "Checking" else "Check for updates")
+                    }
+                    val available = state.updateState as? UpdateUiState.Available
+                    if (available != null) {
+                        Button(
+                            onClick = { onOpenUpdate(available.candidate) },
+                            shape = RoundedCornerShape(Radius.sm),
+                        ) {
+                            Icon(Icons.Filled.Download, contentDescription = null)
+                            Spacer(Modifier.width(Space.xs))
+                            Text("Open installer")
+                        }
                     }
                 }
             }
@@ -119,3 +168,12 @@ fun SettingsScreen(
 
 private val AppearancePreference.displayName: String
     get() = name.lowercase().replaceFirstChar(Char::uppercase)
+
+private val UpdateUiState.message: String
+    get() = when (this) {
+        UpdateUiState.NotChecked -> "Check GitHub Releases for a newer Daemonitor installer. Nothing is installed without approval."
+        UpdateUiState.Checking -> "Checking GitHub Releases..."
+        is UpdateUiState.UpToDate -> "Daemonitor is up to date at v$version."
+        is UpdateUiState.Available -> "v${candidate.version} is available. ${candidate.assetName} will open only if you approve."
+        is UpdateUiState.Failed -> message
+    }
