@@ -11,9 +11,9 @@ plugins {
 }
 
 group = "io.github.cdsap.daemonitor"
-version = "0.1.1"
+version = "1.0.2"
 
-val nativePackageVersion = "1.0.1"
+val nativePackageVersion = "1.0.2"
 
 val buildInfoDirectory = layout.buildDirectory.dir("generated/build-info")
 val buildCommit = providers.environmentVariable("GITHUB_SHA")
