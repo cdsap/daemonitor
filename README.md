@@ -92,6 +92,12 @@ Daemonitor is distributed as a native desktop app per operating system:
 The installed app does not require a project-local Gradle setup. It only reads local process
 metadata and Gradle daemon logs for the current user.
 
+## Updates
+
+The Settings tab can check GitHub Releases for a newer Daemonitor version. When a newer release is
+available, Daemonitor shows the matching installer for the current operating system and opens the
+download only after you approve it. The app does not silently install updates.
+
 ## Run from source
 
 Source builds require **JDK 17+** to launch Gradle; the pinned Java 21 toolchain is provisioned
