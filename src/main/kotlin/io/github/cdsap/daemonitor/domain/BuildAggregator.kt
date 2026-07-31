@@ -150,7 +150,12 @@ class BuildAggregator(
             }
             val duration = outcomeDurationSeconds
                 ?: endMs?.let { (it - busyTimeMs) / 1000.0 }
-            val agentAttr = AgentDetector.detect(envNames, ambientEnvNames)
+            val source = SourceDetector.detect(envNames)
+            val agentAttr = if (source == Source.IDE) {
+                null
+            } else {
+                AgentDetector.detect(envNames, ambientEnvNames)
+            }
 
             return Build(
                 buildId = buildId ?: "$daemonPid-$busyTimeMs",
@@ -165,7 +170,7 @@ class BuildAggregator(
                 peakMemoryMb = rss.maxOrNull(),
                 avgMemoryMb = if (rss.isEmpty()) null else rss.average().toLong(),
                 peakCpuPercent = cpu.maxOrNull(),
-                inferredSource = SourceDetector.detect(envNames),
+                inferredSource = source,
                 finalStatus = status,
                 logSnippet = logLines.takeIf { it.isNotEmpty() }?.joinToString("\n"),
                 agent = agentAttr?.agent,

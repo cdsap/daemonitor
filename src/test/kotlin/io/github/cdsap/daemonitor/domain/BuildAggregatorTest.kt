@@ -147,6 +147,26 @@ class BuildAggregatorTest {
     }
 
     @Test
+    fun `ide builds do not get attributed to inherited Claude agent env names`() {
+        val agg = BuildAggregator()
+        val b = agg.onEvents(
+            pid,
+            listOf(
+                context(0), BusyMark(1_000), start(1_010),
+                BuildEnvNames(
+                    1_020,
+                    listOf("PATH", "VSCODE_GIT_IPC_HANDLE", "CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "AI_AGENT"),
+                ),
+                Outcome(true, 1.0), IdleMark(2_000),
+            ),
+        ).single()
+
+        assertEquals(Source.IDE, b.inferredSource)
+        assertNull(b.agent)
+        assertNull(b.agentProvider)
+    }
+
+    @Test
     fun `a second busy mark with no intervening idle flushes the first build`() {
         val agg = BuildAggregator()
         // First build qualifies but its IdleMark is missing; a new BusyMark arrives.
