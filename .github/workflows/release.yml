@@ -109,11 +109,66 @@ jobs:
           echo "- Platform: ${{ matrix.platform }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- Asset: ${asset}" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload asset to GitHub release
+      - name: Upload staged release asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-asset-${{ matrix.platform }}
+          path: ${{ steps.asset.outputs.path }}
+          if-no-files-found: error
+          retention-days: 7
+
+  publish-assets:
+    name: Publish release assets and metadata
+    needs: build-assets
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Download staged release assets
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-asset-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Read package version
+        id: package-version
+        run: echo "value=$(./gradlew -q printNativePackageVersion --no-daemon)" >> "$GITHUB_OUTPUT"
+
+      - name: Generate release metadata
+        run: |
+          scripts/generate-release-metadata.sh \
+            release-assets \
+            release-metadata \
+            "${{ steps.package-version.outputs.value }}" \
+            "${{ github.ref_name }}" \
+            "${{ github.repository }}"
+          echo "### Release metadata" >> "$GITHUB_STEP_SUMMARY"
+          echo "- latest.json" >> "$GITHUB_STEP_SUMMARY"
+          echo "- update.json" >> "$GITHUB_STEP_SUMMARY"
+          echo "- checksums.txt" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload assets and metadata to GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG_NAME: ${{ github.ref_name }}
-          ASSET_PATH: ${{ steps.asset.outputs.path }}
         run: |
-          gh release upload "$TAG_NAME" "$ASSET_PATH" --clobber
+          gh release upload "$TAG_NAME" \
+            release-assets/* \
+            release-metadata/latest.json \
+            release-metadata/update.json \
+            release-metadata/checksums.txt \
+            --clobber

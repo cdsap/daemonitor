@@ -134,6 +134,10 @@ target OS):
 ./gradlew packageDeb          # Linux (.deb)
 ```
 
+Tag-triggered GitHub releases also publish `latest.json`, `update.json`, and `checksums.txt` next
+to the native installers. The updater-facing metadata contract is documented in
+[`docs/update-metadata.md`](docs/update-metadata.md).
+
 ## Test
 
 ```bash
