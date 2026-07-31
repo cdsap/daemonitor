@@ -181,5 +181,5 @@ permissions. Daemonitor never makes network requests.
 
 ## Status
 
-Early (v0.1.1). The data model and detection heuristics are evolving; see `requirements.md` for the
+Early (v1.0.2). The data model and detection heuristics are evolving; see `requirements.md` for the
 original specification.
