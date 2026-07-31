@@ -48,6 +48,22 @@ class HistoryScreenUiTest {
     }
 
     @Test
+    fun `ide build rows suppress stale stored agent labels`() = runComposeUiTest {
+        val state = HistoryUiState(
+            builds = listOf(sampleBuild().copy(inferredSource = Source.IDE)),
+            isEmptyResult = false,
+        )
+        setContent {
+            WatcherTheme(appearance = AppearancePreference.DARK) {
+                HistoryScreen(state, onProject = {}, onTimeRange = {})
+            }
+        }
+
+        onNodeWithText("IDE").assertExists()
+        onNodeWithText("Claude Code").assertDoesNotExist()
+    }
+
+    @Test
     fun `empty result shows the empty state`() = runComposeUiTest {
         val state = HistoryUiState(builds = emptyList(), isEmptyResult = true)
         setContent { WatcherTheme { HistoryScreen(state, onProject = {}, onTimeRange = {}) } }

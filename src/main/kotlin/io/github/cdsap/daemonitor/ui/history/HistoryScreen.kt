@@ -39,6 +39,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.ProcessType
+import io.github.cdsap.daemonitor.domain.model.Source
 import io.github.cdsap.daemonitor.ui.common.Cell
 import io.github.cdsap.daemonitor.ui.common.CellSlot
 import io.github.cdsap.daemonitor.ui.common.Col
@@ -151,6 +152,7 @@ private fun ProjectDropdown(projects: List<String>, selected: String?, onProject
 @Composable
 private fun BuildRow(b: Build, selected: Boolean, onSelect: () -> Unit) {
     val bg = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f) else MaterialTheme.colorScheme.surface
+    val agent = b.displayAgent()
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -171,7 +173,7 @@ private fun BuildRow(b: Build, selected: Boolean, onSelect: () -> Unit) {
         Cell(b.peakMemoryMb?.let { "$it MB" } ?: "not sampled", COLS[3], muted = b.peakMemoryMb == null)
         CellSlot(COLS[4]) { StatusPill(b.finalStatus) }
         CellSlot(COLS[5]) { SourcePill(b.inferredSource) }
-        CellSlot(COLS[6]) { AgentLabel(b.agent) }
+        CellSlot(COLS[6]) { AgentLabel(agent) }
     }
 }
 
@@ -199,6 +201,7 @@ private fun HistoryDetail(build: Build?) {
         Text("Select a build to see details.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
         return
     }
+    val agent = build.displayAgent()
     Column(modifier = Modifier.fillMaxSize()) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
             ProcessTypeIcon(ProcessType.GRADLE_DAEMON, size = 18.dp)
@@ -212,8 +215,8 @@ private fun HistoryDetail(build: Build?) {
         DetailRow("Avg memory", build.avgMemoryMb?.let { "$it MB" } ?: "not sampled (<2s)")
         DetailRow("Peak CPU", build.peakCpuPercent?.let { "%.0f%%".format(it) } ?: "not sampled (<2s)")
         DetailRow("Source", build.inferredSource.name.lowercase())
-        DetailRow("Agent", build.agent ?: "not detected")
-        DetailRow("LLM provider", build.agent?.let { build.agentProvider ?: "unknown" } ?: "—")
+        DetailRow("Agent", agent ?: "not detected")
+        DetailRow("LLM provider", agent?.let { build.agentProvider ?: "unknown" } ?: "—")
         Spacer(Modifier.padding(Space.xs))
         Text(
             "Build log excerpt — captured during the build window",
@@ -239,6 +242,7 @@ private fun DetailRow(label: String, value: String) {
 }
 
 private val TIME_FMT = DateTimeFormatter.ofPattern("MMM d, HH:mm:ss").withZone(ZoneId.systemDefault())
+private fun Build.displayAgent(): String? = agent.takeUnless { inferredSource == Source.IDE }
 private fun formatTime(ms: Long): String = TIME_FMT.format(Instant.ofEpochMilli(ms))
 private fun formatDuration(seconds: Double?): String =
     seconds?.let { if (it < 1) "%.0f ms".format(it * 1000) else "%.1f s".format(it) } ?: "—"
