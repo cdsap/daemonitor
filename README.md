@@ -192,9 +192,10 @@ Kotlin · Compose for Desktop (Material 3) · OSHI · SQLDelight + JDBC SQLite �
 
 All data is local. Command lines and daemon-log lines may contain sensitive values, so they are
 redacted on a best-effort basis before storage, and the database file is created with owner-only
-permissions. Daemonitor never makes network requests.
+permissions. Daemonitor only makes an outbound request when you explicitly check GitHub Releases for
+updates from Settings.
 
 ## Status
 
-Early (v1.0.2). The data model and detection heuristics are evolving; see `requirements.md` for the
+Early (v1.0.3). The data model and detection heuristics are evolving; see `requirements.md` for the
 original specification.
