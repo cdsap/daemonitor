@@ -12,8 +12,9 @@ daemon-log lines, and a searchable history of past builds — including **which 
 triggered each build**. It's built for the agentic-workflow era, where multiple IDEs, terminals, and
 agents can all be driving Gradle at once.
 
-Everything stays on your machine. No telemetry, no network calls; command lines and logs are
-best-effort redacted before they're ever stored.
+Everything stays on your machine. No telemetry; command lines and logs are best-effort redacted
+before they're ever stored. The only outbound request is an explicit Settings check for GitHub
+Releases updates.
 
 [![CI](https://github.com/cdsap/daemonitor/actions/workflows/ci.yml/badge.svg)](https://github.com/cdsap/daemonitor/actions/workflows/ci.yml)
 ![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue)
@@ -91,6 +92,10 @@ Daemonitor is distributed as a native desktop app per operating system:
 
 The installed app does not require a project-local Gradle setup. It only reads local process
 metadata and Gradle daemon logs for the current user.
+
+Linux distribution starts with the GitHub Releases `.deb`. The follow-up update strategy is a signed
+apt repository with advisory in-app prompts only; see
+[Linux Update Distribution](docs/linux-update-distribution.md).
 
 ## Updates
 
