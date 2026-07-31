@@ -12,6 +12,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runComposeUiTest
 import io.github.cdsap.daemonitor.store.AppearancePreference
+import io.github.cdsap.daemonitor.update.UpdateCandidate
 import io.github.cdsap.daemonitor.ui.common.WatcherTheme
 import io.github.cdsap.daemonitor.ui.common.WatcherDarkColors
 import io.github.cdsap.daemonitor.ui.common.WatcherLightColors
@@ -69,5 +70,47 @@ class SettingsScreenUiTest {
         onNodeWithText("Keep build & process history for").assertExists()
         assertEquals(AppearancePreference.DARK, picked)
         assertEquals(WatcherDarkColors.background, renderedBackground)
+    }
+
+    @Test
+    fun `update card can trigger a manual check`() = runComposeUiTest {
+        var checks = 0
+        setContent {
+            WatcherTheme {
+                SettingsScreen(
+                    SettingsUiState(),
+                    onRetentionDays = {},
+                    onCheckForUpdates = { checks += 1 },
+                )
+            }
+        }
+
+        onNodeWithText("Check for updates").performClick()
+
+        assertEquals(1, checks)
+    }
+
+    @Test
+    fun `available update renders installer action`() = runComposeUiTest {
+        var opened: UpdateCandidate? = null
+        val candidate = UpdateCandidate(
+            version = "1.0.3",
+            releaseUrl = "https://example.com/release",
+            assetName = "Daemonitor-1.0.3-macos.dmg",
+            downloadUrl = "https://example.com/Daemonitor-1.0.3-macos.dmg",
+        )
+        setContent {
+            WatcherTheme {
+                SettingsScreen(
+                    SettingsUiState(updateState = UpdateUiState.Available(candidate)),
+                    onRetentionDays = {},
+                    onOpenUpdate = { opened = it },
+                )
+            }
+        }
+
+        onNodeWithText("Open installer").performClick()
+
+        assertEquals(candidate, opened)
     }
 }
