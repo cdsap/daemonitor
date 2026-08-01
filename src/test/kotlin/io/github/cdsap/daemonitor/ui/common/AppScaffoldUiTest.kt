@@ -63,6 +63,22 @@ class AppScaffoldUiTest {
     }
 
     @Test
+    fun `settings tab shows notification count when an update is available`() = runComposeUiTest {
+        setContent {
+            WatcherTheme {
+                AppScaffold(
+                    settingsNotificationCount = 1,
+                    liveContent = { Text("Live") },
+                    historyContent = { Text("History") },
+                    settingsContent = { Text("Settings") },
+                )
+            }
+        }
+
+        onNodeWithText("Settings (1)").assertExists()
+    }
+
+    @Test
     fun `header exposes switch to headless action`() = runComposeUiTest {
         var switchedToHeadless = false
 

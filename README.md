@@ -13,8 +13,8 @@ triggered each build**. It's built for the agentic-workflow era, where multiple 
 agents can all be driving Gradle at once.
 
 Everything stays on your machine. No telemetry; command lines and logs are best-effort redacted
-before they're ever stored. The only outbound request is an explicit Settings check for GitHub
-Releases updates.
+before they're ever stored. The only outbound request is a GitHub Releases update check at startup
+and when you ask from Settings.
 
 [![CI](https://github.com/cdsap/daemonitor/actions/workflows/ci.yml/badge.svg)](https://github.com/cdsap/daemonitor/actions/workflows/ci.yml)
 ![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue)
@@ -99,7 +99,8 @@ apt repository with advisory in-app prompts only; see
 
 ## Updates
 
-The Settings tab can check GitHub Releases for a newer Daemonitor version. When a newer release is
+Daemonitor checks GitHub Releases once at startup and marks the Settings tab as `Settings (1)` when
+a newer version is available. The Settings tab can also check manually. When a newer release is
 available, Daemonitor shows the matching installer for the current operating system and opens the
 download only after you approve it. The app does not silently install updates.
 
@@ -193,7 +194,7 @@ Kotlin · Compose for Desktop (Material 3) · OSHI · SQLDelight + JDBC SQLite �
 All data is local. Command lines and daemon-log lines may contain sensitive values, so they are
 redacted on a best-effort basis before storage, and the database file is created with owner-only
 permissions. Daemonitor only makes an outbound request when you explicitly check GitHub Releases for
-updates from Settings.
+updates from Settings or when it checks GitHub Releases at startup.
 
 ## Status
 

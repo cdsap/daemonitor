@@ -2,9 +2,12 @@ package io.github.cdsap.daemonitor
 
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
+import io.github.cdsap.daemonitor.ui.settings.UpdateUiState
+import io.github.cdsap.daemonitor.update.UpdateCheckResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -86,10 +89,39 @@ class WatcherServiceTest {
         }
     }
 
+    @Test
+    fun `starting service checks for updates`(@TempDir tmp: Path) = runTest {
+        val database = WatcherDatabase.open(tmp.resolve("watcher.db"))
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        try {
+            var updateChecks = 0
+            val service = service(
+                database = database,
+                tmp = tmp,
+                updateChecker = {
+                    updateChecks += 1
+                    UpdateCheckResult.UpToDate("1.0.3")
+                },
+            ) {
+                WatcherRuntime.PollResult(emptyList(), emptyList(), buildsChanged = false)
+            }
+
+            service.start(backgroundScope)
+            advanceUntilIdle()
+
+            assertEquals(1, updateChecks)
+            assertEquals(UpdateUiState.UpToDate("1.0.3"), service.settingsViewModel.state.value.updateState)
+        } finally {
+            Dispatchers.resetMain()
+            database.close()
+        }
+    }
+
     private fun service(
         database: WatcherDatabase,
         tmp: Path,
         clock: () -> Long = { 0 },
+        updateChecker: suspend () -> UpdateCheckResult = { UpdateCheckResult.UpToDate("1.0.3") },
         pollAction: suspend () -> WatcherRuntime.PollResult,
     ) = WatcherService(
         runtime = WatcherRuntime.create(database),
@@ -97,5 +129,6 @@ class WatcherServiceTest {
         settingsStore = SettingsStore(tmp.resolve("settings.properties")),
         clock = clock,
         pollAction = pollAction,
+        updateChecker = updateChecker,
     )
 }

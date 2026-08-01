@@ -47,6 +47,7 @@ fun AppScaffold(
     historyContent: @Composable () -> Unit,
     settingsContent: @Composable () -> Unit,
     onSwitchToHeadless: () -> Unit = {},
+    settingsNotificationCount: Int = 0,
     buildInfo: BuildInfo = BuildInfo.current,
 ) {
     var selectedTab by remember { mutableStateOf(0) }
@@ -56,6 +57,7 @@ fun AppScaffold(
             selectedTab = selectedTab,
             onSelectTab = { selectedTab = it },
             onSwitchToHeadless = onSwitchToHeadless,
+            settingsNotificationCount = settingsNotificationCount,
         )
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         Column(modifier = Modifier.weight(1f)) {
@@ -76,6 +78,7 @@ private fun AppHeader(
     selectedTab: Int,
     onSelectTab: (Int) -> Unit,
     onSwitchToHeadless: () -> Unit,
+    settingsNotificationCount: Int,
 ) {
     BoxWithConstraints(
         modifier = Modifier
@@ -111,7 +114,7 @@ private fun AppHeader(
                         label = {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
                                 Icon(item.icon, contentDescription = null, modifier = Modifier.size(15.dp))
-                                Text(item.label)
+                                Text(item.label(settingsNotificationCount))
                             }
                         },
                     )
@@ -148,7 +151,14 @@ private fun AppHeader(
     }
 }
 
-private data class NavItem(val label: String, val icon: ImageVector)
+private data class NavItem(val label: String, val icon: ImageVector) {
+    fun label(settingsNotificationCount: Int): String =
+        if (label == "Settings" && settingsNotificationCount > 0) {
+            "$label ($settingsNotificationCount)"
+        } else {
+            label
+        }
+}
 
 private val NAV_ITEMS = listOf(
     NavItem("Live", Icons.Filled.Speed),

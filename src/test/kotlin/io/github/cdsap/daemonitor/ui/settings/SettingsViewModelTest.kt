@@ -69,6 +69,23 @@ class SettingsViewModelTest {
         advanceUntilIdle()
 
         assertEquals(UpdateUiState.Available(candidate), vm.state.value.updateState)
+        assertEquals(1, vm.state.value.updateNotificationCount)
+    }
+
+    @Test
+    fun `update notification count is only set for available updates`() {
+        val candidate = UpdateCandidate(
+            version = "1.0.3",
+            releaseUrl = "https://example.com/release",
+            assetName = "Daemonitor-1.0.3-macos.dmg",
+            downloadUrl = "https://example.com/Daemonitor-1.0.3-macos.dmg",
+        )
+
+        assertEquals(0, SettingsUiState().updateNotificationCount)
+        assertEquals(0, SettingsUiState(updateState = UpdateUiState.Checking).updateNotificationCount)
+        assertEquals(0, SettingsUiState(updateState = UpdateUiState.UpToDate("1.0.2")).updateNotificationCount)
+        assertEquals(0, SettingsUiState(updateState = UpdateUiState.Failed("No network")).updateNotificationCount)
+        assertEquals(1, SettingsUiState(updateState = UpdateUiState.Available(candidate)).updateNotificationCount)
     }
 
     @Test
