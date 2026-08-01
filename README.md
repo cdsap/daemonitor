@@ -198,5 +198,5 @@ updates from Settings or when it checks GitHub Releases at startup.
 
 ## Status
 
-Early (v1.0.3). The data model and detection heuristics are evolving; see `requirements.md` for the
+Early (v1.0.4). The data model and detection heuristics are evolving; see `requirements.md` for the
 original specification.
