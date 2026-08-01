@@ -8,6 +8,8 @@ import io.github.cdsap.daemonitor.ui.history.HistoryViewModel
 import io.github.cdsap.daemonitor.ui.live.LiveViewModel
 import io.github.cdsap.daemonitor.ui.settings.SettingsUiState
 import io.github.cdsap.daemonitor.ui.settings.SettingsViewModel
+import io.github.cdsap.daemonitor.update.GitHubReleaseUpdateSource
+import io.github.cdsap.daemonitor.update.UpdateCheckResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -23,6 +25,9 @@ class WatcherService(
     private val settingsStore: SettingsStore = SettingsStore(),
     private val clock: () -> Long = System::currentTimeMillis,
     private val pollAction: suspend () -> WatcherRuntime.PollResult = { runtime.pollOnce() },
+    private val updateChecker: suspend () -> UpdateCheckResult = {
+        GitHubReleaseUpdateSource().check(BuildInfo.current.version)
+    },
 ) {
     val liveViewModel = LiveViewModel()
     val historyViewModel = HistoryViewModel()
@@ -35,11 +40,13 @@ class WatcherService(
         initial = SettingsUiState(retentionDays = retentionDays, appearance = initialSettings.appearance),
         onRetentionChange = ::onRetentionChanged,
         onAppearanceChange = ::onAppearanceChanged,
+        updateChecker = updateChecker,
     )
 
     private var serviceScope: CoroutineScope? = null
     fun start(scope: CoroutineScope) {
         serviceScope = scope
+        settingsViewModel.checkForUpdates()
         database.purgeOlderThan(clock(), retentionDays)
         // Load whatever history already exists, then keep it current from the poll loop.
         scope.launch(Dispatchers.IO) { refreshHistory() }

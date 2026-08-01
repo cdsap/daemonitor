@@ -21,7 +21,10 @@ data class SettingsUiState(
     val retentionDays: Long = Defaults.DEFAULT_RETENTION_DAYS,
     val appearance: AppearancePreference = AppearancePreference.SYSTEM,
     val updateState: UpdateUiState = UpdateUiState.NotChecked,
-)
+) {
+    val updateNotificationCount: Int
+        get() = if (updateState is UpdateUiState.Available) 1 else 0
+}
 
 sealed interface UpdateUiState {
     data object NotChecked : UpdateUiState
@@ -65,7 +68,13 @@ class SettingsViewModel(
         if (_state.value.updateState == UpdateUiState.Checking) return
         _state.value = _state.value.copy(updateState = UpdateUiState.Checking)
         scope.launch {
-            _state.value = _state.value.copy(updateState = updateChecker().toUiState())
+            val nextState = runCatching { updateChecker().toUiState() }
+                .getOrElse { error ->
+                    UpdateUiState.Failed(
+                        error.message ?: error::class.simpleName ?: "Could not check for updates",
+                    )
+                }
+            _state.value = _state.value.copy(updateState = nextState)
         }
     }
 

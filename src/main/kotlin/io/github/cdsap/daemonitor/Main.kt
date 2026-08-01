@@ -93,6 +93,7 @@ internal fun DaemonitorContent(
             val liveState by service.liveViewModel.state.collectAsState()
             AppScaffold(
                 onSwitchToHeadless = onSwitchToHeadless,
+                settingsNotificationCount = settingsState.updateNotificationCount,
                 liveContent = {
                     LiveMonitorScreen(
                         state = liveState,
