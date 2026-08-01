@@ -23,7 +23,12 @@ data class SettingsUiState(
     val updateState: UpdateUiState = UpdateUiState.NotChecked,
 ) {
     val updateNotificationCount: Int
-        get() = if (updateState is UpdateUiState.Available) 1 else 0
+        get() = when (updateState) {
+            is UpdateUiState.Available,
+            is UpdateUiState.Downloading,
+            is UpdateUiState.ReadyToInstall -> 1
+            else -> 0
+        }
 }
 
 sealed interface UpdateUiState {
@@ -31,6 +36,8 @@ sealed interface UpdateUiState {
     data object Checking : UpdateUiState
     data class UpToDate(val version: String) : UpdateUiState
     data class Available(val candidate: UpdateCandidate) : UpdateUiState
+    data class Downloading(val candidate: UpdateCandidate, val progress: Double?) : UpdateUiState
+    data class ReadyToInstall(val candidate: UpdateCandidate) : UpdateUiState
     data class Failed(val message: String) : UpdateUiState
 }
 
@@ -79,14 +86,23 @@ class SettingsViewModel(
     }
 
     fun openUpdate(candidate: UpdateCandidate) {
-        runCatching { updateInstaller.open(candidate) }
-            .onFailure { error ->
+        if (_state.value.updateState is UpdateUiState.Downloading) return
+        _state.value = _state.value.copy(updateState = UpdateUiState.Downloading(candidate, 0.0))
+        scope.launch {
+            runCatching {
+                updateInstaller.open(candidate) { progress ->
+                    _state.value = _state.value.copy(updateState = UpdateUiState.Downloading(candidate, progress))
+                }
+            }.onSuccess {
+                _state.value = _state.value.copy(updateState = UpdateUiState.ReadyToInstall(candidate))
+            }.onFailure { error ->
                 _state.value = _state.value.copy(
                     updateState = UpdateUiState.Failed(
                         error.message ?: error::class.simpleName ?: "Could not open the update",
                     ),
                 )
             }
+        }
     }
 
     private fun UpdateCheckResult.toUiState(): UpdateUiState = when (this) {

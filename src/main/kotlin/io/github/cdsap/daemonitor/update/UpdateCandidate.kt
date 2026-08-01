@@ -5,6 +5,8 @@ data class UpdateCandidate(
     val releaseUrl: String,
     val assetName: String,
     val downloadUrl: String,
+    val sha256: String? = null,
+    val sizeBytes: Long? = null,
 )
 
 sealed interface UpdateCheckResult {

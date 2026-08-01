@@ -11,8 +11,8 @@ available version and send the user to the appropriate system-managed install pa
 
 - If the current install came from the apt repository, prompt the user to update through their
   package manager.
-- If the current install came from a downloaded `.deb`, prompt the user to download/open the newer
-  GitHub Releases `.deb`.
+- If the current install came from a downloaded `.deb`, prompt the user to download and open the
+  newer GitHub Releases `.deb`.
 - If the install source is unknown, offer both paths and explain that apt is preferred once the
   repository is configured.
 
@@ -51,8 +51,8 @@ Linux prompts must be advisory, not self-installing:
 - Show the available version and release link.
 - Never run `sudo`, `pkexec`, `apt`, `dpkg`, or any privileged installer command from the app.
 - For apt installs, say to update from the system package manager and link to repository setup docs.
-- For direct `.deb` installs, offer the GitHub Releases `.deb` and let the OS package installer
-  handle privilege prompts.
+- For direct `.deb` installs, the app may download and verify the GitHub Releases `.deb`, then open
+  it with the OS package installer so the operating system owns privilege prompts.
 - Allow dismissing or deferring the prompt so background collection is not blocked.
 
 ## Package Metadata Requirements

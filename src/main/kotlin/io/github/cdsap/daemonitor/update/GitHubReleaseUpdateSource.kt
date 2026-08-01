@@ -30,10 +30,33 @@ class GitHubReleaseUpdateSource(
             }
             val release = GitHubReleaseJsonParser.parse(response.body())
                 ?: return@withContext UpdateCheckResult.Failed("Could not read the latest release metadata")
-            ReleaseUpdateSelector.select(release, currentVersion, platform)
+            val metadata = release.updateMetadataAsset()?.let { asset ->
+                fetchUpdateMetadata(asset.downloadUrl)
+            }
+            if (metadata != null) {
+                ReleaseMetadataUpdateSelector.select(metadata, release.releaseUrl, currentVersion, platform)
+            } else {
+                ReleaseUpdateSelector.select(release, currentVersion, platform)
+            }
         }.getOrElse { error ->
             UpdateCheckResult.Failed(error.message ?: error::class.simpleName ?: "Update check failed")
         }
+    }
+
+    private fun GitHubRelease.updateMetadataAsset(): GitHubReleaseAsset? =
+        assets.firstOrNull { it.name == "update.json" }
+            ?: assets.firstOrNull { it.name == "latest.json" }
+
+    private fun fetchUpdateMetadata(url: String): ReleaseUpdateMetadata? {
+        val request = HttpRequest.newBuilder()
+            .uri(URI(url))
+            .header("Accept", "application/json")
+            .header("User-Agent", "Daemonitor")
+            .GET()
+            .build()
+        val response = client.send(request, HttpResponse.BodyHandlers.ofString())
+        if (response.statusCode() !in 200..299) return null
+        return ReleaseUpdateMetadataJsonParser.parse(response.body())
     }
 }
 
@@ -44,6 +67,55 @@ internal data class GitHubRelease(
 )
 
 internal data class GitHubReleaseAsset(val name: String, val downloadUrl: String)
+
+internal data class ReleaseUpdateMetadata(
+    val version: String,
+    val tag: String,
+    val assets: List<ReleaseUpdateAsset>,
+)
+
+internal data class ReleaseUpdateAsset(
+    val platform: String,
+    val fileName: String,
+    val url: String,
+    val sha256: String,
+    val sizeBytes: Long,
+)
+
+internal object ReleaseMetadataUpdateSelector {
+    fun select(
+        metadata: ReleaseUpdateMetadata,
+        releaseUrl: String,
+        currentVersion: String,
+        platform: DesktopPlatform,
+    ): UpdateCheckResult {
+        val asset = metadata.assets.firstOrNull { it.platform == platform.metadataName }
+            ?: return UpdateCheckResult.Failed("No ${platform.name.lowercase()} installer was listed in ${metadata.tag}")
+
+        return if (VersionComparator.isNewer(metadata.version, currentVersion)) {
+            UpdateCheckResult.Available(
+                UpdateCandidate(
+                    version = metadata.version,
+                    releaseUrl = releaseUrl,
+                    assetName = asset.fileName,
+                    downloadUrl = asset.url,
+                    sha256 = asset.sha256,
+                    sizeBytes = asset.sizeBytes,
+                ),
+            )
+        } else {
+            UpdateCheckResult.UpToDate(currentVersion)
+        }
+    }
+
+    private val DesktopPlatform.metadataName: String
+        get() = when (this) {
+            DesktopPlatform.MACOS -> "macos"
+            DesktopPlatform.WINDOWS -> "windows"
+            DesktopPlatform.LINUX -> "linux"
+            DesktopPlatform.UNKNOWN -> "unknown"
+        }
+}
 
 internal object ReleaseUpdateSelector {
     fun select(
@@ -88,6 +160,123 @@ internal object GitHubReleaseJsonParser {
             )
         }.toList()
         return GitHubRelease(version = version, releaseUrl = releaseUrl.jsonUnescape(), assets = assets)
+    }
+
+    private fun String.jsonUnescape(): String =
+        replace("\\/", "/")
+            .replace("\\\"", "\"")
+            .replace("\\\\", "\\")
+}
+
+internal object ReleaseUpdateMetadataJsonParser {
+    fun parse(json: String): ReleaseUpdateMetadata? {
+        val schemaVersion = json.intField("schemaVersion") ?: return null
+        if (schemaVersion != 1) return null
+        val version = json.stringField("version") ?: return null
+        val tag = json.stringField("tag") ?: return null
+        val assetsJson = json.arrayField("assets") ?: return null
+        val assets = assetsJson.objectValues().mapNotNull { assetJson ->
+            val sha256 = assetJson.stringField("sha256")?.lowercase()
+            if (sha256 == null || !sha256.matches(Regex("[a-f0-9]{64}"))) return@mapNotNull null
+            ReleaseUpdateAsset(
+                platform = assetJson.stringField("platform") ?: return@mapNotNull null,
+                fileName = assetJson.stringField("fileName") ?: return@mapNotNull null,
+                url = assetJson.stringField("url") ?: return@mapNotNull null,
+                sha256 = sha256,
+                sizeBytes = assetJson.longField("size") ?: return@mapNotNull null,
+            )
+        }.toList()
+        if (assets.isEmpty()) return null
+        return ReleaseUpdateMetadata(version = version, tag = tag, assets = assets)
+    }
+
+    private fun String.stringField(name: String): String? {
+        val valueStart = valueStart(name) ?: return null
+        if (getOrNull(valueStart) != '"') return null
+        val start = valueStart + 1
+        var index = start
+        var escaped = false
+        while (index < length) {
+            val char = this[index]
+            if (char == '"' && !escaped) {
+                return substring(start, index).jsonUnescape()
+            }
+            escaped = char == '\\' && !escaped
+            if (char != '\\') escaped = false
+            index++
+        }
+        return null
+    }
+
+    private fun String.intField(name: String): Int? =
+        longField(name)?.toInt()
+
+    private fun String.longField(name: String): Long? {
+        val start = valueStart(name) ?: return null
+        var end = start
+        while (end < length && this[end].isDigit()) end++
+        return substring(start, end).toLongOrNull()
+    }
+
+    private fun String.arrayField(name: String): String? {
+        val valueStart = valueStart(name) ?: return null
+        if (getOrNull(valueStart) != '[') return null
+        var depth = 0
+        var inString = false
+        var escaped = false
+        for (index in valueStart until length) {
+            val char = this[index]
+            if (char == '"' && !escaped) inString = !inString
+            if (!inString) {
+                if (char == '[') depth++
+                if (char == ']') {
+                    depth--
+                    if (depth == 0) return substring(valueStart + 1, index)
+                }
+            }
+            escaped = char == '\\' && !escaped
+            if (char != '\\') escaped = false
+        }
+        return null
+    }
+
+    private fun String.objectValues(): List<String> {
+        val objects = mutableListOf<String>()
+        var start = -1
+        var depth = 0
+        var inString = false
+        var escaped = false
+        for (index in indices) {
+            val char = this[index]
+            if (char == '"' && !escaped) inString = !inString
+            if (!inString) {
+                if (char == '{') {
+                    if (depth == 0) start = index
+                    depth++
+                }
+                if (char == '}') {
+                    depth--
+                    if (depth == 0 && start >= 0) {
+                        objects += substring(start, index + 1)
+                        start = -1
+                    }
+                }
+            }
+            escaped = char == '\\' && !escaped
+            if (char != '\\') escaped = false
+        }
+        return objects
+    }
+
+    private fun String.valueStart(name: String): Int? {
+        val key = """"$name""""
+        val keyStart = indexOf(key)
+        if (keyStart < 0) return null
+        val colon = indexOf(':', startIndex = keyStart + key.length)
+        if (colon < 0) return null
+        var index = colon + 1
+        while (index < length && this[index].isWhitespace()) index++
+        return index.takeIf { it < length }
     }
 
     private fun String.jsonUnescape(): String =
