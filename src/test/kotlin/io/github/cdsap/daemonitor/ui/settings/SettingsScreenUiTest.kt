@@ -91,7 +91,7 @@ class SettingsScreenUiTest {
     }
 
     @Test
-    fun `available update renders installer action`() = runComposeUiTest {
+    fun `available update renders download action`() = runComposeUiTest {
         var opened: UpdateCandidate? = null
         val candidate = UpdateCandidate(
             version = "1.0.3",
@@ -109,8 +109,28 @@ class SettingsScreenUiTest {
             }
         }
 
-        onNodeWithText("Open installer").performClick()
+        onNodeWithText("Download and open").performClick()
 
         assertEquals(candidate, opened)
+    }
+
+    @Test
+    fun `downloading update renders progress`() = runComposeUiTest {
+        val candidate = UpdateCandidate(
+            version = "1.0.3",
+            releaseUrl = "https://example.com/release",
+            assetName = "Daemonitor-1.0.3-macos.dmg",
+            downloadUrl = "https://example.com/Daemonitor-1.0.3-macos.dmg",
+        )
+        setContent {
+            WatcherTheme {
+                SettingsScreen(
+                    SettingsUiState(updateState = UpdateUiState.Downloading(candidate, 0.42)),
+                    onRetentionDays = {},
+                )
+            }
+        }
+
+        onNodeWithText("Downloading Daemonitor-1.0.3-macos.dmg: 42%.").assertExists()
     }
 }

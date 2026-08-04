@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -98,6 +99,14 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                val downloading = state.updateState as? UpdateUiState.Downloading
+                if (downloading != null) {
+                    Spacer(Modifier.height(Space.sm))
+                    LinearProgressIndicator(
+                        progress = { downloading.progress?.coerceIn(0.0, 1.0)?.toFloat() ?: 0f },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
                 Spacer(Modifier.height(Space.md))
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedButton(
@@ -110,14 +119,17 @@ fun SettingsScreen(
                         Text(if (state.updateState == UpdateUiState.Checking) "Checking" else "Check for updates")
                     }
                     val available = state.updateState as? UpdateUiState.Available
-                    if (available != null) {
+                    val ready = state.updateState as? UpdateUiState.ReadyToInstall
+                    val candidate = available?.candidate ?: ready?.candidate
+                    if (candidate != null) {
                         Button(
-                            onClick = { onOpenUpdate(available.candidate) },
+                            onClick = { onOpenUpdate(candidate) },
+                            enabled = state.updateState !is UpdateUiState.Downloading,
                             shape = RoundedCornerShape(Radius.sm),
                         ) {
                             Icon(Icons.Filled.Download, contentDescription = null)
                             Spacer(Modifier.width(Space.xs))
-                            Text("Open installer")
+                            Text(if (ready != null) "Open again" else "Download and open")
                         }
                     }
                 }
@@ -174,6 +186,9 @@ private val UpdateUiState.message: String
         UpdateUiState.NotChecked -> "Check GitHub Releases for a newer Daemonitor installer. Nothing is installed without approval."
         UpdateUiState.Checking -> "Checking GitHub Releases..."
         is UpdateUiState.UpToDate -> "Daemonitor is up to date at v$version."
-        is UpdateUiState.Available -> "v${candidate.version} is available. ${candidate.assetName} will open only if you approve."
+        is UpdateUiState.Available -> "v${candidate.version} is available. Daemonitor will download and verify ${candidate.assetName} before opening it."
+        is UpdateUiState.Downloading -> progress?.let { "Downloading ${candidate.assetName}: ${(it * 100).toInt()}%." }
+            ?: "Downloading ${candidate.assetName}..."
+        is UpdateUiState.ReadyToInstall -> "Downloaded and opened ${candidate.assetName}. Finish the installer to update Daemonitor."
         is UpdateUiState.Failed -> message
     }

@@ -1,7 +1,9 @@
 # Update Metadata Contract
 
 Daemonitor publishes update metadata to each tag-triggered GitHub Release so updater clients can
-validate release information and native downloads before presenting or opening installers.
+validate release information and native downloads before presenting or opening installers. The
+desktop app uses this metadata to download the selected installer in-app, verify it, and then hand
+off to the operating system installer.
 
 ## Release assets
 
@@ -56,8 +58,8 @@ Updater clients should:
 2. Confirm `schemaVersion` is supported.
 3. Select the asset matching the current platform.
 4. Download the asset from `url`.
-5. Compute SHA-256 over the downloaded bytes and compare it with `sha256` before presenting or
-   opening the installer.
+5. Compute SHA-256 over the downloaded bytes and compare it with `sha256`.
+6. Open the verified local installer only after the user approves the update.
 
 Clients may also download `checksums.txt` and compare it against the JSON asset list as a secondary
 integrity check.

@@ -89,7 +89,8 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `opening an available update delegates to installer`() {
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun `opening an available update delegates to installer`() = runTest {
         val opened = mutableListOf<UpdateCandidate>()
         val candidate = UpdateCandidate(
             version = "1.0.3",
@@ -98,16 +99,23 @@ class SettingsViewModelTest {
             downloadUrl = "https://example.com/Daemonitor-1.0.3-linux.deb",
         )
         val vm = SettingsViewModel(
-            updateInstaller = UpdateInstaller { opened += it },
+            updateInstaller = UpdateInstaller { update, progress ->
+                progress(0.5)
+                opened += update
+            },
+            scope = this,
         )
 
         vm.openUpdate(candidate)
+        advanceUntilIdle()
 
         assertEquals(listOf(candidate), opened)
+        assertEquals(UpdateUiState.ReadyToInstall(candidate), vm.state.value.updateState)
     }
 
     @Test
-    fun `installer failures are surfaced in update state`() {
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun `installer failures are surfaced in update state`() = runTest {
         val candidate = UpdateCandidate(
             version = "1.0.3",
             releaseUrl = "https://example.com/release",
@@ -115,10 +123,12 @@ class SettingsViewModelTest {
             downloadUrl = "https://example.com/Daemonitor-1.0.3-windows.msi",
         )
         val vm = SettingsViewModel(
-            updateInstaller = UpdateInstaller { error("No desktop") },
+            updateInstaller = UpdateInstaller { _, _ -> error("No desktop") },
+            scope = this,
         )
 
         vm.openUpdate(candidate)
+        advanceUntilIdle()
 
         assertEquals(UpdateUiState.Failed("No desktop"), vm.state.value.updateState)
     }
@@ -128,7 +138,7 @@ class SettingsViewModelTest {
         scope: TestScope,
     ): SettingsViewModel = SettingsViewModel(
         updateChecker = { result },
-        updateInstaller = UpdateInstaller {},
+        updateInstaller = UpdateInstaller { _, _ -> },
         scope = scope,
     )
 }
