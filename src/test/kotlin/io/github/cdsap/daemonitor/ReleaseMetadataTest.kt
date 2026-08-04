@@ -12,6 +12,14 @@ import kotlin.test.assertTrue
 
 class ReleaseMetadataTest {
     @Test
+    fun `Gradle project and native package versions are aligned for v1_0_5`() {
+        val buildFile = Path.of("build.gradle.kts").readText()
+
+        assertTrue(buildFile.contains("version = \"1.0.5\""), buildFile)
+        assertTrue(buildFile.contains("val nativePackageVersion = \"1.0.5\""), buildFile)
+    }
+
+    @Test
     fun `metadata generator writes checksums and latest update contract`(@TempDir tempDir: Path) {
         val assetsDir = tempDir.resolve("assets").createDirectories()
         val outputDir = tempDir.resolve("metadata")
