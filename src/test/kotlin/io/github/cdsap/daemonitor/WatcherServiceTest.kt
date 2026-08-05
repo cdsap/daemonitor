@@ -4,13 +4,11 @@ import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
 import io.github.cdsap.daemonitor.ui.settings.UpdateUiState
 import io.github.cdsap.daemonitor.update.UpdateCheckResult
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
-import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.setMain
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 import kotlin.test.Test
@@ -23,9 +21,9 @@ class WatcherServiceTest {
     @Test
     fun `failed poll records sanitized error and failure timestamp`(@TempDir tmp: Path) = runTest {
         val database = WatcherDatabase.open(tmp.resolve("watcher.db"))
-        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        val uiDispatcher = UnconfinedTestDispatcher(testScheduler)
         try {
-            val service = service(database, tmp, clock = { 100 }) {
+            val service = service(database, tmp, uiDispatcher = uiDispatcher, clock = { 100 }) {
                 error("secret command line and log content")
             }
 
@@ -36,7 +34,6 @@ class WatcherServiceTest {
             assertEquals("IllegalStateException", error?.errorType)
             assertFalse(error.toString().contains("secret"))
         } finally {
-            Dispatchers.resetMain()
             database.close()
         }
     }
@@ -44,11 +41,11 @@ class WatcherServiceTest {
     @Test
     fun `repeated failure replaces the latest failure timestamp`(@TempDir tmp: Path) = runTest {
         val database = WatcherDatabase.open(tmp.resolve("watcher.db"))
-        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        val uiDispatcher = UnconfinedTestDispatcher(testScheduler)
         try {
             var now = 100L
             var firstFailure = true
-            val service = service(database, tmp, clock = { now }) {
+            val service = service(database, tmp, uiDispatcher = uiDispatcher, clock = { now }) {
                 if (firstFailure) throw IllegalArgumentException("first failure")
                 error("second failure")
             }
@@ -62,7 +59,6 @@ class WatcherServiceTest {
             assertEquals(200, error?.failedAtMs)
             assertEquals("IllegalStateException", error?.errorType)
         } finally {
-            Dispatchers.resetMain()
             database.close()
         }
     }
@@ -70,10 +66,10 @@ class WatcherServiceTest {
     @Test
     fun `successful retry clears the previous failure`(@TempDir tmp: Path) = runTest {
         val database = WatcherDatabase.open(tmp.resolve("watcher.db"))
-        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        val uiDispatcher = UnconfinedTestDispatcher(testScheduler)
         try {
             var fail = true
-            val service = service(database, tmp) {
+            val service = service(database, tmp, uiDispatcher = uiDispatcher) {
                 if (fail) error("failure")
                 WatcherRuntime.PollResult(emptyList(), emptyList(), buildsChanged = false)
             }
@@ -84,7 +80,6 @@ class WatcherServiceTest {
 
             assertNull(service.liveViewModel.state.value.pollError)
         } finally {
-            Dispatchers.resetMain()
             database.close()
         }
     }
@@ -92,12 +87,13 @@ class WatcherServiceTest {
     @Test
     fun `starting service checks for updates`(@TempDir tmp: Path) = runTest {
         val database = WatcherDatabase.open(tmp.resolve("watcher.db"))
-        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        val uiDispatcher = UnconfinedTestDispatcher(testScheduler)
         try {
             var updateChecks = 0
             val service = service(
                 database = database,
                 tmp = tmp,
+                uiDispatcher = uiDispatcher,
                 updateChecker = {
                     updateChecks += 1
                     UpdateCheckResult.UpToDate("1.0.3")
@@ -112,7 +108,6 @@ class WatcherServiceTest {
             assertEquals(1, updateChecks)
             assertEquals(UpdateUiState.UpToDate("1.0.3"), service.settingsViewModel.state.value.updateState)
         } finally {
-            Dispatchers.resetMain()
             database.close()
         }
     }
@@ -120,6 +115,7 @@ class WatcherServiceTest {
     private fun service(
         database: WatcherDatabase,
         tmp: Path,
+        uiDispatcher: CoroutineDispatcher,
         clock: () -> Long = { 0 },
         updateChecker: suspend () -> UpdateCheckResult = { UpdateCheckResult.UpToDate("1.0.3") },
         pollAction: suspend () -> WatcherRuntime.PollResult,
@@ -130,5 +126,6 @@ class WatcherServiceTest {
         clock = clock,
         pollAction = pollAction,
         updateChecker = updateChecker,
+        uiDispatcher = uiDispatcher,
     )
 }
