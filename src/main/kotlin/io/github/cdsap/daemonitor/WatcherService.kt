@@ -10,9 +10,11 @@ import io.github.cdsap.daemonitor.ui.settings.SettingsUiState
 import io.github.cdsap.daemonitor.ui.settings.SettingsViewModel
 import io.github.cdsap.daemonitor.update.GitHubReleaseUpdateSource
 import io.github.cdsap.daemonitor.update.UpdateCheckResult
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -28,6 +30,7 @@ class WatcherService(
     private val updateChecker: suspend () -> UpdateCheckResult = {
         GitHubReleaseUpdateSource().check(BuildInfo.current.version)
     },
+    private val uiDispatcher: CoroutineDispatcher = Dispatchers.Main,
 ) {
     val liveViewModel = LiveViewModel()
     val historyViewModel = HistoryViewModel()
@@ -41,6 +44,7 @@ class WatcherService(
         onRetentionChange = ::onRetentionChanged,
         onAppearanceChange = ::onAppearanceChanged,
         updateChecker = updateChecker,
+        scope = CoroutineScope(SupervisorJob() + uiDispatcher),
     )
 
     private var serviceScope: CoroutineScope? = null
@@ -90,7 +94,7 @@ class WatcherService(
     private suspend fun refreshHistory() {
         val builds = database.recentBuilds()
         val projects = database.distinctProjects()
-        withContext(Dispatchers.Main) {
+        withContext(uiDispatcher) {
             historyViewModel.onBuilds(builds)
             historyViewModel.onProjects(projects)
         }
@@ -102,7 +106,7 @@ class WatcherService(
 
         // Surface the selected daemon's tail, if any is selected.
         val selectedTail = selectedDaemonTail(result)
-        withContext(Dispatchers.Main) {
+        withContext(uiDispatcher) {
             liveViewModel.onPoll(result.processes, selectedTail)
         }
 
@@ -118,7 +122,7 @@ class WatcherService(
             throw error
         } catch (error: Exception) {
             val errorType = error::class.simpleName ?: "UnknownError"
-            withContext(Dispatchers.Main) {
+            withContext(uiDispatcher) {
                 liveViewModel.onPollFailure(clock(), errorType)
             }
         }
