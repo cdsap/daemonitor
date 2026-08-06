@@ -10,6 +10,7 @@ import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.domain.model.Source
+import io.github.cdsap.daemonitor.store.db.Process_samples
 import io.github.cdsap.daemonitor.store.db.WatcherDb
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -90,6 +91,34 @@ class WatcherDatabase private constructor(
     fun recentBuilds(): List<Build> =
         db.watcherQueries.recentBuilds().executeAsList().map { it.toDomain() }
 
+    fun buildsForDaemonPid(pid: Long, limit: Long = DEFAULT_QUERY_LIMIT): List<Build> =
+        db.watcherQueries.buildsForDaemonPid(pid, limit.coerceQueryLimit()).executeAsList()
+            .map { it.toDomain() }
+
+    fun searchBuilds(query: String, limit: Long = DEFAULT_QUERY_LIMIT): List<Build> {
+        val sanitizedQuery = query.trim()
+        if (sanitizedQuery.isEmpty()) return recentBuilds().take(limit.coerceQueryLimit().toInt())
+        return db.watcherQueries.searchBuilds(
+            sanitizedQuery,
+            sanitizedQuery,
+            sanitizedQuery,
+            sanitizedQuery,
+            sanitizedQuery,
+            sanitizedQuery,
+            sanitizedQuery,
+            sanitizedQuery,
+            limit.coerceQueryLimit(),
+        ).executeAsList().map { it.toDomain() }
+    }
+
+    fun recentProcessSamples(limit: Long = DEFAULT_QUERY_LIMIT): List<ProcessSample> =
+        db.watcherQueries.recentProcessSamples(limit.coerceQueryLimit()).executeAsList()
+            .map { it.toDomain() }
+
+    fun processSamplesForPid(pid: Long, limit: Long = DEFAULT_QUERY_LIMIT): List<ProcessSample> =
+        db.watcherQueries.processSamplesForPid(pid, limit.coerceQueryLimit()).executeAsList()
+            .map { it.toDomain() }
+
     /** One-shot snapshot of distinct project paths for the History filter dropdown. */
     fun distinctProjects(): List<String> =
         db.watcherQueries.distinctProjects().executeAsList()
@@ -143,6 +172,11 @@ class WatcherDatabase private constructor(
             ).forEach { sql -> runCatching { driver.execute(null, sql, 0) } }
         }
 
+        private const val DEFAULT_QUERY_LIMIT = 50L
+        private const val MAX_QUERY_LIMIT = 200L
+
+        private fun Long.coerceQueryLimit(): Long = coerceIn(1, MAX_QUERY_LIMIT)
+
         /** Owner-only file permissions + Time Machine exclusion (KTD-7/Privacy). Best-effort. */
         private fun hardenFilePrivacy(path: Path) {
             runCatching {
@@ -174,5 +208,34 @@ class WatcherDatabase private constructor(
             agent = agent,
             agentProvider = agent_provider,
         )
+
+        private fun Process_samples.toDomain(): ProcessSample = ProcessSample(
+            timestampMs = timestamp,
+            pid = pid,
+            parentPid = parent_pid,
+            processType = runCatching { ProcessType.valueOf(process_type) }
+                .getOrDefault(ProcessType.JAVA_GRADLE_RELATED),
+            commandLine = command_line,
+            workingDirectory = working_directory,
+            projectPath = project_path,
+            cpuPercent = cpu_percent,
+            rssMemoryMb = rss_memory_mb,
+            maxHeapMb = max_heap_mb,
+            status = status,
+        )
     }
 }
+
+data class ProcessSample(
+    val timestampMs: Long,
+    val pid: Long,
+    val parentPid: Long,
+    val processType: ProcessType,
+    val commandLine: String,
+    val workingDirectory: String?,
+    val projectPath: String?,
+    val cpuPercent: Double?,
+    val rssMemoryMb: Long,
+    val maxHeapMb: Long?,
+    val status: String,
+)
