@@ -119,6 +119,7 @@ internal fun DaemonitorContent(
                         state = settingsState,
                         onRetentionDays = service.settingsViewModel::setRetentionDays,
                         onAppearance = service.settingsViewModel::setAppearance,
+                        onMcpEnabled = service.settingsViewModel::setMcpEnabled,
                         onCheckForUpdates = service.settingsViewModel::checkForUpdates,
                         onOpenUpdate = service.settingsViewModel::openUpdate,
                     )

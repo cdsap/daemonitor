@@ -137,12 +137,39 @@ termination signal.
 
 ## Connect MCP
 
-MCP clients should start Daemonitor through the native packaged launcher with the `--mcp` argument.
-Do not point an MCP client at `./gradlew run`; Gradle writes its own progress output to stdout, which
-can corrupt stdio MCP messages. For local development, build a distributable first and use the
-launcher inside `build/compose/binaries/main/app/`.
+Daemonitor exposes read-only MCP from the desktop app:
 
-Example MCP server config:
+1. Open Daemonitor.
+2. Go to Settings.
+3. Enable MCP.
+4. Copy the local URL and token shown in Settings into your MCP client.
+
+Example HTTP MCP client config:
+
+```json
+{
+  "mcpServers": {
+    "daemonitor": {
+      "url": "http://127.0.0.1:17333/mcp",
+      "headers": {
+        "Authorization": "Bearer <token from Daemonitor Settings>"
+      }
+    }
+  }
+}
+```
+
+The in-app MCP server binds only to `127.0.0.1` and requires the token shown in Settings. Keep
+Daemonitor open while your MCP client is connected. It is read-only: it can search Daemonitor's
+retained SQL history and poll current Gradle-related processes, but it does not start, stop, or
+modify builds.
+
+Clients that only support stdio can still start Daemonitor through the native packaged launcher with
+the `--mcp` argument. Do not point a stdio MCP client at `./gradlew run`; Gradle writes its own
+progress output to stdout, which can corrupt stdio MCP messages. For local development, build a
+distributable first and use the launcher inside `build/compose/binaries/main/app/`.
+
+Example stdio MCP client config:
 
 ```json
 {
@@ -155,9 +182,8 @@ Example MCP server config:
 }
 ```
 
-Replace `command` with the installed launcher path for your operating system. The MCP server exits
-when the client disconnects. It is read-only: it can search Daemonitor's retained SQL history and
-poll current Gradle-related processes, but it does not start, stop, or modify builds.
+Replace `command` with the installed launcher path for your operating system. The stdio server exits
+when the client disconnects.
 
 ## Build a native distribution
 

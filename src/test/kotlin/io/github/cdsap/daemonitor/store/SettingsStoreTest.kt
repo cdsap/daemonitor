@@ -5,20 +5,37 @@ import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 
 class SettingsStoreTest {
 
     @Test
     fun `missing file returns defaults`(@TempDir tmp: Path) {
         val store = SettingsStore(tmp.resolve("settings.properties"))
-        assertEquals(Settings(), store.load())
+        val settings = store.load()
+        assertEquals(Defaults.DEFAULT_RETENTION_DAYS, settings.retentionDays)
+        assertEquals(AppearancePreference.SYSTEM, settings.appearance)
+        assertFalse(settings.mcpEnabled)
+        assertEquals(Defaults.DEFAULT_MCP_PORT, settings.mcpPort)
+        assertFalse(settings.mcpToken.isBlank())
     }
 
     @Test
-    fun `save then load round-trips retention`(@TempDir tmp: Path) {
+    fun `save then load round-trips settings`(@TempDir tmp: Path) {
         val path = tmp.resolve("settings.properties")
-        SettingsStore(path).save(Settings(retentionDays = 30, appearance = AppearancePreference.DARK))
-        assertEquals(Settings(30, AppearancePreference.DARK), SettingsStore(path).load())
+        SettingsStore(path).save(
+            Settings(
+                retentionDays = 30,
+                appearance = AppearancePreference.DARK,
+                mcpEnabled = true,
+                mcpPort = 18_123,
+                mcpToken = "test-token",
+            ),
+        )
+        assertEquals(
+            Settings(30, AppearancePreference.DARK, mcpEnabled = true, mcpPort = 18_123, mcpToken = "test-token"),
+            SettingsStore(path).load(),
+        )
     }
 
     @Test

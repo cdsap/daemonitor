@@ -52,6 +52,26 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun `enabling mcp updates state and notifies once`() {
+        val changes = mutableListOf<Boolean>()
+        val vm = SettingsViewModel(onMcpEnabledChange = { changes += it })
+        vm.setMcpEnabled(true)
+        vm.setMcpEnabled(true)
+        assertEquals(true, vm.state.value.mcpEnabled)
+        assertEquals(McpUiState.Starting, vm.state.value.mcpState)
+        assertEquals(listOf(true), changes)
+    }
+
+    @Test
+    fun `mcp runtime state can report running and failed`() {
+        val vm = SettingsViewModel()
+        vm.setMcpRunning("http://127.0.0.1:17333/mcp")
+        assertEquals(McpUiState.Running("http://127.0.0.1:17333/mcp"), vm.state.value.mcpState)
+        vm.setMcpFailed("Port already in use")
+        assertEquals(McpUiState.Failed("Port already in use"), vm.state.value.mcpState)
+    }
+
+    @Test
     @OptIn(ExperimentalCoroutinesApi::class)
     fun `checking for updates exposes available update state`() = runTest {
         val candidate = UpdateCandidate(

@@ -10,6 +10,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.runComposeUiTest
 import io.github.cdsap.daemonitor.store.AppearancePreference
 import io.github.cdsap.daemonitor.update.UpdateCandidate
@@ -88,6 +89,46 @@ class SettingsScreenUiTest {
         onNodeWithText("Check for updates").performClick()
 
         assertEquals(1, checks)
+    }
+
+    @Test
+    fun `mcp card can enable the local server`() = runComposeUiTest {
+        var enabled: Boolean? = null
+        setContent {
+            WatcherTheme {
+                SettingsScreen(
+                    SettingsUiState(mcpToken = "test-token"),
+                    onRetentionDays = {},
+                    onMcpEnabled = { enabled = it },
+                )
+            }
+        }
+
+        onNodeWithText("Enable MCP").performScrollTo().assertExists()
+        onNodeWithText("Expose read-only build history and current Gradle processes to local MCP clients.").assertExists()
+        onNodeWithText("Enable MCP").performClick()
+
+        assertEquals(true, enabled)
+    }
+
+    @Test
+    fun `enabled mcp card renders connection details`() = runComposeUiTest {
+        setContent {
+            WatcherTheme {
+                SettingsScreen(
+                    SettingsUiState(
+                        mcpEnabled = true,
+                        mcpPort = 18_123,
+                        mcpToken = "test-token",
+                        mcpState = McpUiState.Running("http://127.0.0.1:18123/mcp"),
+                    ),
+                    onRetentionDays = {},
+                )
+            }
+        }
+
+        onNodeWithText("URL: http://127.0.0.1:18123/mcp").performScrollTo().assertExists()
+        onNodeWithText("Token: test-token").assertExists()
     }
 
     @Test
