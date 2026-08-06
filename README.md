@@ -58,6 +58,16 @@ mode uses the same local database and settings as the desktop app, shows a syste
 when the OS supports it, and offers **Open Daemonitor** and **Quit Daemonitor** actions from that
 menu.
 
+### MCP access
+
+Daemonitor can also run as a local, read-only MCP server so agent tools can inspect retained build
+history and currently visible Gradle-related processes. The MCP mode uses stdio, reads the same local
+SQLite database as the desktop app, and exposes these tools:
+
+- `daemonitor_search_history`: search retained builds by id, command, project, status, source, or agent.
+- `daemonitor_builds_for_process`: find retained builds and process samples for a daemon PID or process text.
+- `daemonitor_current_processes`: return the Gradle-related processes visible right now.
+
 ### AI-agent attribution
 Daemonitor fingerprints the coding agent behind a build from the environment-variable *names* the
 daemon recorded (names only — never values, staying within the redaction posture). It recognizes
@@ -124,6 +134,30 @@ Packaged launchers also accept `--headless`. Headless and desktop modes use the 
 and retention setting. On desktop operating systems, the tray/menu-bar icon can reopen Daemonitor or
 quit the collector. Stop source-run headless mode with `Ctrl+C` or the service manager's normal
 termination signal.
+
+## Connect MCP
+
+MCP clients should start Daemonitor through the native packaged launcher with the `--mcp` argument.
+Do not point an MCP client at `./gradlew run`; Gradle writes its own progress output to stdout, which
+can corrupt stdio MCP messages. For local development, build a distributable first and use the
+launcher inside `build/compose/binaries/main/app/`.
+
+Example MCP server config:
+
+```json
+{
+  "mcpServers": {
+    "daemonitor": {
+      "command": "/Applications/Daemonitor.app/Contents/MacOS/Daemonitor",
+      "args": ["--mcp"]
+    }
+  }
+}
+```
+
+Replace `command` with the installed launcher path for your operating system. The MCP server exits
+when the client disconnects. It is read-only: it can search Daemonitor's retained SQL history and
+poll current Gradle-related processes, but it does not start, stop, or modify builds.
 
 ## Build a native distribution
 
