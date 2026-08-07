@@ -1,6 +1,7 @@
 package io.github.cdsap.daemonitor.ui.settings
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,22 +11,27 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.github.cdsap.daemonitor.Defaults
@@ -42,12 +48,14 @@ fun SettingsScreen(
     state: SettingsUiState,
     onRetentionDays: (Long) -> Unit,
     onAppearance: (AppearancePreference) -> Unit = {},
+    onMcpEnabled: (Boolean) -> Unit = {},
     onCheckForUpdates: () -> Unit = {},
     onOpenUpdate: (io.github.cdsap.daemonitor.update.UpdateCandidate) -> Unit = {},
 ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .background(MaterialTheme.colorScheme.background),
     ) {
         ScreenHeader("Settings")
@@ -175,11 +183,69 @@ fun SettingsScreen(
                 }
             }
         }
+        Spacer(Modifier.height(Space.md))
+        SectionCard(
+            "MCP",
+            modifier = Modifier.fillMaxWidth().height(230.dp).padding(horizontal = Space.lg),
+        ) {
+            Column {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .toggleable(
+                            value = state.mcpEnabled,
+                            role = Role.Switch,
+                            onValueChange = onMcpEnabled,
+                        ),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
+                        Icon(Icons.Filled.Hub, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Text("Enable MCP", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    Switch(
+                        checked = state.mcpEnabled,
+                        onCheckedChange = null,
+                    )
+                }
+                Spacer(Modifier.height(Space.sm))
+                Text(
+                    state.mcpState.message(state.mcpPort),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (state.mcpEnabled) {
+                    Spacer(Modifier.height(Space.sm))
+                    Text(
+                        "URL: ${state.mcpEndpoint}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(Space.xs))
+                    Text(
+                        "Token: ${state.mcpToken}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
     }
 }
 
 private val AppearancePreference.displayName: String
     get() = name.lowercase().replaceFirstChar(Char::uppercase)
+
+private val SettingsUiState.mcpEndpoint: String
+    get() = (mcpState as? McpUiState.Running)?.endpoint ?: "http://127.0.0.1:$mcpPort/mcp"
+
+private fun McpUiState.message(port: Int): String = when (this) {
+    McpUiState.Stopped -> "Expose read-only build history and current Gradle processes to local MCP clients."
+    McpUiState.Starting -> "Starting local MCP server on 127.0.0.1:$port..."
+    is McpUiState.Running -> "Running on $endpoint. Keep Daemonitor open while your MCP client is connected."
+    is McpUiState.Failed -> "MCP could not start: $message"
+}
 
 private val UpdateUiState.message: String
     get() = when (this) {

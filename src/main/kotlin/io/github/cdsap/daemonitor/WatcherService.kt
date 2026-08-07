@@ -4,8 +4,11 @@ import io.github.cdsap.daemonitor.store.AppearancePreference
 import io.github.cdsap.daemonitor.store.Settings
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
+import io.github.cdsap.daemonitor.mcp.DaemonitorMcpHttpServer
+import io.github.cdsap.daemonitor.mcp.DaemonitorMcpServer
 import io.github.cdsap.daemonitor.ui.history.HistoryViewModel
 import io.github.cdsap.daemonitor.ui.live.LiveViewModel
+import io.github.cdsap.daemonitor.ui.settings.McpUiState
 import io.github.cdsap.daemonitor.ui.settings.SettingsUiState
 import io.github.cdsap.daemonitor.ui.settings.SettingsViewModel
 import io.github.cdsap.daemonitor.update.GitHubReleaseUpdateSource
@@ -40,17 +43,27 @@ class WatcherService(
     @Volatile private var retentionDays: Long = initialSettings.retentionDays
 
     val settingsViewModel = SettingsViewModel(
-        initial = SettingsUiState(retentionDays = retentionDays, appearance = initialSettings.appearance),
+        initial = SettingsUiState(
+            retentionDays = retentionDays,
+            appearance = initialSettings.appearance,
+            mcpEnabled = initialSettings.mcpEnabled,
+            mcpPort = initialSettings.mcpPort,
+            mcpToken = initialSettings.mcpToken,
+        ),
         onRetentionChange = ::onRetentionChanged,
         onAppearanceChange = ::onAppearanceChanged,
+        onMcpEnabledChange = ::onMcpEnabledChanged,
         updateChecker = updateChecker,
         scope = CoroutineScope(SupervisorJob() + uiDispatcher),
     )
 
     private var serviceScope: CoroutineScope? = null
+    @Volatile private var mcpHttpServer: DaemonitorMcpHttpServer? = null
+
     fun start(scope: CoroutineScope) {
         serviceScope = scope
         settingsViewModel.checkForUpdates()
+        if (settingsViewModel.state.value.mcpEnabled) startMcpServer(scope)
         database.purgeOlderThan(clock(), retentionDays)
         // Load whatever history already exists, then keep it current from the poll loop.
         scope.launch(Dispatchers.IO) { refreshHistory() }
@@ -78,11 +91,64 @@ class WatcherService(
         saveSettings(appearance)
     }
 
-    private fun saveSettings(appearance: AppearancePreference = settingsViewModel.state.value.appearance) {
+    private fun onMcpEnabledChanged(enabled: Boolean) {
+        saveSettings(mcpEnabled = enabled)
+        val scope = serviceScope ?: return
+        if (enabled) {
+            startMcpServer(scope)
+        } else {
+            mcpHttpServer?.close()
+            mcpHttpServer = null
+            settingsViewModel.setMcpRunningState(McpUiState.Stopped)
+        }
+    }
+
+    private fun startMcpServer(scope: CoroutineScope) {
+        val existing = mcpHttpServer
+        if (existing != null) {
+            settingsViewModel.setMcpRunning(existing.endpoint)
+            return
+        }
+        scope.launch(Dispatchers.IO) {
+            withContext(uiDispatcher) {
+                settingsViewModel.setMcpRunningState(McpUiState.Starting)
+            }
+            runCatching {
+                val state = settingsViewModel.state.value
+                DaemonitorMcpHttpServer.start(
+                    port = state.mcpPort,
+                    token = state.mcpToken,
+                    server = DaemonitorMcpServer(database),
+                )
+            }.onSuccess { server ->
+                if (!settingsViewModel.state.value.mcpEnabled) {
+                    server.close()
+                    return@onSuccess
+                }
+                mcpHttpServer = server
+                withContext(uiDispatcher) {
+                    settingsViewModel.setMcpRunning(server.endpoint)
+                }
+            }.onFailure { error ->
+                withContext(uiDispatcher) {
+                    settingsViewModel.setMcpFailed(error.message ?: error::class.simpleName ?: "Could not start MCP")
+                }
+            }
+        }
+    }
+
+    private fun saveSettings(
+        appearance: AppearancePreference = settingsViewModel.state.value.appearance,
+        mcpEnabled: Boolean = settingsViewModel.state.value.mcpEnabled,
+    ) {
+        val state = settingsViewModel.state.value
         settingsStore.save(
             Settings(
                 retentionDays = retentionDays,
                 appearance = appearance,
+                mcpEnabled = mcpEnabled,
+                mcpPort = state.mcpPort,
+                mcpToken = state.mcpToken,
             ),
         )
     }

@@ -21,6 +21,10 @@ data class SettingsUiState(
     val retentionDays: Long = Defaults.DEFAULT_RETENTION_DAYS,
     val appearance: AppearancePreference = AppearancePreference.SYSTEM,
     val updateState: UpdateUiState = UpdateUiState.NotChecked,
+    val mcpEnabled: Boolean = false,
+    val mcpPort: Int = Defaults.DEFAULT_MCP_PORT,
+    val mcpToken: String = "",
+    val mcpState: McpUiState = McpUiState.Stopped,
 ) {
     val updateNotificationCount: Int
         get() = when (updateState) {
@@ -29,6 +33,13 @@ data class SettingsUiState(
             is UpdateUiState.ReadyToInstall -> 1
             else -> 0
         }
+}
+
+sealed interface McpUiState {
+    data object Stopped : McpUiState
+    data object Starting : McpUiState
+    data class Running(val endpoint: String) : McpUiState
+    data class Failed(val message: String) : McpUiState
 }
 
 sealed interface UpdateUiState {
@@ -49,6 +60,7 @@ class SettingsViewModel(
     initial: SettingsUiState = SettingsUiState(),
     private val onRetentionChange: (Long) -> Unit = {},
     private val onAppearanceChange: (AppearancePreference) -> Unit = {},
+    private val onMcpEnabledChange: (Boolean) -> Unit = {},
     private val updateChecker: suspend () -> UpdateCheckResult = {
         GitHubReleaseUpdateSource().check(BuildInfo.current.version)
     },
@@ -69,6 +81,27 @@ class SettingsViewModel(
         if (appearance == _state.value.appearance) return
         _state.value = _state.value.copy(appearance = appearance)
         onAppearanceChange(appearance)
+    }
+
+    fun setMcpEnabled(enabled: Boolean) {
+        if (enabled == _state.value.mcpEnabled) return
+        _state.value = _state.value.copy(
+            mcpEnabled = enabled,
+            mcpState = if (enabled) McpUiState.Starting else McpUiState.Stopped,
+        )
+        onMcpEnabledChange(enabled)
+    }
+
+    fun setMcpRunning(endpoint: String) {
+        _state.value = _state.value.copy(mcpState = McpUiState.Running(endpoint))
+    }
+
+    fun setMcpRunningState(state: McpUiState) {
+        _state.value = _state.value.copy(mcpState = state)
+    }
+
+    fun setMcpFailed(message: String) {
+        _state.value = _state.value.copy(mcpState = McpUiState.Failed(message))
     }
 
     fun checkForUpdates() {

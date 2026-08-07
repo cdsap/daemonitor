@@ -31,6 +31,9 @@ object Defaults {
     /** Retention choices shared by Settings and the Historical view filter. */
     val RETENTION_PRESETS: List<Long> = listOf(7, 15, 30, 60, 90)
 
+    /** Default localhost port for the optional MCP HTTP endpoint exposed from Settings. */
+    const val DEFAULT_MCP_PORT: Int = 17333
+
     /** Memory highlight thresholds, in MiB of RSS (U9). */
     const val MEM_WARN_MB: Long = 4_096
     const val MEM_CRIT_MB: Long = 8_192

@@ -66,6 +66,27 @@ SELECT *
 FROM builds
 ORDER BY start_time DESC;
 
+buildsForDaemonPid:
+SELECT *
+FROM builds
+WHERE daemon_pid = ?
+ORDER BY start_time DESC
+LIMIT ?;
+
+searchBuilds:
+SELECT *
+FROM builds
+WHERE lower(build_id) LIKE '%' || lower(?) || '%'
+   OR lower(COALESCE(command_line, '')) LIKE '%' || lower(?) || '%'
+   OR lower(COALESCE(working_directory, '')) LIKE '%' || lower(?) || '%'
+   OR lower(COALESCE(project_path, '')) LIKE '%' || lower(?) || '%'
+   OR lower(COALESCE(inferred_source, '')) LIKE '%' || lower(?) || '%'
+   OR lower(COALESCE(final_status, '')) LIKE '%' || lower(?) || '%'
+   OR lower(COALESCE(agent, '')) LIKE '%' || lower(?) || '%'
+   OR lower(COALESCE(agent_provider, '')) LIKE '%' || lower(?) || '%'
+ORDER BY start_time DESC
+LIMIT ?;
+
 buildsSince:
 SELECT *
 FROM builds
@@ -77,6 +98,19 @@ SELECT DISTINCT project_path
 FROM builds
 WHERE project_path IS NOT NULL
 ORDER BY project_path;
+
+recentProcessSamples:
+SELECT *
+FROM process_samples
+ORDER BY timestamp DESC
+LIMIT ?;
+
+processSamplesForPid:
+SELECT *
+FROM process_samples
+WHERE pid = ?
+ORDER BY timestamp DESC
+LIMIT ?;
 
 purgeSamplesOlderThan:
 DELETE FROM process_samples WHERE timestamp < ?;

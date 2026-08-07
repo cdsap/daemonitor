@@ -26,6 +26,7 @@ import io.github.cdsap.daemonitor.ui.common.WatcherTheme
 import io.github.cdsap.daemonitor.ui.history.HistoryScreen
 import io.github.cdsap.daemonitor.ui.live.LiveMonitorScreen
 import io.github.cdsap.daemonitor.ui.settings.SettingsScreen
+import io.github.cdsap.daemonitor.mcp.DaemonitorMcpStdio
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -37,6 +38,10 @@ fun main(args: Array<String>) {
     if (args.firstOrNull() == "--headless") {
         val exitCode = HeadlessLauncher.run(args.drop(1).toTypedArray())
         if (exitCode != 0) kotlin.system.exitProcess(exitCode)
+        return
+    }
+    if (args.firstOrNull() == "--mcp") {
+        DaemonitorMcpStdio.run()
         return
     }
     DesktopDockIcon.configure()
@@ -114,6 +119,7 @@ internal fun DaemonitorContent(
                         state = settingsState,
                         onRetentionDays = service.settingsViewModel::setRetentionDays,
                         onAppearance = service.settingsViewModel::setAppearance,
+                        onMcpEnabled = service.settingsViewModel::setMcpEnabled,
                         onCheckForUpdates = service.settingsViewModel::checkForUpdates,
                         onOpenUpdate = service.settingsViewModel::openUpdate,
                     )
