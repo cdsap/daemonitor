@@ -259,5 +259,5 @@ from Settings, and for installer downloads that you explicitly approve.
 
 ## Status
 
-Early (v1.0.5). The data model and detection heuristics are evolving; see `requirements.md` for the
+Early (v1.0.6). The data model and detection heuristics are evolving; see `requirements.md` for the
 original specification.

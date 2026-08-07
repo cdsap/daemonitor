@@ -12,11 +12,11 @@ import kotlin.test.assertTrue
 
 class ReleaseMetadataTest {
     @Test
-    fun `Gradle project and native package versions are aligned for v1_0_5`() {
+    fun `Gradle project and native package versions are aligned for v1_0_6`() {
         val buildFile = Path.of("build.gradle.kts").readText()
 
-        assertTrue(buildFile.contains("version = \"1.0.5\""), buildFile)
-        assertTrue(buildFile.contains("val nativePackageVersion = \"1.0.5\""), buildFile)
+        assertTrue(buildFile.contains("version = \"1.0.6\""), buildFile)
+        assertTrue(buildFile.contains("val nativePackageVersion = \"1.0.6\""), buildFile)
     }
 
     @Test
