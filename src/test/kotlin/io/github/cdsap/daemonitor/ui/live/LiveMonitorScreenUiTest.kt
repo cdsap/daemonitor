@@ -24,7 +24,10 @@ import kotlin.test.Test
 @OptIn(ExperimentalTestApi::class)
 class LiveMonitorScreenUiTest {
 
-    private fun sampleProcess(commandLine: String = "java org.gradle.launcher.daemon.bootstrap.GradleDaemon 9.5") = GradleProcess(
+    private fun sampleProcess(
+        commandLine: String = "java org.gradle.launcher.daemon.bootstrap.GradleDaemon 9.5",
+        maxHeapMb: Long? = 4096,
+    ) = GradleProcess(
         pid = 4321,
         parentPid = 1,
         type = ProcessType.GRADLE_DAEMON,
@@ -33,7 +36,7 @@ class LiveMonitorScreenUiTest {
         projectPath = "/Users/dev/my-app",
         cpuPercent = 12.0,
         rssMemoryMb = 1024,
-        maxHeapMb = 4096,
+        maxHeapMb = maxHeapMb,
         minHeapMb = 256,
         gc = "G1",
         startTimeMs = 1_700_000_000_000,
@@ -84,6 +87,65 @@ class LiveMonitorScreenUiTest {
 
         onNodeWithText("UPTIME").assertExists()        // new column header
         onNodeWithText("Gradle daemon").assertExists() // classified type label in the row
+    }
+
+    @Test
+    fun `live processes render memory allocation graph with rss and heap limit`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+
+        val state = LiveUiState(
+            processes = listOf(sampleProcess()),
+            summary = LiveSummary(activeProcessCount = 1, totalRssMb = 1024, highestMemoryPid = 4321, activeProjectCount = 1),
+            isLoading = false,
+            isEmpty = false,
+        )
+        setContent {
+            WatcherTheme(appearance = AppearancePreference.DARK) {
+                LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+            }
+        }
+
+        onNodeWithText("Memory allocation").assertExists()
+        onNodeWithText("RSS 1024 MB").assertExists()
+        onNodeWithText("Heap limit 4096 MB").assertExists()
+    }
+
+    @Test
+    fun `memory allocation graph labels missing heap limit as unavailable`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+
+        val state = LiveUiState(
+            processes = listOf(sampleProcess(maxHeapMb = null)),
+            summary = LiveSummary(activeProcessCount = 1, totalRssMb = 1024, highestMemoryPid = 4321, activeProjectCount = 1),
+            isLoading = false,
+            isEmpty = false,
+        )
+        setContent {
+            WatcherTheme(appearance = AppearancePreference.DARK) {
+                LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+            }
+        }
+
+        onNodeWithText("RSS 1024 MB").assertExists()
+        onNodeWithText("Heap limit unavailable").assertExists()
+    }
+
+    @Test
+    fun `empty live monitor does not render memory allocation graph`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+
+        setContent {
+            WatcherTheme(appearance = AppearancePreference.DARK) {
+                LiveMonitorScreen(
+                    LiveUiState(processes = emptyList(), isLoading = false, isEmpty = true),
+                    onSelect = {},
+                    onClearSelection = {},
+                )
+            }
+        }
+
+        onNodeWithText("No Gradle processes are running right now.").assertExists()
+        onNodeWithText("Memory allocation").assertDoesNotExist()
     }
 
     @Test
