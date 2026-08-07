@@ -29,6 +29,7 @@ import io.github.cdsap.daemonitor.ui.live.DetailState
 import io.github.cdsap.daemonitor.ui.live.LiveMonitorScreen
 import io.github.cdsap.daemonitor.ui.live.LiveSummary
 import io.github.cdsap.daemonitor.ui.live.LiveUiState
+import io.github.cdsap.daemonitor.ui.live.ProcessVisualScreen
 import io.github.cdsap.daemonitor.ui.settings.SettingsScreen
 import io.github.cdsap.daemonitor.ui.settings.SettingsUiState
 import org.junit.jupiter.api.Tag
@@ -88,6 +89,9 @@ class ReadmeScreenshotCapture {
                 AppScaffold(
                     liveContent = {
                         LiveMonitorScreen(liveState, onSelect = {}, onClearSelection = {})
+                    },
+                    visualContent = {
+                        ProcessVisualScreen(liveState)
                     },
                     historyContent = {
                         HistoryScreen(historyState, onProject = {}, onTimeRange = {})

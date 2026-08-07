@@ -49,6 +49,7 @@ class AppScaffoldUiTest {
             WatcherTheme {
                 AppScaffold(
                     liveContent = { Text("Live content") },
+                    visualContent = { Text("Visual content") },
                     historyContent = { Text("History content") },
                     settingsContent = { Text("Settings content") },
                 )
@@ -56,6 +57,8 @@ class AppScaffoldUiTest {
         }
 
         onNodeWithText("Live content").assertExists()
+        onNodeWithText("Visual").performClick()
+        onNodeWithText("Visual content").assertExists()
         onNodeWithText("History").performClick()
         onNodeWithText("History content").assertExists()
         onNodeWithText("Settings").performClick()
