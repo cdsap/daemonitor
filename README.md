@@ -37,6 +37,16 @@ startup or from Settings, plus installer downloads that you explicitly approve.
 - Per-daemon detail with `-Xmx`, GC, working dir, full (redacted) command line, and a live tail of the daemon log
 - One-click switch to headless mode from the toolbar when you want collection to continue without the desktop window
 
+### Visual
+
+![Daemonitor Visual tab showing per-process RSS and configured heap (-Xmx) timelines](docs/images/process-visual.png)
+
+*Visual timeline of resident memory and configured heap for live Gradle processes.*
+
+- Full-width **RSS & Heap** chart over a rolling window
+- **Solid** series for RSS, **dashed** for configured heap (`-Xmx`) when recoverable
+- Totals plus a legend for every process — click to show/hide series or focus selected heap
+
 ### Historical
 
 ![Daemonitor build history showing status and source tags, agent attribution, metrics, and build details](docs/images/build-history.png)
@@ -219,7 +229,7 @@ Compose screens at the application's native 1180×760 window size. After a visib
 ./gradlew captureReadmeScreenshots test
 ```
 
-Review both files in `docs/images/` before committing. Keep sample paths and logs synthetic; never
+Review the files in `docs/images/` before committing. Keep sample paths and logs synthetic; never
 capture a locally running instance with personal paths, environment values, or command-line secrets.
 
 ---
