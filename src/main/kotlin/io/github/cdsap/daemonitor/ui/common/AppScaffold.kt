@@ -3,6 +3,7 @@ package io.github.cdsap.daemonitor.ui.common
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,8 +14,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
@@ -40,6 +43,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.github.cdsap.daemonitor.BuildInfo
+import io.github.cdsap.daemonitor.ui.settings.McpUiState
 
 /** Top-level navigation: Live Monitor and Historical tabs (U7). Resolves the navigation-model gap. */
 @Composable
@@ -50,6 +54,7 @@ fun AppScaffold(
     settingsContent: @Composable () -> Unit,
     onSwitchToHeadless: () -> Unit = {},
     settingsNotificationCount: Int = 0,
+    mcpState: McpUiState = McpUiState.Stopped,
     buildInfo: BuildInfo = BuildInfo.current,
 ) {
     var selectedTab by remember { mutableStateOf(0) }
@@ -60,6 +65,7 @@ fun AppScaffold(
             onSelectTab = { selectedTab = it },
             onSwitchToHeadless = onSwitchToHeadless,
             settingsNotificationCount = settingsNotificationCount,
+            mcpState = mcpState,
         )
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         Column(modifier = Modifier.weight(1f)) {
@@ -82,6 +88,7 @@ private fun AppHeader(
     onSelectTab: (Int) -> Unit,
     onSwitchToHeadless: () -> Unit,
     settingsNotificationCount: Int,
+    mcpState: McpUiState,
 ) {
     BoxWithConstraints(
         modifier = Modifier
@@ -124,6 +131,7 @@ private fun AppHeader(
                 }
             }
             Spacer(modifier = Modifier.weight(1f))
+            McpStatusIcon(mcpState)
             IconButton(
                 onClick = onSwitchToHeadless,
                 modifier = Modifier.size(40.dp),
@@ -138,8 +146,8 @@ private fun AppHeader(
             if (!compact) {
                 Spacer(modifier = Modifier.width(Space.xs))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
-                    androidx.compose.foundation.layout.Box(
-                        modifier = Modifier.size(7.dp).background(LocalAccentColors.current.success, androidx.compose.foundation.shape.CircleShape),
+                    Box(
+                        modifier = Modifier.size(7.dp).background(LocalAccentColors.current.success, CircleShape),
                     )
                     Text("LOCAL", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -151,6 +159,30 @@ private fun AppHeader(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun McpStatusIcon(mcpState: McpUiState) {
+    val accents = LocalAccentColors.current
+    val (contentDescription, tint, background) = when (mcpState) {
+        McpUiState.Stopped -> Triple("MCP stopped", accents.neutral, accents.neutralBg)
+        McpUiState.Starting -> Triple("MCP starting", accents.warn, accents.warnBg)
+        is McpUiState.Running -> Triple("MCP running", accents.success, accents.successBg)
+        is McpUiState.Failed -> Triple("MCP failed", accents.danger, accents.dangerBg)
+    }
+    Box(
+        modifier = Modifier
+            .size(32.dp)
+            .background(background, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            Icons.Filled.Hub,
+            contentDescription = contentDescription,
+            tint = tint,
+            modifier = Modifier.size(18.dp),
+        )
     }
 }
 

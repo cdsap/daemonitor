@@ -100,6 +100,7 @@ internal fun DaemonitorContent(
             AppScaffold(
                 onSwitchToHeadless = onSwitchToHeadless,
                 settingsNotificationCount = settingsState.updateNotificationCount,
+                mcpState = settingsState.mcpState,
                 liveContent = {
                     LiveMonitorScreen(
                         state = liveState,
