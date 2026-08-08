@@ -29,6 +29,15 @@ data class PollError(
     val errorType: String,
 )
 
+/** One poll-time sample for the Visual tab memory timeline. */
+data class RssTimelineSample(
+    val atMs: Long,
+    val totalRssMb: Long,
+    val byPid: Map<Long, Long> = emptyMap(),
+    /** Configured max heap (-Xmx) per PID when recoverable; live heap occupancy is unavailable. */
+    val heapByPid: Map<Long, Long> = emptyMap(),
+)
+
 /** Full immutable state the Live Monitor renders. */
 data class LiveUiState(
     val processes: List<GradleProcess> = emptyList(),
@@ -38,6 +47,7 @@ data class LiveUiState(
     val isLoading: Boolean = true,
     val isEmpty: Boolean = true,
     val pollError: PollError? = null,
+    val rssTimeline: List<RssTimelineSample> = emptyList(),
 ) {
     /** A process row whose restricted fields (cwd/project) could not be read (KTD-6). */
     fun isPermissionDegraded(p: GradleProcess): Boolean = p.workingDirectory == null

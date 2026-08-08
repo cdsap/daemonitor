@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -94,28 +93,19 @@ fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit, onClearSelec
             EmptyState("No Gradle processes are running right now.", modifier = Modifier.weight(1f))
         } else {
             val concurrent = Badges.concurrentSameProjectPids(state.processes)
-            val memoryRows = MemoryGraphModel.fromProcesses(state.processes)
-            val memoryGraphHeight = (memoryRows.size.coerceAtMost(4) * 36 + 62).dp
             Row(modifier = Modifier.weight(1f).padding(Space.lg)) {
-                Column(modifier = Modifier.weight(1.6f).fillMaxSize()) {
-                    MemoryGraph(
-                        rows = memoryRows,
-                        modifier = Modifier.fillMaxWidth().height(memoryGraphHeight),
-                    )
-                    Spacer(Modifier.padding(Space.xs))
-                    Surface(
-                        modifier = Modifier.fillMaxWidth().weight(1f),
-                        shape = RoundedCornerShape(Radius.md),
-                        color = MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    ) {
-                        Column {
-                            TableHeader(COLS)
-                            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                                items(state.processes, key = { it.pid }) { p ->
-                                    ProcessRow(p, p.pid == selectedPid, p.pid in concurrent, nowMs, state::isPermissionDegraded, onSelect)
-                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                                }
+                Surface(
+                    modifier = Modifier.weight(1.6f).fillMaxSize(),
+                    shape = RoundedCornerShape(Radius.md),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                ) {
+                    Column {
+                        TableHeader(COLS)
+                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            items(state.processes, key = { it.pid }) { p ->
+                                ProcessRow(p, p.pid == selectedPid, p.pid in concurrent, nowMs, state::isPermissionDegraded, onSelect)
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                             }
                         }
                     }

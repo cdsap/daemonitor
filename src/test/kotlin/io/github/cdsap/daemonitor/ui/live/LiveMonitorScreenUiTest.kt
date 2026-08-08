@@ -90,7 +90,7 @@ class LiveMonitorScreenUiTest {
     }
 
     @Test
-    fun `live processes render memory allocation graph with rss and heap limit`() = runComposeUiTest {
+    fun `live monitor keeps memory graph out of the process table tab`() = runComposeUiTest {
         mainClock.autoAdvance = false
 
         val state = LiveUiState(
@@ -105,47 +105,10 @@ class LiveMonitorScreenUiTest {
             }
         }
 
-        onNodeWithText("Memory allocation").assertExists()
-        onNodeWithText("RSS 1024 MB").assertExists()
-        onNodeWithText("Heap limit 4096 MB").assertExists()
-    }
-
-    @Test
-    fun `memory allocation graph labels missing heap limit as unavailable`() = runComposeUiTest {
-        mainClock.autoAdvance = false
-
-        val state = LiveUiState(
-            processes = listOf(sampleProcess(maxHeapMb = null)),
-            summary = LiveSummary(activeProcessCount = 1, totalRssMb = 1024, highestMemoryPid = 4321, activeProjectCount = 1),
-            isLoading = false,
-            isEmpty = false,
-        )
-        setContent {
-            WatcherTheme(appearance = AppearancePreference.DARK) {
-                LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
-            }
-        }
-
-        onNodeWithText("RSS 1024 MB").assertExists()
-        onNodeWithText("Heap limit unavailable").assertExists()
-    }
-
-    @Test
-    fun `empty live monitor does not render memory allocation graph`() = runComposeUiTest {
-        mainClock.autoAdvance = false
-
-        setContent {
-            WatcherTheme(appearance = AppearancePreference.DARK) {
-                LiveMonitorScreen(
-                    LiveUiState(processes = emptyList(), isLoading = false, isEmpty = true),
-                    onSelect = {},
-                    onClearSelection = {},
-                )
-            }
-        }
-
-        onNodeWithText("No Gradle processes are running right now.").assertExists()
         onNodeWithText("Memory allocation").assertDoesNotExist()
+        onNodeWithText("UPTIME").assertExists()
+        onNodeWithText("Process monitor").assertExists()
+        onNodeWithText("Gradle daemon").assertExists()
     }
 
     @Test
