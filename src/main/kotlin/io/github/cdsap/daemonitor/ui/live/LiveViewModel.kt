@@ -10,7 +10,10 @@ import kotlinx.coroutines.flow.asStateFlow
  * selection/summary logic is unit-testable. The poll loop in [io.github.cdsap.daemonitor.WatcherService]
  * calls [onPoll]; the UI collects [state].
  */
-class LiveViewModel {
+class LiveViewModel(
+    private val clockMs: () -> Long = { System.currentTimeMillis() },
+    private val timelineCapacity: Int = DEFAULT_TIMELINE_CAPACITY,
+) {
     private val _state = MutableStateFlow(LiveUiState())
     val state: StateFlow<LiveUiState> = _state.asStateFlow()
 
@@ -18,6 +21,14 @@ class LiveViewModel {
     fun onPoll(processes: List<GradleProcess>, tailForSelected: List<String> = emptyList()) {
         val current = _state.value
         val detail = nextDetail(current.detail, processes)
+        val sample = RssTimelineSample(
+            atMs = clockMs(),
+            totalRssMb = processes.sumOf { it.rssMemoryMb },
+            byPid = processes.associate { it.pid to it.rssMemoryMb },
+            heapByPid = processes.mapNotNull { process ->
+                process.maxHeapMb?.let { heapMb -> process.pid to heapMb }
+            }.toMap(),
+        )
         _state.value = current.copy(
             processes = processes,
             summary = summarize(processes),
@@ -26,6 +37,7 @@ class LiveViewModel {
             isLoading = false,
             isEmpty = processes.isEmpty(),
             pollError = null,
+            rssTimeline = (current.rssTimeline + sample).takeLast(timelineCapacity),
         )
     }
 
@@ -61,5 +73,9 @@ class LiveViewModel {
             highestMemoryPid = highest?.pid,
             activeProjectCount = processes.mapNotNull { it.projectPath }.distinct().size,
         )
+    }
+
+    companion object {
+        const val DEFAULT_TIMELINE_CAPACITY = 90
     }
 }

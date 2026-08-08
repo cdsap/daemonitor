@@ -25,6 +25,7 @@ import io.github.cdsap.daemonitor.ui.common.StartupLoadingScreen
 import io.github.cdsap.daemonitor.ui.common.WatcherTheme
 import io.github.cdsap.daemonitor.ui.history.HistoryScreen
 import io.github.cdsap.daemonitor.ui.live.LiveMonitorScreen
+import io.github.cdsap.daemonitor.ui.live.ProcessVisualScreen
 import io.github.cdsap.daemonitor.ui.settings.SettingsScreen
 import io.github.cdsap.daemonitor.mcp.DaemonitorMcpStdio
 import kotlinx.coroutines.Dispatchers
@@ -105,6 +106,9 @@ internal fun DaemonitorContent(
                         onSelect = service.liveViewModel::select,
                         onClearSelection = service.liveViewModel::clearSelection,
                     )
+                },
+                visualContent = {
+                    ProcessVisualScreen(state = liveState)
                 },
                 historyContent = {
                     val historyState by service.historyViewModel.state.collectAsState()

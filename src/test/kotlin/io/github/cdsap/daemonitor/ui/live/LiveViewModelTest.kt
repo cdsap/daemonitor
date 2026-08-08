@@ -9,13 +9,18 @@ import kotlin.test.assertTrue
 
 class LiveViewModelTest {
 
-    private fun proc(pid: Long, rss: Long = 100, project: String? = "/p", cwd: String? = "/p") =
-        GradleProcess(
-            pid = pid, parentPid = 1, type = ProcessType.GRADLE_DAEMON,
-            commandLine = "java GradleDaemon", workingDirectory = cwd, projectPath = project,
-            cpuPercent = 10.0, rssMemoryMb = rss, maxHeapMb = 512, minHeapMb = null,
-            gc = "G1", startTimeMs = 1, status = "RUNNING",
-        )
+    private fun proc(
+        pid: Long,
+        rss: Long = 100,
+        project: String? = "/p",
+        cwd: String? = "/p",
+        heap: Long? = 512,
+    ) = GradleProcess(
+        pid = pid, parentPid = 1, type = ProcessType.GRADLE_DAEMON,
+        commandLine = "java GradleDaemon", workingDirectory = cwd, projectPath = project,
+        cpuPercent = 10.0, rssMemoryMb = rss, maxHeapMb = heap, minHeapMb = null,
+        gc = "G1", startTimeMs = 1, status = "RUNNING",
+    )
 
     @Test
     fun `initial state is loading until first poll completes`() {
@@ -105,5 +110,42 @@ class LiveViewModelTest {
         vm.onPoll(emptyList())
 
         assertNull(vm.state.value.pollError)
+    }
+
+    @Test
+    fun `poll appends rss timeline samples and respects capacity`() {
+        var now = 1_000L
+        val vm = LiveViewModel(clockMs = { now }, timelineCapacity = 3)
+
+        vm.onPoll(listOf(proc(1, rss = 100)))
+        now = 2_000L
+        vm.onPoll(listOf(proc(1, rss = 120), proc(2, rss = 80)))
+        now = 3_000L
+        vm.onPoll(listOf(proc(1, rss = 140)))
+        now = 4_000L
+        vm.onPoll(listOf(proc(1, rss = 160)))
+
+        val timeline = vm.state.value.rssTimeline
+        assertEquals(3, timeline.size)
+        assertEquals(2_000L, timeline.first().atMs)
+        assertEquals(200L, timeline.first().totalRssMb)
+        assertEquals(mapOf(1L to 120L, 2L to 80L), timeline.first().byPid)
+        assertEquals(160L, timeline.last().totalRssMb)
+    }
+
+    @Test
+    fun `poll samples configured heap alongside rss`() {
+        val vm = LiveViewModel(clockMs = { 5_000L })
+
+        vm.onPoll(
+            listOf(
+                proc(1, rss = 100, heap = 4096),
+                proc(2, rss = 80, heap = null),
+            ),
+        )
+
+        val sample = vm.state.value.rssTimeline.single()
+        assertEquals(mapOf(1L to 100L, 2L to 80L), sample.byPid)
+        assertEquals(mapOf(1L to 4096L), sample.heapByPid)
     }
 }

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Terminal
@@ -44,6 +45,7 @@ import io.github.cdsap.daemonitor.BuildInfo
 @Composable
 fun AppScaffold(
     liveContent: @Composable () -> Unit,
+    visualContent: @Composable () -> Unit = {},
     historyContent: @Composable () -> Unit,
     settingsContent: @Composable () -> Unit,
     onSwitchToHeadless: () -> Unit = {},
@@ -63,7 +65,8 @@ fun AppScaffold(
         Column(modifier = Modifier.weight(1f)) {
             when (selectedTab) {
                 0 -> liveContent()
-                1 -> historyContent()
+                1 -> visualContent()
+                2 -> historyContent()
                 else -> settingsContent()
             }
         }
@@ -162,6 +165,7 @@ private data class NavItem(val label: String, val icon: ImageVector) {
 
 private val NAV_ITEMS = listOf(
     NavItem("Live", Icons.Filled.Speed),
+    NavItem("Visual", Icons.Filled.Memory),
     NavItem("History", Icons.Filled.History),
     NavItem("Settings", Icons.Filled.Settings),
 )

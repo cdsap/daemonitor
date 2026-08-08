@@ -39,7 +39,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
-import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.ui.common.LocalAccentColors
 import io.github.cdsap.daemonitor.ui.common.AutomatedBadge
 import io.github.cdsap.daemonitor.ui.common.Badges
@@ -174,7 +173,7 @@ private fun ProcessRow(
         CellSlot(COLS[0]) {
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
                 ProcessTypeIcon(p.type, size = 16.dp)
-                Text(p.type.label(), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                Text(p.type.displayLabel(), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             }
         }
         Cell(p.projectPath?.substringAfterLast('/') ?: "—", COLS[1], muted = p.projectPath == null)
@@ -216,13 +215,13 @@ private fun ProcessDetails(p: GradleProcess, ended: Boolean, nowMs: Long) {
         }
         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
             ProcessTypeIcon(p.type, size = 18.dp)
-            Text("PID ${p.pid} · ${p.type.label()}", fontWeight = FontWeight.SemiBold)
+            Text("PID ${p.pid} · ${p.type.displayLabel()}", fontWeight = FontWeight.SemiBold)
         }
         Spacer(Modifier.padding(Space.xs))
         DetailRow("Uptime", if (ended) "—" else formatUptime(p.startTimeMs, nowMs))
         DetailRow("Working dir", p.workingDirectory ?: "unavailable")
         DetailRow("RSS", "${p.rssMemoryMb} MB")
-        DetailRow("Max heap (-Xmx)", p.maxHeapMb?.let { "$it MB" } ?: "unavailable")
+        DetailRow("Heap limit (-Xmx)", p.maxHeapMb?.let { "$it MB" } ?: "unavailable")
         DetailRow("GC", p.gc ?: "—")
         Spacer(Modifier.padding(Space.xs))
         Text("Command line", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -243,14 +242,6 @@ private fun DetailRow(label: String, value: String) {
         Text(label, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
         Text(value, modifier = Modifier.weight(2f), style = MaterialTheme.typography.bodySmall)
     }
-}
-
-private fun ProcessType.label(): String = when (this) {
-    ProcessType.GRADLE_DAEMON -> "Gradle daemon"
-    ProcessType.GRADLE_WRAPPER -> "Gradle wrapper"
-    ProcessType.KOTLIN_DAEMON -> "Kotlin daemon"
-    ProcessType.TEST_WORKER -> "Test worker"
-    ProcessType.JAVA_GRADLE_RELATED -> "Java (Gradle)"
 }
 
 /** Compact, human-readable process uptime: "45s", "12m 03s", "3h 07m", "2d 4h". */

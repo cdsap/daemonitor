@@ -24,7 +24,10 @@ import kotlin.test.Test
 @OptIn(ExperimentalTestApi::class)
 class LiveMonitorScreenUiTest {
 
-    private fun sampleProcess(commandLine: String = "java org.gradle.launcher.daemon.bootstrap.GradleDaemon 9.5") = GradleProcess(
+    private fun sampleProcess(
+        commandLine: String = "java org.gradle.launcher.daemon.bootstrap.GradleDaemon 9.5",
+        maxHeapMb: Long? = 4096,
+    ) = GradleProcess(
         pid = 4321,
         parentPid = 1,
         type = ProcessType.GRADLE_DAEMON,
@@ -33,7 +36,7 @@ class LiveMonitorScreenUiTest {
         projectPath = "/Users/dev/my-app",
         cpuPercent = 12.0,
         rssMemoryMb = 1024,
-        maxHeapMb = 4096,
+        maxHeapMb = maxHeapMb,
         minHeapMb = 256,
         gc = "G1",
         startTimeMs = 1_700_000_000_000,
@@ -84,6 +87,28 @@ class LiveMonitorScreenUiTest {
 
         onNodeWithText("UPTIME").assertExists()        // new column header
         onNodeWithText("Gradle daemon").assertExists() // classified type label in the row
+    }
+
+    @Test
+    fun `live monitor keeps memory graph out of the process table tab`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+
+        val state = LiveUiState(
+            processes = listOf(sampleProcess()),
+            summary = LiveSummary(activeProcessCount = 1, totalRssMb = 1024, highestMemoryPid = 4321, activeProjectCount = 1),
+            isLoading = false,
+            isEmpty = false,
+        )
+        setContent {
+            WatcherTheme(appearance = AppearancePreference.DARK) {
+                LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+            }
+        }
+
+        onNodeWithText("Memory allocation").assertDoesNotExist()
+        onNodeWithText("UPTIME").assertExists()
+        onNodeWithText("Process monitor").assertExists()
+        onNodeWithText("Gradle daemon").assertExists()
     }
 
     @Test

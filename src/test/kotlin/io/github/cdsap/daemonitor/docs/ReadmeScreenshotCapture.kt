@@ -29,6 +29,8 @@ import io.github.cdsap.daemonitor.ui.live.DetailState
 import io.github.cdsap.daemonitor.ui.live.LiveMonitorScreen
 import io.github.cdsap.daemonitor.ui.live.LiveSummary
 import io.github.cdsap.daemonitor.ui.live.LiveUiState
+import io.github.cdsap.daemonitor.ui.live.ProcessVisualScreen
+import io.github.cdsap.daemonitor.ui.live.RssTimelineSample
 import io.github.cdsap.daemonitor.ui.settings.SettingsScreen
 import io.github.cdsap.daemonitor.ui.settings.SettingsUiState
 import org.junit.jupiter.api.Tag
@@ -51,6 +53,17 @@ class ReadmeScreenshotCapture {
         setContent {
             App(state, HistoryUiState())
         }
+    }
+
+    @Test
+    fun captureVisual() = capture("process-visual.png") {
+        // The scaffold initially composes Live, whose uptime ticker is intentionally infinite.
+        mainClock.autoAdvance = false
+        setContent {
+            App(SampleUi.liveState(), HistoryUiState())
+        }
+        onNodeWithText("Visual").performClick()
+        waitForIdle()
     }
 
     @Test
@@ -89,6 +102,9 @@ class ReadmeScreenshotCapture {
                     liveContent = {
                         LiveMonitorScreen(liveState, onSelect = {}, onClearSelection = {})
                     },
+                    visualContent = {
+                        ProcessVisualScreen(liveState)
+                    },
                     historyContent = {
                         HistoryScreen(historyState, onProject = {}, onTimeRange = {})
                     },
@@ -122,6 +138,15 @@ internal object SampleUi {
             process(4930, ProcessType.TEST_WORKER, "checkout-service", 768, 71.0, now - 75 * 1_000, "java -Xmx1024m GradleWorkerMain 'Test Executor 2'"),
             process(5077, ProcessType.KOTLIN_DAEMON, "design-system", 544, 9.0, now - 11 * 60 * 1_000, "java -Xmx1536m org.jetbrains.kotlin.daemon.KotlinCompileDaemon"),
         )
+        val endMs = 1_700_000_060_000L
+        fun sample(offsetMs: Long, rssByPid: Map<Long, Long>) = RssTimelineSample(
+            atMs = endMs + offsetMs,
+            totalRssMb = rssByPid.values.sum(),
+            byPid = rssByPid,
+            heapByPid = processes.mapNotNull { process ->
+                process.maxHeapMb?.let { heap -> process.pid to heap }
+            }.toMap(),
+        )
         return LiveUiState(
             processes = processes,
             summary = LiveSummary(4, processes.sumOf { it.rssMemoryMb }, daemon.pid, 2),
@@ -134,6 +159,13 @@ internal object SampleUi {
             ),
             isLoading = false,
             isEmpty = false,
+            rssTimeline = listOf(
+                sample(-24_000, mapOf(4821L to 1980L, 4914L to 540L, 4930L to 610L, 5077L to 480L)),
+                sample(-18_000, mapOf(4821L to 2140L, 4914L to 580L, 4930L to 690L, 5077L to 500L)),
+                sample(-12_000, mapOf(4821L to 2260L, 4914L to 600L, 4930L to 740L, 5077L to 520L)),
+                sample(-6_000, mapOf(4821L to 2310L, 4914L to 608L, 4930L to 760L, 5077L to 536L)),
+                sample(0, processes.associate { it.pid to it.rssMemoryMb }),
+            ),
         )
     }
 
