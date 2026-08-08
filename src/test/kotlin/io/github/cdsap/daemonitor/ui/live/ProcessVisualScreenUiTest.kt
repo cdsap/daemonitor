@@ -1,11 +1,13 @@
 package io.github.cdsap.daemonitor.ui.live
 
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.runComposeUiTest
+import androidx.compose.ui.test.runSkikoComposeUiTest
+import androidx.compose.ui.unit.Density
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.ui.common.WatcherTheme
@@ -15,8 +17,7 @@ import kotlin.test.Test
 class ProcessVisualScreenUiTest {
 
     @Test
-    fun `visual screen renders rss and heap timeline series`() = runComposeUiTest {
-        mainClock.autoAdvance = false
+    fun `visual screen renders rss and heap timeline series`() = runVisualUiTest {
         val processes = listOf(
             process(pid = 100, type = ProcessType.GRADLE_DAEMON, project = "checkout", rss = 1024, heap = 4096, cpu = 24.0),
             process(pid = 101, type = ProcessType.TEST_WORKER, project = "checkout", rss = 512, heap = null, cpu = 64.0),
@@ -43,8 +44,7 @@ class ProcessVisualScreenUiTest {
     }
 
     @Test
-    fun `selecting timeline legend updates selected heap tile`() = runComposeUiTest {
-        mainClock.autoAdvance = false
+    fun `selecting timeline legend updates selected heap tile`() = runVisualUiTest {
         val processes = listOf(
             process(pid = 100, type = ProcessType.GRADLE_DAEMON, project = "checkout", rss = 1024, heap = 4096, cpu = 24.0),
             process(pid = 101, type = ProcessType.KOTLIN_DAEMON, project = "design-system", rss = 768, heap = 1536, cpu = 12.0),
@@ -56,16 +56,17 @@ class ProcessVisualScreenUiTest {
             }
         }
 
+        // Default selection is the highest-RSS process.
+        onNodeWithText("4096 MB").assertExists()
         onAllNodesWithText("Kotlin daemon · design-system · PID 101 · Heap").onFirst().performClick()
 
         onNodeWithText("1536 MB").assertExists()
+        onNodeWithText("4096 MB").assertDoesNotExist()
         onNodeWithText("Process inspector").assertDoesNotExist()
     }
 
     @Test
-    fun `visual screen preserves empty state`() = runComposeUiTest {
-        mainClock.autoAdvance = false
-
+    fun `visual screen preserves empty state`() = runVisualUiTest {
         setContent {
             WatcherTheme {
                 ProcessVisualScreen(LiveUiState(processes = emptyList(), isLoading = false, isEmpty = true))
@@ -76,6 +77,13 @@ class ProcessVisualScreenUiTest {
         onNodeWithText("RSS & Heap").assertDoesNotExist()
         onNodeWithText("Process inspector").assertDoesNotExist()
     }
+
+    private fun runVisualUiTest(block: androidx.compose.ui.test.SkikoComposeUiTest.() -> Unit) =
+        runSkikoComposeUiTest(Size(1400f, 900f), Density(1f)) {
+            // Keep the Compose clock paused: VisualDashboard hosts a 30s refresh loop.
+            mainClock.autoAdvance = false
+            block()
+        }
 
     private fun liveState(
         processes: List<GradleProcess>,
