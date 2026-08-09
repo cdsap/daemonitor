@@ -7,6 +7,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runComposeUiTest
 import io.github.cdsap.daemonitor.BuildInfo
+import io.github.cdsap.daemonitor.ui.settings.McpUiState
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -99,5 +100,42 @@ class AppScaffoldUiTest {
         onNodeWithContentDescription("Switch to headless mode").performClick()
 
         assertTrue(switchedToHeadless)
+    }
+
+    @Test
+    fun `header shows mcp stopped status by default`() = runComposeUiTest {
+        setContent {
+            WatcherTheme {
+                AppScaffold(
+                    liveContent = { Text("Live") },
+                    historyContent = { Text("History") },
+                    settingsContent = { Text("Settings") },
+                )
+            }
+        }
+
+        onNodeWithContentDescription("MCP stopped").assertExists()
+    }
+
+    @Test
+    fun `header shows active mcp statuses`() = runComposeUiTest {
+        listOf(
+            McpUiState.Starting to "MCP starting",
+            McpUiState.Running("http://127.0.0.1:17333/mcp") to "MCP running",
+            McpUiState.Failed("Port already in use") to "MCP failed",
+        ).forEach { (state, contentDescription) ->
+            setContent {
+                WatcherTheme {
+                    AppScaffold(
+                        mcpState = state,
+                        liveContent = { Text("Live") },
+                        historyContent = { Text("History") },
+                        settingsContent = { Text("Settings") },
+                    )
+                }
+            }
+
+            onNodeWithContentDescription(contentDescription).assertExists()
+        }
     }
 }
