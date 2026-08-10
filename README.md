@@ -25,7 +25,7 @@ startup or from Settings, plus installer downloads that you explicitly approve.
 
 ### Live Monitor
 
-![Daemonitor Live monitor showing active Gradle processes, metrics, status badges, process details, and the headless toolbar action](docs/images/live-monitor.png)
+![Daemonitor Live monitor showing active Gradle processes, metrics, status badges, process details, MCP status, and the headless toolbar action](docs/images/live-monitor.png)
 
 *Live monitor with concurrent Gradle activity and the selected daemon inspector.*
 
@@ -35,7 +35,7 @@ startup or from Settings, plus installer downloads that you explicitly approve.
 - Headline stats: active processes, total RSS, highest-memory PID, active projects
 - Highlight badges: high/critical memory, `MULTI-BUILD` (a project with concurrent build invocations), `AUTOMATED` (CI/script/agent flags)
 - Per-daemon detail with `-Xmx`, GC, working dir, full (redacted) command line, and a live tail of the daemon log
-- One-click switch to headless mode from the toolbar when you want collection to continue without the desktop window
+- Toolbar MCP status indicator next to one-click headless mode when you want collection to continue without the desktop window
 
 ### Visual
 
@@ -274,5 +274,5 @@ from Settings, and for installer downloads that you explicitly approve.
 
 ## Status
 
-Early (v1.0.6). The data model and detection heuristics are evolving; see `requirements.md` for the
+Early (v1.0.7). The data model and detection heuristics are evolving; see `requirements.md` for the
 original specification.
