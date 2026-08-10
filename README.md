@@ -104,26 +104,31 @@ owned by the current user.
 
 Daemonitor is distributed as a native desktop app per operating system:
 
-| OS | Package |
-|----|---------|
-| macOS | `.dmg` |
-| Windows | `.msi` |
-| Linux | `.deb` |
+| OS | First-time installer | In-app update package |
+|----|----------------------|------------------------|
+| macOS | `.dmg` | `.zip` app bundle |
+| Windows | `.msi` | `.zip` app directory |
+| Linux | `.deb` | `.tar.gz` standalone image |
+
+Release asset names include the CPU architecture (`x64` or `arm64`), for example
+`Daemonitor-1.0.7-macos-arm64.dmg` and `Daemonitor-1.0.7-macos-arm64.zip`.
 
 The installed app does not require a project-local Gradle setup. It only reads local process
 metadata and Gradle daemon logs for the current user.
 
-Linux distribution starts with the GitHub Releases `.deb`. The follow-up update strategy is a signed
-apt repository with advisory in-app prompts only; see
+Linux distribution starts with the GitHub Releases `.deb` for package installs and a `.tar.gz`
+update package for writable standalone installs. Package-managed Linux prompts stay advisory; see
 [Linux Update Distribution](docs/linux-update-distribution.md).
 
 ## Updates
 
 Daemonitor checks GitHub Releases once at startup and marks the Settings tab as `Settings (1)` when
 a newer version is available. The Settings tab can also check manually. When a newer release is
-available, Daemonitor downloads the matching installer for the current operating system only after
-you approve it, verifies the SHA-256 checksum from release metadata, and opens the local installer.
-The app does not silently install updates.
+available, Daemonitor selects the matching artifact for the current operating system and CPU
+architecture only after you approve the download, verifies the SHA-256 checksum from release
+metadata, and either stages an update package for **Restart and Update** or opens the platform
+installer when automatic installation is not supported for the current install. The app does not
+silently install updates while it is running.
 
 ## Run from source
 

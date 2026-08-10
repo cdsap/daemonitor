@@ -25,9 +25,12 @@ class ReleaseMetadataTest {
         val outputDir = tempDir.resolve("metadata")
 
         val assets = mapOf(
-            "Daemonitor-1.0.2-linux.deb" to "linux package",
-            "Daemonitor-1.0.2-windows.msi" to "windows package",
-            "Daemonitor-1.0.2-macos.dmg" to "macos package",
+            "Daemonitor-1.0.7-linux-x64.deb" to "linux package",
+            "Daemonitor-1.0.7-linux-x64.tar.gz" to "linux update",
+            "Daemonitor-1.0.7-windows-x64.msi" to "windows package",
+            "Daemonitor-1.0.7-windows-x64.zip" to "windows update",
+            "Daemonitor-1.0.7-macos-arm64.dmg" to "macos package",
+            "Daemonitor-1.0.7-macos-arm64.zip" to "macos update",
         )
         assets.forEach { (name, content) -> assetsDir.resolve(name).writeText(content) }
 
@@ -36,8 +39,8 @@ class ReleaseMetadataTest {
             "scripts/generate-release-metadata.sh",
             assetsDir.toString(),
             outputDir.toString(),
-            "1.0.2",
-            "v1.0.2",
+            "1.0.7",
+            "v1.0.7",
             "cdsap/daemonitor",
         )
             .redirectErrorStream(true)
@@ -50,22 +53,27 @@ class ReleaseMetadataTest {
         assets.keys.forEach { name ->
             val expected = sha256(assetsDir.resolve(name))
             assertTrue(checksums.contains("$expected  $name"), checksums)
+            assertEquals(expected + "\n", assetsDir.resolve("$name.sha256").readText())
         }
 
         val latest = outputDir.resolve("latest.json").readText()
-        assertTrue(latest.contains("\"schemaVersion\": 1"), latest)
-        assertTrue(latest.contains("\"version\": \"1.0.2\""), latest)
-        assertTrue(latest.contains("\"tag\": \"v1.0.2\""), latest)
+        assertTrue(latest.contains("\"schemaVersion\": 2"), latest)
+        assertTrue(latest.contains("\"version\": \"1.0.7\""), latest)
+        assertTrue(latest.contains("\"tag\": \"v1.0.7\""), latest)
         assertTrue(latest.contains("\"platform\": \"linux\""), latest)
         assertTrue(latest.contains("\"platform\": \"windows\""), latest)
         assertTrue(latest.contains("\"platform\": \"macos\""), latest)
+        assertTrue(latest.contains("\"arch\": \"arm64\""), latest)
+        assertTrue(latest.contains("\"arch\": \"x64\""), latest)
+        assertTrue(latest.contains("\"role\": \"update\""), latest)
+        assertTrue(latest.contains("\"role\": \"installer\""), latest)
         assertTrue(
             latest.contains(
-                "\"url\": \"https://github.com/cdsap/daemonitor/releases/download/v1.0.2/Daemonitor-1.0.2-macos.dmg\"",
+                "\"url\": \"https://github.com/cdsap/daemonitor/releases/download/v1.0.7/Daemonitor-1.0.7-macos-arm64.zip\"",
             ),
             latest,
         )
-        assertTrue(latest.contains("\"sha256\": \"${sha256(assetsDir.resolve("Daemonitor-1.0.2-linux.deb"))}\""), latest)
+        assertTrue(latest.contains("\"sha256\": \"${sha256(assetsDir.resolve("Daemonitor-1.0.7-linux-x64.deb"))}\""), latest)
 
         assertEquals(latest, outputDir.resolve("update.json").readText())
     }
@@ -75,12 +83,15 @@ class ReleaseMetadataTest {
         val workflow = Path.of(".github/workflows/release.yml").readText()
 
         assertTrue(workflow.contains("Read package version"), workflow)
+        assertTrue(workflow.contains("Detect CPU architecture"), workflow)
         assertTrue(workflow.contains("upload-artifact"), workflow)
         assertTrue(workflow.contains("download-artifact"), workflow)
         assertTrue(workflow.contains("scripts/generate-release-metadata.sh"), workflow)
         assertTrue(workflow.contains("release-metadata/latest.json"), workflow)
         assertTrue(workflow.contains("release-metadata/update.json"), workflow)
         assertTrue(workflow.contains("release-metadata/checksums.txt"), workflow)
+        assertTrue(workflow.contains("update_ext: zip"), workflow)
+        assertTrue(workflow.contains("update_ext: tar.gz"), workflow)
     }
 
     private fun sha256(path: Path): String {

@@ -51,6 +51,8 @@ fun SettingsScreen(
     onMcpEnabled: (Boolean) -> Unit = {},
     onCheckForUpdates: () -> Unit = {},
     onOpenUpdate: (io.github.cdsap.daemonitor.update.UpdateCandidate) -> Unit = {},
+    onRestartAndUpdate: () -> Unit = {},
+    onOpenManualDownload: () -> Unit = {},
 ) {
     Column(
         modifier = Modifier
@@ -94,7 +96,7 @@ fun SettingsScreen(
         Spacer(Modifier.height(Space.md))
         SectionCard(
             "Updates",
-            modifier = Modifier.fillMaxWidth().height(180.dp).padding(horizontal = Space.lg),
+            modifier = Modifier.fillMaxWidth().height(210.dp).padding(horizontal = Space.lg),
         ) {
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
@@ -119,26 +121,61 @@ fun SettingsScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedButton(
                         onClick = onCheckForUpdates,
-                        enabled = state.updateState != UpdateUiState.Checking,
+                        enabled = state.updateState != UpdateUiState.Checking &&
+                            state.updateState !is UpdateUiState.Downloading,
                         shape = RoundedCornerShape(Radius.sm),
                     ) {
                         Icon(Icons.Filled.Refresh, contentDescription = null)
                         Spacer(Modifier.width(Space.xs))
                         Text(if (state.updateState == UpdateUiState.Checking) "Checking" else "Check for updates")
                     }
-                    val available = state.updateState as? UpdateUiState.Available
-                    val ready = state.updateState as? UpdateUiState.ReadyToInstall
-                    val candidate = available?.candidate ?: ready?.candidate
-                    if (candidate != null) {
-                        Button(
-                            onClick = { onOpenUpdate(candidate) },
-                            enabled = state.updateState !is UpdateUiState.Downloading,
-                            shape = RoundedCornerShape(Radius.sm),
-                        ) {
-                            Icon(Icons.Filled.Download, contentDescription = null)
-                            Spacer(Modifier.width(Space.xs))
-                            Text(if (ready != null) "Open again" else "Download and open")
+                    when (val updateState = state.updateState) {
+                        is UpdateUiState.Available -> {
+                            Button(
+                                onClick = { onOpenUpdate(updateState.candidate) },
+                                shape = RoundedCornerShape(Radius.sm),
+                            ) {
+                                Icon(Icons.Filled.Download, contentDescription = null)
+                                Spacer(Modifier.width(Space.xs))
+                                Text("Download Update")
+                            }
                         }
+                        is UpdateUiState.ReadyToInstall -> {
+                            if (updateState.candidate.installMode == io.github.cdsap.daemonitor.update.UpdateInstallMode.Automatic &&
+                                updateState.staged != null
+                            ) {
+                                Button(
+                                    onClick = onRestartAndUpdate,
+                                    shape = RoundedCornerShape(Radius.sm),
+                                ) {
+                                    Icon(Icons.Filled.Refresh, contentDescription = null)
+                                    Spacer(Modifier.width(Space.xs))
+                                    Text("Restart and Update")
+                                }
+                            } else {
+                                Button(
+                                    onClick = { onOpenUpdate(updateState.candidate) },
+                                    shape = RoundedCornerShape(Radius.sm),
+                                ) {
+                                    Icon(Icons.Filled.Download, contentDescription = null)
+                                    Spacer(Modifier.width(Space.xs))
+                                    Text("Open again")
+                                }
+                            }
+                        }
+                        is UpdateUiState.Failed -> {
+                            if (updateState.releaseUrl != null) {
+                                OutlinedButton(
+                                    onClick = onOpenManualDownload,
+                                    shape = RoundedCornerShape(Radius.sm),
+                                ) {
+                                    Icon(Icons.Filled.Download, contentDescription = null)
+                                    Spacer(Modifier.width(Space.xs))
+                                    Text("Manual download")
+                                }
+                            }
+                        }
+                        else -> Unit
                     }
                 }
             }
@@ -249,12 +286,22 @@ private fun McpUiState.message(port: Int): String = when (this) {
 
 private val UpdateUiState.message: String
     get() = when (this) {
-        UpdateUiState.NotChecked -> "Check GitHub Releases for a newer Daemonitor installer. Nothing is installed without approval."
+        UpdateUiState.NotChecked -> "Check GitHub Releases for a newer Daemonitor version. Updates are never installed without your approval."
         UpdateUiState.Checking -> "Checking GitHub Releases..."
         is UpdateUiState.UpToDate -> "Daemonitor is up to date at v$version."
-        is UpdateUiState.Available -> "v${candidate.version} is available. Daemonitor will download and verify ${candidate.assetName} before opening it."
+        is UpdateUiState.Available -> when (candidate.installMode) {
+            io.github.cdsap.daemonitor.update.UpdateInstallMode.Automatic ->
+                "v${candidate.version} is available for ${candidate.platform.metadataName}/${candidate.architecture.token}. Download stages the update while Daemonitor keeps running."
+            io.github.cdsap.daemonitor.update.UpdateInstallMode.Manual ->
+                "v${candidate.version} is available. Automatic installation is not supported for this install; Daemonitor can download and open ${candidate.assetName}."
+        }
         is UpdateUiState.Downloading -> progress?.let { "Downloading ${candidate.assetName}: ${(it * 100).toInt()}%." }
             ?: "Downloading ${candidate.assetName}..."
-        is UpdateUiState.ReadyToInstall -> "Downloaded and opened ${candidate.assetName}. Finish the installer to update Daemonitor."
+        is UpdateUiState.ReadyToInstall -> when {
+            candidate.installMode == io.github.cdsap.daemonitor.update.UpdateInstallMode.Automatic && staged != null ->
+                "Daemonitor ${candidate.version} is ready to install."
+            else ->
+                "Downloaded and opened ${candidate.assetName}. Finish the installer to update Daemonitor."
+        }
         is UpdateUiState.Failed -> message
     }

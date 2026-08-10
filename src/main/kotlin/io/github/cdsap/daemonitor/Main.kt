@@ -127,6 +127,8 @@ internal fun DaemonitorContent(
                         onMcpEnabled = service.settingsViewModel::setMcpEnabled,
                         onCheckForUpdates = service.settingsViewModel::checkForUpdates,
                         onOpenUpdate = service.settingsViewModel::openUpdate,
+                        onRestartAndUpdate = service.settingsViewModel::restartAndUpdate,
+                        onOpenManualDownload = service.settingsViewModel::openManualDownload,
                     )
                 },
             )
