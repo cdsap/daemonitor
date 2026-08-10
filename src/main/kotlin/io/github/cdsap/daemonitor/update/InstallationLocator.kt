@@ -86,14 +86,14 @@ object InstallationLocator {
         platform: DesktopPlatform,
         architecture: CpuArchitecture,
     ): InstallationInfo {
-        val appPath = executable.macAppBundlePath()?.let(Path::of)
+        val appPath = executable.macAppBundlePath()
         if (appPath != null) {
             return InstallationInfo(
                 platform = platform,
                 architecture = architecture,
                 kind = InstallationKind.MACOS_APP_BUNDLE,
-                installRoot = appPath,
-                relaunchCommand = listOf("/usr/bin/open", "-n", appPath.toString()),
+                installRoot = Path.of(appPath),
+                relaunchCommand = listOf("/usr/bin/open", "-n", appPath),
             )
         }
         return unsupported(platform, architecture)
