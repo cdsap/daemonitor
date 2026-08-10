@@ -41,17 +41,26 @@ jobs:
             platform: linux
             package_task: packageDeb
             package_glob: build/compose/binaries/main/deb/*.deb
+            package_ext: deb
+            update_ext: tar.gz
             launcher: build/compose/binaries/main/app/Daemonitor/bin/Daemonitor
+            app_path: build/compose/binaries/main/app/Daemonitor
           - os: windows-latest
             platform: windows
             package_task: packageMsi
             package_glob: build/compose/binaries/main/msi/*.msi
+            package_ext: msi
+            update_ext: zip
             launcher: build/compose/binaries/main/app/Daemonitor/Daemonitor.exe
+            app_path: build/compose/binaries/main/app/Daemonitor
           - os: macos-latest
             platform: macos
             package_task: packageDmg
             package_glob: build/compose/binaries/main/dmg/*.dmg
+            package_ext: dmg
+            update_ext: zip
             launcher: build/compose/binaries/main/app/Daemonitor.app/Contents/MacOS/Daemonitor
+            app_path: build/compose/binaries/main/app/Daemonitor.app
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -89,9 +98,24 @@ jobs:
         id: package-version
         run: echo "value=$(./gradlew -q printNativePackageVersion --no-daemon)" >> "$GITHUB_OUTPUT"
 
-      - name: Stage release asset
+      - name: Detect CPU architecture
+        id: arch
+        run: |
+          machine=$(uname -m | tr '[:upper:]' '[:lower:]')
+          case "$machine" in
+            arm64|aarch64) arch=arm64 ;;
+            x86_64|amd64) arch=x64 ;;
+            *)
+              echo "Unsupported architecture: $machine" >&2
+              exit 1
+              ;;
+          esac
+          echo "value=$arch" >> "$GITHUB_OUTPUT"
+
+      - name: Stage release assets
         id: asset
         run: |
+          set -euo pipefail
           shopt -s nullglob
           packages=(${{ matrix.package_glob }})
           if (( ${#packages[@]} != 1 )); then
@@ -99,21 +123,53 @@ jobs:
             exit 1
           fi
           test -s "${packages[0]}"
-          extension="${packages[0]##*.}"
-          asset="Daemonitor-${{ steps.package-version.outputs.value }}-${{ matrix.platform }}.${extension}"
-          mkdir -p release-assets
-          cp "${packages[0]}" "release-assets/${asset}"
-          echo "path=release-assets/${asset}" >> "$GITHUB_OUTPUT"
-          echo "name=${asset}" >> "$GITHUB_OUTPUT"
-          echo "### Release asset" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Platform: ${{ matrix.platform }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Asset: ${asset}" >> "$GITHUB_STEP_SUMMARY"
+          test -e "${{ matrix.app_path }}"
 
-      - name: Upload staged release asset
+          version="${{ steps.package-version.outputs.value }}"
+          platform="${{ matrix.platform }}"
+          arch="${{ steps.arch.outputs.value }}"
+          mkdir -p release-assets
+
+          installer="Daemonitor-${version}-${platform}-${arch}.${{ matrix.package_ext }}"
+          cp "${packages[0]}" "release-assets/${installer}"
+
+          update_asset="Daemonitor-${version}-${platform}-${arch}.${{ matrix.update_ext }}"
+          app_dir="$(dirname "${{ matrix.app_path }}")"
+          app_name="$(basename "${{ matrix.app_path }}")"
+          update_path="$GITHUB_WORKSPACE/release-assets/${update_asset}"
+          case "${{ matrix.update_ext }}" in
+            zip)
+              if command -v zip >/dev/null 2>&1; then
+                (cd "$app_dir" && zip -qry "$update_path" "$app_name")
+              else
+                powershell.exe -NoProfile -Command \
+                  "Compress-Archive -Path (Join-Path '$app_dir' '$app_name') -DestinationPath '$update_path' -Force"
+              fi
+              ;;
+            tar.gz)
+              (cd "$app_dir" && tar -czf "$update_path" "$app_name")
+              ;;
+            *)
+              echo "Unsupported update extension: ${{ matrix.update_ext }}" >&2
+              exit 1
+              ;;
+          esac
+          test -s "release-assets/${update_asset}"
+
+          {
+            echo "installer=${installer}"
+            echo "update=${update_asset}"
+          } >> "$GITHUB_OUTPUT"
+          echo "### Release assets" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Platform: ${platform}/${arch}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Installer: ${installer}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Update package: ${update_asset}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload staged release assets
         uses: actions/upload-artifact@v4
         with:
-          name: release-asset-${{ matrix.platform }}
-          path: ${{ steps.asset.outputs.path }}
+          name: release-asset-${{ matrix.platform }}-${{ steps.arch.outputs.value }}
+          path: release-assets/*
           if-no-files-found: error
           retention-days: 7
 
@@ -159,6 +215,7 @@ jobs:
           echo "- latest.json" >> "$GITHUB_STEP_SUMMARY"
           echo "- update.json" >> "$GITHUB_STEP_SUMMARY"
           echo "- checksums.txt" >> "$GITHUB_STEP_SUMMARY"
+          echo "- per-asset .sha256 sidecars" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload assets and metadata to GitHub release
         env:

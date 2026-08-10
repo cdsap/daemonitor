@@ -137,8 +137,12 @@ class SettingsScreenUiTest {
         val candidate = UpdateCandidate(
             version = "1.0.3",
             releaseUrl = "https://example.com/release",
-            assetName = "Daemonitor-1.0.3-macos.dmg",
-            downloadUrl = "https://example.com/Daemonitor-1.0.3-macos.dmg",
+            assetName = "Daemonitor-1.0.3-macos-arm64.zip",
+            downloadUrl = "https://example.com/Daemonitor-1.0.3-macos-arm64.zip",
+            platform = io.github.cdsap.daemonitor.update.DesktopPlatform.MACOS,
+            architecture = io.github.cdsap.daemonitor.update.CpuArchitecture.ARM64,
+            role = io.github.cdsap.daemonitor.update.UpdateArtifactRole.UpdatePackage,
+            installMode = io.github.cdsap.daemonitor.update.UpdateInstallMode.Automatic,
         )
         setContent {
             WatcherTheme {
@@ -150,9 +154,49 @@ class SettingsScreenUiTest {
             }
         }
 
-        onNodeWithText("Download and open").performClick()
+        onNodeWithText("Download Update").performClick()
 
         assertEquals(candidate, opened)
+    }
+
+    @Test
+    fun `ready automatic update renders restart action`() = runComposeUiTest {
+        var restarted = 0
+        val candidate = UpdateCandidate(
+            version = "1.0.7",
+            releaseUrl = "https://example.com/release",
+            assetName = "Daemonitor-1.0.7-macos-arm64.zip",
+            downloadUrl = "https://example.com/Daemonitor-1.0.7-macos-arm64.zip",
+            platform = io.github.cdsap.daemonitor.update.DesktopPlatform.MACOS,
+            architecture = io.github.cdsap.daemonitor.update.CpuArchitecture.ARM64,
+            role = io.github.cdsap.daemonitor.update.UpdateArtifactRole.UpdatePackage,
+            installMode = io.github.cdsap.daemonitor.update.UpdateInstallMode.Automatic,
+        )
+        val staged = io.github.cdsap.daemonitor.update.StagedUpdate(
+            candidate = candidate,
+            artifactPath = java.nio.file.Path.of("/tmp/artifact.zip"),
+            payloadPath = java.nio.file.Path.of("/tmp/Daemonitor.app"),
+            installation = io.github.cdsap.daemonitor.update.InstallationInfo(
+                platform = io.github.cdsap.daemonitor.update.DesktopPlatform.MACOS,
+                architecture = io.github.cdsap.daemonitor.update.CpuArchitecture.ARM64,
+                kind = io.github.cdsap.daemonitor.update.InstallationKind.MACOS_APP_BUNDLE,
+                installRoot = java.nio.file.Path.of("/Applications/Daemonitor.app"),
+                relaunchCommand = listOf("/usr/bin/open", "-n", "/Applications/Daemonitor.app"),
+            ),
+        )
+        setContent {
+            WatcherTheme {
+                SettingsScreen(
+                    SettingsUiState(updateState = UpdateUiState.ReadyToInstall(candidate, staged)),
+                    onRetentionDays = {},
+                    onRestartAndUpdate = { restarted += 1 },
+                )
+            }
+        }
+
+        onNodeWithText("Daemonitor 1.0.7 is ready to install.").assertExists()
+        onNodeWithText("Restart and Update").performClick()
+        assertEquals(1, restarted)
     }
 
     @Test
@@ -160,8 +204,8 @@ class SettingsScreenUiTest {
         val candidate = UpdateCandidate(
             version = "1.0.3",
             releaseUrl = "https://example.com/release",
-            assetName = "Daemonitor-1.0.3-macos.dmg",
-            downloadUrl = "https://example.com/Daemonitor-1.0.3-macos.dmg",
+            assetName = "Daemonitor-1.0.3-macos-arm64.zip",
+            downloadUrl = "https://example.com/Daemonitor-1.0.3-macos-arm64.zip",
         )
         setContent {
             WatcherTheme {
@@ -172,6 +216,6 @@ class SettingsScreenUiTest {
             }
         }
 
-        onNodeWithText("Downloading Daemonitor-1.0.3-macos.dmg: 42%.").assertExists()
+        onNodeWithText("Downloading Daemonitor-1.0.3-macos-arm64.zip: 42%.").assertExists()
     }
 }

@@ -13,7 +13,7 @@ class LinuxUpdateDistributionDocTest {
         listOf(
             "direct `.deb` asset on GitHub Releases",
             "signed apt repository",
-            "must not try to self-install updates on Linux",
+            "must not try to self-install updates on Linux installations owned by the system package",
             "If the current install came from the apt repository",
             "If the current install came from a downloaded `.deb`",
             "Package name: `daemonitor`",

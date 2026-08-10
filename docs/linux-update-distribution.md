@@ -2,30 +2,34 @@
 
 ## Decision
 
-Daemonitor will keep the initial Linux release path as a direct `.deb` asset on GitHub Releases.
-After that Phase 1 flow is working, Linux updates should move to a signed apt repository as the
-preferred distribution channel.
+Daemonitor will keep the initial Linux release path as a direct `.deb` asset on GitHub Releases,
+plus a `.tar.gz` update package for standalone installations that can safely self-update. After
+that flow is working, Linux package updates should move to a signed apt repository as the preferred
+distribution channel for package-managed installs.
 
-The app must not try to self-install updates on Linux. Linux update prompts should describe the
-available version and send the user to the appropriate system-managed install path:
+The app must not try to self-install updates on Linux installations owned by the system package
+manager. Package-managed Linux update prompts should describe the available version and send the
+user to the appropriate system-managed install path:
 
 - If the current install came from the apt repository, prompt the user to update through their
   package manager.
 - If the current install came from a downloaded `.deb`, prompt the user to download and open the
   newer GitHub Releases `.deb`.
-- If the install source is unknown, offer both paths and explain that apt is preferred once the
-  repository is configured.
+- If the current install is a writable standalone / archive layout, Daemonitor may download the
+  matching `.tar.gz` update package, stage it, and apply it after **Restart and Update**.
+- If the install source is unknown, offer the manual package path and explain that apt is preferred
+  once the repository is configured.
 
-This keeps Phase 1 independent from repository setup and avoids silent privilege escalation from
-inside the desktop app.
+This keeps package-manager installs independent from repository setup and avoids silent privilege
+escalation or unsafe replacement of files owned by `dpkg`/`rpm` from inside the desktop app.
 
 ## Direct `.deb` Download
 
 Direct `.deb` downloads are the smallest viable Linux distribution path:
 
-- GitHub Releases already publishes `Daemonitor-<version>-linux.deb`.
+- GitHub Releases already publishes `Daemonitor-<version>-linux-<arch>.deb`.
 - Users can download and open the package with their desktop software installer, or install it with
-  a terminal command such as `sudo apt install ./Daemonitor-<version>-linux.deb`.
+  a terminal command such as `sudo apt install ./Daemonitor-<version>-linux-<arch>.deb`.
 - The release asset can be produced by the current `packageDeb` CI path without repository metadata.
 
 The tradeoff is that direct `.deb` installs do not provide a standard update feed. The app can detect
@@ -46,13 +50,15 @@ preferred path once repository hosting, package metadata, and signing are in pla
 
 ## Update Prompt Behavior
 
-Linux prompts must be advisory, not self-installing:
+Linux package-managed prompts must be advisory, not self-installing:
 
 - Show the available version and release link.
 - Never run `sudo`, `pkexec`, `apt`, `dpkg`, or any privileged installer command from the app.
 - For apt installs, say to update from the system package manager and link to repository setup docs.
 - For direct `.deb` installs, the app may download and verify the GitHub Releases `.deb`, then open
   it with the OS package installer so the operating system owns privilege prompts.
+- For writable standalone installs, the app may stage the `.tar.gz` update package and apply it only
+  after the user chooses **Restart and Update**.
 - Allow dismissing or deferring the prompt so background collection is not blocked.
 
 ## Package Metadata Requirements
