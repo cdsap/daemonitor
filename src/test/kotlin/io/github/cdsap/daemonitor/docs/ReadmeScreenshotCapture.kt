@@ -44,7 +44,7 @@ import kotlin.test.Test
 @Tag("documentation")
 class ReadmeScreenshotCapture {
     private val outputDirectory = Path.of("docs", "images")
-    private val buildInfo = BuildInfo(version = "1.0.6", commit = "preview")
+    private val buildInfo = BuildInfo(version = "1.0.7", commit = "preview")
 
     @Test
     fun captureLive() = capture("live-monitor.png") {
