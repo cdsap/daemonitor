@@ -3,6 +3,7 @@ package io.github.cdsap.daemonitor.ui.live
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -33,6 +34,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -57,6 +65,7 @@ import io.github.cdsap.daemonitor.ui.common.ScreenHeader
 import io.github.cdsap.daemonitor.ui.common.Space
 import io.github.cdsap.daemonitor.ui.common.StatTile
 import io.github.cdsap.daemonitor.ui.common.TableHeader
+import io.github.cdsap.daemonitor.ui.common.cycleIndex
 
 private val COLS = listOf(
     Col("Type", 1.4f),
@@ -93,6 +102,15 @@ fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit, onClearSelec
             EmptyState("No Gradle processes are running right now.", modifier = Modifier.weight(1f))
         } else {
             val concurrent = Badges.concurrentSameProjectPids(state.processes)
+            val listFocus = remember { FocusRequester() }
+            // Request once when the table appears — not on every poll, which would steal focus.
+            LaunchedEffect(Unit) { listFocus.requestFocus() }
+            fun moveSelection(delta: Int) {
+                val currentIndex = selectedPid?.let { pid -> state.processes.indexOfFirst { it.pid == pid } }
+                    ?.takeIf { it >= 0 }
+                val next = cycleIndex(state.processes.size, currentIndex, delta) ?: return
+                onSelect(state.processes[next].pid)
+            }
             Row(modifier = Modifier.weight(1f).padding(Space.lg)) {
                 Surface(
                     modifier = Modifier.weight(1.6f).fillMaxSize(),
@@ -100,11 +118,34 @@ fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit, onClearSelec
                     color = MaterialTheme.colorScheme.surface,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 ) {
-                    Column {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .focusRequester(listFocus)
+                            .focusable()
+                            .testTag("live-process-list")
+                            .onPreviewKeyEvent { event ->
+                                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                                when (event.key) {
+                                    Key.DirectionDown -> { moveSelection(1); true }
+                                    Key.DirectionUp -> { moveSelection(-1); true }
+                                    else -> false
+                                }
+                            },
+                    ) {
                         TableHeader(COLS)
                         LazyColumn(modifier = Modifier.fillMaxSize()) {
                             items(state.processes, key = { it.pid }) { p ->
-                                ProcessRow(p, p.pid == selectedPid, p.pid in concurrent, nowMs, state::isPermissionDegraded, onSelect)
+                                ProcessRow(
+                                    p,
+                                    p.pid == selectedPid,
+                                    p.pid in concurrent,
+                                    nowMs,
+                                    state::isPermissionDegraded,
+                                ) { pid ->
+                                    onSelect(pid)
+                                    listFocus.requestFocus()
+                                }
                                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                             }
                         }

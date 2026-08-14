@@ -42,11 +42,12 @@ fun TableHeader(cols: List<Col>) {
 }
 
 /** A weighted cell slot that hosts arbitrary content (e.g. a status pill) while keeping the same
- *  column alignment as text cells. */
+ *  column alignment as text cells. Content is width-bounded to the column so children can
+ *  ellipsize instead of expanding the row. */
 @Composable
 fun RowScope.CellSlot(col: Col, content: @Composable () -> Unit) {
     androidx.compose.foundation.layout.Box(
-        modifier = Modifier.weight(col.weight),
+        modifier = Modifier.weight(col.weight, fill = true),
         contentAlignment = if (col.end) androidx.compose.ui.Alignment.CenterEnd else androidx.compose.ui.Alignment.CenterStart,
     ) {
         content()

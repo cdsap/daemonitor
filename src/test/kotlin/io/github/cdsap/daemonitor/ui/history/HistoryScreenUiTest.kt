@@ -1,7 +1,14 @@
 package io.github.cdsap.daemonitor.ui.history
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.requestFocus
 import androidx.compose.ui.test.runComposeUiTest
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
@@ -13,23 +20,29 @@ import kotlin.test.Test
 @OptIn(ExperimentalTestApi::class)
 class HistoryScreenUiTest {
 
-    private fun sampleBuild() = Build(
-        buildId = "b1",
+    private fun sampleBuild(
+        buildId: String = "b1",
+        projectPath: String = "/Users/dev/my-app",
+        status: FinalStatus = FinalStatus.SUCCESS,
+        source: Source = Source.TERMINAL,
+        agent: String? = "Claude Code",
+    ) = Build(
+        buildId = buildId,
         daemonPid = 1234,
         daemonIdentity = "uid-1",
         commandLine = null,
-        workingDirectory = "/Users/dev/my-app",
-        projectPath = "/Users/dev/my-app",
+        workingDirectory = projectPath,
+        projectPath = projectPath,
         startTimeMs = 1_700_000_000_000,
         endTimeMs = 1_700_000_030_000,
         durationSeconds = 30.0,
         peakMemoryMb = 2048,
         avgMemoryMb = 1500,
         peakCpuPercent = 80.0,
-        inferredSource = Source.TERMINAL,
-        finalStatus = FinalStatus.SUCCESS,
+        inferredSource = source,
+        finalStatus = status,
         logSnippet = null,
-        agent = "Claude Code",
+        agent = agent,
         agentProvider = "Anthropic",
     )
 
@@ -81,5 +94,51 @@ class HistoryScreenUiTest {
         onNodeWithText("All").assertDoesNotExist()
         onNodeWithText("Today").assertDoesNotExist()
         onNodeWithText("Last 24 hours").assertDoesNotExist()
+    }
+
+    @Test
+    fun `arrow keys cycle the selected build and show its detail`() = runComposeUiTest {
+        val builds = listOf(
+            sampleBuild(buildId = "b1", projectPath = "/Users/dev/alpha"),
+            sampleBuild(buildId = "b2", projectPath = "/Users/dev/beta", status = FinalStatus.FAILED),
+            sampleBuild(buildId = "b3", projectPath = "/Users/dev/gamma", status = FinalStatus.INTERRUPTED),
+        )
+        val state = HistoryUiState(builds = builds, isEmptyResult = false)
+        setContent {
+            WatcherTheme(appearance = AppearancePreference.DARK) {
+                HistoryScreen(state, onProject = {}, onTimeRange = {})
+            }
+        }
+
+        val list = onNodeWithTag("history-build-list")
+        list.requestFocus()
+        waitForIdle()
+        list.performKeyInput {
+            keyDown(Key.DirectionDown)
+            keyUp(Key.DirectionDown)
+        }
+        waitForIdle()
+        onNodeWithText("Build b1").assertExists()
+
+        list.performKeyInput {
+            keyDown(Key.DirectionDown)
+            keyUp(Key.DirectionDown)
+        }
+        waitForIdle()
+        onNodeWithText("Build b2").assertExists()
+
+        list.performKeyInput {
+            keyDown(Key.DirectionUp)
+            keyUp(Key.DirectionUp)
+        }
+        waitForIdle()
+        onNodeWithText("Build b1").assertExists()
+
+        list.performKeyInput {
+            keyDown(Key.DirectionUp)
+            keyUp(Key.DirectionUp)
+        }
+        waitForIdle()
+        onNodeWithText("Build b3").assertExists()
     }
 }

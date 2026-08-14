@@ -3,6 +3,7 @@ package io.github.cdsap.daemonitor.ui.history
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,12 +29,21 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -54,6 +64,7 @@ import io.github.cdsap.daemonitor.ui.common.Space
 import io.github.cdsap.daemonitor.ui.common.SourcePill
 import io.github.cdsap.daemonitor.ui.common.StatusPill
 import io.github.cdsap.daemonitor.ui.common.TableHeader
+import io.github.cdsap.daemonitor.ui.common.cycleIndex
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -71,12 +82,21 @@ private val COLS = listOf(
 @Composable
 fun HistoryScreen(state: HistoryUiState, onProject: (String?) -> Unit, onTimeRange: (TimeRange) -> Unit) {
     var selected by remember { mutableStateOf<Build?>(null) }
+    val listFocus = remember { FocusRequester() }
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Filters(state, onProject, onTimeRange)
         if (state.isEmptyResult) {
             EmptyState("No builds match the current filters.", modifier = Modifier.weight(1f))
         } else {
+            // Request once when the table appears — filter refreshes keep keyboard focus via row clicks.
+            LaunchedEffect(Unit) { listFocus.requestFocus() }
+            fun moveSelection(delta: Int) {
+                val currentIndex = selected?.let { sel -> state.builds.indexOfFirst { it.buildId == sel.buildId } }
+                    ?.takeIf { it >= 0 }
+                val next = cycleIndex(state.builds.size, currentIndex, delta) ?: return
+                selected = state.builds[next]
+            }
             Row(modifier = Modifier.weight(1f).padding(start = Space.lg, end = Space.lg, bottom = Space.lg)) {
                 Surface(
                     modifier = Modifier.weight(1.5f).fillMaxSize(),
@@ -84,11 +104,28 @@ fun HistoryScreen(state: HistoryUiState, onProject: (String?) -> Unit, onTimeRan
                     color = MaterialTheme.colorScheme.surface,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 ) {
-                    Column {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .focusRequester(listFocus)
+                            .focusable()
+                            .testTag("history-build-list")
+                            .onPreviewKeyEvent { event ->
+                                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                                when (event.key) {
+                                    Key.DirectionDown -> { moveSelection(1); true }
+                                    Key.DirectionUp -> { moveSelection(-1); true }
+                                    else -> false
+                                }
+                            },
+                    ) {
                         TableHeader(COLS)
                         LazyColumn(modifier = Modifier.fillMaxSize()) {
                             items(state.builds, key = { it.buildId }) { b ->
-                                BuildRow(b, b.buildId == selected?.buildId) { selected = b }
+                                BuildRow(b, b.buildId == selected?.buildId) {
+                                    selected = b
+                                    listFocus.requestFocus()
+                                }
                                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                             }
                         }
