@@ -19,7 +19,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
@@ -29,6 +31,9 @@ import io.github.cdsap.daemonitor.domain.model.Source
  * A small, soft status pill: tinted container + saturated label, with an optional leading marker —
  * either a vector [icon] or a unicode [glyph]. The single primitive behind every colored
  * status/source indicator so they read as one visual language instead of a scatter of ad-hoc badges.
+ *
+ * Label text is single-line with ellipsis so narrow table columns (History) clip cleanly instead
+ * of wrapping onto a second line.
  */
 @Composable
 fun Pill(
@@ -43,13 +48,26 @@ fun Pill(
         modifier = modifier
             .clip(RoundedCornerShape(Radius.sm))
             .background(bg)
-            .padding(horizontal = 8.dp, vertical = 2.dp),
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+            .testTag("pill-$text"),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         when {
-            icon != null -> Icon(icon, contentDescription = null, tint = fg, modifier = Modifier.size(11.dp))
-            glyph != null -> Text(glyph, color = fg, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            icon != null -> Icon(
+                icon,
+                contentDescription = null,
+                tint = fg,
+                modifier = Modifier.size(11.dp),
+            )
+            glyph != null -> Text(
+                text = glyph,
+                color = fg,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                softWrap = false,
+            )
         }
         Text(
             text = text,
@@ -57,6 +75,9 @@ fun Pill(
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
             style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }

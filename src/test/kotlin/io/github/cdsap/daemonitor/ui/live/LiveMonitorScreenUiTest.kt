@@ -2,7 +2,11 @@ package io.github.cdsap.daemonitor.ui.live
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
@@ -11,7 +15,9 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.requestFocus
 import androidx.compose.ui.test.runComposeUiTest
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.unit.dp
@@ -20,17 +26,20 @@ import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.store.AppearancePreference
 import io.github.cdsap.daemonitor.ui.common.WatcherTheme
 import kotlin.test.Test
+import kotlin.test.assertEquals
 
 @OptIn(ExperimentalTestApi::class)
 class LiveMonitorScreenUiTest {
 
     private fun sampleProcess(
+        pid: Long = 4321,
+        type: ProcessType = ProcessType.GRADLE_DAEMON,
         commandLine: String = "java org.gradle.launcher.daemon.bootstrap.GradleDaemon 9.5",
         maxHeapMb: Long? = 4096,
     ) = GradleProcess(
-        pid = 4321,
+        pid = pid,
         parentPid = 1,
-        type = ProcessType.GRADLE_DAEMON,
+        type = type,
         commandLine = commandLine,
         workingDirectory = "/Users/dev/my-app",
         projectPath = "/Users/dev/my-app",
@@ -151,5 +160,68 @@ class LiveMonitorScreenUiTest {
         detailPane.assert(hasScrolledDetailContent)
         onNodeWithText("UPTIME").assertIsDisplayed()
         onNodeWithText("Daemon log").assertIsDisplayed()
+    }
+
+    @Test
+    fun `arrow keys cycle the selected process`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+
+        val processes = listOf(
+            sampleProcess(pid = 100, type = ProcessType.GRADLE_DAEMON),
+            sampleProcess(pid = 200, type = ProcessType.GRADLE_WRAPPER),
+            sampleProcess(pid = 300, type = ProcessType.KOTLIN_DAEMON),
+        )
+        val state = LiveUiState(
+            processes = processes,
+            summary = LiveSummary(activeProcessCount = 3, totalRssMb = 3072, highestMemoryPid = 100, activeProjectCount = 1),
+            isLoading = false,
+            isEmpty = false,
+        )
+        var selectedPid by mutableStateOf<Long?>(null)
+
+        setContent {
+            WatcherTheme(appearance = AppearancePreference.DARK) {
+                LiveMonitorScreen(
+                    state = state.copy(
+                        detail = selectedPid?.let { pid ->
+                            DetailState.Selected(processes.first { it.pid == pid })
+                        } ?: DetailState.NoSelection,
+                    ),
+                    onSelect = { selectedPid = it },
+                    onClearSelection = { selectedPid = null },
+                )
+            }
+        }
+
+        val list = onNodeWithTag("live-process-list")
+        list.requestFocus()
+        waitForIdle()
+        list.performKeyInput {
+            keyDown(Key.DirectionDown)
+            keyUp(Key.DirectionDown)
+        }
+        waitForIdle()
+        assertEquals(100L, selectedPid)
+
+        list.performKeyInput {
+            keyDown(Key.DirectionDown)
+            keyUp(Key.DirectionDown)
+        }
+        waitForIdle()
+        assertEquals(200L, selectedPid)
+
+        list.performKeyInput {
+            keyDown(Key.DirectionUp)
+            keyUp(Key.DirectionUp)
+        }
+        waitForIdle()
+        assertEquals(100L, selectedPid)
+
+        list.performKeyInput {
+            keyDown(Key.DirectionUp)
+            keyUp(Key.DirectionUp)
+        }
+        waitForIdle()
+        assertEquals(300L, selectedPid) // wraps
     }
 }
