@@ -19,6 +19,8 @@ startup or from Settings, plus installer downloads that you explicitly approve.
 [![CI](https://github.com/cdsap/daemonitor/actions/workflows/ci.yml/badge.svg)](https://github.com/cdsap/daemonitor/actions/workflows/ci.yml)
 ![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue)
 
+**Website:** [https://cdsap.github.io/daemonitor/](https://cdsap.github.io/daemonitor/)
+
 ---
 
 ## Features

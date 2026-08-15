@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Daemonitor — Activity Monitor for Gradle daemons</title>
+  <meta name="description" content="Daemonitor is a local Activity Monitor for Gradle daemons. See active builds, CPU and memory usage, build history, and which IDE, terminal, or AI coding agent triggered each build.">
+  <meta name="theme-color" content="#28735F" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#111413" media="(prefers-color-scheme: dark)">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Daemonitor">
+  <meta property="og:url" content="https://cdsap.github.io/daemonitor/">
+  <meta property="og:title" content="Daemonitor — Activity Monitor for Gradle daemons">
+  <meta property="og:description" content="Daemonitor is a local Activity Monitor for Gradle daemons. See active builds, CPU and memory usage, build history, and which IDE, terminal, or AI coding agent triggered each build.">
+  <meta property="og:image" content="https://cdsap.github.io/daemonitor/assets/live-monitor.png">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Daemonitor — Activity Monitor for Gradle daemons">
+  <meta name="twitter:description" content="Daemonitor is a local Activity Monitor for Gradle daemons. See active builds, CPU and memory usage, build history, and which IDE, terminal, or AI coding agent triggered each build.">
+  <meta name="twitter:image" content="https://cdsap.github.io/daemonitor/assets/live-monitor.png">
+
+  <link rel="icon" type="image/png" href="assets/favicon.png">
+  <link rel="apple-touch-icon" href="assets/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header" id="top">
+    <div class="header-inner">
+      <a class="brand" href="#top" aria-label="Daemonitor home">
+        <img src="assets/icon-192.png" width="32" height="32" alt="" aria-hidden="true">
+        <span>Daemonitor</span>
+      </a>
+      <nav class="site-nav" aria-label="Primary">
+        <a href="#features">Features</a>
+        <a href="#privacy">Privacy</a>
+        <a href="https://github.com/cdsap/daemonitor" rel="noopener noreferrer">GitHub</a>
+        <a class="button button-primary button-compact" href="#download">Download</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" aria-labelledby="hero-heading">
+      <div class="hero-copy">
+        <p class="brand-mark">
+          <img src="assets/icon-192.png" width="56" height="56" alt="">
+          <span>Daemonitor</span>
+        </p>
+        <h1 id="hero-heading">Activity Monitor for your Gradle daemons</h1>
+        <p class="lede">
+          See what's building right now, what built recently, and which IDE, terminal,
+          or AI coding agent triggered it.
+        </p>
+        <div class="cta-row">
+          <a class="button button-primary" href="https://github.com/cdsap/daemonitor/releases/latest" rel="noopener noreferrer">
+            Download Daemonitor
+          </a>
+          <a class="button button-secondary" href="https://github.com/cdsap/daemonitor" rel="noopener noreferrer">
+            View on GitHub
+          </a>
+        </div>
+        <p class="platforms" aria-label="Supported platforms">macOS · Windows · Linux</p>
+      </div>
+      <figure class="hero-visual">
+        <img
+          class="screenshot reveal"
+          src="assets/live-monitor.png"
+          width="1180"
+          height="760"
+          alt="Daemonitor Live Monitor showing active Gradle daemons, wrappers, Kotlin daemons, and test workers with RSS, CPU, and uptime"
+        >
+      </figure>
+    </section>
+
+    <section class="section why" id="why" aria-labelledby="why-heading">
+      <div class="section-inner narrow">
+        <h2 id="why-heading">Why Daemonitor</h2>
+        <p class="section-lede">
+          Modern agentic workflows run Gradle from many places at once. Daemonitor gives you one
+          local window into that activity.
+        </p>
+        <ul class="why-list">
+          <li>
+            <strong>Concurrent triggers</strong>
+            IDEs, terminals, scripts, and coding agents can all start Gradle builds at the same time.
+          </li>
+          <li>
+            <strong>Hidden load</strong>
+            Daemons and test workers can consume significant CPU and memory without an obvious owner.
+          </li>
+          <li>
+            <strong>Local clarity</strong>
+            Get a simple view of current processes and recent builds without leaving your machine.
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="section features" id="features" aria-labelledby="features-heading">
+      <div class="section-inner">
+        <h2 id="features-heading">Feature highlights</h2>
+        <p class="section-lede">
+          Live processes, memory timelines, and searchable build history — including AI-agent attribution.
+        </p>
+
+        <article class="feature" id="live-monitor">
+          <div class="feature-copy">
+            <h3>Live Monitor</h3>
+            <p>
+              Watch every Gradle-related JVM as it runs: daemons, wrappers, Kotlin daemons, and
+              test workers, with RSS, CPU, uptime, process details, and memory-pressure indicators.
+            </p>
+            <ul>
+              <li>Gradle daemons, wrappers, Kotlin daemons, and test workers</li>
+              <li>RSS, CPU, and live uptime</li>
+              <li>Process and JVM details with concurrent-build indicators</li>
+              <li>Memory-pressure badges when usage climbs</li>
+            </ul>
+          </div>
+          <figure class="feature-visual">
+            <img
+              class="screenshot reveal"
+              src="assets/live-monitor.png"
+              width="1180"
+              height="760"
+              alt="Daemonitor Live Monitor with process list, status badges, and selected daemon inspector"
+              loading="lazy"
+            >
+          </figure>
+        </article>
+
+        <article class="feature feature-reverse" id="visual">
+          <div class="feature-copy">
+            <h3>Visual</h3>
+            <p>
+              See rolling RSS timelines alongside configured heap (<code>-Xmx</code>) so concurrent
+              Gradle processes are easy to compare at a glance.
+            </p>
+            <ul>
+              <li>Rolling RSS timelines across live processes</li>
+              <li>Configured heap / <code>-Xmx</code> when recoverable</li>
+              <li>Memory usage across concurrent Gradle processes</li>
+            </ul>
+          </div>
+          <figure class="feature-visual">
+            <img
+              class="screenshot reveal"
+              src="assets/process-visual.png"
+              width="1180"
+              height="760"
+              alt="Daemonitor Visual tab showing rolling RSS and configured heap timelines for concurrent Gradle processes"
+              loading="lazy"
+            >
+          </figure>
+        </article>
+
+        <article class="feature" id="build-history">
+          <div class="feature-copy">
+            <h3>Build History</h3>
+            <p>
+              Browse recent builds with duration, outcome, peak resources, source, and AI-agent
+              attribution — then search history when you need the details.
+            </p>
+            <ul>
+              <li>Recent builds with duration and outcome</li>
+              <li>Peak resources and invocation source</li>
+              <li>AI-agent attribution when a coding agent triggered the build</li>
+              <li>Searchable retained history</li>
+            </ul>
+          </div>
+          <figure class="feature-visual">
+            <img
+              class="screenshot reveal"
+              src="assets/build-history.png"
+              width="1180"
+              height="760"
+              alt="Daemonitor Build History listing recent builds with outcomes, source tags, agent attribution, and peak resources"
+              loading="lazy"
+            >
+          </figure>
+        </article>
+
+        <article class="mcp" id="mcp" aria-labelledby="mcp-heading">
+          <h3 id="mcp-heading">MCP / Agent workflows</h3>
+          <p>
+            Daemonitor can expose a local, read-only MCP interface so compatible tools inspect
+            retained build history and currently visible Gradle processes — without sending data off
+            your machine.
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section privacy" id="privacy" aria-labelledby="privacy-heading">
+      <div class="section-inner narrow">
+        <h2 id="privacy-heading">Your build data stays on your machine.</h2>
+        <p class="section-lede">
+          Daemonitor is local-first by design. Privacy is a product feature, not a settings toggle.
+        </p>
+        <ul class="privacy-list">
+          <li><strong>No telemetry</strong> — nothing is phoned home about your builds or machine.</li>
+          <li><strong>Local SQLite storage</strong> — history lives in a database on your computer.</li>
+          <li><strong>Best-effort redaction</strong> — command lines and logs are redacted before storage.</li>
+          <li><strong>Local read-only MCP</strong> — agent access stays on localhost and cannot mutate builds.</li>
+          <li><strong>Limited network use</strong> — outbound access is limited to GitHub release and update checks.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="section download" id="download" aria-labelledby="download-heading">
+      <div class="section-inner narrow">
+        <h2 id="download-heading">Download</h2>
+        <p class="section-lede">
+          Packaged builds are ready for macOS, Windows, and Linux. They do not require you to install
+          or configure Gradle locally. Source is available on GitHub for contributors.
+        </p>
+        <p class="release-note" id="release-note" hidden></p>
+        <div class="download-grid" role="list">
+          <a
+            class="download-option"
+            role="listitem"
+            data-os="macos"
+            href="https://github.com/cdsap/daemonitor/releases/latest"
+            rel="noopener noreferrer"
+          >
+            <span class="download-os">macOS</span>
+            <span class="download-hint">Latest release</span>
+          </a>
+          <a
+            class="download-option"
+            role="listitem"
+            data-os="windows"
+            href="https://github.com/cdsap/daemonitor/releases/latest"
+            rel="noopener noreferrer"
+          >
+            <span class="download-os">Windows</span>
+            <span class="download-hint">Latest release</span>
+          </a>
+          <a
+            class="download-option"
+            role="listitem"
+            data-os="linux"
+            href="https://github.com/cdsap/daemonitor/releases/latest"
+            rel="noopener noreferrer"
+          >
+            <span class="download-os">Linux</span>
+            <span class="download-hint">Latest release</span>
+          </a>
+        </div>
+        <p class="download-footnote">
+          All platforms open the latest GitHub Release. Choose the installer that matches your OS
+          and CPU architecture.
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <p class="footer-brand">
+        <img src="assets/icon-192.png" width="28" height="28" alt="" aria-hidden="true">
+        <span>Daemonitor</span>
+      </p>
+      <p class="footer-blurb">
+        An open-source developer tool: a local Activity Monitor for Gradle daemons, wrappers,
+        Kotlin daemons, and test workers.
+      </p>
+      <nav class="footer-nav" aria-label="Footer">
+        <a href="https://github.com/cdsap/daemonitor" rel="noopener noreferrer">GitHub repository</a>
+        <a href="https://github.com/cdsap/daemonitor/releases" rel="noopener noreferrer">Releases</a>
+        <a href="https://github.com/cdsap/daemonitor/blob/main/LICENSE" rel="noopener noreferrer">MIT License</a>
+      </nav>
+    </div>
+  </footer>
+
+  <script src="app.js" defer></script>
+</body>
+</html>
