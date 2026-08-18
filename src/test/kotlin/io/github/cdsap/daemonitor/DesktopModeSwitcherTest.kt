@@ -47,4 +47,24 @@ class DesktopModeSwitcherTest {
             command,
         )
     }
+
+    @Test
+    fun `source run uses windows java executable name on windows`() {
+        val command = DesktopModeSwitcher.commandForCurrentProcess(
+            executable = "C:\\hostedtoolcache\\windows\\Java_Temurin-Hotspot_jdk\\21\\x64\\bin\\java.exe",
+            javaHome = "C:\\hostedtoolcache\\windows\\Java_Temurin-Hotspot_jdk\\21\\x64",
+            classpath = "build/classes;kotlin-runtime.jar",
+            osName = "Windows Server 2025",
+        )
+
+        assertEquals(
+            listOf(
+                "C:\\hostedtoolcache\\windows\\Java_Temurin-Hotspot_jdk\\21\\x64\\bin\\java.exe",
+                "-cp",
+                "build/classes;kotlin-runtime.jar",
+                "io.github.cdsap.daemonitor.Daemonitor",
+            ),
+            command,
+        )
+    }
 }
