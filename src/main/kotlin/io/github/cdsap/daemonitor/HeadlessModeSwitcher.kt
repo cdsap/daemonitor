@@ -1,16 +1,7 @@
 package io.github.cdsap.daemonitor
 
-import java.io.File
-
 internal object HeadlessModeSwitcher {
-    fun launch(): Process {
-        val command = currentProcessCommand()
-        val builder = ProcessBuilder(command)
-            .directory(File(System.getProperty("user.dir")))
-            .redirectOutput(ProcessBuilder.Redirect.INHERIT)
-            .redirectError(ProcessBuilder.Redirect.INHERIT)
-        return builder.start()
-    }
+    fun launch(): Process = AppLaunchCommand.start(currentProcessCommand())
 
     internal fun commandForCurrentProcess(
         executable: String?,
@@ -18,41 +9,24 @@ internal object HeadlessModeSwitcher {
         classpath: String,
         osName: String = System.getProperty("os.name"),
     ): List<String> {
-        if (executable != null && !executable.isJavaExecutable()) {
+        if (executable != null && !AppLaunchCommand.isJavaExecutable(executable)) {
             return listOf(executable, "--headless")
         }
 
-        val javaExecutable = javaExecutablePath(javaHome, javaExecutableName(osName))
-        return listOf(
-            javaExecutable,
-            "-cp",
-            classpath,
-            "io.github.cdsap.daemonitor.Daemonitor",
-            "--headless",
+        return AppLaunchCommand.javaClasspathLaunch(
+            javaHome = javaHome,
+            classpath = classpath,
+            osName = osName,
+            extraArgs = listOf("--headless"),
         )
     }
 
     private fun currentProcessCommand(): List<String> {
-        val info = ProcessHandle.current().info()
+        val process = AppLaunchCommand.currentProcess()
         return commandForCurrentProcess(
-            executable = info.command().orElse(null),
-            javaHome = System.getProperty("java.home"),
-            classpath = System.getProperty("java.class.path"),
+            executable = process.executable,
+            javaHome = process.javaHome,
+            classpath = process.classpath,
         )
     }
-
-    private fun String.isJavaExecutable(): Boolean {
-        val name = substringAfterLast('/').substringAfterLast('\\').lowercase()
-        return name == "java" || name == "java.exe"
-    }
-
-    private fun javaExecutableName(osName: String): String =
-        if (osName.lowercase().contains("windows")) "java.exe" else "java"
-
-    private fun javaExecutablePath(javaHome: String, executableName: String): String =
-        if (javaHome.contains('\\')) {
-            "${javaHome.trimEnd('\\')}\\bin\\$executableName"
-        } else {
-            "${javaHome.trimEnd('/')}/bin/$executableName"
-        }
 }
