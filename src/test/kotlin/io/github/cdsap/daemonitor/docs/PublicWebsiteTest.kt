@@ -48,13 +48,14 @@ class PublicWebsiteTest {
     @Test
     fun `landing page covers hero features privacy download and metadata`() {
         listOf(
-            "Daemonitor — Activity Monitor for Gradle daemons",
+            "Daemonitor — Activity Monitor for Gradle and Kotlin daemons",
             "meta name=\"description\"",
             "property=\"og:title\"",
             "property=\"og:description\"",
             "property=\"og:image\"",
             "rel=\"icon\"",
-            "Activity Monitor for your Gradle daemons",
+            "Activity Monitor for your Gradle and Kotlin daemons",
+            "local Activity Monitor for Gradle and Kotlin daemons",
             "Download Daemonitor",
             "View on GitHub",
             "macOS · Windows · Linux",
