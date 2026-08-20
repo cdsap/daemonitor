@@ -17,7 +17,9 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -34,6 +36,7 @@ class WatcherService(
         GitHubReleaseUpdateSource().check(BuildInfo.current.version)
     },
     private val uiDispatcher: CoroutineDispatcher = Dispatchers.Main,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     val liveViewModel = LiveViewModel()
     val historyViewModel = HistoryViewModel()
@@ -58,21 +61,39 @@ class WatcherService(
     )
 
     private var serviceScope: CoroutineScope? = null
+    private var serviceJob: Job? = null
     @Volatile private var mcpHttpServer: DaemonitorMcpHttpServer? = null
 
     fun start(scope: CoroutineScope) {
-        serviceScope = scope
+        serviceJob?.cancel()
+        val job = SupervisorJob(scope.coroutineContext[Job])
+        serviceJob = job
+        val boundScope = CoroutineScope(scope.coroutineContext + job)
+        serviceScope = boundScope
         settingsViewModel.checkForUpdates()
-        if (settingsViewModel.state.value.mcpEnabled) startMcpServer(scope)
+        if (settingsViewModel.state.value.mcpEnabled) startMcpServer(boundScope)
         database.purgeOlderThan(clock(), retentionDays)
         // Load whatever history already exists, then keep it current from the poll loop.
-        scope.launch(Dispatchers.IO) { refreshHistory() }
-        scope.launch(Dispatchers.IO) {
+        boundScope.launch(ioDispatcher) { refreshHistory() }
+        boundScope.launch(ioDispatcher) {
             while (isActive) {
                 pollSafely()
                 delay(Defaults.POLL_INTERVAL)
             }
         }
+    }
+
+    /**
+     * Cancels background poll/history work and waits for it to finish.
+     * Call this before closing [database] so temp-dir cleanup cannot race in-flight SQLite access.
+     */
+    suspend fun stop() {
+        mcpHttpServer?.close()
+        mcpHttpServer = null
+        val job = serviceJob
+        serviceJob = null
+        serviceScope = null
+        job?.cancelAndJoin()
     }
 
     /** User changed the retention window: persist it, purge anything now out of range, and refresh
@@ -81,7 +102,7 @@ class WatcherService(
         retentionDays = days
         saveSettings()
         val scope = serviceScope ?: return
-        scope.launch(Dispatchers.IO) {
+        scope.launch(ioDispatcher) {
             database.purgeOlderThan(clock(), days)
             refreshHistory()
         }
@@ -109,7 +130,7 @@ class WatcherService(
             settingsViewModel.setMcpRunning(existing.endpoint)
             return
         }
-        scope.launch(Dispatchers.IO) {
+        scope.launch(ioDispatcher) {
             withContext(uiDispatcher) {
                 settingsViewModel.setMcpRunningState(McpUiState.Starting)
             }
