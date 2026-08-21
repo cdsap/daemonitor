@@ -2,7 +2,7 @@ package io.github.cdsap.daemonitor
 
 import java.io.File
 
-internal object AppLaunchCommand {
+internal object RelaunchCommand {
     private const val ENTRY_POINT = "io.github.cdsap.daemonitor.Daemonitor"
 
     data class Options(
@@ -10,14 +10,27 @@ internal object AppLaunchCommand {
         val reopenMacDesktopBundle: Boolean = false,
     )
 
-    fun start(command: List<String>): Process =
+    fun launch(options: Options): Process {
+        val process = currentProcess()
+        return start(
+            buildCommand(
+                executable = process.executable,
+                javaHome = process.javaHome,
+                classpath = process.classpath,
+                osName = System.getProperty("os.name"),
+                options = options,
+            ),
+        )
+    }
+
+    private fun start(command: List<String>): Process =
         ProcessBuilder(command)
             .directory(File(System.getProperty("user.dir")))
             .redirectOutput(ProcessBuilder.Redirect.INHERIT)
             .redirectError(ProcessBuilder.Redirect.INHERIT)
             .start()
 
-    fun currentProcess(): CurrentProcess {
+    private fun currentProcess(): CurrentProcess {
         val info = ProcessHandle.current().info()
         return CurrentProcess(
             executable = info.command().orElse(null),
@@ -76,7 +89,7 @@ internal object AppLaunchCommand {
     private fun javaExecutableName(osName: String): String =
         if (osName.lowercase().contains("windows")) "java.exe" else "java"
 
-    data class CurrentProcess(
+    private data class CurrentProcess(
         val executable: String?,
         val javaHome: String,
         val classpath: String,
