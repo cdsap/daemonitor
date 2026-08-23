@@ -1,5 +1,6 @@
 package io.github.cdsap.daemonitor
 
+import io.github.cdsap.daemonitor.application.PollMonitoring
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
 import io.github.cdsap.daemonitor.ui.settings.UpdateUiState
@@ -72,7 +73,7 @@ class WatcherServiceTest {
         var fail = true
         val service = service(database, tmp, uiDispatcher = uiDispatcher) {
             if (fail) error("failure")
-            WatcherRuntime.PollResult(emptyList(), emptyList(), buildsChanged = false)
+            PollMonitoring.PollResult(emptyList(), emptyList(), buildsChanged = false)
         }
         try {
             service.pollSafely()
@@ -100,7 +101,7 @@ class WatcherServiceTest {
                 UpdateCheckResult.UpToDate("1.0.3")
             },
         ) {
-            WatcherRuntime.PollResult(emptyList(), emptyList(), buildsChanged = false)
+            PollMonitoring.PollResult(emptyList(), emptyList(), buildsChanged = false)
         }
         try {
             service.start(backgroundScope)
@@ -125,7 +126,7 @@ class WatcherServiceTest {
             pollEntered.complete(Unit)
             releasePoll.await()
             pollStillRunningAfterStop = true
-            WatcherRuntime.PollResult(emptyList(), emptyList(), buildsChanged = false)
+            PollMonitoring.PollResult(emptyList(), emptyList(), buildsChanged = false)
         }
         try {
             service.start(backgroundScope)
@@ -149,7 +150,7 @@ class WatcherServiceTest {
         uiDispatcher: CoroutineDispatcher,
         clock: () -> Long = { 0 },
         updateChecker: suspend () -> UpdateCheckResult = { UpdateCheckResult.UpToDate("1.0.3") },
-        pollAction: suspend () -> WatcherRuntime.PollResult,
+        pollAction: suspend () -> PollMonitoring.PollResult,
     ) = WatcherService(
         runtime = WatcherRuntime.create(database),
         database = database,

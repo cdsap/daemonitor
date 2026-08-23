@@ -1,5 +1,6 @@
 package io.github.cdsap.daemonitor
 
+import io.github.cdsap.daemonitor.application.PollMonitoring
 import io.github.cdsap.daemonitor.store.AppearancePreference
 import io.github.cdsap.daemonitor.store.Settings
 import io.github.cdsap.daemonitor.store.SettingsStore
@@ -25,13 +26,13 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Desktop adapter that runs [WatcherRuntime] on [Dispatchers.IO] and projects results into UI state. */
+/** Desktop adapter that runs [PollMonitoring] on [Dispatchers.IO] and projects results into UI state. */
 class WatcherService(
-    private val runtime: WatcherRuntime,
+    private val runtime: PollMonitoring,
     private val database: WatcherDatabase,
     private val settingsStore: SettingsStore = SettingsStore(),
     private val clock: () -> Long = System::currentTimeMillis,
-    private val pollAction: suspend () -> WatcherRuntime.PollResult = { runtime.pollOnce() },
+    private val pollAction: suspend () -> PollMonitoring.PollResult = { runtime.pollOnce() },
     private val updateChecker: suspend () -> UpdateCheckResult = {
         GitHubReleaseUpdateSource().check(BuildInfo.current.version)
     },
@@ -215,7 +216,7 @@ class WatcherService(
         }
     }
 
-    private fun selectedDaemonTail(result: WatcherRuntime.PollResult): List<String> {
+    private fun selectedDaemonTail(result: PollMonitoring.PollResult): List<String> {
         val detail = liveViewModel.state.value.detail
         val pid = when (detail) {
             is io.github.cdsap.daemonitor.ui.live.DetailState.Selected -> detail.process.pid

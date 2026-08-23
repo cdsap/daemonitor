@@ -1,5 +1,6 @@
 package io.github.cdsap.daemonitor.collect
 
+import io.github.cdsap.daemonitor.application.ProcessSource
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.PriorSample
 import io.github.cdsap.daemonitor.domain.model.ProcessInfo
@@ -12,11 +13,13 @@ import oshi.software.os.OSProcess
  * [ProcessSnapshotBuilder]. Scoped to the effective UID of the watcher process (KTD-6): cross-user
  * command lines / cwd are unreadable on macOS anyway, and limiting scope avoids becoming a
  * cross-user credential-reading target.
+ *
+ * Implements [ProcessSource] so application polling depends on the port, not OSHI.
  */
 class ProcessCollector(
     private val systemInfo: SystemInfo = SystemInfo(),
     private val clock: () -> Long = System::currentTimeMillis,
-) {
+) : ProcessSource {
     private val os = systemInfo.operatingSystem
     private val logicalProcessors = systemInfo.hardware.processor.logicalProcessorCount
     private val selfPid: Int = os.processId
@@ -25,7 +28,10 @@ class ProcessCollector(
     /** Prior CPU sample per process, keyed by (pid, startTime) to survive PID reuse (KTD-4). */
     private val priorSamples = mutableMapOf<ProcessKey, PriorSample>()
 
-    fun poll(): List<GradleProcess> {
+    /** Compatibility alias for [currentProcesses]. */
+    fun poll(): List<GradleProcess> = currentProcesses()
+
+    override fun currentProcesses(): List<GradleProcess> {
         val now = clock()
         val seen = mutableSetOf<ProcessKey>()
         val result = mutableListOf<GradleProcess>()
