@@ -4,6 +4,8 @@ import io.github.cdsap.daemonitor.store.AppearancePreference
 import io.github.cdsap.daemonitor.store.Settings
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
+import io.github.cdsap.daemonitor.application.DefaultDaemonitorQueryService
+import io.github.cdsap.daemonitor.collect.ProcessCollector
 import io.github.cdsap.daemonitor.mcp.DaemonitorMcpHttpServer
 import io.github.cdsap.daemonitor.mcp.DaemonitorMcpServer
 import io.github.cdsap.daemonitor.ui.history.HistoryViewModel
@@ -139,7 +141,9 @@ class WatcherService(
                 DaemonitorMcpHttpServer.start(
                     port = state.mcpPort,
                     token = state.mcpToken,
-                    server = DaemonitorMcpServer(database),
+                    server = DaemonitorMcpServer(
+                        DefaultDaemonitorQueryService(database, ProcessCollector()),
+                    ),
                 )
             }.onSuccess { server ->
                 if (!settingsViewModel.state.value.mcpEnabled) {

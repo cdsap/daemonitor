@@ -1,5 +1,6 @@
 package io.github.cdsap.daemonitor.collect
 
+import io.github.cdsap.daemonitor.application.ProcessSource
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.PriorSample
 import io.github.cdsap.daemonitor.domain.model.ProcessInfo
@@ -16,7 +17,7 @@ import oshi.software.os.OSProcess
 class ProcessCollector(
     private val systemInfo: SystemInfo = SystemInfo(),
     private val clock: () -> Long = System::currentTimeMillis,
-) {
+) : ProcessSource {
     private val os = systemInfo.operatingSystem
     private val logicalProcessors = systemInfo.hardware.processor.logicalProcessorCount
     private val selfPid: Int = os.processId
@@ -24,6 +25,8 @@ class ProcessCollector(
 
     /** Prior CPU sample per process, keyed by (pid, startTime) to survive PID reuse (KTD-4). */
     private val priorSamples = mutableMapOf<ProcessKey, PriorSample>()
+
+    override fun currentProcesses(): List<GradleProcess> = poll()
 
     fun poll(): List<GradleProcess> {
         val now = clock()

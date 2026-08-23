@@ -27,7 +27,6 @@ import io.github.cdsap.daemonitor.ui.history.HistoryScreen
 import io.github.cdsap.daemonitor.ui.live.LiveMonitorScreen
 import io.github.cdsap.daemonitor.ui.live.ProcessVisualScreen
 import io.github.cdsap.daemonitor.ui.settings.SettingsScreen
-import io.github.cdsap.daemonitor.mcp.DaemonitorMcpStdio
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 

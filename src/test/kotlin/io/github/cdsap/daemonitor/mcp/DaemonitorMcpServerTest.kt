@@ -1,5 +1,7 @@
 package io.github.cdsap.daemonitor.mcp
 
+import io.github.cdsap.daemonitor.application.DefaultDaemonitorQueryService
+import io.github.cdsap.daemonitor.application.ProcessSource
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
@@ -36,7 +38,7 @@ class DaemonitorMcpServerTest {
         val db = WatcherDatabase.open(tmp.resolve("watcher.db"))
         db.insertBuild(build("old", 1_000, project = "/repo/a", status = FinalStatus.SUCCESS))
         db.insertBuild(build("match", 2_000, project = "/repo/target", status = FinalStatus.FAILED))
-        val server = DaemonitorMcpServer(db, currentProcessesProvider = { emptyList() })
+        val server = DaemonitorMcpServer(queryService(db, emptyList()))
 
         val payload = server.callTool(
             "daemonitor_search_history",
@@ -70,7 +72,7 @@ class DaemonitorMcpServerTest {
             ),
             timestampMs = 3_100,
         )
-        val server = DaemonitorMcpServer(db, currentProcessesProvider = { emptyList() })
+        val server = DaemonitorMcpServer(queryService(db, emptyList()))
 
         val payload = server.callTool(
             "daemonitor_builds_for_process",
@@ -119,9 +121,16 @@ class DaemonitorMcpServerTest {
         currentProcesses: List<GradleProcess> = emptyList(),
     ): DaemonitorMcpServer =
         DaemonitorMcpServer(
-            database = WatcherDatabase.open(tmp.resolve("watcher.db")),
-            currentProcessesProvider = { currentProcesses },
+            queryService(WatcherDatabase.open(tmp.resolve("watcher.db")), currentProcesses),
         )
+
+    private fun queryService(
+        database: WatcherDatabase,
+        currentProcesses: List<GradleProcess>,
+    ) = DefaultDaemonitorQueryService(
+        database = database,
+        processSource = ProcessSource { currentProcesses },
+    )
 
     private fun DaemonitorMcpServer.request(method: String, params: JsonObject = jsonObject()): JsonObject =
         handle(
