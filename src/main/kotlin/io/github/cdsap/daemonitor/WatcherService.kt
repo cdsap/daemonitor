@@ -1,18 +1,18 @@
 package io.github.cdsap.daemonitor
 
+import io.github.cdsap.daemonitor.application.update.UpdateService
+import io.github.cdsap.daemonitor.infrastructure.update.defaultUpdateService
+import io.github.cdsap.daemonitor.mcp.DaemonitorMcpHttpServer
+import io.github.cdsap.daemonitor.mcp.DaemonitorMcpServer
 import io.github.cdsap.daemonitor.store.AppearancePreference
 import io.github.cdsap.daemonitor.store.Settings
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
-import io.github.cdsap.daemonitor.mcp.DaemonitorMcpHttpServer
-import io.github.cdsap.daemonitor.mcp.DaemonitorMcpServer
 import io.github.cdsap.daemonitor.ui.history.HistoryViewModel
 import io.github.cdsap.daemonitor.ui.live.LiveViewModel
 import io.github.cdsap.daemonitor.ui.settings.McpUiState
 import io.github.cdsap.daemonitor.ui.settings.SettingsUiState
 import io.github.cdsap.daemonitor.ui.settings.SettingsViewModel
-import io.github.cdsap.daemonitor.update.GitHubReleaseUpdateSource
-import io.github.cdsap.daemonitor.update.UpdateCheckResult
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
@@ -32,9 +32,7 @@ class WatcherService(
     private val settingsStore: SettingsStore = SettingsStore(),
     private val clock: () -> Long = System::currentTimeMillis,
     private val pollAction: suspend () -> WatcherRuntime.PollResult = { runtime.pollOnce() },
-    private val updateChecker: suspend () -> UpdateCheckResult = {
-        GitHubReleaseUpdateSource().check(BuildInfo.current.version)
-    },
+    private val updateService: UpdateService = defaultUpdateService(),
     private val uiDispatcher: CoroutineDispatcher = Dispatchers.Main,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
@@ -56,7 +54,7 @@ class WatcherService(
         onRetentionChange = ::onRetentionChanged,
         onAppearanceChange = ::onAppearanceChanged,
         onMcpEnabledChange = ::onMcpEnabledChanged,
-        updateChecker = updateChecker,
+        updateService = updateService,
         scope = CoroutineScope(SupervisorJob() + uiDispatcher),
     )
 
