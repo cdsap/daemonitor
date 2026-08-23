@@ -32,8 +32,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Application entry point (U1 scaffold, wired in U7). Opens the database, starts the polling
- * [WatcherService], and renders the tabbed UI. The Historical tab is wired in U8.
+ * Application entry point (U1 scaffold, wired in U7). Opens the database, starts the desktop
+ * [WatcherService] facade (monitoring/history/settings/MCP/update services), and renders the
+ * tabbed UI. The Historical tab is wired in U8.
  */
 fun main(args: Array<String>) {
     if (args.firstOrNull() == "--headless") {

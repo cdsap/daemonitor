@@ -150,7 +150,7 @@ class WatcherServiceTest {
         clock: () -> Long = { 0 },
         updateChecker: suspend () -> UpdateCheckResult = { UpdateCheckResult.UpToDate("1.0.3") },
         pollAction: suspend () -> WatcherRuntime.PollResult,
-    ) = WatcherService(
+    ) = WatcherService.forTests(
         runtime = WatcherRuntime.create(database),
         database = database,
         settingsStore = SettingsStore(tmp.resolve("settings.properties")),
