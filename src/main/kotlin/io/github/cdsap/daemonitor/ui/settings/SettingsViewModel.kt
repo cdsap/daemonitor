@@ -1,11 +1,7 @@
 package io.github.cdsap.daemonitor.ui.settings
 
-import io.github.cdsap.daemonitor.BuildInfo
 import io.github.cdsap.daemonitor.Defaults
 import io.github.cdsap.daemonitor.store.AppearancePreference
-import io.github.cdsap.daemonitor.update.DesktopUpdateApplier
-import io.github.cdsap.daemonitor.update.DesktopUpdateInstaller
-import io.github.cdsap.daemonitor.update.GitHubReleaseUpdateSource
 import io.github.cdsap.daemonitor.update.StagedUpdate
 import io.github.cdsap.daemonitor.update.UpdateApplier
 import io.github.cdsap.daemonitor.update.UpdateCandidate
@@ -71,10 +67,14 @@ class SettingsViewModel(
     private val onAppearanceChange: (AppearancePreference) -> Unit = {},
     private val onMcpEnabledChange: (Boolean) -> Unit = {},
     private val updateChecker: suspend () -> UpdateCheckResult = {
-        GitHubReleaseUpdateSource().check(BuildInfo.current.version)
+        UpdateCheckResult.Failed("Update checker not configured")
     },
-    private val updateInstaller: UpdateInstaller = DesktopUpdateInstaller(),
-    private val updateApplier: UpdateApplier = DesktopUpdateApplier(),
+    private val updateInstaller: UpdateInstaller = UpdateInstaller { _, _ ->
+        error("Update installer not configured")
+    },
+    private val updateApplier: UpdateApplier = UpdateApplier {
+        error("Update applier not configured")
+    },
     private val onExitForUpdate: () -> Unit = { kotlin.system.exitProcess(0) },
     private val releaseOpener: (String) -> Unit = ::openReleaseUrl,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
