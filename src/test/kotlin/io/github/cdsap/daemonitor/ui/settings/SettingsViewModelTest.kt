@@ -1,7 +1,7 @@
 package io.github.cdsap.daemonitor.ui.settings
 
 import io.github.cdsap.daemonitor.config.RetentionPolicy
-import io.github.cdsap.daemonitor.store.AppearancePreference
+import io.github.cdsap.daemonitor.persistence.AppearancePreference
 import io.github.cdsap.daemonitor.update.StagedUpdate
 import io.github.cdsap.daemonitor.update.UpdateApplier
 import io.github.cdsap.daemonitor.update.UpdateCandidate

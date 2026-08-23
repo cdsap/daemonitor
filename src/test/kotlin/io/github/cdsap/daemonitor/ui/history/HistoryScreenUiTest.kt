@@ -13,7 +13,7 @@ import androidx.compose.ui.test.runComposeUiTest
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.Source
-import io.github.cdsap.daemonitor.store.AppearancePreference
+import io.github.cdsap.daemonitor.persistence.AppearancePreference
 import io.github.cdsap.daemonitor.ui.common.WatcherTheme
 import kotlin.test.Test
 

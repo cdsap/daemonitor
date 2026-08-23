@@ -34,9 +34,9 @@ class DaemonitorMcpServerTest {
     @Test
     fun `search history returns retained builds from sql`(@TempDirArg tmp: Path) {
         val db = WatcherDatabase.open(tmp.resolve("watcher.db"))
-        db.insertBuild(build("old", 1_000, project = "/repo/a", status = FinalStatus.SUCCESS))
-        db.insertBuild(build("match", 2_000, project = "/repo/target", status = FinalStatus.FAILED))
-        val server = DaemonitorMcpServer(db, currentProcessesProvider = { emptyList() })
+        db.save(build("old", 1_000, project = "/repo/a", status = FinalStatus.SUCCESS))
+        db.save(build("match", 2_000, project = "/repo/target", status = FinalStatus.FAILED))
+        val server = DaemonitorMcpServer(db, db, currentProcessesProvider = { emptyList() })
 
         val payload = server.callTool(
             "daemonitor_search_history",
@@ -51,8 +51,8 @@ class DaemonitorMcpServerTest {
     @Test
     fun `builds for process matches daemon pid and samples`(@TempDirArg tmp: Path) {
         val db = WatcherDatabase.open(tmp.resolve("watcher.db"))
-        db.insertBuild(build("b1", 3_000, pid = 42, project = "/repo/target"))
-        db.insertSample(
+        db.save(build("b1", 3_000, pid = 42, project = "/repo/target"))
+        db.save(
             GradleProcess(
                 pid = 42,
                 parentPid = 7,
@@ -70,7 +70,7 @@ class DaemonitorMcpServerTest {
             ),
             timestampMs = 3_100,
         )
-        val server = DaemonitorMcpServer(db, currentProcessesProvider = { emptyList() })
+        val server = DaemonitorMcpServer(db, db, currentProcessesProvider = { emptyList() })
 
         val payload = server.callTool(
             "daemonitor_builds_for_process",
@@ -117,11 +117,14 @@ class DaemonitorMcpServerTest {
     private fun server(
         tmp: Path,
         currentProcesses: List<GradleProcess> = emptyList(),
-    ): DaemonitorMcpServer =
-        DaemonitorMcpServer(
-            database = WatcherDatabase.open(tmp.resolve("watcher.db")),
+    ): DaemonitorMcpServer {
+        val database = WatcherDatabase.open(tmp.resolve("watcher.db"))
+        return DaemonitorMcpServer(
+            builds = database,
+            processSamples = database,
             currentProcessesProvider = { currentProcesses },
         )
+    }
 
     private fun DaemonitorMcpServer.request(method: String, params: JsonObject = jsonObject()): JsonObject =
         handle(

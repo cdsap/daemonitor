@@ -152,7 +152,9 @@ class WatcherServiceTest {
         pollAction: suspend () -> WatcherRuntime.PollResult,
     ) = WatcherService(
         runtime = WatcherRuntime.create(database),
-        database = database,
+        builds = database,
+        processSamples = database,
+        retention = database,
         settingsStore = SettingsStore(tmp.resolve("settings.properties")),
         clock = clock,
         pollAction = pollAction,

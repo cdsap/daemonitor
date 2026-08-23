@@ -6,6 +6,8 @@ import io.github.cdsap.daemonitor.collect.ProcessCollector
 import io.github.cdsap.daemonitor.domain.BuildAggregator
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
+import io.github.cdsap.daemonitor.persistence.BuildRepository
+import io.github.cdsap.daemonitor.persistence.ProcessSampleRepository
 import io.github.cdsap.daemonitor.store.WatcherDatabase
 
 /** UI-independent collection and persistence runtime shared by desktop and headless launchers. */
@@ -13,7 +15,8 @@ class WatcherRuntime(
     private val collector: ProcessCollector = ProcessCollector(),
     private val logWatcher: DaemonLogWatcher = DaemonLogWatcher(),
     private val aggregator: BuildAggregator,
-    private val database: WatcherDatabase,
+    private val builds: BuildRepository,
+    private val processSamples: ProcessSampleRepository,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
     private var knownDaemonPids = emptySet<Long>()
@@ -27,7 +30,7 @@ class WatcherRuntime(
     fun pollOnce(): PollResult {
         val now = clock()
         val processes = collector.poll()
-        processes.forEach { database.insertSample(it, now) }
+        processes.forEach { processSamples.save(it, now) }
 
         val logs = logWatcher.discover()
         return PollResult(
@@ -47,13 +50,13 @@ class WatcherRuntime(
             val lines = logWatcher.readNewLines(log.path)
             if (lines.isNotEmpty()) {
                 lines.flatMap { aggregator.onLogLine(log.pid, it.text, it.event) }.forEach {
-                    database.insertBuild(it)
+                    builds.save(it)
                     inserted = true
                 }
             }
             if (log.pid !in activeDaemonPids) {
                 aggregator.onDaemonGone(log.pid)?.let {
-                    database.insertBuild(it)
+                    builds.save(it)
                     inserted = true
                 }
             }
@@ -61,7 +64,7 @@ class WatcherRuntime(
 
         (knownDaemonPids - activeDaemonPids).forEach { gonePid ->
             aggregator.onDaemonGone(gonePid)?.let {
-                database.insertBuild(it)
+                builds.save(it)
                 inserted = true
             }
         }
@@ -75,10 +78,11 @@ class WatcherRuntime(
     companion object {
         fun create(database: WatcherDatabase): WatcherRuntime = WatcherRuntime(
             aggregator = BuildAggregator(
-                sampleProvider = database::samplesInWindow,
+                sampleProvider = database::samples,
                 ambientEnvNames = System.getenv().keys.toSet(),
             ),
-            database = database,
+            builds = database,
+            processSamples = database,
         )
     }
 }

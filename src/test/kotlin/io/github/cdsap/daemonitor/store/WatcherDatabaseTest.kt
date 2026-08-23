@@ -5,6 +5,9 @@ import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.domain.model.Source
+import io.github.cdsap.daemonitor.persistence.BuildRepository
+import io.github.cdsap.daemonitor.persistence.ProcessSampleRepository
+import io.github.cdsap.daemonitor.persistence.RetentionRepository
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import java.nio.file.Files
@@ -40,7 +43,7 @@ class WatcherDatabaseTest {
     @Test
     fun `build round-trips through the database`(@TempDirArg tmp: Path) = runTest {
         val db = WatcherDatabase.open(tmp.resolve("watcher.db"))
-        db.insertBuild(build("b1", 10_000))
+        db.save(build("b1", 10_000))
         val rows = db.buildsFlow().first()
         assertEquals(1, rows.size)
         assertEquals(FinalStatus.SUCCESS, rows[0].finalStatus)
@@ -59,8 +62,8 @@ class WatcherDatabaseTest {
             cpuPercent = null, rssMemoryMb = 300, maxHeapMb = null, minHeapMb = null,
             gc = null, startTimeMs = 1, status = "RUNNING",
         )
-        db.insertSample(p, timestampMs = 1_000)
-        val samples = db.samplesInWindow(pid = 5, startMs = 0, endMs = 2_000)
+        db.save(p, timestampMs = 1_000)
+        val samples = db.samples(pid = 5, fromMs = 0, toMs = 2_000)
         assertEquals(1, samples.size)
         assertEquals(300L, samples[0].first)
     }
@@ -84,10 +87,10 @@ class WatcherDatabaseTest {
             status = "RUNNING",
         )
 
-        db.insertSample(p, timestampMs = 1_000)
+        db.save(p, timestampMs = 1_000)
 
-        assertEquals(1L, db.processSampleCount(ProcessType.KOTLIN_DAEMON))
-        assertEquals(0L, db.processSampleCount(ProcessType.GRADLE_DAEMON))
+        assertEquals(1L, db.countByType(ProcessType.KOTLIN_DAEMON))
+        assertEquals(0L, db.countByType(ProcessType.GRADLE_DAEMON))
     }
 
     @Test
@@ -96,8 +99,8 @@ class WatcherDatabaseTest {
         val now = 100L * 24 * 60 * 60 * 1000 // day 100
         val old = now - 8L * 24 * 60 * 60 * 1000 // 8 days ago (> 7d retention)
         val recent = now - 1L * 24 * 60 * 60 * 1000 // 1 day ago
-        db.insertBuild(build("old", old))
-        db.insertBuild(build("recent", recent))
+        db.save(build("old", old))
+        db.save(build("recent", recent))
         db.purgeOlderThan(now, retentionDays = 7)
         val rows = db.buildsFlow().first()
         assertEquals(listOf("recent"), rows.map { it.buildId })
@@ -124,6 +127,45 @@ class WatcherDatabaseTest {
         Files.delete(path)
 
         assertTrue(!path.exists())
+    }
+
+    @Test
+    fun `repository ports expose build sample and retention operations`(@TempDirArg tmp: Path) {
+        val database = WatcherDatabase.open(tmp.resolve("watcher.db"))
+        val builds: BuildRepository = database
+        val samples: ProcessSampleRepository = database
+        val retention: RetentionRepository = database
+
+        samples.save(
+            GradleProcess(
+                pid = 11,
+                parentPid = 1,
+                type = ProcessType.GRADLE_DAEMON,
+                commandLine = "java GradleDaemon",
+                workingDirectory = "/repo",
+                projectPath = "/repo",
+                cpuPercent = 1.0,
+                rssMemoryMb = 400,
+                maxHeapMb = 1024,
+                minHeapMb = null,
+                gc = null,
+                startTimeMs = 1,
+                status = "RUNNING",
+            ),
+            timestampMs = 5_000,
+        )
+        builds.save(build("port-build", 5_000, project = "/repo"))
+
+        assertEquals(listOf("port-build"), builds.recent().map { it.buildId })
+        assertEquals(listOf("/repo"), builds.distinctProjects())
+        assertEquals(1, builds.search("port", limit = 10).size)
+        assertEquals(1, builds.findByDaemon(1, limit = 10).size)
+        assertEquals(listOf(400L to 1.0), samples.samples(11, fromMs = 0, toMs = 10_000))
+        assertEquals(1, samples.findByPid(11, limit = 10).size)
+        assertEquals(1, samples.recentSamples(limit = 10).size)
+
+        retention.purgeOlderThan(nowMs = 5_000 + 8L * 24 * 60 * 60 * 1000, retentionDays = 7)
+        assertTrue(builds.recent().isEmpty())
     }
 }
 

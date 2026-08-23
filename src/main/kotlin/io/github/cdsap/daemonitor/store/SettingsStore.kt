@@ -2,6 +2,9 @@ package io.github.cdsap.daemonitor.store
 
 import io.github.cdsap.daemonitor.Defaults
 import io.github.cdsap.daemonitor.config.RetentionPolicy
+import io.github.cdsap.daemonitor.persistence.AppearancePreference
+import io.github.cdsap.daemonitor.persistence.Settings
+import io.github.cdsap.daemonitor.persistence.SettingsRepository
 import io.github.cdsap.daemonitor.platform.AppDirectories
 import java.nio.file.Files
 import java.nio.file.Path
@@ -12,26 +15,15 @@ import kotlin.io.path.exists
 import kotlin.io.path.inputStream
 import kotlin.io.path.outputStream
 
-/** User-configurable settings (KTD-9 deferred config, now partially realized). */
-data class Settings(
-    val retentionDays: Long = RetentionPolicy.DEFAULT.defaultDays,
-    val appearance: AppearancePreference = AppearancePreference.SYSTEM,
-    val mcpEnabled: Boolean = false,
-    val mcpPort: Int = Defaults.DEFAULT_MCP_PORT,
-    val mcpToken: String = "",
-)
-
-enum class AppearancePreference { SYSTEM, LIGHT, DARK }
-
 /**
  * Tiny properties-file settings store kept alongside the database. A full config table would be
  * over-built for a single scalar; a properties file is dependency-free, human-readable, and avoids
  * a schema migration. Reads are defensive — a missing/corrupt file or out-of-range value falls back
  * to the default rather than failing the app.
  */
-class SettingsStore(private val path: Path = AppDirectories.system.settingsPath) {
+class SettingsStore(private val path: Path = AppDirectories.system.settingsPath) : SettingsRepository {
 
-    fun load(): Settings {
+    override fun load(): Settings {
         if (!path.exists()) return Settings(mcpToken = newMcpToken())
         val props = Properties()
         runCatching { path.inputStream().use { props.load(it) } }
@@ -54,7 +46,7 @@ class SettingsStore(private val path: Path = AppDirectories.system.settingsPath)
         )
     }
 
-    fun save(settings: Settings) {
+    override fun save(settings: Settings) {
         runCatching {
             Files.createDirectories(path.parent)
             val mcpToken = settings.mcpToken.ifBlank { newMcpToken() }

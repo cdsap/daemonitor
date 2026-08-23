@@ -4,7 +4,9 @@ import io.github.cdsap.daemonitor.BuildInfo
 import io.github.cdsap.daemonitor.collect.ProcessCollector
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
-import io.github.cdsap.daemonitor.store.ProcessSample
+import io.github.cdsap.daemonitor.persistence.BuildRepository
+import io.github.cdsap.daemonitor.persistence.ProcessSample
+import io.github.cdsap.daemonitor.persistence.ProcessSampleRepository
 import io.github.cdsap.daemonitor.store.WatcherDatabase
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
@@ -13,7 +15,8 @@ import java.io.OutputStream
 import java.nio.charset.StandardCharsets
 
 class DaemonitorMcpServer(
-    private val database: WatcherDatabase,
+    private val builds: BuildRepository,
+    private val processSamples: ProcessSampleRepository,
     private val currentProcessesProvider: () -> List<GradleProcess> = ProcessCollector()::poll,
 ) {
     internal fun handle(request: JsonObject): JsonObject? {
@@ -166,15 +169,15 @@ class DaemonitorMcpServer(
 
         val limit = arguments.long("limit").coerceLimit()
         val pid = process.toLongOrNull()
-        val builds = if (pid != null) {
-            database.buildsForDaemonPid(pid, limit)
+        val matchedBuilds = if (pid != null) {
+            builds.findByDaemon(pid, limit)
         } else {
-            database.searchBuilds(process, limit)
+            builds.search(process, limit)
         }
         val samples = if (pid != null) {
-            database.processSamplesForPid(pid, limit)
+            processSamples.findByPid(pid, limit)
         } else {
-            database.recentProcessSamples(200).filter { sample ->
+            processSamples.recentSamples(200).filter { sample ->
                 sample.commandLine.contains(process, ignoreCase = true) ||
                     sample.workingDirectory?.contains(process, ignoreCase = true) == true ||
                     sample.projectPath?.contains(process, ignoreCase = true) == true ||
@@ -184,7 +187,7 @@ class DaemonitorMcpServer(
 
         return jsonObject(
             "process" to JsonString(process),
-            "matchedBuilds" to JsonArray(builds.map { it.toJson() }),
+            "matchedBuilds" to JsonArray(matchedBuilds.map { it.toJson() }),
             "matchedProcessSamples" to JsonArray(samples.map { it.toJson() }),
         )
     }
@@ -192,10 +195,10 @@ class DaemonitorMcpServer(
     private fun searchHistory(arguments: JsonObject): JsonObject {
         val query = arguments.string("query").orEmpty()
         val limit = arguments.long("limit").coerceLimit()
-        val builds = database.searchBuilds(query, limit)
+        val matchedBuilds = builds.search(query, limit)
         return jsonObject(
             "query" to JsonString(query),
-            "builds" to JsonArray(builds.map { it.toJson() }),
+            "builds" to JsonArray(matchedBuilds.map { it.toJson() }),
         )
     }
 
@@ -286,7 +289,7 @@ object DaemonitorMcpStdio {
         output: OutputStream = System.out,
     ) {
         database.use {
-            val server = DaemonitorMcpServer(it)
+            val server = DaemonitorMcpServer(it, it)
             McpMessageStream(input, output).serve(server)
         }
     }

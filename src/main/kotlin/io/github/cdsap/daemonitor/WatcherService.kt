@@ -1,8 +1,12 @@
 package io.github.cdsap.daemonitor
 
 import io.github.cdsap.daemonitor.config.MonitoringConfig
-import io.github.cdsap.daemonitor.store.AppearancePreference
-import io.github.cdsap.daemonitor.store.Settings
+import io.github.cdsap.daemonitor.persistence.AppearancePreference
+import io.github.cdsap.daemonitor.persistence.BuildRepository
+import io.github.cdsap.daemonitor.persistence.ProcessSampleRepository
+import io.github.cdsap.daemonitor.persistence.RetentionRepository
+import io.github.cdsap.daemonitor.persistence.Settings
+import io.github.cdsap.daemonitor.persistence.SettingsRepository
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
 import io.github.cdsap.daemonitor.mcp.DaemonitorMcpHttpServer
@@ -29,8 +33,10 @@ import kotlinx.coroutines.withContext
 /** Desktop adapter that runs [WatcherRuntime] on [Dispatchers.IO] and projects results into UI state. */
 class WatcherService(
     private val runtime: WatcherRuntime,
-    private val database: WatcherDatabase,
-    private val settingsStore: SettingsStore = SettingsStore(),
+    private val builds: BuildRepository,
+    private val processSamples: ProcessSampleRepository,
+    private val retention: RetentionRepository,
+    private val settingsStore: SettingsRepository = SettingsStore(),
     private val clock: () -> Long = System::currentTimeMillis,
     private val pollAction: suspend () -> WatcherRuntime.PollResult = { runtime.pollOnce() },
     private val updateChecker: suspend () -> UpdateCheckResult = {
@@ -73,7 +79,7 @@ class WatcherService(
         serviceScope = boundScope
         settingsViewModel.checkForUpdates()
         if (settingsViewModel.state.value.mcpEnabled) startMcpServer(boundScope)
-        database.purgeOlderThan(clock(), retentionDays)
+        retention.purgeOlderThan(clock(), retentionDays)
         // Load whatever history already exists, then keep it current from the poll loop.
         boundScope.launch(ioDispatcher) { refreshHistory() }
         boundScope.launch(ioDispatcher) {
@@ -86,7 +92,7 @@ class WatcherService(
 
     /**
      * Cancels background poll/history work and waits for it to finish.
-     * Call this before closing [database] so temp-dir cleanup cannot race in-flight SQLite access.
+     * Call this before closing the database so temp-dir cleanup cannot race in-flight SQLite access.
      */
     suspend fun stop() {
         mcpHttpServer?.close()
@@ -104,7 +110,7 @@ class WatcherService(
         saveSettings()
         val scope = serviceScope ?: return
         scope.launch(ioDispatcher) {
-            database.purgeOlderThan(clock(), days)
+            retention.purgeOlderThan(clock(), days)
             refreshHistory()
         }
     }
@@ -140,7 +146,7 @@ class WatcherService(
                 DaemonitorMcpHttpServer.start(
                     port = state.mcpPort,
                     token = state.mcpToken,
-                    server = DaemonitorMcpServer(database),
+                    server = DaemonitorMcpServer(builds, processSamples),
                 )
             }.onSuccess { server ->
                 if (!settingsViewModel.state.value.mcpEnabled) {
@@ -180,10 +186,10 @@ class WatcherService(
      *  Historical tab updates within one poll instead of waiting on `asFlow` notifications that did
      *  not fire reliably with the JDBC SQLite driver. */
     private suspend fun refreshHistory() {
-        val builds = database.recentBuilds()
-        val projects = database.distinctProjects()
+        val recentBuilds = builds.recent()
+        val projects = builds.distinctProjects()
         withContext(uiDispatcher) {
-            historyViewModel.onBuilds(builds)
+            historyViewModel.onBuilds(recentBuilds)
             historyViewModel.onProjects(projects)
         }
     }
@@ -230,7 +236,9 @@ class WatcherService(
         fun create(database: WatcherDatabase = WatcherDatabase.open()): WatcherService =
             WatcherService(
                 runtime = WatcherRuntime.create(database),
-                database = database,
+                builds = database,
+                processSamples = database,
+                retention = database,
             )
     }
 }

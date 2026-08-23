@@ -3,6 +3,8 @@
 package io.github.cdsap.daemonitor
 
 import io.github.cdsap.daemonitor.config.MonitoringConfig
+import io.github.cdsap.daemonitor.persistence.RetentionRepository
+import io.github.cdsap.daemonitor.persistence.SettingsRepository
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
 import kotlinx.coroutines.CancellationException
@@ -32,8 +34,10 @@ internal object HeadlessLauncher {
 
         HeadlessMacMode.configure()
         val database = WatcherDatabase.open()
+        val retention: RetentionRepository = database
+        val settings: SettingsRepository = SettingsStore()
         val runtime = WatcherRuntime.create(database)
-        val retentionDays = SettingsStore().load().retentionDays
+        val retentionDays = settings.load().retentionDays
         val pollingThread = Thread.currentThread()
         val running = AtomicBoolean(true)
         val cleanupFinished = CountDownLatch(1)
@@ -59,7 +63,7 @@ internal object HeadlessLauncher {
         )
 
         return try {
-            database.purgeOlderThan(System.currentTimeMillis(), retentionDays)
+            retention.purgeOlderThan(System.currentTimeMillis(), retentionDays)
             Runtime.getRuntime().addShutdownHook(shutdownHook)
             output.println("Daemonitor headless collector started")
             runBlocking {
