@@ -2,6 +2,7 @@
 
 package io.github.cdsap.daemonitor
 
+import io.github.cdsap.daemonitor.config.MonitoringConfig
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
 import kotlinx.coroutines.CancellationException
@@ -65,7 +66,7 @@ internal object HeadlessLauncher {
                 while (currentCoroutineContext().isActive && running.get()) {
                     runCatching { runtime.pollOnce() }
                         .onFailure { error.println("Daemonitor poll failed: ${it.message}") }
-                    delay(Defaults.POLL_INTERVAL)
+                    delay(MonitoringConfig.DEFAULT.pollInterval)
                 }
             }
             0

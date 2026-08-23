@@ -4,7 +4,8 @@ import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import app.cash.sqldelight.db.SqlDriver
-import io.github.cdsap.daemonitor.Defaults
+import io.github.cdsap.daemonitor.config.RetentionPolicy
+import io.github.cdsap.daemonitor.platform.AppDirectories
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
@@ -137,7 +138,7 @@ class WatcherDatabase private constructor(
         db.watcherQueries.distinctProjects().asFlow().mapToList(ioDispatcher)
 
     /** Delete samples and builds older than [retentionDays] before [nowMs] (KTD-5). */
-    fun purgeOlderThan(nowMs: Long, retentionDays: Long = Defaults.DEFAULT_RETENTION_DAYS) {
+    fun purgeOlderThan(nowMs: Long, retentionDays: Long = RetentionPolicy.DEFAULT.defaultDays) {
         val cutoff = nowMs - retentionDays * 24 * 60 * 60 * 1000
         db.watcherQueries.purgeSamplesOlderThan(cutoff)
         db.watcherQueries.purgeBuildsOlderThan(cutoff)
@@ -146,7 +147,7 @@ class WatcherDatabase private constructor(
     companion object {
         /** Open (creating if necessary) the database at [path], applying privacy hardening. */
         fun open(
-            path: Path = Defaults.DATABASE_PATH,
+            path: Path = AppDirectories.system.databasePath,
             ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
         ): WatcherDatabase {
             val isNew = !path.exists()

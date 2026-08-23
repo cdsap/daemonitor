@@ -1,6 +1,6 @@
 package io.github.cdsap.daemonitor.domain
 
-import io.github.cdsap.daemonitor.Defaults
+import io.github.cdsap.daemonitor.config.MonitoringConfig
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.BuildEnvNames
 import io.github.cdsap.daemonitor.domain.model.BuildEvent
@@ -121,10 +121,11 @@ class BuildAggregator(
         private var logChars = 0
 
         fun appendLogLine(line: String) {
-            val boundedLine = line.takeLast(Defaults.LOG_SNIPPET_CHARS)
+            val snippetLimit = MonitoringConfig.DEFAULT.logSnippetLimit
+            val boundedLine = line.takeLast(snippetLimit.chars)
             logLines.addLast(boundedLine)
             logChars += boundedLine.length + if (logLines.size > 1) 1 else 0
-            while (logLines.size > Defaults.LOG_SNIPPET_LINES || logChars > Defaults.LOG_SNIPPET_CHARS) {
+            while (logLines.size > snippetLimit.lines || logChars > snippetLimit.chars) {
                 val removed = logLines.removeFirst()
                 logChars -= removed.length + if (logLines.isNotEmpty()) 1 else 0
             }

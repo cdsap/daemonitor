@@ -34,7 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import io.github.cdsap.daemonitor.Defaults
+import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.store.AppearancePreference
 import io.github.cdsap.daemonitor.ui.common.SectionCard
 import io.github.cdsap.daemonitor.ui.common.ScreenHeader
@@ -199,13 +199,13 @@ fun SettingsScreen(
                 Spacer(Modifier.height(Space.sm))
                 Text(
                     "Entries older than this are removed on startup and immediately when you lower it. " +
-                        "Range ${Defaults.MIN_RETENTION_DAYS}–${Defaults.MAX_RETENTION_DAYS} days; default ${Defaults.DEFAULT_RETENTION_DAYS}.",
+                        "Range ${RetentionPolicy.DEFAULT.minDays}–${RetentionPolicy.DEFAULT.maxDays} days; default ${RetentionPolicy.DEFAULT.defaultDays}.",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(Space.md))
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                    Defaults.RETENTION_PRESETS.forEach { days ->
+                    RetentionPolicy.DEFAULT.presets.forEach { days ->
                         FilterChip(
                             selected = state.retentionDays == days,
                             onClick = { onRetentionDays(days) },
