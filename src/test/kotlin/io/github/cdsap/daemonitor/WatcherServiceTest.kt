@@ -176,7 +176,7 @@ class WatcherServiceTest {
             urlOpener = UrlOpener {},
         ),
         pollAction: suspend () -> WatcherRuntime.PollResult,
-    ) = WatcherService(
+    ) = WatcherService.forTests(
         runtime = WatcherRuntime.create(database),
         database = database,
         settingsStore = SettingsStore(tmp.resolve("settings.properties")),

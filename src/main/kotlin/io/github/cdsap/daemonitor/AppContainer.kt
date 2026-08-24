@@ -5,6 +5,7 @@ import io.github.cdsap.daemonitor.application.ProcessSource
 import io.github.cdsap.daemonitor.application.update.UpdateService
 import io.github.cdsap.daemonitor.collect.DaemonLogWatcher
 import io.github.cdsap.daemonitor.collect.ProcessCollector
+import io.github.cdsap.daemonitor.config.MonitoringConfig
 import io.github.cdsap.daemonitor.domain.BuildAggregator
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.infrastructure.update.defaultUpdateService
@@ -48,13 +49,17 @@ class AppContainer(
         ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     ): WatcherService = WatcherService(
         runtime = runtime,
-        database = database,
-        settingsStore = settingsStore,
-        clock = clock,
+        historyService = HistoryService(database),
+        settingsService = SettingsService(settingsStore, database, clock),
+        mcpController = McpServiceController.create(::createMcpServer),
         updateService = updateService,
-        mcpServerFactory = ::createMcpServer,
+        monitoringService = MonitoringService(
+            pollAction = { runtime.pollOnce() },
+            ioDispatcher = ioDispatcher,
+            pollInterval = MonitoringConfig.DEFAULT.pollInterval,
+        ),
         uiDispatcher = uiDispatcher,
-        ioDispatcher = ioDispatcher,
+        clock = clock,
     )
 
     fun createMcpServer(
