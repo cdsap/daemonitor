@@ -1,5 +1,6 @@
 package io.github.cdsap.daemonitor
 
+import io.github.cdsap.daemonitor.config.MonitoringConfig
 import io.github.cdsap.daemonitor.mcp.DaemonitorMcpHttpServer
 import io.github.cdsap.daemonitor.mcp.DaemonitorMcpServer
 import io.github.cdsap.daemonitor.store.AppearancePreference
@@ -82,7 +83,7 @@ class WatcherService(
         boundScope.launch(ioDispatcher) {
             while (isActive) {
                 pollSafely()
-                delay(Defaults.POLL_INTERVAL)
+                delay(MonitoringConfig.DEFAULT.pollInterval)
             }
         }
     }

@@ -5,6 +5,7 @@ import io.github.cdsap.daemonitor.collect.ProcessCollector
 import io.github.cdsap.daemonitor.domain.BuildAggregator
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.mcp.DaemonitorMcpServer
+import io.github.cdsap.daemonitor.platform.AppDirectories
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
 import io.github.cdsap.daemonitor.update.DesktopUpdateApplier
@@ -21,8 +22,8 @@ import java.nio.file.Path
  * bootstrappers and application/presentation code receives dependencies through constructors.
  */
 class AppContainer(
-    databasePath: Path = Defaults.DATABASE_PATH,
-    settingsPath: Path = Defaults.SETTINGS_PATH,
+    databasePath: Path = AppDirectories.system.databasePath,
+    settingsPath: Path = AppDirectories.system.settingsPath,
     private val clock: () -> Long = System::currentTimeMillis,
     ambientEnvNames: Set<String> = System.getenv().keys.toSet(),
 ) : AutoCloseable {
