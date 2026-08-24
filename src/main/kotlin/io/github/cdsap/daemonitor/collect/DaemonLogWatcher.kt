@@ -1,6 +1,7 @@
 package io.github.cdsap.daemonitor.collect
 
-import io.github.cdsap.daemonitor.Defaults
+import io.github.cdsap.daemonitor.config.MonitoringConfig
+import io.github.cdsap.daemonitor.platform.AppDirectories
 import io.github.cdsap.daemonitor.domain.Redactor
 import io.github.cdsap.daemonitor.domain.model.BuildEvent
 import java.io.ByteArrayOutputStream
@@ -29,8 +30,8 @@ data class DaemonLogLine(val text: String, val event: BuildEvent?)
  * single registration.
  */
 class DaemonLogWatcher(
-    private val gradleUserHome: Path = Defaults.GRADLE_USER_HOME,
-    private val tailLines: Int = Defaults.LOG_TAIL_LINES,
+    private val gradleUserHome: Path = AppDirectories.system.gradleUserHome,
+    private val tailLines: Int = MonitoringConfig.DEFAULT.logTailLines,
     private val initialReadBytes: Int = DEFAULT_INITIAL_READ_BYTES,
     private val readChunkBytes: Int = DEFAULT_READ_CHUNK_BYTES,
 ) {

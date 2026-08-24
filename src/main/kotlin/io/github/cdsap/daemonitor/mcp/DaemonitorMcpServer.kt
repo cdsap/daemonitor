@@ -1,5 +1,6 @@
 package io.github.cdsap.daemonitor.mcp
 
+import io.github.cdsap.daemonitor.AppContainer
 import io.github.cdsap.daemonitor.BuildInfo
 import io.github.cdsap.daemonitor.application.DaemonitorQueryService
 import io.github.cdsap.daemonitor.domain.model.Build
@@ -259,7 +260,19 @@ class DaemonitorMcpServer(
     }
 }
 
-class McpMessageStream(
+object DaemonitorMcpStdio {
+    fun run(
+        container: AppContainer = AppContainer(),
+        input: InputStream = System.`in`,
+        output: OutputStream = System.out,
+    ) {
+        container.use {
+            McpMessageStream(input, output).serve(it.createMcpServer())
+        }
+    }
+}
+
+internal class McpMessageStream(
     input: InputStream,
     output: OutputStream,
 ) {

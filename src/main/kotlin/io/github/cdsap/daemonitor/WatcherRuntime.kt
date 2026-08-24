@@ -10,8 +10,8 @@ import io.github.cdsap.daemonitor.store.WatcherDatabase
 
 /** UI-independent collection and persistence runtime shared by desktop and headless launchers. */
 class WatcherRuntime(
-    private val collector: ProcessCollector = ProcessCollector(),
-    private val logWatcher: DaemonLogWatcher = DaemonLogWatcher(),
+    private val collector: ProcessCollector,
+    private val logWatcher: DaemonLogWatcher,
     private val aggregator: BuildAggregator,
     private val database: WatcherDatabase,
     private val clock: () -> Long = System::currentTimeMillis,
@@ -73,7 +73,10 @@ class WatcherRuntime(
         filter { it.type == ProcessType.GRADLE_DAEMON }.map { it.pid }.toSet()
 
     companion object {
+        /** Test/helper factory. Production wiring lives in [AppContainer]. */
         fun create(database: WatcherDatabase): WatcherRuntime = WatcherRuntime(
+            collector = ProcessCollector(),
+            logWatcher = DaemonLogWatcher(),
             aggregator = BuildAggregator(
                 sampleProvider = database::samplesInWindow,
                 ambientEnvNames = System.getenv().keys.toSet(),

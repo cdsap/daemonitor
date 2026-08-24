@@ -1,6 +1,6 @@
 package io.github.cdsap.daemonitor.ui.settings
 
-import io.github.cdsap.daemonitor.Defaults
+import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.store.AppearancePreference
 import io.github.cdsap.daemonitor.update.StagedUpdate
 import io.github.cdsap.daemonitor.update.UpdateApplier
@@ -47,7 +47,7 @@ class SettingsViewModelTest {
     fun `out-of-range value is clamped`() {
         val vm = SettingsViewModel()
         vm.setRetentionDays(9_999)
-        assertEquals(Defaults.MAX_RETENTION_DAYS, vm.state.value.retentionDays)
+        assertEquals(RetentionPolicy.DEFAULT.maxDays, vm.state.value.retentionDays)
     }
 
     @Test

@@ -1,6 +1,6 @@
 package io.github.cdsap.daemonitor.ui.history
 
-import io.github.cdsap.daemonitor.Defaults
+import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.Source
@@ -33,8 +33,8 @@ class HistoryViewModelTest {
 
     @Test
     fun `time-range presets match retention choices and use rolling day cutoffs`() {
-        assertEquals(Defaults.RETENTION_PRESETS, TimeRange.entries.map(TimeRange::days))
-        assertEquals(Defaults.DEFAULT_RETENTION_DAYS, TimeRange.DEFAULT.days)
+        assertEquals(RetentionPolicy.DEFAULT.presets, TimeRange.entries.map(TimeRange::days))
+        assertEquals(RetentionPolicy.DEFAULT.defaultDays, TimeRange.DEFAULT.days)
         TimeRange.entries.forEach { range ->
             assertEquals(now - range.days * dayMs, range.cutoffMs(now))
         }

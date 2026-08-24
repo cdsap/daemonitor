@@ -1,6 +1,6 @@
 package io.github.cdsap.daemonitor.ui.history
 
-import io.github.cdsap.daemonitor.Defaults
+import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.domain.model.Build
 
 /** Rolling time ranges aligned with the history-retention choices in Settings. */
@@ -21,12 +21,12 @@ enum class TimeRange(val days: Long) {
         private const val DAY_MS = 24L * 60 * 60 * 1000
 
         init {
-            check(entries.map(TimeRange::days) == Defaults.RETENTION_PRESETS) {
+            check(entries.map(TimeRange::days) == RetentionPolicy.DEFAULT.presets) {
                 "Historical ranges must match the configured retention presets"
             }
         }
 
-        val DEFAULT: TimeRange = entries.single { it.days == Defaults.DEFAULT_RETENTION_DAYS }
+        val DEFAULT: TimeRange = entries.single { it.days == RetentionPolicy.DEFAULT.defaultDays }
     }
 }
 
