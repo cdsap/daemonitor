@@ -15,6 +15,19 @@ version = "1.0.7"
 
 val nativePackageVersion = "1.0.7"
 
+val distributionChannel = (findProperty("daemonitor.distribution") as String?)
+    ?.trim()
+    ?.uppercase()
+    .orEmpty()
+    .ifEmpty { "DIRECT" }
+    .let { raw ->
+        when (raw) {
+            "APP_STORE", "APPSTORE", "MAC_APP_STORE" -> "APP_STORE"
+            else -> "DIRECT"
+        }
+    }
+val isAppStoreDistribution = distributionChannel == "APP_STORE"
+
 val buildInfoDirectory = layout.buildDirectory.dir("generated/build-info")
 val buildCommit = providers.environmentVariable("GITHUB_SHA")
     .map { it.take(8) }
@@ -32,12 +45,17 @@ val generateBuildInfo = tasks.register("generateBuildInfo") {
     val appVersion = project.version.toString()
     inputs.property("version", appVersion)
     inputs.property("commit", buildCommit)
+    inputs.property("distribution", distributionChannel)
     outputs.dir(buildInfoDirectory)
 
     doLast {
         buildInfoDirectory.get().file("daemonitor-build.properties").asFile.apply {
             parentFile.mkdirs()
-            writeText("version=$appVersion\ncommit=${buildCommit.get()}\n")
+            writeText(
+                "version=$appVersion\n" +
+                    "commit=${buildCommit.get()}\n" +
+                    "distribution=$distributionChannel\n",
+            )
         }
     }
 }
@@ -119,13 +137,27 @@ compose.desktop {
         mainClass = "io.github.cdsap.daemonitor.Daemonitor"
         nativeDistributions {
             // One format per OS; each is only buildable on its own platform (jpackage limitation).
-            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
+            // APP_STORE adds macOS .pkg for App Store / TestFlight packaging experiments.
+            if (isAppStoreDistribution) {
+                targetFormats(TargetFormat.Pkg, TargetFormat.Msi, TargetFormat.Deb)
+            } else {
+                targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
+            }
             packageName = "Daemonitor"
             packageVersion = nativePackageVersion
             modules("java.sql", "java.net.http", "jdk.httpserver")
 
             // Per-platform installer/app icons (jpackage requires the native format per OS).
-            macOS { iconFile.set(project.file("icons/daemonitor.icns")) }
+            macOS {
+                iconFile.set(project.file("icons/daemonitor.icns"))
+                bundleID = "io.github.cdsap.daemonitor"
+                if (isAppStoreDistribution) {
+                    appStore = true
+                    appCategory = "public.app-category.developer-tools"
+                    entitlementsFile.set(project.file("packaging/macos/app-store.entitlements"))
+                    runtimeEntitlementsFile.set(project.file("packaging/macos/app-store-runtime.entitlements"))
+                }
+            }
             windows { iconFile.set(project.file("icons/daemonitor.ico")) }
             linux { iconFile.set(project.file("icons/daemonitor.png")) }
         }

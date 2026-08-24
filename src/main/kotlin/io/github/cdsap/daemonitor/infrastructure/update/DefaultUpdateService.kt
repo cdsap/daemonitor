@@ -8,12 +8,14 @@ import io.github.cdsap.daemonitor.application.update.CheckForUpdate
 import io.github.cdsap.daemonitor.application.update.PrepareUpdate
 import io.github.cdsap.daemonitor.application.update.UpdateService
 import io.github.cdsap.daemonitor.application.update.UpdateSource
+import io.github.cdsap.daemonitor.distribution.DistributionChannel
 import io.github.cdsap.daemonitor.infrastructure.platform.DesktopUrlOpener
 import io.github.cdsap.daemonitor.infrastructure.platform.SystemProcessExiter
 import io.github.cdsap.daemonitor.update.DesktopUpdateApplier
 import io.github.cdsap.daemonitor.update.DesktopUpdateInstaller
 import io.github.cdsap.daemonitor.update.GitHubReleaseUpdateSource
 import io.github.cdsap.daemonitor.update.UpdateApplier
+import io.github.cdsap.daemonitor.update.UpdateCheckResult
 import io.github.cdsap.daemonitor.update.UpdateInstaller
 
 /**
@@ -33,3 +35,26 @@ fun defaultUpdateService(
     applyUpdate = ApplyUpdate(applier = applier, processExiter = processExiter),
     urlOpener = urlOpener,
 )
+
+/**
+ * Selects the update stack for the packaged [DistributionChannel].
+ * App Store builds never contact GitHub Releases.
+ */
+fun updateServiceForDistribution(
+    channel: DistributionChannel = BuildInfo.current.distribution,
+    direct: () -> UpdateService = { defaultUpdateService() },
+): UpdateService = when (channel) {
+    DistributionChannel.DIRECT -> direct()
+    DistributionChannel.APP_STORE -> UpdateService(
+        checkForUpdate = CheckForUpdate(
+            source = UpdateSource { UpdateCheckResult.ManagedByAppStore },
+            currentVersion = { BuildInfo.current.version },
+        ),
+        prepareUpdate = PrepareUpdate(UpdateInstaller { _, _ -> null }),
+        applyUpdate = ApplyUpdate(
+            applier = UpdateApplier {},
+            processExiter = ProcessExiter {},
+        ),
+        urlOpener = UrlOpener {},
+    )
+}

@@ -213,6 +213,13 @@ target OS):
 ./gradlew packageDeb          # Linux (.deb)
 ```
 
+Mac App Store packaging experiments use a separate distribution channel (see
+[`docs/mac-app-store-distribution.md`](docs/mac-app-store-distribution.md)):
+
+```bash
+./gradlew packagePkg -Pdaemonitor.distribution=APP_STORE
+```
+
 Tag-triggered GitHub releases also publish `latest.json`, `update.json`, and `checksums.txt` next
 to the native installers. The updater-facing metadata contract is documented in
 [`docs/update-metadata.md`](docs/update-metadata.md).

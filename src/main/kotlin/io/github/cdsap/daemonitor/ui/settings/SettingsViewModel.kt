@@ -52,6 +52,8 @@ sealed interface UpdateUiState {
         val candidate: UpdateCandidate,
         val staged: StagedUpdate? = null,
     ) : UpdateUiState
+    /** Mac App Store / TestFlight builds; Apple owns updates. */
+    data object ManagedByAppStore : UpdateUiState
     data class Failed(val message: String, val releaseUrl: String? = null) : UpdateUiState
 }
 
@@ -108,6 +110,7 @@ class SettingsViewModel(
 
     fun checkForUpdates() {
         if (_state.value.updateState == UpdateUiState.Checking) return
+        if (_state.value.updateState == UpdateUiState.ManagedByAppStore) return
         _state.value = _state.value.copy(updateState = UpdateUiState.Checking)
         scope.launch {
             val nextState = runCatching { updateService.check().toUiState() }
@@ -192,6 +195,7 @@ class SettingsViewModel(
         is UpdateCheckResult.Available -> UpdateUiState.Available(candidate)
         is UpdateCheckResult.UpToDate -> UpdateUiState.UpToDate(currentVersion)
         is UpdateCheckResult.UnsupportedPlatform -> UpdateUiState.Failed("Updates are not available for this platform yet")
+        UpdateCheckResult.ManagedByAppStore -> UpdateUiState.ManagedByAppStore
         is UpdateCheckResult.Failed -> UpdateUiState.Failed(reason)
     }
 }

@@ -8,7 +8,8 @@ import io.github.cdsap.daemonitor.collect.ProcessCollector
 import io.github.cdsap.daemonitor.config.MonitoringConfig
 import io.github.cdsap.daemonitor.domain.BuildAggregator
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
-import io.github.cdsap.daemonitor.infrastructure.update.defaultUpdateService
+import io.github.cdsap.daemonitor.distribution.DistributionChannel
+import io.github.cdsap.daemonitor.infrastructure.update.updateServiceForDistribution
 import io.github.cdsap.daemonitor.mcp.DaemonitorMcpServer
 import io.github.cdsap.daemonitor.platform.AppDirectories
 import io.github.cdsap.daemonitor.store.SettingsStore
@@ -26,6 +27,7 @@ class AppContainer(
     settingsPath: Path = AppDirectories.system.settingsPath,
     private val clock: () -> Long = System::currentTimeMillis,
     ambientEnvNames: Set<String> = System.getenv().keys.toSet(),
+    distribution: DistributionChannel = BuildInfo.current.distribution,
 ) : AutoCloseable {
     val processCollector = ProcessCollector()
     val daemonLogWatcher = DaemonLogWatcher()
@@ -42,7 +44,8 @@ class AppContainer(
         database = database,
         clock = clock,
     )
-    val updateService: UpdateService = defaultUpdateService()
+    val distributionChannel: DistributionChannel = distribution
+    val updateService: UpdateService = updateServiceForDistribution(distribution)
 
     fun createDesktopService(
         uiDispatcher: CoroutineDispatcher = Dispatchers.Main,

@@ -115,7 +115,35 @@ class SettingsViewModelTest {
         assertEquals(0, SettingsUiState(updateState = UpdateUiState.Checking).updateNotificationCount)
         assertEquals(0, SettingsUiState(updateState = UpdateUiState.UpToDate("1.0.2")).updateNotificationCount)
         assertEquals(0, SettingsUiState(updateState = UpdateUiState.Failed("No network")).updateNotificationCount)
+        assertEquals(0, SettingsUiState(updateState = UpdateUiState.ManagedByAppStore).updateNotificationCount)
         assertEquals(1, SettingsUiState(updateState = UpdateUiState.Available(candidate)).updateNotificationCount)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun `app store managed updates map to managed UI state`() = runTest {
+        val vm = updateViewModel(
+            result = UpdateCheckResult.ManagedByAppStore,
+            scope = this,
+        )
+
+        vm.checkForUpdates()
+        advanceUntilIdle()
+
+        assertEquals(UpdateUiState.ManagedByAppStore, vm.state.value.updateState)
+        assertEquals(0, vm.state.value.updateNotificationCount)
+    }
+
+    @Test
+    fun `check for updates is a no-op when already managed by app store`() {
+        val vm = SettingsViewModel(
+            initial = SettingsUiState(updateState = UpdateUiState.ManagedByAppStore),
+            updateService = UpdateService.inactive(),
+        )
+
+        vm.checkForUpdates()
+
+        assertEquals(UpdateUiState.ManagedByAppStore, vm.state.value.updateState)
     }
 
     @Test

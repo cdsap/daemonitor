@@ -118,64 +118,66 @@ fun SettingsScreen(
                     )
                 }
                 Spacer(Modifier.height(Space.md))
-                Row(horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedButton(
-                        onClick = onCheckForUpdates,
-                        enabled = state.updateState != UpdateUiState.Checking &&
-                            state.updateState !is UpdateUiState.Downloading,
-                        shape = RoundedCornerShape(Radius.sm),
-                    ) {
-                        Icon(Icons.Filled.Refresh, contentDescription = null)
-                        Spacer(Modifier.width(Space.xs))
-                        Text(if (state.updateState == UpdateUiState.Checking) "Checking" else "Check for updates")
-                    }
-                    when (val updateState = state.updateState) {
-                        is UpdateUiState.Available -> {
-                            Button(
-                                onClick = { onOpenUpdate(updateState.candidate) },
-                                shape = RoundedCornerShape(Radius.sm),
-                            ) {
-                                Icon(Icons.Filled.Download, contentDescription = null)
-                                Spacer(Modifier.width(Space.xs))
-                                Text("Download Update")
-                            }
+                if (state.updateState != UpdateUiState.ManagedByAppStore) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedButton(
+                            onClick = onCheckForUpdates,
+                            enabled = state.updateState != UpdateUiState.Checking &&
+                                state.updateState !is UpdateUiState.Downloading,
+                            shape = RoundedCornerShape(Radius.sm),
+                        ) {
+                            Icon(Icons.Filled.Refresh, contentDescription = null)
+                            Spacer(Modifier.width(Space.xs))
+                            Text(if (state.updateState == UpdateUiState.Checking) "Checking" else "Check for updates")
                         }
-                        is UpdateUiState.ReadyToInstall -> {
-                            if (updateState.candidate.installMode == io.github.cdsap.daemonitor.update.UpdateInstallMode.Automatic &&
-                                updateState.staged != null
-                            ) {
-                                Button(
-                                    onClick = onRestartAndUpdate,
-                                    shape = RoundedCornerShape(Radius.sm),
-                                ) {
-                                    Icon(Icons.Filled.Refresh, contentDescription = null)
-                                    Spacer(Modifier.width(Space.xs))
-                                    Text("Restart and Update")
-                                }
-                            } else {
+                        when (val updateState = state.updateState) {
+                            is UpdateUiState.Available -> {
                                 Button(
                                     onClick = { onOpenUpdate(updateState.candidate) },
                                     shape = RoundedCornerShape(Radius.sm),
                                 ) {
                                     Icon(Icons.Filled.Download, contentDescription = null)
                                     Spacer(Modifier.width(Space.xs))
-                                    Text("Open again")
+                                    Text("Download Update")
                                 }
                             }
-                        }
-                        is UpdateUiState.Failed -> {
-                            if (updateState.releaseUrl != null) {
-                                OutlinedButton(
-                                    onClick = onOpenManualDownload,
-                                    shape = RoundedCornerShape(Radius.sm),
+                            is UpdateUiState.ReadyToInstall -> {
+                                if (updateState.candidate.installMode == io.github.cdsap.daemonitor.update.UpdateInstallMode.Automatic &&
+                                    updateState.staged != null
                                 ) {
-                                    Icon(Icons.Filled.Download, contentDescription = null)
-                                    Spacer(Modifier.width(Space.xs))
-                                    Text("Manual download")
+                                    Button(
+                                        onClick = onRestartAndUpdate,
+                                        shape = RoundedCornerShape(Radius.sm),
+                                    ) {
+                                        Icon(Icons.Filled.Refresh, contentDescription = null)
+                                        Spacer(Modifier.width(Space.xs))
+                                        Text("Restart and Update")
+                                    }
+                                } else {
+                                    Button(
+                                        onClick = { onOpenUpdate(updateState.candidate) },
+                                        shape = RoundedCornerShape(Radius.sm),
+                                    ) {
+                                        Icon(Icons.Filled.Download, contentDescription = null)
+                                        Spacer(Modifier.width(Space.xs))
+                                        Text("Open again")
+                                    }
                                 }
                             }
+                            is UpdateUiState.Failed -> {
+                                if (updateState.releaseUrl != null) {
+                                    OutlinedButton(
+                                        onClick = onOpenManualDownload,
+                                        shape = RoundedCornerShape(Radius.sm),
+                                    ) {
+                                        Icon(Icons.Filled.Download, contentDescription = null)
+                                        Spacer(Modifier.width(Space.xs))
+                                        Text("Manual download")
+                                    }
+                                }
+                            }
+                            else -> Unit
                         }
-                        else -> Unit
                     }
                 }
             }
@@ -303,5 +305,7 @@ private val UpdateUiState.message: String
             else ->
                 "Downloaded and opened ${candidate.assetName}. Finish the installer to update Daemonitor."
         }
+        UpdateUiState.ManagedByAppStore ->
+            "This Mac App Store build is updated by Apple. The GitHub Releases updater is disabled."
         is UpdateUiState.Failed -> message
     }

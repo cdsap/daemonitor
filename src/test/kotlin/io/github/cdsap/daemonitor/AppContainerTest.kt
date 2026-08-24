@@ -3,11 +3,14 @@ package io.github.cdsap.daemonitor
 import io.github.cdsap.daemonitor.application.update.UpdateService
 import io.github.cdsap.daemonitor.collect.DaemonLogWatcher
 import io.github.cdsap.daemonitor.collect.ProcessCollector
+import io.github.cdsap.daemonitor.distribution.DistributionChannel
 import io.github.cdsap.daemonitor.domain.BuildAggregator
 import io.github.cdsap.daemonitor.mcp.DaemonitorMcpServer
 import io.github.cdsap.daemonitor.store.Settings
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
+import io.github.cdsap.daemonitor.update.UpdateCheckResult
+import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 import kotlin.test.Test
@@ -28,11 +31,24 @@ class AppContainerTest {
             assertIs<BuildAggregator>(container.buildAggregator)
             assertIs<WatcherRuntime>(container.runtime)
             assertIs<UpdateService>(container.updateService)
+            assertEquals(DistributionChannel.DIRECT, container.distributionChannel)
 
             assertIs<WatcherService>(container.createDesktopService())
             assertIs<DaemonitorMcpServer>(
                 container.createMcpServer(currentProcessesProvider = { emptyList() }),
             )
+        }
+    }
+
+    @Test
+    fun `app store distribution disables GitHub updater`(@TempDir tmp: Path) = runTest {
+        AppContainer(
+            databasePath = tmp.resolve("watcher.db"),
+            settingsPath = tmp.resolve("settings.properties"),
+            distribution = DistributionChannel.APP_STORE,
+        ).use { container ->
+            assertEquals(DistributionChannel.APP_STORE, container.distributionChannel)
+            assertEquals(UpdateCheckResult.ManagedByAppStore, container.updateService.check())
         }
     }
 
