@@ -1,5 +1,6 @@
 package io.github.cdsap.daemonitor.update
 
+import io.github.cdsap.daemonitor.application.update.UpdateSource
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -16,8 +17,8 @@ class GitHubReleaseUpdateSource(
         architecture = architecture,
     ),
     private val client: HttpClient = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build(),
-) {
-    suspend fun check(currentVersion: String): UpdateCheckResult = withContext(Dispatchers.IO) {
+) : UpdateSource {
+    override suspend fun check(currentVersion: String): UpdateCheckResult = withContext(Dispatchers.IO) {
         if (platform == DesktopPlatform.UNKNOWN || architecture == CpuArchitecture.UNKNOWN) {
             return@withContext UpdateCheckResult.UnsupportedPlatform(platform)
         }

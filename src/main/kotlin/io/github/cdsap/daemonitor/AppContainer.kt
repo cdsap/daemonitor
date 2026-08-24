@@ -2,19 +2,16 @@ package io.github.cdsap.daemonitor
 
 import io.github.cdsap.daemonitor.application.DefaultDaemonitorQueryService
 import io.github.cdsap.daemonitor.application.ProcessSource
+import io.github.cdsap.daemonitor.application.update.UpdateService
 import io.github.cdsap.daemonitor.collect.DaemonLogWatcher
 import io.github.cdsap.daemonitor.collect.ProcessCollector
 import io.github.cdsap.daemonitor.domain.BuildAggregator
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
+import io.github.cdsap.daemonitor.infrastructure.update.defaultUpdateService
 import io.github.cdsap.daemonitor.mcp.DaemonitorMcpServer
 import io.github.cdsap.daemonitor.platform.AppDirectories
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
-import io.github.cdsap.daemonitor.update.DesktopUpdateApplier
-import io.github.cdsap.daemonitor.update.DesktopUpdateInstaller
-import io.github.cdsap.daemonitor.update.GitHubReleaseUpdateSource
-import io.github.cdsap.daemonitor.update.UpdateApplier
-import io.github.cdsap.daemonitor.update.UpdateInstaller
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import java.nio.file.Path
@@ -44,9 +41,7 @@ class AppContainer(
         database = database,
         clock = clock,
     )
-    val updateSource = GitHubReleaseUpdateSource()
-    val updateInstaller: UpdateInstaller = DesktopUpdateInstaller()
-    val updateApplier: UpdateApplier = DesktopUpdateApplier()
+    val updateService: UpdateService = defaultUpdateService()
 
     fun createDesktopService(
         uiDispatcher: CoroutineDispatcher = Dispatchers.Main,
@@ -56,9 +51,7 @@ class AppContainer(
         database = database,
         settingsStore = settingsStore,
         clock = clock,
-        updateChecker = { updateSource.check(BuildInfo.current.version) },
-        updateInstaller = updateInstaller,
-        updateApplier = updateApplier,
+        updateService = updateService,
         mcpServerFactory = ::createMcpServer,
         uiDispatcher = uiDispatcher,
         ioDispatcher = ioDispatcher,

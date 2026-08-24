@@ -1,5 +1,6 @@
 package io.github.cdsap.daemonitor
 
+import io.github.cdsap.daemonitor.application.update.UpdateService
 import io.github.cdsap.daemonitor.config.MonitoringConfig
 import io.github.cdsap.daemonitor.mcp.DaemonitorMcpHttpServer
 import io.github.cdsap.daemonitor.mcp.DaemonitorMcpServer
@@ -12,9 +13,6 @@ import io.github.cdsap.daemonitor.ui.live.LiveViewModel
 import io.github.cdsap.daemonitor.ui.settings.McpUiState
 import io.github.cdsap.daemonitor.ui.settings.SettingsUiState
 import io.github.cdsap.daemonitor.ui.settings.SettingsViewModel
-import io.github.cdsap.daemonitor.update.UpdateApplier
-import io.github.cdsap.daemonitor.update.UpdateCheckResult
-import io.github.cdsap.daemonitor.update.UpdateInstaller
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
@@ -34,9 +32,7 @@ class WatcherService(
     private val settingsStore: SettingsStore,
     private val clock: () -> Long = System::currentTimeMillis,
     private val pollAction: suspend () -> WatcherRuntime.PollResult = { runtime.pollOnce() },
-    private val updateChecker: suspend () -> UpdateCheckResult,
-    private val updateInstaller: UpdateInstaller,
-    private val updateApplier: UpdateApplier,
+    private val updateService: UpdateService,
     private val mcpServerFactory: () -> DaemonitorMcpServer,
     private val uiDispatcher: CoroutineDispatcher = Dispatchers.Main,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -59,9 +55,7 @@ class WatcherService(
         onRetentionChange = ::onRetentionChanged,
         onAppearanceChange = ::onAppearanceChanged,
         onMcpEnabledChange = ::onMcpEnabledChanged,
-        updateChecker = updateChecker,
-        updateInstaller = updateInstaller,
-        updateApplier = updateApplier,
+        updateService = updateService,
         scope = CoroutineScope(SupervisorJob() + uiDispatcher),
     )
 

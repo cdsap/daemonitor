@@ -1,5 +1,6 @@
 package io.github.cdsap.daemonitor
 
+import io.github.cdsap.daemonitor.application.update.UpdateService
 import io.github.cdsap.daemonitor.collect.DaemonLogWatcher
 import io.github.cdsap.daemonitor.collect.ProcessCollector
 import io.github.cdsap.daemonitor.domain.BuildAggregator
@@ -7,9 +8,6 @@ import io.github.cdsap.daemonitor.mcp.DaemonitorMcpServer
 import io.github.cdsap.daemonitor.store.Settings
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
-import io.github.cdsap.daemonitor.update.DesktopUpdateApplier
-import io.github.cdsap.daemonitor.update.DesktopUpdateInstaller
-import io.github.cdsap.daemonitor.update.GitHubReleaseUpdateSource
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 import kotlin.test.Test
@@ -29,9 +27,7 @@ class AppContainerTest {
             assertIs<SettingsStore>(container.settingsStore)
             assertIs<BuildAggregator>(container.buildAggregator)
             assertIs<WatcherRuntime>(container.runtime)
-            assertIs<GitHubReleaseUpdateSource>(container.updateSource)
-            assertIs<DesktopUpdateInstaller>(container.updateInstaller)
-            assertIs<DesktopUpdateApplier>(container.updateApplier)
+            assertIs<UpdateService>(container.updateService)
 
             assertIs<WatcherService>(container.createDesktopService())
             assertIs<DaemonitorMcpServer>(

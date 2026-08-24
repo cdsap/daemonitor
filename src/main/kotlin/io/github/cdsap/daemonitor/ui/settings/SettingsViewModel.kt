@@ -1,16 +1,13 @@
 package io.github.cdsap.daemonitor.ui.settings
 
 import io.github.cdsap.daemonitor.Defaults
+import io.github.cdsap.daemonitor.application.update.UpdateService
 import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.store.AppearancePreference
 import io.github.cdsap.daemonitor.update.StagedUpdate
-import io.github.cdsap.daemonitor.update.UpdateApplier
 import io.github.cdsap.daemonitor.update.UpdateCandidate
 import io.github.cdsap.daemonitor.update.UpdateCheckResult
 import io.github.cdsap.daemonitor.update.UpdateInstallMode
-import io.github.cdsap.daemonitor.update.UpdateInstaller
-import java.awt.Desktop
-import java.net.URI
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -61,23 +58,15 @@ sealed interface UpdateUiState {
 /**
  * Holds Settings state and forwards changes to [onRetentionChange], which the service wires to
  * persistence + an immediate purge. Framework-light so it stays unit-testable.
+ *
+ * Update check/download/apply and platform side effects go through [updateService].
  */
 class SettingsViewModel(
     initial: SettingsUiState = SettingsUiState(),
     private val onRetentionChange: (Long) -> Unit = {},
     private val onAppearanceChange: (AppearancePreference) -> Unit = {},
     private val onMcpEnabledChange: (Boolean) -> Unit = {},
-    private val updateChecker: suspend () -> UpdateCheckResult = {
-        UpdateCheckResult.Failed("Update checker not configured")
-    },
-    private val updateInstaller: UpdateInstaller = UpdateInstaller { _, _ ->
-        error("Update installer not configured")
-    },
-    private val updateApplier: UpdateApplier = UpdateApplier {
-        error("Update applier not configured")
-    },
-    private val onExitForUpdate: () -> Unit = { kotlin.system.exitProcess(0) },
-    private val releaseOpener: (String) -> Unit = ::openReleaseUrl,
+    private val updateService: UpdateService = UpdateService.inactive(),
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
 ) {
     private val _state = MutableStateFlow(initial)
@@ -121,7 +110,7 @@ class SettingsViewModel(
         if (_state.value.updateState == UpdateUiState.Checking) return
         _state.value = _state.value.copy(updateState = UpdateUiState.Checking)
         scope.launch {
-            val nextState = runCatching { updateChecker().toUiState() }
+            val nextState = runCatching { updateService.check().toUiState() }
                 .getOrElse { error ->
                     UpdateUiState.Failed(
                         error.message ?: error::class.simpleName ?: "Could not check for updates",
@@ -136,7 +125,7 @@ class SettingsViewModel(
         _state.value = _state.value.copy(updateState = UpdateUiState.Downloading(candidate, 0.0))
         scope.launch {
             runCatching {
-                updateInstaller.prepare(candidate) { progress ->
+                updateService.prepare(candidate) { progress ->
                     _state.value = _state.value.copy(updateState = UpdateUiState.Downloading(candidate, progress))
                 }
             }.onSuccess { staged ->
@@ -167,8 +156,7 @@ class SettingsViewModel(
             return
         }
         runCatching {
-            updateApplier.applyAfterExit(staged)
-            onExitForUpdate()
+            updateService.applyAndRestart(staged)
         }.onFailure { error ->
             _state.value = _state.value.copy(
                 updateState = UpdateUiState.Failed(
@@ -181,7 +169,7 @@ class SettingsViewModel(
 
     fun openManualDownload(url: String? = releaseUrlFromState()) {
         val target = url ?: return
-        runCatching { releaseOpener(target) }
+        runCatching { updateService.openReleaseUrl(target) }
             .onFailure { error ->
                 _state.value = _state.value.copy(
                     updateState = UpdateUiState.Failed(
@@ -206,11 +194,4 @@ class SettingsViewModel(
         is UpdateCheckResult.UnsupportedPlatform -> UpdateUiState.Failed("Updates are not available for this platform yet")
         is UpdateCheckResult.Failed -> UpdateUiState.Failed(reason)
     }
-}
-
-private fun openReleaseUrl(url: String) {
-    require(Desktop.isDesktopSupported()) { "Desktop integration is not available" }
-    val desktop = Desktop.getDesktop()
-    require(desktop.isSupported(Desktop.Action.BROWSE)) { "Opening release pages is not supported" }
-    desktop.browse(URI(url))
 }
