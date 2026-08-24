@@ -1,5 +1,7 @@
 package io.github.cdsap.daemonitor
 
+import io.github.cdsap.daemonitor.application.DefaultDaemonitorQueryService
+import io.github.cdsap.daemonitor.application.ProcessSource
 import io.github.cdsap.daemonitor.collect.DaemonLogWatcher
 import io.github.cdsap.daemonitor.collect.ProcessCollector
 import io.github.cdsap.daemonitor.domain.BuildAggregator
@@ -65,8 +67,10 @@ class AppContainer(
     fun createMcpServer(
         currentProcessesProvider: () -> List<GradleProcess> = processCollector::poll,
     ): DaemonitorMcpServer = DaemonitorMcpServer(
-        database = database,
-        currentProcessesProvider = currentProcessesProvider,
+        DefaultDaemonitorQueryService(
+            database = database,
+            processSource = ProcessSource { currentProcessesProvider() },
+        ),
     )
 
     override fun close() {

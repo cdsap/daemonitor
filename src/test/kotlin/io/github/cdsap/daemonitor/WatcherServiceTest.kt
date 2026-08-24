@@ -1,5 +1,7 @@
 package io.github.cdsap.daemonitor
 
+import io.github.cdsap.daemonitor.application.DefaultDaemonitorQueryService
+import io.github.cdsap.daemonitor.application.ProcessSource
 import io.github.cdsap.daemonitor.mcp.DaemonitorMcpServer
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
@@ -163,7 +165,7 @@ class WatcherServiceTest {
         updateInstaller = UpdateInstaller { _, _ -> null },
         updateApplier = UpdateApplier { },
         mcpServerFactory = {
-            DaemonitorMcpServer(database, currentProcessesProvider = { emptyList() })
+            DaemonitorMcpServer(DefaultDaemonitorQueryService(database, ProcessSource { emptyList() }))
         },
         uiDispatcher = uiDispatcher,
         ioDispatcher = uiDispatcher,

@@ -2,10 +2,10 @@ package io.github.cdsap.daemonitor.mcp
 
 import io.github.cdsap.daemonitor.AppContainer
 import io.github.cdsap.daemonitor.BuildInfo
+import io.github.cdsap.daemonitor.application.DaemonitorQueryService
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.store.ProcessSample
-import io.github.cdsap.daemonitor.store.WatcherDatabase
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.InputStream
@@ -13,8 +13,7 @@ import java.io.OutputStream
 import java.nio.charset.StandardCharsets
 
 class DaemonitorMcpServer(
-    private val database: WatcherDatabase,
-    private val currentProcessesProvider: () -> List<GradleProcess>,
+    private val queries: DaemonitorQueryService,
 ) {
     internal fun handle(request: JsonObject): JsonObject? {
         val id = request.values["id"]
@@ -164,35 +163,17 @@ class DaemonitorMcpServer(
             ?: throw McpError(-32602, "Missing required argument: process")
         if (process.isEmpty()) throw McpError(-32602, "Process argument cannot be empty")
 
-        val limit = arguments.long("limit").coerceLimit()
-        val pid = process.toLongOrNull()
-        val builds = if (pid != null) {
-            database.buildsForDaemonPid(pid, limit)
-        } else {
-            database.searchBuilds(process, limit)
-        }
-        val samples = if (pid != null) {
-            database.processSamplesForPid(pid, limit)
-        } else {
-            database.recentProcessSamples(200).filter { sample ->
-                sample.commandLine.contains(process, ignoreCase = true) ||
-                    sample.workingDirectory?.contains(process, ignoreCase = true) == true ||
-                    sample.projectPath?.contains(process, ignoreCase = true) == true ||
-                    sample.processType.name.contains(process, ignoreCase = true)
-            }.take(limit.toInt())
-        }
-
+        val result = queries.buildsForProcess(process, arguments.long("limit").coerceLimit())
         return jsonObject(
-            "process" to JsonString(process),
-            "matchedBuilds" to JsonArray(builds.map { it.toJson() }),
-            "matchedProcessSamples" to JsonArray(samples.map { it.toJson() }),
+            "process" to JsonString(result.process),
+            "matchedBuilds" to JsonArray(result.matchedBuilds.map { it.toJson() }),
+            "matchedProcessSamples" to JsonArray(result.matchedProcessSamples.map { it.toJson() }),
         )
     }
 
     private fun searchHistory(arguments: JsonObject): JsonObject {
         val query = arguments.string("query").orEmpty()
-        val limit = arguments.long("limit").coerceLimit()
-        val builds = database.searchBuilds(query, limit)
+        val builds = queries.searchHistory(query, arguments.long("limit").coerceLimit())
         return jsonObject(
             "query" to JsonString(query),
             "builds" to JsonArray(builds.map { it.toJson() }),
@@ -200,7 +181,7 @@ class DaemonitorMcpServer(
     }
 
     private fun currentProcesses(): JsonObject {
-        val processes = currentProcessesProvider()
+        val processes = queries.currentProcesses()
         return jsonObject(
             "processes" to JsonArray(processes.map { it.toJson() }),
         )
@@ -217,7 +198,7 @@ class DaemonitorMcpServer(
             "isError" to JsonBoolean(false),
         )
 
-    private fun Long?.coerceLimit(): Long = (this ?: DEFAULT_LIMIT).coerceIn(1, MAX_LIMIT)
+    private fun Long?.coerceLimit(): Int = (this ?: DEFAULT_LIMIT).coerceIn(1, MAX_LIMIT).toInt()
 
     private fun Build.toJson(): JsonObject = jsonObject(
         "buildId" to JsonString(buildId),
