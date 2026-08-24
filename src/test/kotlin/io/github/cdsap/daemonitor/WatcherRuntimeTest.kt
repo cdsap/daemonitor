@@ -1,6 +1,5 @@
 package io.github.cdsap.daemonitor
 
-import io.github.cdsap.daemonitor.application.PollMonitoring
 import io.github.cdsap.daemonitor.collect.DaemonLogWatcher
 import io.github.cdsap.daemonitor.collect.ProcessCollector
 import io.github.cdsap.daemonitor.domain.BuildAggregator
@@ -28,12 +27,11 @@ class WatcherRuntimeTest {
         log.writeText("outside before window -Ptoken=before-secret\n")
 
         WatcherDatabase.open(tmp.resolve("watcher.db")).use { database ->
-            val runtime = PollMonitoring(
-                processSource = ProcessCollector(),
-                logSource = DaemonLogWatcher(gradleUserHome = tmp.resolve("gradle")),
-                builds = database,
-                samples = database,
+            val runtime = WatcherRuntime(
+                collector = ProcessCollector(),
+                logWatcher = DaemonLogWatcher(gradleUserHome = tmp.resolve("gradle")),
                 aggregator = BuildAggregator(sampleProvider = database::samplesInWindow),
+                database = database,
             )
 
             runtime.pollOnce() // Establish the incremental-read offset.
@@ -77,16 +75,15 @@ class WatcherRuntimeTest {
         )
 
         WatcherDatabase.open(tmp.resolve("watcher.db")).use { database ->
-            val logSource = DaemonLogWatcher(gradleUserHome = tmp.resolve("gradle"))
-            val runtime = PollMonitoring(
-                processSource = ProcessCollector(),
-                logSource = logSource,
-                builds = database,
-                samples = database,
+            val logWatcher = DaemonLogWatcher(gradleUserHome = tmp.resolve("gradle"))
+            val runtime = WatcherRuntime(
+                collector = ProcessCollector(),
+                logWatcher = logWatcher,
                 aggregator = BuildAggregator(sampleProvider = database::samplesInWindow),
+                database = database,
             )
 
-            val changed = runtime.processForBuilds(logSource.discover(), activeDaemonPids = emptySet())
+            val changed = runtime.processForBuilds(logWatcher.discover(), activeDaemonPids = emptySet())
 
             assertTrue(changed)
             val build = database.recentBuilds().single()

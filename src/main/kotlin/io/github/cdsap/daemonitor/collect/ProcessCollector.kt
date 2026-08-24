@@ -28,9 +28,6 @@ class ProcessCollector(
     /** Prior CPU sample per process, keyed by (pid, startTime) to survive PID reuse (KTD-4). */
     private val priorSamples = mutableMapOf<ProcessKey, PriorSample>()
 
-    /** Compatibility alias for [currentProcesses]. */
-    fun poll(): List<GradleProcess> = currentProcesses()
-
     override fun currentProcesses(): List<GradleProcess> {
         val now = clock()
         val seen = mutableSetOf<ProcessKey>()
@@ -52,6 +49,9 @@ class ProcessCollector(
         priorSamples.keys.retainAll(seen)
         return result
     }
+
+    /** Compatibility alias for [currentProcesses]. */
+    fun poll(): List<GradleProcess> = currentProcesses()
 
     private data class ProcessKey(val pid: Long, val startTimeMs: Long)
 

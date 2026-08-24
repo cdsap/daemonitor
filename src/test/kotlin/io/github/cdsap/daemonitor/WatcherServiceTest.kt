@@ -1,10 +1,21 @@
 package io.github.cdsap.daemonitor
 
-import io.github.cdsap.daemonitor.application.PollMonitoring
+import io.github.cdsap.daemonitor.application.DefaultDaemonitorQueryService
+import io.github.cdsap.daemonitor.application.ProcessSource
+import io.github.cdsap.daemonitor.application.platform.ProcessExiter
+import io.github.cdsap.daemonitor.application.platform.UrlOpener
+import io.github.cdsap.daemonitor.application.update.ApplyUpdate
+import io.github.cdsap.daemonitor.application.update.CheckForUpdate
+import io.github.cdsap.daemonitor.application.update.PrepareUpdate
+import io.github.cdsap.daemonitor.application.update.UpdateService
+import io.github.cdsap.daemonitor.application.update.UpdateSource
+import io.github.cdsap.daemonitor.mcp.DaemonitorMcpServer
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
 import io.github.cdsap.daemonitor.ui.settings.UpdateUiState
+import io.github.cdsap.daemonitor.update.UpdateApplier
 import io.github.cdsap.daemonitor.update.UpdateCheckResult
+import io.github.cdsap.daemonitor.update.UpdateInstaller
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -73,7 +84,7 @@ class WatcherServiceTest {
         var fail = true
         val service = service(database, tmp, uiDispatcher = uiDispatcher) {
             if (fail) error("failure")
-            PollMonitoring.PollResult(emptyList(), emptyList(), buildsChanged = false)
+            WatcherRuntime.PollResult(emptyList(), emptyList(), buildsChanged = false)
         }
         try {
             service.pollSafely()
@@ -96,12 +107,19 @@ class WatcherServiceTest {
             database = database,
             tmp = tmp,
             uiDispatcher = uiDispatcher,
-            updateChecker = {
-                updateChecks += 1
-                UpdateCheckResult.UpToDate("1.0.3")
-            },
+            updateService = UpdateService(
+                checkForUpdate = CheckForUpdate(
+                    source = UpdateSource {
+                        updateChecks += 1
+                        UpdateCheckResult.UpToDate("1.0.3")
+                    },
+                ),
+                prepareUpdate = PrepareUpdate(UpdateInstaller { _, _ -> null }),
+                applyUpdate = ApplyUpdate(UpdateApplier {}, ProcessExiter {}),
+                urlOpener = UrlOpener {},
+            ),
         ) {
-            PollMonitoring.PollResult(emptyList(), emptyList(), buildsChanged = false)
+            WatcherRuntime.PollResult(emptyList(), emptyList(), buildsChanged = false)
         }
         try {
             service.start(backgroundScope)
@@ -126,7 +144,7 @@ class WatcherServiceTest {
             pollEntered.complete(Unit)
             releasePoll.await()
             pollStillRunningAfterStop = true
-            PollMonitoring.PollResult(emptyList(), emptyList(), buildsChanged = false)
+            WatcherRuntime.PollResult(emptyList(), emptyList(), buildsChanged = false)
         }
         try {
             service.start(backgroundScope)
@@ -149,15 +167,25 @@ class WatcherServiceTest {
         tmp: Path,
         uiDispatcher: CoroutineDispatcher,
         clock: () -> Long = { 0 },
-        updateChecker: suspend () -> UpdateCheckResult = { UpdateCheckResult.UpToDate("1.0.3") },
-        pollAction: suspend () -> PollMonitoring.PollResult,
-    ) = WatcherService(
+        updateService: UpdateService = UpdateService(
+            checkForUpdate = CheckForUpdate(
+                source = UpdateSource { UpdateCheckResult.UpToDate("1.0.3") },
+            ),
+            prepareUpdate = PrepareUpdate(UpdateInstaller { _, _ -> null }),
+            applyUpdate = ApplyUpdate(UpdateApplier {}, ProcessExiter {}),
+            urlOpener = UrlOpener {},
+        ),
+        pollAction: suspend () -> WatcherRuntime.PollResult,
+    ) = WatcherService.forTests(
         runtime = WatcherRuntime.create(database),
         database = database,
         settingsStore = SettingsStore(tmp.resolve("settings.properties")),
         clock = clock,
         pollAction = pollAction,
-        updateChecker = updateChecker,
+        updateService = updateService,
+        mcpServerFactory = {
+            DaemonitorMcpServer(DefaultDaemonitorQueryService(database, ProcessSource { emptyList() }))
+        },
         uiDispatcher = uiDispatcher,
         ioDispatcher = uiDispatcher,
     )
