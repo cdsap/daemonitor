@@ -2,6 +2,7 @@ package io.github.cdsap.daemonitor.ui.settings
 
 import io.github.cdsap.daemonitor.Defaults
 import io.github.cdsap.daemonitor.application.update.UpdateService
+import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.store.AppearancePreference
 import io.github.cdsap.daemonitor.update.StagedUpdate
 import io.github.cdsap.daemonitor.update.UpdateCandidate
@@ -17,7 +18,7 @@ import kotlinx.coroutines.launch
 
 /** Immutable state the Settings screen renders. */
 data class SettingsUiState(
-    val retentionDays: Long = Defaults.DEFAULT_RETENTION_DAYS,
+    val retentionDays: Long = RetentionPolicy.DEFAULT.defaultDays,
     val appearance: AppearancePreference = AppearancePreference.SYSTEM,
     val updateState: UpdateUiState = UpdateUiState.NotChecked,
     val mcpEnabled: Boolean = false,
@@ -72,7 +73,7 @@ class SettingsViewModel(
     val state: StateFlow<SettingsUiState> = _state.asStateFlow()
 
     fun setRetentionDays(days: Long) {
-        val clamped = days.coerceIn(Defaults.MIN_RETENTION_DAYS, Defaults.MAX_RETENTION_DAYS)
+        val clamped = RetentionPolicy.DEFAULT.clamp(days)
         if (clamped == _state.value.retentionDays) return
         _state.value = _state.value.copy(retentionDays = clamped)
         onRetentionChange(clamped)

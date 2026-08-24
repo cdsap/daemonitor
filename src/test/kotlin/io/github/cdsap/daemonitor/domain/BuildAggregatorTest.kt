@@ -1,6 +1,6 @@
 package io.github.cdsap.daemonitor.domain
 
-import io.github.cdsap.daemonitor.Defaults
+import io.github.cdsap.daemonitor.config.MonitoringConfig
 import io.github.cdsap.daemonitor.domain.model.BuildEnvNames
 import io.github.cdsap.daemonitor.domain.model.BuildEvent
 import io.github.cdsap.daemonitor.domain.model.BuildStart
@@ -103,16 +103,17 @@ class BuildAggregatorTest {
         val agg = BuildAggregator()
         agg.onLogLine(pid, "busy", BusyMark(1_000))
         agg.onLogLine(pid, "start", start(1_010))
-        repeat(Defaults.LOG_SNIPPET_LINES + 5) { index ->
+        val snippetLimit = MonitoringConfig.DEFAULT.logSnippetLimit
+        repeat(snippetLimit.lines + 5) { index ->
             agg.onLogLine(pid, "line-$index-${"x".repeat(200)}", null)
         }
 
         val b = agg.onDaemonGone(pid)!!
         val snippet = b.logSnippet!!
         assertEquals(FinalStatus.INTERRUPTED, b.finalStatus)
-        assertTrue(snippet.lines().size <= Defaults.LOG_SNIPPET_LINES)
-        assertTrue(snippet.length <= Defaults.LOG_SNIPPET_CHARS)
-        assertTrue(snippet.contains("line-${Defaults.LOG_SNIPPET_LINES + 4}"))
+        assertTrue(snippet.lines().size <= snippetLimit.lines)
+        assertTrue(snippet.length <= snippetLimit.chars)
+        assertTrue(snippet.contains("line-${snippetLimit.lines + 4}"))
     }
 
     @Test

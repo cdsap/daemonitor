@@ -1,6 +1,7 @@
 package io.github.cdsap.daemonitor
 
 import io.github.cdsap.daemonitor.collect.DaemonLogWatcher
+import io.github.cdsap.daemonitor.collect.ProcessCollector
 import io.github.cdsap.daemonitor.domain.BuildAggregator
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.store.WatcherDatabase
@@ -27,6 +28,7 @@ class WatcherRuntimeTest {
 
         WatcherDatabase.open(tmp.resolve("watcher.db")).use { database ->
             val runtime = WatcherRuntime(
+                collector = ProcessCollector(),
                 logWatcher = DaemonLogWatcher(gradleUserHome = tmp.resolve("gradle")),
                 aggregator = BuildAggregator(sampleProvider = database::samplesInWindow),
                 database = database,
@@ -75,6 +77,7 @@ class WatcherRuntimeTest {
         WatcherDatabase.open(tmp.resolve("watcher.db")).use { database ->
             val logWatcher = DaemonLogWatcher(gradleUserHome = tmp.resolve("gradle"))
             val runtime = WatcherRuntime(
+                collector = ProcessCollector(),
                 logWatcher = logWatcher,
                 aggregator = BuildAggregator(sampleProvider = database::samplesInWindow),
                 database = database,
