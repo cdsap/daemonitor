@@ -2,7 +2,6 @@ package io.github.cdsap.daemonitor
 
 import io.github.cdsap.daemonitor.mcp.DaemonitorMcpHttpServer
 import io.github.cdsap.daemonitor.mcp.DaemonitorMcpServer
-import io.github.cdsap.daemonitor.store.WatcherDatabase
 
 /** Controls the optional MCP HTTP server lifecycle independently of UI wiring. */
 class McpServiceController(
@@ -35,12 +34,12 @@ class McpServiceController(
     }
 
     companion object {
-        fun create(database: WatcherDatabase): McpServiceController =
+        fun create(serverFactory: () -> DaemonitorMcpServer): McpServiceController =
             McpServiceController { port, token ->
                 DaemonitorMcpHttpServer.start(
                     port = port,
                     token = token,
-                    server = DaemonitorMcpServer(database),
+                    server = serverFactory(),
                 )
             }
     }

@@ -1,5 +1,7 @@
 package io.github.cdsap.daemonitor
 
+import io.github.cdsap.daemonitor.application.DefaultDaemonitorQueryService
+import io.github.cdsap.daemonitor.application.ProcessSource
 import io.github.cdsap.daemonitor.mcp.DaemonitorMcpHttpServer
 import io.github.cdsap.daemonitor.mcp.DaemonitorMcpServer
 import io.github.cdsap.daemonitor.store.WatcherDatabase
@@ -19,7 +21,9 @@ class McpServiceControllerTest {
                 DaemonitorMcpHttpServer.start(
                     port = port,
                     token = token,
-                    server = DaemonitorMcpServer(database),
+                    server = DaemonitorMcpServer(
+                        DefaultDaemonitorQueryService(database, ProcessSource { emptyList() }),
+                    ),
                 )
             }
 

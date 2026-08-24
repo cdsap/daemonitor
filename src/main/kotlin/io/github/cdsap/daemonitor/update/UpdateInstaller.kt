@@ -1,6 +1,6 @@
 package io.github.cdsap.daemonitor.update
 
-import io.github.cdsap.daemonitor.Defaults
+import io.github.cdsap.daemonitor.platform.AppDirectories
 import java.awt.Desktop
 import java.net.URI
 import java.net.http.HttpClient
@@ -27,7 +27,7 @@ fun interface UpdateInstaller {
 }
 
 class DesktopUpdateInstaller(
-    private val updateDirectory: Path = Defaults.APP_SUPPORT_DIR.resolve("updates"),
+    private val updateDirectory: Path = AppDirectories.system.updatesDirectory,
     private val installation: InstallationInfo = InstallationLocator.current(),
     private val opener: (Path) -> Unit = ::openWithDesktop,
     private val downloader: suspend (UpdateCandidate, Path, (Double?) -> Unit) -> Path = ::downloadAndVerify,

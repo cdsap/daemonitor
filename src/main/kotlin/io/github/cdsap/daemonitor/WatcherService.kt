@@ -1,6 +1,6 @@
 package io.github.cdsap.daemonitor
 
-import io.github.cdsap.daemonitor.store.AppearancePreference
+import io.github.cdsap.daemonitor.application.update.UpdateService
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
 import io.github.cdsap.daemonitor.ui.history.HistoryViewModel
@@ -8,7 +8,6 @@ import io.github.cdsap.daemonitor.ui.live.LiveViewModel
 import io.github.cdsap.daemonitor.ui.settings.McpUiState
 import io.github.cdsap.daemonitor.ui.settings.SettingsUiState
 import io.github.cdsap.daemonitor.ui.settings.SettingsViewModel
-import io.github.cdsap.daemonitor.update.UpdateCheckResult
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -43,18 +42,15 @@ class WatcherService(
             mcpToken = initialSettings.mcpToken,
         ),
         onRetentionChange = ::onRetentionChanged,
-        onAppearanceChange = ::onAppearanceChanged,
+        onAppearanceChange = settingsService::updateAppearance,
         onMcpEnabledChange = ::onMcpEnabledChanged,
-        updateChecker = updateService::check,
-        updateInstaller = updateService::download,
-        updateApplier = updateService::install,
+        updateService = updateService,
         scope = CoroutineScope(SupervisorJob() + uiDispatcher),
     )
 
     fun start(scope: CoroutineScope) {
         settingsViewModel.checkForUpdates()
         settingsService.purgeNow()
-        // Bind the monitoring scope first so MCP / history work can launch on it.
         monitoringService.start(scope) { pollSafely() }
         if (settingsViewModel.state.value.mcpEnabled) startMcpServer()
         monitoringService.launchIo { refreshHistory() }
@@ -72,10 +68,6 @@ class WatcherService(
     private fun onRetentionChanged(days: Long) {
         settingsService.updateRetention(days)
         monitoringService.launchIo { refreshHistory() }
-    }
-
-    private fun onAppearanceChanged(appearance: AppearancePreference) {
-        settingsService.updateAppearance(appearance)
     }
 
     private fun onMcpEnabledChanged(enabled: Boolean) {
@@ -129,7 +121,6 @@ class WatcherService(
         }
     }
 
-    /** One poll cycle, factored out for testability. */
     suspend fun pollOnce() {
         val result = monitoringService.poll()
         val selectedTail = selectedDaemonTail(result)
@@ -139,7 +130,6 @@ class WatcherService(
         if (result.buildsChanged) refreshHistory()
     }
 
-    /** Run one retryable desktop poll and expose only a non-sensitive failure classification. */
     internal suspend fun pollSafely() {
         monitoringService.pollSafely(
             onResult = { result ->
@@ -168,57 +158,30 @@ class WatcherService(
     }
 
     companion object {
-        /** Build a fully wired desktop facade against the real database. */
-        fun create(database: WatcherDatabase = WatcherDatabase.open()): WatcherService {
-            val runtime = WatcherRuntime.create(database)
-            val settingsStore = SettingsStore()
-            val settingsService = SettingsService(settingsStore, database)
-            val historyService = HistoryService(database)
-            val updateService = UpdateService()
-            val mcpController = McpServiceController.create(database)
-            val monitoringService = MonitoringService(
-                pollAction = { runtime.pollOnce() },
-            )
-            return WatcherService(
-                runtime = runtime,
-                historyService = historyService,
-                settingsService = settingsService,
-                mcpController = mcpController,
-                updateService = updateService,
-                monitoringService = monitoringService,
-            )
-        }
+        /** Build a fully wired desktop service via the application composition root. */
+        fun create(): WatcherService = AppContainer().createDesktopService()
 
-        /**
-         * Test/helper constructor that mirrors the historical [WatcherService] wiring surface.
-         */
         internal fun forTests(
             runtime: WatcherRuntime,
             database: WatcherDatabase,
             settingsStore: SettingsStore = SettingsStore(),
             clock: () -> Long = System::currentTimeMillis,
             pollAction: suspend () -> WatcherRuntime.PollResult = { runtime.pollOnce() },
-            updateChecker: suspend () -> UpdateCheckResult = {
-                UpdateService().check()
-            },
+            updateService: UpdateService = UpdateService.inactive(),
+            mcpServerFactory: () -> io.github.cdsap.daemonitor.mcp.DaemonitorMcpServer,
             uiDispatcher: CoroutineDispatcher = Dispatchers.Main,
             ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
         ): WatcherService {
-            val settingsService = SettingsService(settingsStore, database, clock)
-            val historyService = HistoryService(database)
-            val updateService = UpdateService(checker = updateChecker)
-            val mcpController = McpServiceController.create(database)
-            val monitoringService = MonitoringService(
-                pollAction = pollAction,
-                ioDispatcher = ioDispatcher,
-            )
             return WatcherService(
                 runtime = runtime,
-                historyService = historyService,
-                settingsService = settingsService,
-                mcpController = mcpController,
+                historyService = HistoryService(database),
+                settingsService = SettingsService(settingsStore, database, clock),
+                mcpController = McpServiceController.create(mcpServerFactory),
                 updateService = updateService,
-                monitoringService = monitoringService,
+                monitoringService = MonitoringService(
+                    pollAction = pollAction,
+                    ioDispatcher = ioDispatcher,
+                ),
                 uiDispatcher = uiDispatcher,
                 clock = clock,
             )

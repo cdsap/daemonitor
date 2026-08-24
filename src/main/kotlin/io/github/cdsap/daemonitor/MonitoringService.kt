@@ -1,5 +1,6 @@
 package io.github.cdsap.daemonitor
 
+import io.github.cdsap.daemonitor.config.MonitoringConfig
 import kotlin.time.Duration
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -21,7 +22,7 @@ import kotlinx.coroutines.launch
 class MonitoringService(
     private val pollAction: suspend () -> WatcherRuntime.PollResult,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
-    private val pollInterval: Duration = Defaults.POLL_INTERVAL,
+    private val pollInterval: Duration = MonitoringConfig.DEFAULT.pollInterval,
 ) {
     private var serviceJob: Job? = null
 

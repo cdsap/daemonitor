@@ -1,6 +1,13 @@
 package io.github.cdsap.daemonitor.ui.settings
 
-import io.github.cdsap.daemonitor.Defaults
+import io.github.cdsap.daemonitor.application.platform.ProcessExiter
+import io.github.cdsap.daemonitor.application.platform.UrlOpener
+import io.github.cdsap.daemonitor.application.update.ApplyUpdate
+import io.github.cdsap.daemonitor.application.update.CheckForUpdate
+import io.github.cdsap.daemonitor.application.update.PrepareUpdate
+import io.github.cdsap.daemonitor.application.update.UpdateService
+import io.github.cdsap.daemonitor.application.update.UpdateSource
+import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.store.AppearancePreference
 import io.github.cdsap.daemonitor.update.StagedUpdate
 import io.github.cdsap.daemonitor.update.UpdateApplier
@@ -47,7 +54,7 @@ class SettingsViewModelTest {
     fun `out-of-range value is clamped`() {
         val vm = SettingsViewModel()
         vm.setRetentionDays(9_999)
-        assertEquals(Defaults.MAX_RETENTION_DAYS, vm.state.value.retentionDays)
+        assertEquals(RetentionPolicy.DEFAULT.maxDays, vm.state.value.retentionDays)
     }
 
     @Test
@@ -120,24 +127,20 @@ class SettingsViewModelTest {
             installMode = UpdateInstallMode.Automatic,
             role = UpdateArtifactRole.UpdatePackage,
         )
-        val staged = StagedUpdate(
-            candidate = candidate,
-            artifactPath = Path.of("/tmp/artifact.zip"),
-            payloadPath = Path.of("/tmp/Daemonitor.app"),
-            installation = InstallationInfo(
-                platform = DesktopPlatform.MACOS,
-                architecture = CpuArchitecture.ARM64,
-                kind = InstallationKind.MACOS_APP_BUNDLE,
-                installRoot = Path.of("/Applications/Daemonitor.app"),
-                relaunchCommand = listOf("/usr/bin/open", "-n", "/Applications/Daemonitor.app"),
-            ),
-        )
+        val staged = stagedUpdate(candidate)
         val vm = SettingsViewModel(
-            updateInstaller = UpdateInstaller { update, progress ->
-                progress(0.5)
-                prepared += update
-                staged
-            },
+            updateService = UpdateService(
+                checkForUpdate = CheckForUpdate(UpdateSource { UpdateCheckResult.UpToDate("1.0.2") }),
+                prepareUpdate = PrepareUpdate(
+                    UpdateInstaller { update, progress ->
+                        progress(0.5)
+                        prepared += update
+                        staged
+                    },
+                ),
+                applyUpdate = ApplyUpdate(UpdateApplier {}, ProcessExiter {}),
+                urlOpener = UrlOpener {},
+            ),
             scope = this,
         )
 
@@ -158,22 +161,18 @@ class SettingsViewModelTest {
             installMode = UpdateInstallMode.Automatic,
             role = UpdateArtifactRole.UpdatePackage,
         )
-        val staged = StagedUpdate(
-            candidate = candidate,
-            artifactPath = Path.of("/tmp/artifact.zip"),
-            payloadPath = Path.of("/tmp/Daemonitor.app"),
-            installation = InstallationInfo(
-                platform = DesktopPlatform.MACOS,
-                architecture = CpuArchitecture.ARM64,
-                kind = InstallationKind.MACOS_APP_BUNDLE,
-                installRoot = Path.of("/Applications/Daemonitor.app"),
-                relaunchCommand = listOf("/usr/bin/open", "-n", "/Applications/Daemonitor.app"),
-            ),
-        )
+        val staged = stagedUpdate(candidate)
         val vm = SettingsViewModel(
             initial = SettingsUiState(updateState = UpdateUiState.ReadyToInstall(candidate, staged)),
-            updateApplier = UpdateApplier { applied += it },
-            onExitForUpdate = { exited += 1 },
+            updateService = UpdateService(
+                checkForUpdate = CheckForUpdate(UpdateSource { UpdateCheckResult.UpToDate("1.0.2") }),
+                prepareUpdate = PrepareUpdate(UpdateInstaller { _, _ -> null }),
+                applyUpdate = ApplyUpdate(
+                    applier = UpdateApplier { applied += it },
+                    processExiter = ProcessExiter { exited += 1 },
+                ),
+                urlOpener = UrlOpener {},
+            ),
             scope = this,
         )
 
@@ -188,7 +187,12 @@ class SettingsViewModelTest {
     fun `installer failures are surfaced in update state`() = runTest {
         val candidate = candidate("Daemonitor-1.0.3-windows-x64.msi")
         val vm = SettingsViewModel(
-            updateInstaller = UpdateInstaller { _, _ -> error("No desktop") },
+            updateService = UpdateService(
+                checkForUpdate = CheckForUpdate(UpdateSource { UpdateCheckResult.UpToDate("1.0.2") }),
+                prepareUpdate = PrepareUpdate(UpdateInstaller { _, _ -> error("No desktop") }),
+                applyUpdate = ApplyUpdate(UpdateApplier {}, ProcessExiter {}),
+                urlOpener = UrlOpener {},
+            ),
             scope = this,
         )
 
@@ -205,9 +209,26 @@ class SettingsViewModelTest {
         result: UpdateCheckResult,
         scope: TestScope,
     ): SettingsViewModel = SettingsViewModel(
-        updateChecker = { result },
-        updateInstaller = UpdateInstaller { _, _ -> null },
+        updateService = UpdateService(
+            checkForUpdate = CheckForUpdate(UpdateSource { result }),
+            prepareUpdate = PrepareUpdate(UpdateInstaller { _, _ -> null }),
+            applyUpdate = ApplyUpdate(UpdateApplier {}, ProcessExiter {}),
+            urlOpener = UrlOpener {},
+        ),
         scope = scope,
+    )
+
+    private fun stagedUpdate(candidate: UpdateCandidate): StagedUpdate = StagedUpdate(
+        candidate = candidate,
+        artifactPath = Path.of("/tmp/artifact.zip"),
+        payloadPath = Path.of("/tmp/Daemonitor.app"),
+        installation = InstallationInfo(
+            platform = DesktopPlatform.MACOS,
+            architecture = CpuArchitecture.ARM64,
+            kind = InstallationKind.MACOS_APP_BUNDLE,
+            installRoot = Path.of("/Applications/Daemonitor.app"),
+            relaunchCommand = listOf("/usr/bin/open", "-n", "/Applications/Daemonitor.app"),
+        ),
     )
 
     private fun candidate(

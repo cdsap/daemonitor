@@ -1,9 +1,21 @@
 package io.github.cdsap.daemonitor
 
+import io.github.cdsap.daemonitor.application.DefaultDaemonitorQueryService
+import io.github.cdsap.daemonitor.application.ProcessSource
+import io.github.cdsap.daemonitor.application.platform.ProcessExiter
+import io.github.cdsap.daemonitor.application.platform.UrlOpener
+import io.github.cdsap.daemonitor.application.update.ApplyUpdate
+import io.github.cdsap.daemonitor.application.update.CheckForUpdate
+import io.github.cdsap.daemonitor.application.update.PrepareUpdate
+import io.github.cdsap.daemonitor.application.update.UpdateService
+import io.github.cdsap.daemonitor.application.update.UpdateSource
+import io.github.cdsap.daemonitor.mcp.DaemonitorMcpServer
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
 import io.github.cdsap.daemonitor.ui.settings.UpdateUiState
+import io.github.cdsap.daemonitor.update.UpdateApplier
 import io.github.cdsap.daemonitor.update.UpdateCheckResult
+import io.github.cdsap.daemonitor.update.UpdateInstaller
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -95,10 +107,17 @@ class WatcherServiceTest {
             database = database,
             tmp = tmp,
             uiDispatcher = uiDispatcher,
-            updateChecker = {
-                updateChecks += 1
-                UpdateCheckResult.UpToDate("1.0.3")
-            },
+            updateService = UpdateService(
+                checkForUpdate = CheckForUpdate(
+                    source = UpdateSource {
+                        updateChecks += 1
+                        UpdateCheckResult.UpToDate("1.0.3")
+                    },
+                ),
+                prepareUpdate = PrepareUpdate(UpdateInstaller { _, _ -> null }),
+                applyUpdate = ApplyUpdate(UpdateApplier {}, ProcessExiter {}),
+                urlOpener = UrlOpener {},
+            ),
         ) {
             WatcherRuntime.PollResult(emptyList(), emptyList(), buildsChanged = false)
         }
@@ -148,7 +167,14 @@ class WatcherServiceTest {
         tmp: Path,
         uiDispatcher: CoroutineDispatcher,
         clock: () -> Long = { 0 },
-        updateChecker: suspend () -> UpdateCheckResult = { UpdateCheckResult.UpToDate("1.0.3") },
+        updateService: UpdateService = UpdateService(
+            checkForUpdate = CheckForUpdate(
+                source = UpdateSource { UpdateCheckResult.UpToDate("1.0.3") },
+            ),
+            prepareUpdate = PrepareUpdate(UpdateInstaller { _, _ -> null }),
+            applyUpdate = ApplyUpdate(UpdateApplier {}, ProcessExiter {}),
+            urlOpener = UrlOpener {},
+        ),
         pollAction: suspend () -> WatcherRuntime.PollResult,
     ) = WatcherService.forTests(
         runtime = WatcherRuntime.create(database),
@@ -156,7 +182,10 @@ class WatcherServiceTest {
         settingsStore = SettingsStore(tmp.resolve("settings.properties")),
         clock = clock,
         pollAction = pollAction,
-        updateChecker = updateChecker,
+        updateService = updateService,
+        mcpServerFactory = {
+            DaemonitorMcpServer(DefaultDaemonitorQueryService(database, ProcessSource { emptyList() }))
+        },
         uiDispatcher = uiDispatcher,
         ioDispatcher = uiDispatcher,
     )

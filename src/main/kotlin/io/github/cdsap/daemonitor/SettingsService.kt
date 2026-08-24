@@ -1,5 +1,6 @@
 package io.github.cdsap.daemonitor
 
+import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.store.AppearancePreference
 import io.github.cdsap.daemonitor.store.Settings
 import io.github.cdsap.daemonitor.store.SettingsStore
@@ -17,7 +18,7 @@ class SettingsService(
     fun load(): Settings = current
 
     fun updateRetention(days: Long): Settings {
-        val clamped = days.coerceIn(Defaults.MIN_RETENTION_DAYS, Defaults.MAX_RETENTION_DAYS)
+        val clamped = RetentionPolicy.DEFAULT.clamp(days)
         current = current.copy(retentionDays = clamped)
         settingsStore.save(current)
         purgeNow()
