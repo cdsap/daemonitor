@@ -4,6 +4,8 @@ import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import app.cash.sqldelight.db.SqlDriver
+import io.github.cdsap.daemonitor.application.BuildRepository
+import io.github.cdsap.daemonitor.application.ProcessSampleRepository
 import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.platform.AppDirectories
 import io.github.cdsap.daemonitor.domain.model.Build
@@ -28,6 +30,9 @@ import kotlin.io.path.exists
  * permissions (0600) and excluded from Time Machine, and stale rows are purged by retention
  * window. Reads are exposed as `Flow`s that drive the UI (KTD-5).
  *
+ * Implements [BuildRepository] and [ProcessSampleRepository] so application polling depends on
+ * ports rather than this concrete SQLite type.
+ *
  * Redaction invariant (KTD-7): callers pass only pre-redacted command lines / log snippets;
  * the collector (U2), log watcher (U3), and aggregator (U5) all redact upstream.
  */
@@ -35,9 +40,13 @@ class WatcherDatabase private constructor(
     private val db: WatcherDb,
     private val driver: SqlDriver,
     private val ioDispatcher: CoroutineDispatcher,
-) : AutoCloseable {
+) : AutoCloseable, BuildRepository, ProcessSampleRepository {
 
     override fun close() = driver.close()
+
+    override fun save(sample: GradleProcess, timestampMs: Long) = insertSample(sample, timestampMs)
+
+    override fun save(build: Build) = insertBuild(build)
 
     fun insertSample(p: GradleProcess, timestampMs: Long) {
         db.watcherQueries.insertSample(

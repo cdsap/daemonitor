@@ -1,22 +1,60 @@
 package io.github.cdsap.daemonitor
 
+import io.github.cdsap.daemonitor.application.PollMonitoring
+import io.github.cdsap.daemonitor.application.ProcessSource
+import io.github.cdsap.daemonitor.application.DaemonLogSource
+import io.github.cdsap.daemonitor.application.BuildRepository
+import io.github.cdsap.daemonitor.application.ProcessSampleRepository
 import io.github.cdsap.daemonitor.collect.DaemonLog
 import io.github.cdsap.daemonitor.collect.DaemonLogWatcher
 import io.github.cdsap.daemonitor.collect.ProcessCollector
 import io.github.cdsap.daemonitor.domain.BuildAggregator
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
-import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.store.WatcherDatabase
 
-/** UI-independent collection and persistence runtime shared by desktop and headless launchers. */
+/**
+ * UI-independent collection and persistence runtime shared by desktop and headless launchers.
+ *
+ * This facade preserves the runtime API used by desktop services while delegating polling to the
+ * application-layer [PollMonitoring] use case.
+ */
 class WatcherRuntime(
-    private val collector: ProcessCollector,
-    private val logWatcher: DaemonLogWatcher,
-    private val aggregator: BuildAggregator,
-    private val database: WatcherDatabase,
-    private val clock: () -> Long = System::currentTimeMillis,
+    private val monitoring: PollMonitoring,
 ) {
-    private var knownDaemonPids = emptySet<Long>()
+    constructor(
+        collector: ProcessSource,
+        logWatcher: DaemonLogSource,
+        aggregator: BuildAggregator,
+        database: WatcherDatabase,
+        clock: () -> Long = System::currentTimeMillis,
+    ) : this(
+        PollMonitoring(
+            processSource = collector,
+            logSource = logWatcher,
+            builds = database,
+            samples = database,
+            aggregator = aggregator,
+            clock = clock,
+        ),
+    )
+
+    constructor(
+        processSource: ProcessSource,
+        logSource: DaemonLogSource,
+        builds: BuildRepository,
+        samples: ProcessSampleRepository,
+        aggregator: BuildAggregator,
+        clock: () -> Long = System::currentTimeMillis,
+    ) : this(
+        PollMonitoring(
+            processSource = processSource,
+            logSource = logSource,
+            builds = builds,
+            samples = samples,
+            aggregator = aggregator,
+            clock = clock,
+        ),
+    )
 
     data class PollResult(
         val processes: List<GradleProcess>,
@@ -24,53 +62,19 @@ class WatcherRuntime(
         val buildsChanged: Boolean,
     )
 
-    fun pollOnce(): PollResult {
-        val now = clock()
-        val processes = collector.poll()
-        processes.forEach { database.insertSample(it, now) }
-
-        val logs = logWatcher.discover()
-        return PollResult(
-            processes = processes,
-            daemonLogs = logs,
-            buildsChanged = processForBuilds(logs, activeDaemonPids = processes.activeDaemonPids()),
-        )
-    }
+    fun pollOnce(): PollResult = monitoring.pollOnce().toRuntimeResult()
 
     fun tailFor(logs: List<DaemonLog>, pid: Long): List<String> =
-        logs.firstOrNull { it.pid == pid }?.let { logWatcher.tailFor(it.path) }.orEmpty()
+        monitoring.tailFor(logs, pid)
 
-    internal fun processForBuilds(logs: List<DaemonLog>, activeDaemonPids: Set<Long>): Boolean {
-        var inserted = false
+    internal fun processForBuilds(logs: List<DaemonLog>, activeDaemonPids: Set<Long>): Boolean =
+        monitoring.processForBuilds(logs, activeDaemonPids)
 
-        for (log in logs) {
-            val lines = logWatcher.readNewLines(log.path)
-            if (lines.isNotEmpty()) {
-                lines.flatMap { aggregator.onLogLine(log.pid, it.text, it.event) }.forEach {
-                    database.insertBuild(it)
-                    inserted = true
-                }
-            }
-            if (log.pid !in activeDaemonPids) {
-                aggregator.onDaemonGone(log.pid)?.let {
-                    database.insertBuild(it)
-                    inserted = true
-                }
-            }
-        }
-
-        (knownDaemonPids - activeDaemonPids).forEach { gonePid ->
-            aggregator.onDaemonGone(gonePid)?.let {
-                database.insertBuild(it)
-                inserted = true
-            }
-        }
-        knownDaemonPids = activeDaemonPids
-        return inserted
-    }
-
-    private fun List<GradleProcess>.activeDaemonPids(): Set<Long> =
-        filter { it.type == ProcessType.GRADLE_DAEMON }.map { it.pid }.toSet()
+    private fun PollMonitoring.PollResult.toRuntimeResult(): PollResult = PollResult(
+        processes = processes,
+        daemonLogs = daemonLogs,
+        buildsChanged = buildsChanged,
+    )
 
     companion object {
         /** Test/helper factory. Production wiring lives in [AppContainer]. */

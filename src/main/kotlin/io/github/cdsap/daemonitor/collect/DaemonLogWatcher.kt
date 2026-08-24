@@ -1,5 +1,6 @@
 package io.github.cdsap.daemonitor.collect
 
+import io.github.cdsap.daemonitor.application.DaemonLogSource
 import io.github.cdsap.daemonitor.config.MonitoringConfig
 import io.github.cdsap.daemonitor.platform.AppDirectories
 import io.github.cdsap.daemonitor.domain.Redactor
@@ -25,6 +26,8 @@ data class DaemonLogLine(val text: String, val event: BuildEvent?)
  * and parses build events (U3). Redaction (KTD-7) runs on every line before it enters the tail
  * buffer or is parsed, so anything exposed downstream is already scrubbed.
  *
+ * Implements [DaemonLogSource] so application polling depends on the port, not filesystem details.
+ *
  * macOS note: `WatchService` has no FSEvents backend (polling fallback); newly created version
  * subdirectories are picked up by re-running [discover] each poll rather than relying on a
  * single registration.
@@ -34,7 +37,7 @@ class DaemonLogWatcher(
     private val tailLines: Int = MonitoringConfig.DEFAULT.logTailLines,
     private val initialReadBytes: Int = DEFAULT_INITIAL_READ_BYTES,
     private val readChunkBytes: Int = DEFAULT_READ_CHUNK_BYTES,
-) {
+) : DaemonLogSource {
     init {
         require(initialReadBytes > 0) { "initialReadBytes must be positive" }
         require(readChunkBytes > 0) { "readChunkBytes must be positive" }
@@ -47,7 +50,7 @@ class DaemonLogWatcher(
     private val leftovers = mutableMapOf<Path, ByteArray>()
 
     /** Scan `<gradleUserHome>/daemon/<version>/daemon-<pid>.out.log` for current daemon logs. */
-    fun discover(): List<DaemonLog> {
+    override fun discover(): List<DaemonLog> {
         val daemonRoot = gradleUserHome.resolve("daemon")
         if (!daemonRoot.exists() || !daemonRoot.isDirectory()) return emptyList()
         return daemonRoot.listDirectoryEntries()
@@ -66,6 +69,8 @@ class DaemonLogWatcher(
      */
     fun readNewEvents(path: Path): List<BuildEvent> =
         readNewLines(path).mapNotNull { it.event }
+
+    override fun readNewLines(log: DaemonLog): List<DaemonLogLine> = readNewLines(log.path)
 
     /**
      * Read newly appended complete lines while retaining their parsed-event association. This lets
@@ -122,6 +127,8 @@ class DaemonLogWatcher(
         retainTail(path, redacted)
         return redacted.map { DaemonLogLine(it, DaemonLogParser.parseLine(it)) }
     }
+
+    override fun tailFor(log: DaemonLog): List<String> = tailFor(log.path)
 
     /** The last [tailLines] redacted lines seen for a log, for the live tail panel (U7). */
     fun tailFor(path: Path): List<String> = tails[path]?.toList() ?: emptyList()
