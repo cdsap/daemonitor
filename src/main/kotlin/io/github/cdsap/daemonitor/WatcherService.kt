@@ -1,19 +1,20 @@
 package io.github.cdsap.daemonitor
 
 import io.github.cdsap.daemonitor.config.MonitoringConfig
+import io.github.cdsap.daemonitor.mcp.DaemonitorMcpHttpServer
+import io.github.cdsap.daemonitor.mcp.DaemonitorMcpServer
 import io.github.cdsap.daemonitor.store.AppearancePreference
 import io.github.cdsap.daemonitor.store.Settings
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
-import io.github.cdsap.daemonitor.mcp.DaemonitorMcpHttpServer
-import io.github.cdsap.daemonitor.mcp.DaemonitorMcpServer
 import io.github.cdsap.daemonitor.ui.history.HistoryViewModel
 import io.github.cdsap.daemonitor.ui.live.LiveViewModel
 import io.github.cdsap.daemonitor.ui.settings.McpUiState
 import io.github.cdsap.daemonitor.ui.settings.SettingsUiState
 import io.github.cdsap.daemonitor.ui.settings.SettingsViewModel
-import io.github.cdsap.daemonitor.update.GitHubReleaseUpdateSource
+import io.github.cdsap.daemonitor.update.UpdateApplier
 import io.github.cdsap.daemonitor.update.UpdateCheckResult
+import io.github.cdsap.daemonitor.update.UpdateInstaller
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
@@ -30,12 +31,13 @@ import kotlinx.coroutines.withContext
 class WatcherService(
     private val runtime: WatcherRuntime,
     private val database: WatcherDatabase,
-    private val settingsStore: SettingsStore = SettingsStore(),
+    private val settingsStore: SettingsStore,
     private val clock: () -> Long = System::currentTimeMillis,
     private val pollAction: suspend () -> WatcherRuntime.PollResult = { runtime.pollOnce() },
-    private val updateChecker: suspend () -> UpdateCheckResult = {
-        GitHubReleaseUpdateSource().check(BuildInfo.current.version)
-    },
+    private val updateChecker: suspend () -> UpdateCheckResult,
+    private val updateInstaller: UpdateInstaller,
+    private val updateApplier: UpdateApplier,
+    private val mcpServerFactory: () -> DaemonitorMcpServer,
     private val uiDispatcher: CoroutineDispatcher = Dispatchers.Main,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
@@ -58,6 +60,8 @@ class WatcherService(
         onAppearanceChange = ::onAppearanceChanged,
         onMcpEnabledChange = ::onMcpEnabledChanged,
         updateChecker = updateChecker,
+        updateInstaller = updateInstaller,
+        updateApplier = updateApplier,
         scope = CoroutineScope(SupervisorJob() + uiDispatcher),
     )
 
@@ -140,7 +144,7 @@ class WatcherService(
                 DaemonitorMcpHttpServer.start(
                     port = state.mcpPort,
                     token = state.mcpToken,
-                    server = DaemonitorMcpServer(database),
+                    server = mcpServerFactory(),
                 )
             }.onSuccess { server ->
                 if (!settingsViewModel.state.value.mcpEnabled) {
@@ -226,11 +230,7 @@ class WatcherService(
     }
 
     companion object {
-        /** Build a fully wired service against the real database. */
-        fun create(database: WatcherDatabase = WatcherDatabase.open()): WatcherService =
-            WatcherService(
-                runtime = WatcherRuntime.create(database),
-                database = database,
-            )
+        /** Build a fully wired desktop service via the application composition root. */
+        fun create(): WatcherService = AppContainer().createDesktopService()
     }
 }

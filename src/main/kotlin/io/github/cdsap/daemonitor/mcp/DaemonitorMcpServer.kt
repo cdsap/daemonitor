@@ -1,7 +1,7 @@
 package io.github.cdsap.daemonitor.mcp
 
+import io.github.cdsap.daemonitor.AppContainer
 import io.github.cdsap.daemonitor.BuildInfo
-import io.github.cdsap.daemonitor.collect.ProcessCollector
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.store.ProcessSample
@@ -14,7 +14,7 @@ import java.nio.charset.StandardCharsets
 
 class DaemonitorMcpServer(
     private val database: WatcherDatabase,
-    private val currentProcessesProvider: () -> List<GradleProcess> = ProcessCollector()::poll,
+    private val currentProcessesProvider: () -> List<GradleProcess>,
 ) {
     internal fun handle(request: JsonObject): JsonObject? {
         val id = request.values["id"]
@@ -281,13 +281,12 @@ class DaemonitorMcpServer(
 
 object DaemonitorMcpStdio {
     fun run(
-        database: WatcherDatabase = WatcherDatabase.open(),
+        container: AppContainer = AppContainer(),
         input: InputStream = System.`in`,
         output: OutputStream = System.out,
     ) {
-        database.use {
-            val server = DaemonitorMcpServer(it)
-            McpMessageStream(input, output).serve(server)
+        container.use {
+            McpMessageStream(input, output).serve(it.createMcpServer())
         }
     }
 }

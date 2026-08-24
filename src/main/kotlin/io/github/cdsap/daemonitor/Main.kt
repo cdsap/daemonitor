@@ -32,8 +32,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Application entry point (U1 scaffold, wired in U7). Opens the database, starts the polling
- * [WatcherService], and renders the tabbed UI. The Historical tab is wired in U8.
+ * Application entry point (U1 scaffold, wired in U7). Obtains a wired [WatcherService] from the
+ * composition root, starts polling, and renders the tabbed UI. The Historical tab is wired in U8.
  */
 fun main(args: Array<String>) {
     if (args.firstOrNull() == "--headless") {
@@ -63,7 +63,7 @@ private fun launchDesktop() = application {
         icon = painterResource("icon/daemonitor.png"),
     ) {
         LaunchedEffect(Unit) {
-            service = withContext(Dispatchers.IO) { WatcherService.create() }
+            service = withContext(Dispatchers.IO) { AppContainer().createDesktopService() }
         }
         DaemonitorContent(
             service = service,

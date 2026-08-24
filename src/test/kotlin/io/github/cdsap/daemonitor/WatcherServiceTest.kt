@@ -1,9 +1,12 @@
 package io.github.cdsap.daemonitor
 
+import io.github.cdsap.daemonitor.mcp.DaemonitorMcpServer
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
 import io.github.cdsap.daemonitor.ui.settings.UpdateUiState
+import io.github.cdsap.daemonitor.update.UpdateApplier
 import io.github.cdsap.daemonitor.update.UpdateCheckResult
+import io.github.cdsap.daemonitor.update.UpdateInstaller
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -157,6 +160,11 @@ class WatcherServiceTest {
         clock = clock,
         pollAction = pollAction,
         updateChecker = updateChecker,
+        updateInstaller = UpdateInstaller { _, _ -> null },
+        updateApplier = UpdateApplier { },
+        mcpServerFactory = {
+            DaemonitorMcpServer(database, currentProcessesProvider = { emptyList() })
+        },
         uiDispatcher = uiDispatcher,
         ioDispatcher = uiDispatcher,
     )
