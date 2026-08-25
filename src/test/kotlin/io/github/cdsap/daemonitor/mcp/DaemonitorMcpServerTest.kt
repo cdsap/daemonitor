@@ -53,8 +53,8 @@ class DaemonitorMcpServerTest {
     @Test
     fun `builds for process matches daemon pid and samples`(@TempDirArg tmp: Path) {
         val db = WatcherDatabase.open(tmp.resolve("watcher.db"))
-        db.insertBuild(build("b1", 3_000, pid = 42, project = "/repo/target"))
-        db.insertSample(
+        db.save(build("b1", 3_000, pid = 42, project = "/repo/target"))
+        db.save(
             GradleProcess(
                 pid = 42,
                 parentPid = 7,

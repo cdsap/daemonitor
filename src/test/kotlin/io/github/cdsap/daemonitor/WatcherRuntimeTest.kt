@@ -30,8 +30,9 @@ class WatcherRuntimeTest {
             val runtime = WatcherRuntime(
                 collector = ProcessCollector(),
                 logWatcher = DaemonLogWatcher(gradleUserHome = tmp.resolve("gradle")),
-                aggregator = BuildAggregator(sampleProvider = database::samplesInWindow),
-                database = database,
+                aggregator = BuildAggregator(sampleProvider = database::samples),
+                builds = database,
+                processSamples = database,
             )
 
             runtime.pollOnce() // Establish the incremental-read offset.
@@ -50,7 +51,7 @@ class WatcherRuntimeTest {
 
             assertTrue(runtime.pollOnce().buildsChanged)
 
-            val build = database.recentBuilds().single()
+            val build = database.recent().single()
             val snippet = assertNotNull(build.logSnippet)
             assertTrue(snippet.contains("-Ptoken=***"))
             assertFalse(snippet.contains("window-secret"))
@@ -79,14 +80,15 @@ class WatcherRuntimeTest {
             val runtime = WatcherRuntime(
                 collector = ProcessCollector(),
                 logWatcher = logWatcher,
-                aggregator = BuildAggregator(sampleProvider = database::samplesInWindow),
-                database = database,
+                aggregator = BuildAggregator(sampleProvider = database::samples),
+                builds = database,
+                processSamples = database,
             )
 
             val changed = runtime.processForBuilds(logWatcher.discover(), activeDaemonPids = emptySet())
 
             assertTrue(changed)
-            val build = database.recentBuilds().single()
+            val build = database.recent().single()
             assertEquals("build-96", build.buildId)
             assertEquals(FinalStatus.SUCCESS, build.finalStatus)
         }

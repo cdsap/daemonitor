@@ -5,7 +5,7 @@ import io.github.cdsap.daemonitor.BuildInfo
 import io.github.cdsap.daemonitor.application.DaemonitorQueryService
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
-import io.github.cdsap.daemonitor.store.ProcessSample
+import io.github.cdsap.daemonitor.persistence.ProcessSample
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.InputStream

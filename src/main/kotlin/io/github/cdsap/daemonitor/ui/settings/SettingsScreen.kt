@@ -35,7 +35,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.github.cdsap.daemonitor.config.RetentionPolicy
-import io.github.cdsap.daemonitor.store.AppearancePreference
+import io.github.cdsap.daemonitor.persistence.AppearancePreference
 import io.github.cdsap.daemonitor.ui.common.SectionCard
 import io.github.cdsap.daemonitor.ui.common.ScreenHeader
 import io.github.cdsap.daemonitor.ui.common.Radius

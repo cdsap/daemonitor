@@ -3,7 +3,7 @@ package io.github.cdsap.daemonitor.ui.settings
 import io.github.cdsap.daemonitor.Defaults
 import io.github.cdsap.daemonitor.application.update.UpdateService
 import io.github.cdsap.daemonitor.config.RetentionPolicy
-import io.github.cdsap.daemonitor.store.AppearancePreference
+import io.github.cdsap.daemonitor.persistence.AppearancePreference
 import io.github.cdsap.daemonitor.update.StagedUpdate
 import io.github.cdsap.daemonitor.update.UpdateCandidate
 import io.github.cdsap.daemonitor.update.UpdateCheckResult

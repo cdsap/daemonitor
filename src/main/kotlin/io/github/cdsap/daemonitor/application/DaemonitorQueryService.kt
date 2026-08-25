@@ -2,7 +2,7 @@ package io.github.cdsap.daemonitor.application
 
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
-import io.github.cdsap.daemonitor.store.ProcessSample
+import io.github.cdsap.daemonitor.persistence.ProcessSample
 
 /** Application-facing read API used by MCP and other query consumers. */
 interface DaemonitorQueryService {

@@ -22,6 +22,24 @@ class WatcherRuntime(
     private val monitoring: PollMonitoring,
 ) {
     constructor(
+        collector: ProcessSource = ProcessCollector(),
+        logWatcher: DaemonLogSource = DaemonLogWatcher(),
+        aggregator: BuildAggregator,
+        builds: BuildRepository,
+        processSamples: ProcessSampleRepository,
+        clock: () -> Long = System::currentTimeMillis,
+    ) : this(
+        PollMonitoring(
+            processSource = collector,
+            logSource = logWatcher,
+            builds = builds,
+            samples = processSamples,
+            aggregator = aggregator,
+            clock = clock,
+        ),
+    )
+
+    constructor(
         collector: ProcessSource,
         logWatcher: DaemonLogSource,
         aggregator: BuildAggregator,

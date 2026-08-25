@@ -3,7 +3,8 @@ package io.github.cdsap.daemonitor
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.Source
-import io.github.cdsap.daemonitor.store.AppearancePreference
+import io.github.cdsap.daemonitor.persistence.AppearancePreference
+import io.github.cdsap.daemonitor.persistence.Settings
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
 import org.junit.jupiter.api.io.TempDir
@@ -17,7 +18,7 @@ class SettingsServiceTest {
     fun `load returns persisted settings`(@TempDir tmp: Path) {
         val store = SettingsStore(tmp.resolve("settings.properties"))
         store.save(
-            io.github.cdsap.daemonitor.store.Settings(
+            Settings(
                 retentionDays = 30,
                 appearance = AppearancePreference.DARK,
                 mcpEnabled = true,

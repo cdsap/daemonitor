@@ -5,7 +5,7 @@ import io.github.cdsap.daemonitor.collect.DaemonLogWatcher
 import io.github.cdsap.daemonitor.collect.ProcessCollector
 import io.github.cdsap.daemonitor.domain.BuildAggregator
 import io.github.cdsap.daemonitor.mcp.DaemonitorMcpServer
-import io.github.cdsap.daemonitor.store.Settings
+import io.github.cdsap.daemonitor.persistence.Settings
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
 import org.junit.jupiter.api.io.TempDir

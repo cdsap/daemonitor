@@ -2,11 +2,15 @@ package io.github.cdsap.daemonitor.store
 
 import io.github.cdsap.daemonitor.Defaults
 import io.github.cdsap.daemonitor.config.RetentionPolicy
+import io.github.cdsap.daemonitor.persistence.AppearancePreference
+import io.github.cdsap.daemonitor.persistence.Settings
+import io.github.cdsap.daemonitor.persistence.SettingsRepository
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 
 class SettingsStoreTest {
 
@@ -51,5 +55,14 @@ class SettingsStoreTest {
         val path = tmp.resolve("settings.properties")
         java.nio.file.Files.writeString(path, "retentionDays=30\nappearance=sepia\n")
         assertEquals(AppearancePreference.SYSTEM, SettingsStore(path).load().appearance)
+    }
+
+    @Test
+    fun `SettingsStore implements SettingsRepository`(@TempDir tmp: Path) {
+        val repository: SettingsRepository = SettingsStore(tmp.resolve("settings.properties"))
+        assertIs<SettingsRepository>(repository)
+        repository.save(Settings(retentionDays = 14, appearance = AppearancePreference.LIGHT))
+        assertEquals(14, repository.load().retentionDays)
+        assertEquals(AppearancePreference.LIGHT, repository.load().appearance)
     }
 }

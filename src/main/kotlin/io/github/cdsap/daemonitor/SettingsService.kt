@@ -1,8 +1,8 @@
 package io.github.cdsap.daemonitor
 
 import io.github.cdsap.daemonitor.config.RetentionPolicy
-import io.github.cdsap.daemonitor.store.AppearancePreference
-import io.github.cdsap.daemonitor.store.Settings
+import io.github.cdsap.daemonitor.persistence.AppearancePreference
+import io.github.cdsap.daemonitor.persistence.Settings
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
 
