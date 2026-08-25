@@ -2,18 +2,21 @@ package io.github.cdsap.daemonitor.store
 
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
-import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import app.cash.sqldelight.db.SqlDriver
-import io.github.cdsap.daemonitor.platform.AppDirectories
+import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import io.github.cdsap.daemonitor.application.BuildRepository as ApplicationBuildRepository
+import io.github.cdsap.daemonitor.application.ProcessSampleRepository as ApplicationProcessSampleRepository
+import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.domain.model.Source
-import io.github.cdsap.daemonitor.persistence.BuildRepository
+import io.github.cdsap.daemonitor.persistence.BuildRepository as PersistenceBuildRepository
 import io.github.cdsap.daemonitor.persistence.ProcessSample
-import io.github.cdsap.daemonitor.persistence.ProcessSampleRepository
+import io.github.cdsap.daemonitor.persistence.ProcessSampleRepository as PersistenceProcessSampleRepository
 import io.github.cdsap.daemonitor.persistence.RetentionRepository
+import io.github.cdsap.daemonitor.platform.AppDirectories
 import io.github.cdsap.daemonitor.store.db.Process_samples
 import io.github.cdsap.daemonitor.store.db.WatcherDb
 import kotlinx.coroutines.CoroutineDispatcher
@@ -41,11 +44,20 @@ class WatcherDatabase private constructor(
     private val db: WatcherDb,
     private val driver: SqlDriver,
     private val ioDispatcher: CoroutineDispatcher,
-) : BuildRepository, ProcessSampleRepository, RetentionRepository, AutoCloseable {
+) : AutoCloseable,
+    ApplicationBuildRepository,
+    ApplicationProcessSampleRepository,
+    PersistenceBuildRepository,
+    PersistenceProcessSampleRepository,
+    RetentionRepository {
 
     override fun close() = driver.close()
 
-    override fun save(sample: GradleProcess, timestampMs: Long) {
+    override fun save(sample: GradleProcess, timestampMs: Long) = insertSample(sample, timestampMs)
+
+    override fun save(build: Build) = insertBuild(build)
+
+    fun insertSample(sample: GradleProcess, timestampMs: Long) {
         db.watcherQueries.insertSample(
             timestamp = timestampMs,
             pid = sample.pid,
@@ -61,7 +73,7 @@ class WatcherDatabase private constructor(
         )
     }
 
-    override fun save(build: Build) {
+    fun insertBuild(build: Build) {
         db.watcherQueries.insertBuild(
             build_id = build.buildId,
             daemon_pid = build.daemonPid,
@@ -83,28 +95,36 @@ class WatcherDatabase private constructor(
         )
     }
 
-    /** RSS + CPU samples for a PID within [fromMs, toMs] — used by the aggregator (U5). */
-    override fun samples(pid: Long, fromMs: Long, toMs: Long): List<Pair<Long, Double?>> =
-        db.watcherQueries.samplesInWindow(pid, fromMs, toMs)
+    /** RSS + CPU samples for a PID within [startMs, endMs] -- used by the aggregator (U5). */
+    fun samplesInWindow(pid: Long, startMs: Long, endMs: Long): List<Pair<Long, Double?>> =
+        db.watcherQueries.samplesInWindow(pid, startMs, endMs)
             .executeAsList()
             .map { it.rss_memory_mb to it.cpu_percent }
 
-    fun countByType(type: ProcessType): Long =
+    override fun samples(pid: Long, fromMs: Long, toMs: Long): List<Pair<Long, Double?>> =
+        samplesInWindow(pid, fromMs, toMs)
+
+    fun processSampleCount(type: ProcessType): Long =
         db.watcherQueries.countProcessSamplesByType(type.name).executeAsOne()
 
-    /** One-shot snapshot of all retained builds, newest first. Drives the explicit History refresh
-     *  the poll loop triggers after inserting builds (reactive `asFlow` notifications proved
-     *  unreliable for live updates with the JDBC SQLite driver). */
-    override fun recent(): List<Build> =
+    fun countByType(type: ProcessType): Long = processSampleCount(type)
+
+    /** One-shot snapshot of all retained builds, newest first. */
+    fun recentBuilds(): List<Build> =
         db.watcherQueries.recentBuilds().executeAsList().map { it.toDomain() }
 
-    override fun findByDaemon(pid: Long, limit: Long): List<Build> =
+    override fun recent(): List<Build> = recentBuilds()
+
+    fun buildsForDaemonPid(pid: Long, limit: Long = DEFAULT_QUERY_LIMIT): List<Build> =
         db.watcherQueries.buildsForDaemonPid(pid, limit.coerceQueryLimit()).executeAsList()
             .map { it.toDomain() }
 
-    override fun search(query: String, limit: Long): List<Build> {
+    override fun findByDaemon(pid: Long, limit: Long): List<Build> =
+        buildsForDaemonPid(pid, limit)
+
+    fun searchBuilds(query: String, limit: Long = DEFAULT_QUERY_LIMIT): List<Build> {
         val sanitizedQuery = query.trim()
-        if (sanitizedQuery.isEmpty()) return recent().take(limit.coerceQueryLimit().toInt())
+        if (sanitizedQuery.isEmpty()) return recentBuilds().take(limit.coerceQueryLimit().toInt())
         return db.watcherQueries.searchBuilds(
             sanitizedQuery,
             sanitizedQuery,
@@ -118,13 +138,22 @@ class WatcherDatabase private constructor(
         ).executeAsList().map { it.toDomain() }
     }
 
-    override fun recentSamples(limit: Long): List<ProcessSample> =
+    override fun search(query: String, limit: Long): List<Build> =
+        searchBuilds(query, limit)
+
+    fun recentProcessSamples(limit: Long = DEFAULT_QUERY_LIMIT): List<ProcessSample> =
         db.watcherQueries.recentProcessSamples(limit.coerceQueryLimit()).executeAsList()
             .map { it.toDomain() }
 
-    override fun findByPid(pid: Long, limit: Long): List<ProcessSample> =
+    override fun recentSamples(limit: Long): List<ProcessSample> =
+        recentProcessSamples(limit)
+
+    fun processSamplesForPid(pid: Long, limit: Long = DEFAULT_QUERY_LIMIT): List<ProcessSample> =
         db.watcherQueries.processSamplesForPid(pid, limit.coerceQueryLimit()).executeAsList()
             .map { it.toDomain() }
+
+    override fun findByPid(pid: Long, limit: Long): List<ProcessSample> =
+        processSamplesForPid(pid, limit)
 
     /** One-shot snapshot of distinct project paths for the History filter dropdown. */
     override fun distinctProjects(): List<String> =
@@ -169,9 +198,10 @@ class WatcherDatabase private constructor(
             return WatcherDatabase(WatcherDb(driver), driver, ioDispatcher)
         }
 
-        /** Add columns introduced after a DB was first created. SQLite has no ADD COLUMN IF NOT
-         *  EXISTS, so each ALTER is attempted and the "duplicate column" error is ignored — keeps
-         *  a pre-existing local watcher.db working without a full migration framework. */
+        /**
+         * Add columns introduced after a DB was first created. SQLite has no ADD COLUMN IF NOT
+         * EXISTS, so duplicate-column errors are ignored.
+         */
         private fun migrateInPlace(driver: JdbcSqliteDriver) {
             listOf(
                 "ALTER TABLE builds ADD COLUMN agent TEXT",
@@ -179,6 +209,7 @@ class WatcherDatabase private constructor(
             ).forEach { sql -> runCatching { driver.execute(null, sql, 0) } }
         }
 
+        private const val DEFAULT_QUERY_LIMIT = 50L
         private const val MAX_QUERY_LIMIT = 200L
 
         private fun Long.coerceQueryLimit(): Long = coerceIn(1, MAX_QUERY_LIMIT)

@@ -1,5 +1,7 @@
 package io.github.cdsap.daemonitor.mcp
 
+import io.github.cdsap.daemonitor.application.DefaultDaemonitorQueryService
+import io.github.cdsap.daemonitor.application.ProcessSource
 import io.github.cdsap.daemonitor.store.WatcherDatabase
 import org.junit.jupiter.api.io.TempDir
 import java.net.URI
@@ -16,7 +18,7 @@ class DaemonitorMcpHttpServerTest {
     @Test
     fun `post request returns mcp json response`(@TempDir tmp: Path) {
         val db = WatcherDatabase.open(tmp.resolve("watcher.db"))
-        val server = DaemonitorMcpHttpServer.start(0, TOKEN, DaemonitorMcpServer(db, db, currentProcessesProvider = { emptyList() }))
+        val server = DaemonitorMcpHttpServer.start(0, TOKEN, mcpServer(db))
         try {
             val response = post(
                 endpoint = server.endpoint,
@@ -36,7 +38,7 @@ class DaemonitorMcpHttpServerTest {
     @Test
     fun `post request requires token`(@TempDir tmp: Path) {
         val db = WatcherDatabase.open(tmp.resolve("watcher.db"))
-        val server = DaemonitorMcpHttpServer.start(0, TOKEN, DaemonitorMcpServer(db, db, currentProcessesProvider = { emptyList() }))
+        val server = DaemonitorMcpHttpServer.start(0, TOKEN, mcpServer(db))
         try {
             val response = request(server.endpoint, token = null, method = "POST")
 
@@ -50,7 +52,7 @@ class DaemonitorMcpHttpServerTest {
     @Test
     fun `browser origins must be loopback`(@TempDir tmp: Path) {
         val db = WatcherDatabase.open(tmp.resolve("watcher.db"))
-        val server = DaemonitorMcpHttpServer.start(0, TOKEN, DaemonitorMcpServer(db, db, currentProcessesProvider = { emptyList() }))
+        val server = DaemonitorMcpHttpServer.start(0, TOKEN, mcpServer(db))
         try {
             val response = request(
                 endpoint = server.endpoint,
@@ -69,7 +71,7 @@ class DaemonitorMcpHttpServerTest {
     @Test
     fun `notifications return accepted without body`(@TempDir tmp: Path) {
         val db = WatcherDatabase.open(tmp.resolve("watcher.db"))
-        val server = DaemonitorMcpHttpServer.start(0, TOKEN, DaemonitorMcpServer(db, db, currentProcessesProvider = { emptyList() }))
+        val server = DaemonitorMcpHttpServer.start(0, TOKEN, mcpServer(db))
         try {
             val response = post(
                 endpoint = server.endpoint,
@@ -88,7 +90,7 @@ class DaemonitorMcpHttpServerTest {
     @Test
     fun `get request is rejected because sse is not supported`(@TempDir tmp: Path) {
         val db = WatcherDatabase.open(tmp.resolve("watcher.db"))
-        val server = DaemonitorMcpHttpServer.start(0, TOKEN, DaemonitorMcpServer(db, db, currentProcessesProvider = { emptyList() }))
+        val server = DaemonitorMcpHttpServer.start(0, TOKEN, mcpServer(db))
         try {
             val response = request(server.endpoint, token = TOKEN, method = "GET")
 
@@ -99,6 +101,9 @@ class DaemonitorMcpHttpServerTest {
             db.close()
         }
     }
+
+    private fun mcpServer(db: WatcherDatabase): DaemonitorMcpServer =
+        DaemonitorMcpServer(DefaultDaemonitorQueryService(db, ProcessSource { emptyList() }))
 
     private fun post(endpoint: String, token: String, body: String): HttpResponse<String> =
         request(endpoint, token = token, method = "POST", body = body)
