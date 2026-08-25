@@ -30,5 +30,7 @@ sealed interface UpdateCheckResult {
     data class Available(val candidate: UpdateCandidate) : UpdateCheckResult
     data class UpToDate(val currentVersion: String) : UpdateCheckResult
     data class UnsupportedPlatform(val platform: DesktopPlatform) : UpdateCheckResult
+    /** App Store / TestFlight builds must not self-update from GitHub Releases. */
+    data object ManagedByAppStore : UpdateCheckResult
     data class Failed(val reason: String) : UpdateCheckResult
 }

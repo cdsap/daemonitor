@@ -218,4 +218,20 @@ class SettingsScreenUiTest {
 
         onNodeWithText("Downloading Daemonitor-1.0.3-macos-arm64.zip: 42%.").assertExists()
     }
+
+    @Test
+    fun `app store managed updates hide GitHub update actions`() = runComposeUiTest {
+        setContent {
+            WatcherTheme {
+                SettingsScreen(
+                    SettingsUiState(updateState = UpdateUiState.ManagedByAppStore),
+                    onRetentionDays = {},
+                )
+            }
+        }
+
+        onNodeWithText("This Mac App Store build is updated by Apple. The GitHub Releases updater is disabled.")
+            .assertExists()
+        onNodeWithText("Check for updates").assertDoesNotExist()
+    }
 }
