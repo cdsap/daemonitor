@@ -58,6 +58,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 private data class HoverLegend(
@@ -73,6 +74,8 @@ fun OverallRssTimelineChart(
     selectedPid: Long?,
     onSelectProcess: (Long) -> Unit,
     modifier: Modifier = Modifier,
+    rangeLabel: String = "Live",
+    statusText: String? = null,
 ) {
     val accents = LocalAccentColors.current
     val palette = remember(accents) {
@@ -129,12 +132,15 @@ fun OverallRssTimelineChart(
             verticalArrangement = Arrangement.spacedBy(Space.sm),
         ) {
             Text(
-                "Total $currentTotalRssMb MB RSS · $processCount processes",
+                "$rangeLabel · Total $currentTotalRssMb MB RSS · $processCount processes",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                "Solid = RSS, dashed = Heap (-Xmx). Click a series to show or hide it.",
+                listOfNotNull(
+                    "Solid = RSS, dashed = configured heap limit (-Xmx). Click a series to show or hide it.",
+                    statusText,
+                ).joinToString(" "),
                 style = MaterialTheme.typography.labelSmall,
                 color = labelColor,
             )
@@ -251,7 +257,7 @@ fun OverallRssTimelineChart(
 
                                 visibleSeries.forEach { item ->
                                     val color = seriesColors.getValue(item.id)
-                                    val path = pathFor(points, width, height, maxMb) {
+                                    val path = smoothedPathFor(points, width, height, maxMb) {
                                         (it.valuesBySeriesId[item.id] ?: 0L).toFloat()
                                     }
                                     if (item.isTotal && item.metric == TimelineMetric.RSS) {
@@ -454,7 +460,7 @@ private fun nearestIndex(pointCount: Int, width: Float, x: Float): Int {
     return (x / step).roundToInt().coerceIn(0, pointCount - 1)
 }
 
-private fun pathFor(
+private fun smoothedPathFor(
     points: List<RssTimelinePoint>,
     width: Float,
     height: Float,
@@ -464,13 +470,38 @@ private fun pathFor(
     val path = Path()
     if (points.isEmpty()) return path
     val xStep = if (points.size == 1) 0f else width / (points.size - 1).toFloat()
-    points.forEachIndexed { index, point ->
+    val offsets = points.mapIndexed { index, point ->
         val x = index * xStep
         val y = height - (valueOf(point) / maxMb.toFloat()) * height
-        if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        Offset(x, y.coerceIn(0f, height))
+    }
+    path.moveTo(offsets.first().x, offsets.first().y)
+    if (offsets.size == 1) return path
+    if (offsets.size == 2) {
+        path.lineTo(offsets.last().x, offsets.last().y)
+        return path
+    }
+
+    for (index in 0 until offsets.lastIndex) {
+        val previous = offsets.getOrElse(index - 1) { offsets[index] }
+        val current = offsets[index]
+        val next = offsets[index + 1]
+        val following = offsets.getOrElse(index + 2) { next }
+        val control1 = Offset(
+            x = current.x + (next.x - previous.x) / 6f,
+            y = (current.y + (next.y - previous.y) / 6f).coerceBetween(current.y, next.y),
+        )
+        val control2 = Offset(
+            x = next.x - (following.x - current.x) / 6f,
+            y = (next.y - (following.y - current.y) / 6f).coerceBetween(current.y, next.y),
+        )
+        path.cubicTo(control1.x, control1.y, control2.x, control2.y, next.x, next.y)
     }
     return path
 }
+
+private fun Float.coerceBetween(a: Float, b: Float): Float =
+    coerceIn(min(a, b), max(a, b))
 
 private fun formatClock(atMs: Long): String =
     SimpleDateFormat("h:mm:ss a", Locale.US).format(Date(atMs))

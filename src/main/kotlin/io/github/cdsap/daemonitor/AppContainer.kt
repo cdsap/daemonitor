@@ -61,6 +61,7 @@ class AppContainer(
             ioDispatcher = ioDispatcher,
             pollInterval = MonitoringConfig.DEFAULT.pollInterval,
         ),
+        processSamples = database,
         uiDispatcher = uiDispatcher,
         clock = clock,
     )

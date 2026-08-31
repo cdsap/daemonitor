@@ -2,6 +2,7 @@ package io.github.cdsap.daemonitor.ui.live
 
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
+import io.github.cdsap.daemonitor.persistence.ProcessSample
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -107,6 +108,59 @@ class VisualChartModelTest {
         assertEquals(emptyList(), data.bars)
     }
 
+    @Test
+    fun `historic buckets preserve peak rss and latest heap limit`() {
+        val chart = VisualChartModel.timelineChart(
+            samples = listOf(
+                sample(timestamp = 1_000, pid = 1, rss = 100, heap = 512),
+                sample(timestamp = 2_000, pid = 1, rss = 160, heap = null),
+                sample(timestamp = 9_000, pid = 1, rss = 120, heap = 768),
+            ),
+            range = VisualRange.FIFTEEN_MINUTES,
+            liveProcesses = emptyList(),
+            nowMs = 12_000,
+        )
+
+        val point = chart.points.single()
+        assertEquals(160L, point.valuesBySeriesId[VisualChartModel.rssSeriesId(1)])
+        assertEquals(768L, point.valuesBySeriesId[VisualChartModel.heapSeriesId(1)])
+        assertEquals(160L, point.valuesBySeriesId[VisualChartModel.TOTAL_SERIES_ID])
+        assertEquals(768L, point.valuesBySeriesId[VisualChartModel.TOTAL_HEAP_SERIES_ID])
+    }
+
+    @Test
+    fun `historic total rss aggregates pids inside a bucket`() {
+        val chart = VisualChartModel.timelineChart(
+            samples = listOf(
+                sample(timestamp = 1_000, pid = 1, rss = 100, heap = 512),
+                sample(timestamp = 2_000, pid = 2, rss = 80, heap = null),
+            ),
+            range = VisualRange.FIFTEEN_MINUTES,
+            liveProcesses = emptyList(),
+            nowMs = 12_000,
+        )
+
+        assertEquals(180L, chart.points.single().valuesBySeriesId[VisualChartModel.TOTAL_SERIES_ID])
+        assertEquals(512L, chart.points.single().valuesBySeriesId[VisualChartModel.TOTAL_HEAP_SERIES_ID])
+        assertEquals(null, chart.series.firstOrNull { it.id == VisualChartModel.heapSeriesId(2) })
+    }
+
+    @Test
+    fun `all retained downsampling caps point count`() {
+        val samples = (0..400).map { index ->
+            sample(timestamp = index * 1_000L, pid = 1, rss = index.toLong(), heap = 512)
+        }
+
+        val chart = VisualChartModel.timelineChart(
+            samples = samples,
+            range = VisualRange.ALL_RETAINED,
+            liveProcesses = emptyList(),
+            nowMs = samples.last().timestampMs,
+        )
+
+        assertTrue(chart.points.size <= VisualChartModel.ALL_RETAINED_TARGET_POINTS)
+    }
+
     private fun process(
         pid: Long,
         type: ProcessType = ProcessType.GRADLE_WRAPPER,
@@ -126,6 +180,20 @@ class VisualChartModelTest {
         minHeapMb = null,
         gc = "G1",
         startTimeMs = 1_700_000_000_000,
+        status = "RUNNING",
+    )
+
+    private fun sample(timestamp: Long, pid: Long, rss: Long, heap: Long?) = ProcessSample(
+        timestampMs = timestamp,
+        pid = pid,
+        parentPid = 1,
+        processType = ProcessType.GRADLE_DAEMON,
+        commandLine = "java GradleDaemon",
+        workingDirectory = "/repo",
+        projectPath = "/repo",
+        cpuPercent = 1.0,
+        rssMemoryMb = rss,
+        maxHeapMb = heap,
         status = "RUNNING",
     )
 }

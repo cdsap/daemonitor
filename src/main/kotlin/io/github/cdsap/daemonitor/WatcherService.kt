@@ -1,10 +1,12 @@
 package io.github.cdsap.daemonitor
 
 import io.github.cdsap.daemonitor.application.update.UpdateService
+import io.github.cdsap.daemonitor.application.ProcessSampleRepository
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
 import io.github.cdsap.daemonitor.ui.history.HistoryViewModel
 import io.github.cdsap.daemonitor.ui.live.LiveViewModel
+import io.github.cdsap.daemonitor.ui.live.VisualViewModel
 import io.github.cdsap.daemonitor.ui.settings.McpUiState
 import io.github.cdsap.daemonitor.ui.settings.SettingsUiState
 import io.github.cdsap.daemonitor.ui.settings.SettingsViewModel
@@ -25,11 +27,18 @@ class WatcherService(
     private val mcpController: McpServiceController,
     private val updateService: UpdateService,
     private val monitoringService: MonitoringService,
+    private val processSamples: ProcessSampleRepository,
     private val uiDispatcher: CoroutineDispatcher = Dispatchers.Main,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
     val liveViewModel = LiveViewModel()
     val historyViewModel = HistoryViewModel()
+    val visualViewModel = VisualViewModel(
+        processSamples = processSamples,
+        scope = CoroutineScope(SupervisorJob() + uiDispatcher),
+        ioDispatcher = Dispatchers.IO,
+        clockMs = clock,
+    )
 
     private val initialSettings = settingsService.load()
 
@@ -126,6 +135,7 @@ class WatcherService(
         val selectedTail = selectedDaemonTail(result)
         withContext(uiDispatcher) {
             liveViewModel.onPoll(result.processes, selectedTail)
+            visualViewModel.onLiveState(liveViewModel.state.value)
         }
         if (result.buildsChanged) refreshHistory()
     }
@@ -136,6 +146,7 @@ class WatcherService(
                 val selectedTail = selectedDaemonTail(result)
                 withContext(uiDispatcher) {
                     liveViewModel.onPoll(result.processes, selectedTail)
+                    visualViewModel.onLiveState(liveViewModel.state.value)
                 }
                 if (result.buildsChanged) refreshHistory()
             },
@@ -182,6 +193,7 @@ class WatcherService(
                     pollAction = pollAction,
                     ioDispatcher = ioDispatcher,
                 ),
+                processSamples = database,
                 uiDispatcher = uiDispatcher,
                 clock = clock,
             )
