@@ -83,6 +83,24 @@ class VisualViewModelTest {
         assertEquals("No samples in this range", vm.state.value.statusText)
     }
 
+    @Test
+    fun `empty live state keeps explicit no processes copy`() = runTest {
+        val repo = RecordingSamples(emptyList())
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val vm = VisualViewModel(repo, TestScope(dispatcher), clockMs = { 10_000 }, ioDispatcher = dispatcher)
+
+        vm.onLiveState(
+            LiveUiState(
+                processes = emptyList(),
+                isLoading = false,
+                isEmpty = true,
+            ),
+        )
+
+        assertTrue(vm.state.value.isEmpty)
+        assertEquals("No Gradle processes are running right now.", vm.state.value.statusText)
+    }
+
     private class RecordingSamples(private val rows: List<ProcessSample>) : ProcessSampleRepository {
         var lastFromMs: Long? = null
         var lastToMs: Long? = null

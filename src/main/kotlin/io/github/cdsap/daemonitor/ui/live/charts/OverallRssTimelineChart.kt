@@ -67,6 +67,8 @@ private data class HoverLegend(
     val markerYs: List<Pair<Color, Float>>,
 )
 
+private const val DEFAULT_VISIBLE_PROCESS_LIMIT = 4
+
 @Composable
 fun OverallRssTimelineChart(
     chart: RssTimelineChartData,
@@ -117,8 +119,8 @@ fun OverallRssTimelineChart(
     val crosshairColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
     val points = chart.points
     val series = chart.series
-    var visibleIds by remember(series.map { it.id }) {
-        mutableStateOf(series.map { it.id }.toSet())
+    var visibleIds by remember(series.map { it.id }, selectedPid) {
+        mutableStateOf(defaultVisibleSeriesIds(series, selectedPid))
     }
     var hover by remember(points, visibleIds) { mutableStateOf<HoverLegend?>(null) }
     var plotSize by remember { mutableStateOf(IntSize.Zero) }
@@ -335,6 +337,25 @@ fun OverallRssTimelineChart(
             }
         }
     }
+}
+
+internal fun defaultVisibleSeriesIds(series: List<TimelineSeries>, selectedPid: Long?): Set<String> {
+    val totalIds = series.filter { it.isTotal }.map { it.id }
+    val processIds = series
+        .mapNotNull { it.pid }
+        .distinct()
+        .take(DEFAULT_VISIBLE_PROCESS_LIMIT)
+        .let { ids ->
+            if (selectedPid != null && selectedPid !in ids && series.any { it.pid == selectedPid }) {
+                ids + selectedPid
+            } else {
+                ids
+            }
+        }
+    val selectedProcessSeriesIds = series
+        .filter { it.pid in processIds }
+        .map { it.id }
+    return (totalIds + selectedProcessSeriesIds).toSet()
 }
 
 @Composable

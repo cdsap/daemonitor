@@ -88,7 +88,11 @@ class VisualViewModel(
             activeProjectCount = liveState.summary.activeProjectCount,
             isLoading = liveState.isLoading,
             isEmpty = chart.points.isEmpty(),
-            statusText = if (chart.points.isEmpty() && !liveState.isLoading) "Collecting live samples..." else lastSampleText(chart),
+            statusText = when {
+                chart.points.isNotEmpty() -> lastSampleText(chart)
+                liveState.isEmpty && !liveState.isLoading -> "No Gradle processes are running right now."
+                else -> "Collecting live samples..."
+            },
             errorText = liveState.pollError?.errorType,
         ).withSelection(nextPid)
     }
