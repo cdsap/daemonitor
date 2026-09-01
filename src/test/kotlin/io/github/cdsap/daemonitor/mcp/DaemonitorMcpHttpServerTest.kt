@@ -103,7 +103,7 @@ class DaemonitorMcpHttpServerTest {
     }
 
     private fun mcpServer(db: WatcherDatabase): DaemonitorMcpServer =
-        DaemonitorMcpServer(DefaultDaemonitorQueryService(db, ProcessSource { emptyList() }))
+        DaemonitorMcpServer(DefaultDaemonitorQueryService(db, db, ProcessSource { emptyList() }))
 
     private fun post(endpoint: String, token: String, body: String): HttpResponse<String> =
         request(endpoint, token = token, method = "POST", body = body)

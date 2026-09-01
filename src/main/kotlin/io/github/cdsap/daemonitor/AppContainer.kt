@@ -69,7 +69,8 @@ class AppContainer(
         currentProcessesProvider: () -> List<GradleProcess> = processCollector::poll,
     ): DaemonitorMcpServer = DaemonitorMcpServer(
         DefaultDaemonitorQueryService(
-            database = database,
+            builds = database,
+            samples = database,
             processSource = ProcessSource { currentProcessesProvider() },
         ),
     )

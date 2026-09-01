@@ -18,7 +18,7 @@ object DaemonitorMcpStdio {
         output: OutputStream = System.out,
     ) {
         database.use {
-            val server = DaemonitorMcpServer(DefaultDaemonitorQueryService(it, processSource))
+            val server = DaemonitorMcpServer(DefaultDaemonitorQueryService(it, it, processSource))
             McpMessageStream(input, output).serve(server)
         }
     }
