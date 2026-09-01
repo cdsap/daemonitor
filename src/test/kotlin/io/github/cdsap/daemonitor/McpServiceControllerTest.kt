@@ -22,7 +22,7 @@ class McpServiceControllerTest {
                     port = port,
                     token = token,
                     server = DaemonitorMcpServer(
-                        DefaultDaemonitorQueryService(database, ProcessSource { emptyList() }),
+                        DefaultDaemonitorQueryService(database, database, ProcessSource { emptyList() }),
                     ),
                 )
             }

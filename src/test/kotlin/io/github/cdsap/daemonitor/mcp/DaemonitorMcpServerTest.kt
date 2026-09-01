@@ -128,7 +128,8 @@ class DaemonitorMcpServerTest {
         database: WatcherDatabase,
         currentProcesses: List<GradleProcess>,
     ) = DefaultDaemonitorQueryService(
-        database = database,
+        builds = database,
+        samples = database,
         processSource = ProcessSource { currentProcesses },
     )
 

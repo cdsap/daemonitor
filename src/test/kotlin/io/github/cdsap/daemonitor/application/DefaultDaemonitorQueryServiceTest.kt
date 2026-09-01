@@ -5,50 +5,48 @@ import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.domain.model.Source
-import io.github.cdsap.daemonitor.store.WatcherDatabase
-import org.junit.jupiter.api.io.TempDir
-import java.nio.file.Path
+import io.github.cdsap.daemonitor.persistence.BuildRepository
+import io.github.cdsap.daemonitor.persistence.ProcessSample
+import io.github.cdsap.daemonitor.persistence.ProcessSampleRepository
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class DefaultDaemonitorQueryServiceTest {
 
     @Test
-    fun `searchHistory delegates to retained builds`(@TempDir tmp: Path) {
-        val db = WatcherDatabase.open(tmp.resolve("watcher.db"))
-        db.insertBuild(build("old", 1_000, project = "/repo/a"))
-        db.insertBuild(build("match", 2_000, project = "/repo/target", status = FinalStatus.FAILED))
-        val queries = DefaultDaemonitorQueryService(db, ProcessSource { emptyList() })
+    fun `searchHistory delegates to retained builds`() {
+        val builds = FakeBuildRepository(
+            listOf(
+                build("old", 1_000, project = "/repo/a"),
+                build("match", 2_000, project = "/repo/target", status = FinalStatus.FAILED),
+            ),
+        )
+        val queries = DefaultDaemonitorQueryService(builds, FakeProcessSampleRepository(), ProcessSource { emptyList() })
 
-        val builds = queries.searchHistory("target", limit = 50)
+        val result = queries.searchHistory("target", limit = 50)
 
-        assertEquals(listOf("match"), builds.map { it.buildId })
-        assertEquals(FinalStatus.FAILED, builds.single().finalStatus)
+        assertEquals(listOf("match"), result.map { it.buildId })
+        assertEquals(FinalStatus.FAILED, result.single().finalStatus)
     }
 
     @Test
-    fun `buildsForProcess matches pid builds and samples`(@TempDir tmp: Path) {
-        val db = WatcherDatabase.open(tmp.resolve("watcher.db"))
-        db.insertBuild(build("b1", 3_000, pid = 42, project = "/repo/target"))
-        db.insertSample(
-            GradleProcess(
-                pid = 42,
-                parentPid = 7,
-                type = ProcessType.GRADLE_DAEMON,
-                commandLine = "java GradleDaemon",
-                workingDirectory = "/repo/target",
-                projectPath = "/repo/target",
-                cpuPercent = 12.0,
-                rssMemoryMb = 512,
-                maxHeapMb = 2048,
-                minHeapMb = null,
-                gc = "G1",
-                startTimeMs = 1_000,
-                status = "RUNNING",
+    fun `buildsForProcess matches pid builds and samples`() {
+        val builds = FakeBuildRepository(listOf(build("b1", 3_000, pid = 42, project = "/repo/target")))
+        val samples = FakeProcessSampleRepository(
+            listOf(
+                processSample(
+                    pid = 42,
+                    parentPid = 7,
+                    project = "/repo/target",
+                    timestampMs = 3_100,
+                    commandLine = "java GradleDaemon",
+                    cpuPercent = 12.0,
+                    rssMemoryMb = 512,
+                    maxHeapMb = 2048,
+                ),
             ),
-            timestampMs = 3_100,
         )
-        val queries = DefaultDaemonitorQueryService(db, ProcessSource { emptyList() })
+        val queries = DefaultDaemonitorQueryService(builds, samples, ProcessSource { emptyList() })
 
         val result = queries.buildsForProcess("42", limit = 50)
 
@@ -58,12 +56,15 @@ class DefaultDaemonitorQueryServiceTest {
     }
 
     @Test
-    fun `buildsForProcess text match filters recent samples`(@TempDir tmp: Path) {
-        val db = WatcherDatabase.open(tmp.resolve("watcher.db"))
-        db.insertBuild(build("keep", 4_000, project = "/repo/target"))
-        db.insertSample(sample(pid = 10, project = "/repo/target"), timestampMs = 4_100)
-        db.insertSample(sample(pid = 11, project = "/repo/other"), timestampMs = 4_200)
-        val queries = DefaultDaemonitorQueryService(db, ProcessSource { emptyList() })
+    fun `buildsForProcess text match filters recent samples`() {
+        val builds = FakeBuildRepository(listOf(build("keep", 4_000, project = "/repo/target")))
+        val samples = FakeProcessSampleRepository(
+            listOf(
+                processSample(pid = 10, project = "/repo/target", timestampMs = 4_100),
+                processSample(pid = 11, project = "/repo/other", timestampMs = 4_200),
+            ),
+        )
+        val queries = DefaultDaemonitorQueryService(builds, samples, ProcessSource { emptyList() })
 
         val result = queries.buildsForProcess("target", limit = 50)
 
@@ -72,10 +73,13 @@ class DefaultDaemonitorQueryServiceTest {
     }
 
     @Test
-    fun `currentProcesses uses process source`(@TempDir tmp: Path) {
-        val db = WatcherDatabase.open(tmp.resolve("watcher.db"))
-        val process = sample(pid = 99, project = "/repo", type = ProcessType.KOTLIN_DAEMON)
-        val queries = DefaultDaemonitorQueryService(db, ProcessSource { listOf(process) })
+    fun `currentProcesses uses process source`() {
+        val process = gradleProcess(pid = 99, project = "/repo", type = ProcessType.KOTLIN_DAEMON)
+        val queries = DefaultDaemonitorQueryService(
+            FakeBuildRepository(),
+            FakeProcessSampleRepository(),
+            ProcessSource { listOf(process) },
+        )
 
         assertEquals(listOf(99L), queries.currentProcesses().map { it.pid })
     }
@@ -106,7 +110,7 @@ class DefaultDaemonitorQueryServiceTest {
         agentProvider = null,
     )
 
-    private fun sample(
+    private fun gradleProcess(
         pid: Long,
         project: String,
         type: ProcessType = ProcessType.GRADLE_DAEMON,
@@ -125,4 +129,67 @@ class DefaultDaemonitorQueryServiceTest {
         startTimeMs = 1,
         status = "RUNNING",
     )
+
+    private fun processSample(
+        pid: Long,
+        project: String,
+        timestampMs: Long,
+        type: ProcessType = ProcessType.GRADLE_DAEMON,
+        commandLine: String = "java $type",
+        parentPid: Long = 1,
+        cpuPercent: Double? = 1.0,
+        rssMemoryMb: Long = 256,
+        maxHeapMb: Long? = 1024,
+    ) = ProcessSample(
+        timestampMs = timestampMs,
+        pid = pid,
+        parentPid = parentPid,
+        processType = type,
+        commandLine = commandLine,
+        workingDirectory = project,
+        projectPath = project,
+        cpuPercent = cpuPercent,
+        rssMemoryMb = rssMemoryMb,
+        maxHeapMb = maxHeapMb,
+        status = "RUNNING",
+    )
+
+    private class FakeBuildRepository(
+        private val stored: List<Build> = emptyList(),
+    ) : BuildRepository {
+        override fun save(build: Build) = error("not used")
+
+        override fun recent(): List<Build> = stored
+
+        override fun search(query: String, limit: Long): List<Build> {
+            val needle = query.trim()
+            if (needle.isEmpty()) return stored.take(limit.toInt())
+            return stored.filter { build ->
+                build.projectPath?.contains(needle, ignoreCase = true) == true ||
+                    build.workingDirectory?.contains(needle, ignoreCase = true) == true ||
+                    build.commandLine?.contains(needle, ignoreCase = true) == true ||
+                    build.buildId.contains(needle, ignoreCase = true)
+            }.take(limit.toInt())
+        }
+
+        override fun findByDaemon(pid: Long, limit: Long): List<Build> =
+            stored.filter { it.daemonPid == pid }.take(limit.toInt())
+
+        override fun distinctProjects(): List<String> = error("not used")
+    }
+
+    private class FakeProcessSampleRepository(
+        private val stored: List<ProcessSample> = emptyList(),
+    ) : ProcessSampleRepository {
+        override fun save(sample: GradleProcess, timestampMs: Long) = error("not used")
+
+        override fun samples(pid: Long, fromMs: Long, toMs: Long): List<Pair<Long, Double?>> =
+            error("not used")
+
+        override fun recentSamples(limit: Long): List<ProcessSample> =
+            stored.sortedByDescending { it.timestampMs }.take(limit.toInt())
+
+        override fun findByPid(pid: Long, limit: Long): List<ProcessSample> =
+            stored.filter { it.pid == pid }.take(limit.toInt())
+    }
 }

@@ -184,7 +184,7 @@ class WatcherServiceTest {
         pollAction = pollAction,
         updateService = updateService,
         mcpServerFactory = {
-            DaemonitorMcpServer(DefaultDaemonitorQueryService(database, ProcessSource { emptyList() }))
+            DaemonitorMcpServer(DefaultDaemonitorQueryService(database, database, ProcessSource { emptyList() }))
         },
         uiDispatcher = uiDispatcher,
         ioDispatcher = uiDispatcher,
