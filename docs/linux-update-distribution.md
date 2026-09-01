@@ -3,108 +3,95 @@
 ## Decision
 
 Daemonitor will keep the initial Linux release path as a direct `.deb` asset on GitHub Releases,
-plus a `.tar.gz` update package for standalone installations that can safely self-update. After
-that flow is working, Linux package updates should move to a signed apt repository as the preferred
-distribution channel for package-managed installs.
+plus a `.tar.gz` update package for standalone installs that can self-update. Longer term, Linux
+package updates should move to a signed apt repository as the preferred channel for package-managed
+installs.
 
 The app must not try to self-install updates on Linux installations owned by the system package
-manager. Package-managed Linux update prompts should describe the available version and send the
-user to the appropriate system-managed install path:
+manager. Prompts should describe the available version and point people at the right path:
 
-- If the current install came from the apt repository, prompt the user to update through their
-  package manager.
-- If the current install came from a downloaded `.deb`, prompt the user to download and open the
-  newer GitHub Releases `.deb`.
+- If the current install came from the apt repository, update through the system package manager.
+- If the current install came from a downloaded `.deb`, download and open the newer GitHub Releases
+  `.deb`.
 - If the current install is a writable standalone / archive layout, Daemonitor may download the
-  matching `.tar.gz` update package, stage it, and apply it after **Restart and Update**.
-- If the install source is unknown, offer the manual package path and explain that apt is preferred
-  once the repository is configured.
+  matching `.tar.gz`, stage it, and apply it after **Restart and Update**.
+- If the install source is unknown, offer the manual package path and note that apt is preferred
+  once a repository is configured.
 
-This keeps package-manager installs independent from repository setup and avoids silent privilege
-escalation or unsafe replacement of files owned by `dpkg`/`rpm` from inside the desktop app.
+That keeps package-manager installs separate from repository setup and avoids privilege escalation
+or replacing `dpkg`/`rpm`-owned files from inside the app.
 
-## Direct `.deb` Download
+## Direct `.deb` download
 
-Direct `.deb` downloads are the smallest viable Linux distribution path:
+Smallest viable path:
 
-- GitHub Releases already publishes `Daemonitor-<version>-linux-<arch>.deb`.
-- Users can download and open the package with their desktop software installer, or install it with
-  a terminal command such as `sudo apt install ./Daemonitor-<version>-linux-<arch>.deb`.
-- The release asset can be produced by the current `packageDeb` CI path without repository metadata.
+- Releases already publish `Daemonitor-<version>-linux-<arch>.deb`
+- Users open it in the desktop installer, or run
+  `sudo apt install ./Daemonitor-<version>-linux-<arch>.deb`
+- Built by the existing `packageDeb` CI job; no repository metadata required
 
-The tradeoff is that direct `.deb` installs do not provide a standard update feed. The app can detect
-and announce a new release, but installation still requires explicit user action and system package
-manager privileges.
+Tradeoff: no standard update feed. The app can announce a release, but install still needs an
+explicit user action and package-manager privileges.
 
-## Apt Repository
+## Apt repository
 
-An apt repository should be the long-term Linux update channel because it gives users normal package
-manager behavior:
+Preferred long-term channel for package-managed installs:
 
-- Version discovery and upgrades happen through `apt update` and `apt upgrade`.
-- Dependency checks, package replacement, and removal stay owned by the operating system.
-- The app does not need to invoke privileged commands or ship an updater daemon.
+- Upgrades via `apt update` / `apt upgrade`
+- Dependency checks and replacement stay with the OS
+- The app does not need privileged commands or an updater daemon
 
-The apt repository is not required before shipping the Phase 1 updater prompt. It becomes the
-preferred path once repository hosting, package metadata, and signing are in place.
+The apt repository is not required before shipping the Phase 1 updater prompt. Prefer apt once
+hosting, metadata, and signing exist.
 
-## Update Prompt Behavior
+## Update prompt behavior
 
-Linux package-managed prompts must be advisory, not self-installing:
+Package-managed prompts are advisory only:
 
-- Show the available version and release link.
-- Never run `sudo`, `pkexec`, `apt`, `dpkg`, or any privileged installer command from the app.
-- For apt installs, say to update from the system package manager and link to repository setup docs.
-- For direct `.deb` installs, the app may download and verify the GitHub Releases `.deb`, then open
-  it with the OS package installer so the operating system owns privilege prompts.
-- For writable standalone installs, the app may stage the `.tar.gz` update package and apply it only
-  after the user chooses **Restart and Update**.
-- Allow dismissing or deferring the prompt so background collection is not blocked.
+- Show the available version and release link
+- Never run `sudo`, `pkexec`, `apt`, `dpkg`, or other privileged installers from the app
+- apt installs → tell the user to update via the package manager (link repo setup docs)
+- direct `.deb` → may download and verify the GitHub asset, then open it with the OS installer
+- standalone → may stage `.tar.gz` and apply only after **Restart and Update**
+- Allow dismiss / defer so background collection is not blocked
 
-## Package Metadata Requirements
+## Package metadata
 
-Before apt publication, the Linux package metadata needs to be stable enough for package manager
-upgrades:
+Before apt publication, keep metadata stable:
 
 - Package name: `daemonitor`
 - Display name: `Daemonitor`
-- Version: same release version used by GitHub Releases
-- Architecture: the architecture produced by the Linux package job
-- Maintainer: project maintainer contact for package metadata
-- Description: concise desktop-app description plus a longer package description
+- Version: same as GitHub Releases
+- Architecture: from the Linux package job
+- Maintainer: project maintainer contact
+- Description: short desktop blurb plus a longer package description
 - Homepage: `https://github.com/cdsap/daemonitor`
 - License: MIT
-- Dependencies: explicit runtime dependencies required by the generated package
-- Conflicts/Replaces/Provides: only if the package name or install layout changes later
+- Dependencies: explicit runtime deps for the generated package
+- Conflicts/Replaces/Provides: only if the name or layout changes later
 
-The repository also needs a deterministic asset naming convention that maps one Git tag to one
-package version and one apt package entry.
+Map one Git tag → one package version → one apt package entry.
 
-## Hosting And Signing Requirements
+## Hosting and signing
 
-The apt repository needs:
+The apt repo needs:
 
-- A repository host reachable over HTTPS.
-- A `dists/` and `pool/` layout, or an equivalent static repository generated by tooling such as
-  `reprepro` or `aptly`.
-- `Packages` and compressed `Packages` indexes for the supported distribution/component.
-- A signed `Release` or `InRelease` file.
-- A public signing key and documented setup command for users.
-- A private signing key managed only in release infrastructure, never in the app or repository.
-- CI or release automation that uploads the `.deb`, regenerates indexes, signs metadata, and verifies
-  that `apt update` can read the repository.
+- HTTPS host
+- `dists/` + `pool/` (or equivalent via `reprepro` / `aptly`)
+- `Packages` indexes (plain and compressed)
+- A signed `Release` or `InRelease` file
+- Public signing key + documented user setup
+- A private signing key managed only in release infrastructure, never in the app or this repo
+- Automation to upload the `.deb`, regenerate indexes, sign, and verify `apt update`
 
-GitHub Pages or another static HTTPS host can serve the repository if release automation can update
-the repository files without exposing the signing key.
+GitHub Pages or another static HTTPS host works if automation can update repo files without exposing
+the signing key.
 
-## Follow-up Implementation Plan
+## Follow-up
 
-1. Keep publishing the direct GitHub Releases `.deb` in Phase 1.
-2. Add Linux update prompt copy that distinguishes apt, direct `.deb`, and unknown install sources
-   without attempting privileged installation.
-3. Choose repository hosting and signing-key storage for the apt repository.
-4. Add release automation to generate apt metadata from the published `.deb`.
-5. Add a validation job that installs the repository key/source in a clean Linux runner, runs
-   `apt update`, and verifies the expected `daemonitor` version is available.
-6. Update install docs to prefer apt once the repository is live, while retaining direct `.deb` as a
-   fallback.
+1. Keep publishing the GitHub Releases `.deb` in Phase 1
+2. Prompt copy that distinguishes apt, direct `.deb`, and unknown — no privileged install
+3. Choose hosting and signing-key storage
+4. Automate apt metadata from the published `.deb`
+5. CI: install the repo key/source on a clean Linux runner, `apt update`, confirm `daemonitor`
+6. Prefer apt in install docs once live; keep direct `.deb` as fallback
