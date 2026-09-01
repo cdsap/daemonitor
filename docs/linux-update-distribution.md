@@ -2,20 +2,24 @@
 
 ## Decision
 
-Ship Linux first as a GitHub Releases `.deb`, plus a `.tar.gz` for standalone installs that can
-self-update. Longer term, prefer a signed apt repository for package-managed installs.
+Daemonitor will keep the initial Linux release path as a direct `.deb` asset on GitHub Releases,
+plus a `.tar.gz` update package for standalone installs that can self-update. Longer term, Linux
+package updates should move to a signed apt repository as the preferred channel for package-managed
+installs.
 
-Never self-install updates into a package-manager-owned install. Prompts should describe the new
-version and point people at the right path:
+The app must not try to self-install updates on Linux installations owned by the system package
+manager. Prompts should describe the available version and point people at the right path:
 
-- **apt install** → update via the system package manager
-- **downloaded `.deb`** → download and open the newer GitHub Releases `.deb`
-- **writable standalone / archive** → download the matching `.tar.gz`, stage it, apply after
-  **Restart and Update**
-- **unknown** → offer the manual package path; prefer apt once a repo is available
+- If the current install came from the apt repository, update through the system package manager.
+- If the current install came from a downloaded `.deb`, download and open the newer GitHub Releases
+  `.deb`.
+- If the current install is a writable standalone / archive layout, Daemonitor may download the
+  matching `.tar.gz`, stage it, and apply it after **Restart and Update**.
+- If the install source is unknown, offer the manual package path and note that apt is preferred
+  once a repository is configured.
 
-That keeps package-manager installs separate from repo setup and avoids privilege escalation or
-replacing `dpkg`/`rpm`-owned files from inside the app.
+That keeps package-manager installs separate from repository setup and avoids privilege escalation
+or replacing `dpkg`/`rpm`-owned files from inside the app.
 
 ## Direct `.deb` download
 
@@ -37,7 +41,8 @@ Preferred long-term channel for package-managed installs:
 - Dependency checks and replacement stay with the OS
 - The app does not need privileged commands or an updater daemon
 
-Not required for the Phase 1 advisory prompt. Prefer apt once hosting, metadata, and signing exist.
+The apt repository is not required before shipping the Phase 1 updater prompt. Prefer apt once
+hosting, metadata, and signing exist.
 
 ## Update prompt behavior
 
@@ -74,9 +79,9 @@ The apt repo needs:
 - HTTPS host
 - `dists/` + `pool/` (or equivalent via `reprepro` / `aptly`)
 - `Packages` indexes (plain and compressed)
-- Signed `Release` / `InRelease`
+- A signed `Release` or `InRelease` file
 - Public signing key + documented user setup
-- Private signing key only in release infra (never in the app or this repo)
+- A private signing key managed only in release infrastructure, never in the app or this repo
 - Automation to upload the `.deb`, regenerate indexes, sign, and verify `apt update`
 
 GitHub Pages or another static HTTPS host works if automation can update repo files without exposing

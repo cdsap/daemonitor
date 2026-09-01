@@ -25,7 +25,7 @@ Website: <https://cdsap.github.io/daemonitor/>
 
 ### Live Monitor
 
-![Live monitor](docs/images/live-monitor.png)
+![Daemonitor Live monitor showing active Gradle processes, metrics, status badges, process details, MCP status, and the headless toolbar action](docs/images/live-monitor.png)
 
 - Running Gradle-related JVMs, by type:
   - 🐘 Gradle daemon · 🐘+🔧 wrapper · Kotlin daemon · 🧪 test worker · ☕ other related JVM
@@ -37,7 +37,7 @@ Website: <https://cdsap.github.io/daemonitor/>
 
 ### Visual
 
-![Visual memory chart](docs/images/process-visual.png)
+![Daemonitor Visual tab showing per-process RSS and configured heap (-Xmx) timelines](docs/images/process-visual.png)
 
 - Rolling RSS and configured-heap (`-Xmx`) timelines
 - Solid lines for RSS, dashed for `-Xmx` when known
@@ -45,7 +45,7 @@ Website: <https://cdsap.github.io/daemonitor/>
 
 ### Historical
 
-![Build history](docs/images/build-history.png)
+![Daemonitor build history showing status and source tags, agent attribution, metrics, and build details](docs/images/build-history.png)
 
 - Reconstructed builds with time, project, duration, peak RSS, status, source, and agent
 - Filter by project and time range
