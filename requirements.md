@@ -2,12 +2,14 @@
 
 ## Overview
 
-Build activity is becoming harder to track during agentic AI workflows. Developers may have multiple IDEs, terminals, agents, and background tasks triggering Gradle builds at the same time. The goal of this project is to build a local Gradle Process Watcher that helps developers understand what Gradle activity is currently happening on their laptop and what happened recently.
+When several IDEs, terminals, agents, and scripts can all start Gradle builds, it's easy to lose
+track of what is running on a laptop and what ran earlier. This project is a local Gradle process
+watcher for that case.
 
-The application should provide a Compose UI with two main views:
+The app should use Compose with two main views:
 
-1. **Live Monitor**, focused on currently running Gradle processes.
-2. **Historical View**, focused on past Gradle activity and resource usage.
+1. **Live Monitor** — currently running Gradle processes.
+2. **Historical View** — past Gradle activity and resource usage.
 
 ## Goals
 

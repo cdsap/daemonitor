@@ -1,22 +1,19 @@
 # Update Metadata Contract
 
-Daemonitor publishes update metadata to each tag-triggered GitHub Release so updater clients can
-validate release information and native downloads before staging or opening installers. The desktop
-app uses this metadata to download the selected artifact in-app, verify it, and either stage an
-automatic **Restart and Update** package or hand off to the operating system installer.
+Each tag-triggered GitHub Release publishes metadata so clients can check version info and verify
+downloads before staging or opening installers. The desktop app uses that to fetch the right
+artifact, verify it, then either stage **Restart and Update** or hand off to the OS installer.
 
 ## Release assets
 
-Each release includes these machine-readable files:
+Machine-readable files on each release:
 
-- `latest.json`: canonical metadata for the current release.
-- `update.json`: an alias with the same content for updater clients that prefer an update-specific
-  file name.
-- `checksums.txt`: SHA-256 checksums for every native installer and update package, in the common
-  `<sha256>  <fileName>` format.
-- `<asset>.sha256`: per-asset SHA-256 sidecars for the in-app updater and manual verification.
+- `latest.json` — metadata for the current release
+- `update.json` — same content, alternate name for some clients
+- `checksums.txt` — SHA-256 lines in `<sha256>  <fileName>` form
+- `<asset>.sha256` — per-asset sidecars for the in-app updater and manual checks
 
-The release also includes platform/architecture native installers and update packages:
+Native installers and update packages:
 
 ### Installers (first-time / manual)
 
@@ -68,31 +65,27 @@ are used for installer names, update package names, and metadata.
 }
 ```
 
-Clients should treat `schemaVersion`, `version`, `tag`, and `assets` as required. Each asset entry
-must include `platform`, `fileName`, `url`, `sha256`, and `size`. Schema `2` also includes `arch`
-(`x64` / `arm64`) and `role` (`update` / `installer`).
+Clients should treat `schemaVersion`, `version`, `tag`, and `assets` as required. Each asset needs
+`platform`, `fileName`, `url`, `sha256`, and `size`. Schema `2` also has `arch` (`x64` / `arm64`)
+and `role` (`update` / `installer`).
 
-Schema `1` metadata without `arch`/`role` remains readable: clients infer role from the file
-extension and treat missing architecture as a legacy fallback for the current OS.
+Schema `1` without `arch`/`role` is still readable: infer role from the file extension, and treat
+missing arch as a legacy fallback for the current OS.
 
 ## Client validation
 
-Updater clients should:
-
 1. Download `latest.json` or `update.json` from the GitHub Release.
-2. Confirm `schemaVersion` is supported (`1` or `2`).
-3. Detect the current operating system and CPU architecture.
-4. Select the asset matching the current platform and architecture.
-5. Prefer `role=update` packages when the installation supports automatic Restart and Update.
-6. Prefer `role=installer` assets when automatic installation is unavailable.
-7. Download the asset from `url` only from the official `cdsap/daemonitor` GitHub repository.
-8. Compute SHA-256 over the downloaded bytes and compare it with `sha256`.
-9. Stage validated update packages without terminating Daemonitor, or open verified installers only
-   after the user approves the update.
-10. Apply staged updates only after the user chooses **Restart and Update**.
+2. Confirm `schemaVersion` is `1` or `2`.
+3. Detect the current OS and CPU architecture.
+4. Pick the asset for that platform and arch.
+5. Prefer `role=update` when Restart and Update is supported; otherwise prefer `role=installer`.
+6. Download only from the official `cdsap/daemonitor` repository URL.
+7. Verify SHA-256 against `sha256`.
+8. Stage update packages without quitting Daemonitor, or open verified installers only after the
+   user approves.
+9. Apply staged updates only after **Restart and Update**.
 
-Clients may also download `checksums.txt` or `<asset>.sha256` and compare them against the JSON
-asset list as a secondary integrity check.
+Optional: cross-check `checksums.txt` or `<asset>.sha256` against the JSON list.
 
-A release is not eligible for automatic updates on a given machine when the required
-platform/architecture update package is missing.
+Automatic updates are unavailable on a machine when the matching platform/arch update package is
+missing from the release.
