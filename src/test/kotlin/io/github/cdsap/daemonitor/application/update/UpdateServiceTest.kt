@@ -49,7 +49,10 @@ class UpdateServiceTest {
         val candidate = candidate(installMode = UpdateInstallMode.Automatic)
         val staged = staged(candidate)
         val service = UpdateService(
-            checkForUpdate = CheckForUpdate(UpdateSource { UpdateCheckResult.UpToDate("1.0.2") }),
+            checkForUpdate = CheckForUpdate(
+                source = UpdateSource { UpdateCheckResult.UpToDate("1.0.2") },
+                currentVersion = { "1.0.2" },
+            ),
             prepareUpdate = PrepareUpdate(
                 UpdateInstaller { update, onProgress ->
                     assertEquals(candidate, update)
@@ -71,7 +74,10 @@ class UpdateServiceTest {
     @Test
     fun `prepare can return null for manual installer handoff`() = runTest {
         val service = UpdateService(
-            checkForUpdate = CheckForUpdate(UpdateSource { UpdateCheckResult.UpToDate("1.0.2") }),
+            checkForUpdate = CheckForUpdate(
+                source = UpdateSource { UpdateCheckResult.UpToDate("1.0.2") },
+                currentVersion = { "1.0.2" },
+            ),
             prepareUpdate = PrepareUpdate(UpdateInstaller { _, _ -> null }),
             applyUpdate = ApplyUpdate(UpdateApplier {}, ProcessExiter {}),
             urlOpener = UrlOpener {},
@@ -85,7 +91,10 @@ class UpdateServiceTest {
         val events = mutableListOf<String>()
         val staged = staged(candidate(installMode = UpdateInstallMode.Automatic))
         val service = UpdateService(
-            checkForUpdate = CheckForUpdate(UpdateSource { UpdateCheckResult.UpToDate("1.0.2") }),
+            checkForUpdate = CheckForUpdate(
+                source = UpdateSource { UpdateCheckResult.UpToDate("1.0.2") },
+                currentVersion = { "1.0.2" },
+            ),
             prepareUpdate = PrepareUpdate(UpdateInstaller { _, _ -> null }),
             applyUpdate = ApplyUpdate(
                 applier = UpdateApplier {
@@ -107,7 +116,10 @@ class UpdateServiceTest {
         var exited = 0
         val staged = staged(candidate(installMode = UpdateInstallMode.Automatic))
         val service = UpdateService(
-            checkForUpdate = CheckForUpdate(UpdateSource { UpdateCheckResult.UpToDate("1.0.2") }),
+            checkForUpdate = CheckForUpdate(
+                source = UpdateSource { UpdateCheckResult.UpToDate("1.0.2") },
+                currentVersion = { "1.0.2" },
+            ),
             prepareUpdate = PrepareUpdate(UpdateInstaller { _, _ -> null }),
             applyUpdate = ApplyUpdate(
                 applier = UpdateApplier { error("apply failed") },
@@ -124,7 +136,10 @@ class UpdateServiceTest {
     fun `open release url uses the injected opener`() {
         val opened = mutableListOf<String>()
         val service = UpdateService(
-            checkForUpdate = CheckForUpdate(UpdateSource { UpdateCheckResult.UpToDate("1.0.2") }),
+            checkForUpdate = CheckForUpdate(
+                source = UpdateSource { UpdateCheckResult.UpToDate("1.0.2") },
+                currentVersion = { "1.0.2" },
+            ),
             prepareUpdate = PrepareUpdate(UpdateInstaller { _, _ -> null }),
             applyUpdate = ApplyUpdate(UpdateApplier {}, ProcessExiter {}),
             urlOpener = UrlOpener { opened += it },

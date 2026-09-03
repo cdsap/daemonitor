@@ -113,6 +113,7 @@ class WatcherServiceTest {
                         updateChecks += 1
                         UpdateCheckResult.UpToDate("1.0.3")
                     },
+                    currentVersion = { "1.0.3" },
                 ),
                 prepareUpdate = PrepareUpdate(UpdateInstaller { _, _ -> null }),
                 applyUpdate = ApplyUpdate(UpdateApplier {}, ProcessExiter {}),
@@ -170,6 +171,7 @@ class WatcherServiceTest {
         updateService: UpdateService = UpdateService(
             checkForUpdate = CheckForUpdate(
                 source = UpdateSource { UpdateCheckResult.UpToDate("1.0.3") },
+                currentVersion = { "1.0.3" },
             ),
             prepareUpdate = PrepareUpdate(UpdateInstaller { _, _ -> null }),
             applyUpdate = ApplyUpdate(UpdateApplier {}, ProcessExiter {}),
