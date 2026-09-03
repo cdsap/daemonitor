@@ -158,7 +158,10 @@ class SettingsViewModelTest {
         val staged = stagedUpdate(candidate)
         val vm = SettingsViewModel(
             updateService = UpdateService(
-                checkForUpdate = CheckForUpdate(UpdateSource { UpdateCheckResult.UpToDate("1.0.2") }),
+                checkForUpdate = CheckForUpdate(
+                    source = UpdateSource { UpdateCheckResult.UpToDate("1.0.2") },
+                    currentVersion = { "1.0.2" },
+                ),
                 prepareUpdate = PrepareUpdate(
                     UpdateInstaller { update, progress ->
                         progress(0.5)
@@ -193,7 +196,10 @@ class SettingsViewModelTest {
         val vm = SettingsViewModel(
             initial = SettingsUiState(updateState = UpdateUiState.ReadyToInstall(candidate, staged)),
             updateService = UpdateService(
-                checkForUpdate = CheckForUpdate(UpdateSource { UpdateCheckResult.UpToDate("1.0.2") }),
+                checkForUpdate = CheckForUpdate(
+                    source = UpdateSource { UpdateCheckResult.UpToDate("1.0.2") },
+                    currentVersion = { "1.0.2" },
+                ),
                 prepareUpdate = PrepareUpdate(UpdateInstaller { _, _ -> null }),
                 applyUpdate = ApplyUpdate(
                     applier = UpdateApplier { applied += it },
@@ -216,7 +222,10 @@ class SettingsViewModelTest {
         val candidate = candidate("Daemonitor-1.0.3-windows-x64.msi")
         val vm = SettingsViewModel(
             updateService = UpdateService(
-                checkForUpdate = CheckForUpdate(UpdateSource { UpdateCheckResult.UpToDate("1.0.2") }),
+                checkForUpdate = CheckForUpdate(
+                    source = UpdateSource { UpdateCheckResult.UpToDate("1.0.2") },
+                    currentVersion = { "1.0.2" },
+                ),
                 prepareUpdate = PrepareUpdate(UpdateInstaller { _, _ -> error("No desktop") }),
                 applyUpdate = ApplyUpdate(UpdateApplier {}, ProcessExiter {}),
                 urlOpener = UrlOpener {},
@@ -238,7 +247,10 @@ class SettingsViewModelTest {
         scope: TestScope,
     ): SettingsViewModel = SettingsViewModel(
         updateService = UpdateService(
-            checkForUpdate = CheckForUpdate(UpdateSource { result }),
+            checkForUpdate = CheckForUpdate(
+                source = UpdateSource { result },
+                currentVersion = { "1.0.2" },
+            ),
             prepareUpdate = PrepareUpdate(UpdateInstaller { _, _ -> null }),
             applyUpdate = ApplyUpdate(UpdateApplier {}, ProcessExiter {}),
             urlOpener = UrlOpener {},
