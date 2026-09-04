@@ -1,13 +1,13 @@
 package io.github.cdsap.daemonitor
 
 import io.github.cdsap.daemonitor.domain.model.Build
-import io.github.cdsap.daemonitor.store.WatcherDatabase
+import io.github.cdsap.daemonitor.persistence.BuildRepository
 
 /** Application service for querying retained build history and project filters. */
 class HistoryService(
-    private val database: WatcherDatabase,
+    private val builds: BuildRepository,
 ) {
-    fun history(): List<Build> = database.recentBuilds()
+    fun history(): List<Build> = builds.recent()
 
-    fun projects(): List<String> = database.distinctProjects()
+    fun projects(): List<String> = builds.distinctProjects()
 }
