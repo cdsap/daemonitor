@@ -12,6 +12,8 @@ interface ProcessSampleRepository {
      */
     fun samples(pid: Long, fromMs: Long, toMs: Long): List<Pair<Long, Double?>>
 
+    fun samplesInRange(fromMs: Long, toMs: Long): List<ProcessSample>
+
     fun recentSamples(limit: Long = BuildRepository.DEFAULT_QUERY_LIMIT): List<ProcessSample>
     fun findByPid(pid: Long, limit: Long = BuildRepository.DEFAULT_QUERY_LIMIT): List<ProcessSample>
 }

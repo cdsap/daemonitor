@@ -167,6 +167,38 @@ class WatcherDatabaseTest {
         retention.purgeOlderThan(nowMs = 5_000 + 8L * 24 * 60 * 60 * 1000, retentionDays = 7)
         assertTrue(builds.recent().isEmpty())
     }
+
+    @Test
+    fun `process samples in range are timestamp ascending and preserve nullable heap`(@TempDirArg tmp: Path) {
+        val database = WatcherDatabase.open(tmp.resolve("watcher.db"))
+        database.save(sample(pid = 21, rss = 100, heap = 512), timestampMs = 1_000)
+        database.save(sample(pid = 22, rss = 300, heap = null), timestampMs = 3_000)
+        database.save(sample(pid = 21, rss = 200, heap = 768), timestampMs = 2_000)
+        database.save(sample(pid = 23, rss = 900, heap = 1024), timestampMs = 4_000)
+
+        val rows = database.samplesInRange(fromMs = 1_500, toMs = 3_000)
+
+        assertEquals(listOf(2_000L, 3_000L), rows.map { it.timestampMs })
+        assertEquals(listOf(21L, 22L), rows.map { it.pid })
+        assertEquals(768L, rows[0].maxHeapMb)
+        assertEquals(null, rows[1].maxHeapMb)
+    }
+
+    private fun sample(pid: Long, rss: Long, heap: Long?) = GradleProcess(
+        pid = pid,
+        parentPid = 1,
+        type = ProcessType.GRADLE_DAEMON,
+        commandLine = "java GradleDaemon",
+        workingDirectory = "/repo",
+        projectPath = "/repo",
+        cpuPercent = 1.0,
+        rssMemoryMb = rss,
+        maxHeapMb = heap,
+        minHeapMb = null,
+        gc = null,
+        startTimeMs = 1,
+        status = "RUNNING",
+    )
 }
 
 private typealias TempDirArg = org.junit.jupiter.api.io.TempDir

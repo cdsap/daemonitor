@@ -105,6 +105,12 @@ FROM process_samples
 ORDER BY timestamp DESC
 LIMIT ?;
 
+processSamplesInRange:
+SELECT *
+FROM process_samples
+WHERE timestamp >= ? AND timestamp <= ?
+ORDER BY timestamp ASC;
+
 processSamplesForPid:
 SELECT *
 FROM process_samples

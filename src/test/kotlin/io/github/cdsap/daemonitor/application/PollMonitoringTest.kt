@@ -10,6 +10,7 @@ import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.IdleMark
 import io.github.cdsap.daemonitor.domain.model.Outcome
 import io.github.cdsap.daemonitor.domain.model.ProcessType
+import io.github.cdsap.daemonitor.persistence.ProcessSample
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -137,5 +138,7 @@ class PollMonitoringTest {
         override fun save(sample: GradleProcess, timestampMs: Long) {
             saved += sample to timestampMs
         }
+
+        override fun samplesInRange(fromMs: Long, toMs: Long) = emptyList<ProcessSample>()
     }
 }

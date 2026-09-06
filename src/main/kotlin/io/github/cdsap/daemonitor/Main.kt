@@ -96,6 +96,7 @@ internal fun DaemonitorContent(
     WatcherTheme(appearance = settingsState.appearance) {
         Surface(modifier = Modifier.fillMaxSize()) {
             val liveState by service.liveViewModel.state.collectAsState()
+            val visualState by service.visualViewModel.state.collectAsState()
             AppScaffold(
                 onSwitchToHeadless = onSwitchToHeadless,
                 settingsNotificationCount = settingsState.updateNotificationCount,
@@ -108,7 +109,12 @@ internal fun DaemonitorContent(
                     )
                 },
                 visualContent = {
-                    ProcessVisualScreen(state = liveState)
+                    ProcessVisualScreen(
+                        state = liveState,
+                        visualState = visualState,
+                        onRange = service.visualViewModel::selectRange,
+                        onSelectProcess = service.visualViewModel::selectProcess,
+                    )
                 },
                 historyContent = {
                     val historyState by service.historyViewModel.state.collectAsState()

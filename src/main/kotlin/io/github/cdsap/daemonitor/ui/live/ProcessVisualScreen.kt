@@ -12,39 +12,38 @@ import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.ui.common.EmptyState
 import io.github.cdsap.daemonitor.ui.common.LocalAccentColors
 import io.github.cdsap.daemonitor.ui.common.ScreenHeader
 import io.github.cdsap.daemonitor.ui.common.Space
 import io.github.cdsap.daemonitor.ui.common.StatTile
 import io.github.cdsap.daemonitor.ui.live.charts.OverallRssTimelineChart
-import kotlinx.coroutines.delay
-
-private const val VISUAL_PANEL_REFRESH_MS = 30_000L
 
 @Composable
-fun ProcessVisualScreen(state: LiveUiState) {
-    val latestState by rememberUpdatedState(state)
-    // While this tab is composed (active), keep a 30s-refreshed snapshot for the chart panels.
-    var panelState by remember { mutableStateOf(state) }
-
-    LaunchedEffect(state.isLoading, state.isEmpty) {
-        panelState = latestState
-    }
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(VISUAL_PANEL_REFRESH_MS)
-            if (!latestState.isLoading && !latestState.isEmpty) {
-                panelState = latestState
-            }
+fun ProcessVisualScreen(
+    state: LiveUiState,
+    visualState: VisualUiState? = null,
+    onRange: (VisualRange) -> Unit = {},
+    onSelectProcess: (Long) -> Unit = {},
+) {
+    var localPanelState by remember(state) { mutableStateOf(state.toVisualUiState()) }
+    val panelState = visualState ?: localPanelState
+    val selectProcess: (Long) -> Unit = { pid ->
+        if (visualState == null) {
+            localPanelState = localPanelState.withProcessSelection(pid, state.processes)
+        } else {
+            onSelectProcess(pid)
         }
     }
 
@@ -53,47 +52,139 @@ fun ProcessVisualScreen(state: LiveUiState) {
         if (panelState.isLoading) {
             EmptyState("Scanning for Gradle processes...", modifier = Modifier.weight(1f))
         } else if (panelState.isEmpty) {
-            EmptyState("No Gradle processes are running right now.", modifier = Modifier.weight(1f))
+            Column(modifier = Modifier.weight(1f).padding(start = Space.lg, end = Space.lg, bottom = Space.lg)) {
+                VisualRangeHeader(panelState.selectedRange, onRange)
+                EmptyState(panelState.statusText ?: "No samples in this range", modifier = Modifier.weight(1f))
+            }
         } else {
-            VisualDashboard(panelState, modifier = Modifier.weight(1f))
+            VisualDashboard(
+                state = panelState,
+                onRange = onRange,
+                onSelectProcess = selectProcess,
+                modifier = Modifier.weight(1f),
+            )
         }
     }
 }
 
 @Composable
-private fun VisualDashboard(state: LiveUiState, modifier: Modifier = Modifier) {
-    val chartData = remember(state.processes) { VisualChartModel.fromProcesses(state.processes) }
-    val defaultPid = remember(state.processes) { state.processes.maxByOrNull { it.rssMemoryMb }?.pid }
-    var selectedPid by remember(state.processes) { mutableStateOf(defaultPid) }
-    val selected = state.processes.firstOrNull { it.pid == selectedPid } ?: state.processes.first()
-    val windowEndMs = state.rssTimeline.lastOrNull()?.atMs
-    val timelineChart = remember(state.rssTimeline, state.processes, windowEndMs) {
-        VisualChartModel.timelineChart(
-            samples = state.rssTimeline,
-            processes = state.processes,
-            windowEndMs = windowEndMs,
-            windowDurationMs = VisualChartModel.DEFAULT_TIMELINE_WINDOW_MS,
-        )
-    }
-    val selectedHeap = selected.maxHeapMb?.let { "$it MB" } ?: "unavailable"
-
+private fun VisualDashboard(
+    state: VisualUiState,
+    onRange: (VisualRange) -> Unit,
+    onSelectProcess: (Long) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val selected = state.selectedSummary
+    val selectedHeap = selected?.heapLimitMb?.let { "$it MB" } ?: "unavailable"
     Column(modifier = modifier.padding(start = Space.lg, end = Space.lg, bottom = Space.lg)) {
+        VisualRangeHeader(state.selectedRange, onRange)
         Row(
             modifier = Modifier.fillMaxWidth().padding(bottom = Space.md),
             horizontalArrangement = Arrangement.spacedBy(Space.sm),
         ) {
-            StatTile("Processes", state.summary.activeProcessCount.toString(), Modifier.weight(1f), icon = Icons.Filled.Memory)
-            StatTile("RSS total", "${chartData.totalRssMb} MB", Modifier.weight(1f), icon = Icons.Filled.Storage, accent = LocalAccentColors.current.info)
-            StatTile("Selected heap", selectedHeap, Modifier.weight(1f), icon = Icons.Filled.Timeline, accent = LocalAccentColors.current.warn)
-            StatTile("Projects", state.summary.activeProjectCount.toString(), Modifier.weight(1f), accent = LocalAccentColors.current.brand)
+            StatTile("Processes", state.activeProcessCount.toString(), Modifier.weight(1f), icon = Icons.Filled.Memory)
+            StatTile("RSS total", "${state.currentTotalRssMb} MB", Modifier.weight(1f), icon = Icons.Filled.Storage, accent = LocalAccentColors.current.info)
+            StatTile("Series", state.chart.series.size.toString(), Modifier.weight(1f), icon = Icons.Filled.Timeline, accent = LocalAccentColors.current.warn)
+            StatTile("Projects", state.activeProjectCount.toString(), Modifier.weight(1f), accent = LocalAccentColors.current.brand)
+        }
+        selected?.let { summary ->
+            Text(
+                summary.label,
+                modifier = Modifier.fillMaxWidth().padding(bottom = Space.xs),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = Space.md),
+                horizontalArrangement = Arrangement.spacedBy(Space.sm),
+            ) {
+                StatTile("Current RSS", "${summary.currentRssMb} MB", Modifier.weight(1f), accent = LocalAccentColors.current.info)
+                StatTile("Peak RSS", "${summary.peakRssMb} MB", Modifier.weight(1f), accent = LocalAccentColors.current.danger)
+                StatTile("Heap limit", selectedHeap, Modifier.weight(1f), accent = LocalAccentColors.current.warn)
+                StatTile("Samples", summary.sampleCount.toString(), Modifier.weight(1f), accent = LocalAccentColors.current.success)
+            }
         }
 
         OverallRssTimelineChart(
-            chart = timelineChart,
-            currentTotalRssMb = chartData.totalRssMb,
-            selectedPid = selected.pid,
-            onSelectProcess = { selectedPid = it },
+            chart = state.chart,
+            currentTotalRssMb = state.currentTotalRssMb,
+            selectedPid = state.selectedPid,
+            rangeLabel = state.selectedRange.label,
+            statusText = state.statusText,
+            onSelectProcess = onSelectProcess,
             modifier = Modifier.weight(1f).fillMaxWidth(),
         )
     }
+}
+
+@Composable
+private fun VisualRangeHeader(selectedRange: VisualRange, onRange: (VisualRange) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(bottom = Space.md),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        SingleChoiceSegmentedButtonRow {
+            VisualRange.entries.forEachIndexed { index, range ->
+                SegmentedButton(
+                    selected = selectedRange == range,
+                    onClick = { onRange(range) },
+                    shape = SegmentedButtonDefaults.itemShape(index, VisualRange.entries.size),
+                ) {
+                    Text(range.label)
+                }
+            }
+        }
+    }
+}
+
+private fun LiveUiState.toVisualUiState(): VisualUiState {
+    val endMs = rssTimeline.lastOrNull()?.atMs
+    val chart = VisualChartModel.timelineChart(
+        samples = rssTimeline,
+        processes = processes,
+        windowEndMs = endMs,
+        windowDurationMs = VisualChartModel.DEFAULT_TIMELINE_WINDOW_MS,
+    )
+    val selectedPid = summary.highestMemoryPid ?: chart.series.firstOrNull { it.pid != null }?.pid
+    return VisualUiState(
+        selectedRange = VisualRange.LIVE,
+        chart = chart,
+        selectedPid = selectedPid,
+        currentTotalRssMb = summary.totalRssMb,
+        activeProcessCount = summary.activeProcessCount,
+        activeProjectCount = summary.activeProjectCount,
+        isLoading = isLoading,
+        isEmpty = chart.points.isEmpty(),
+        statusText = when {
+            chart.points.isNotEmpty() -> "Last sample available"
+            isEmpty && !isLoading -> "No Gradle processes are running right now."
+            else -> "Collecting live samples..."
+        },
+        errorText = pollError?.errorType,
+    ).withProcessSelection(selectedPid, processes)
+}
+
+private fun VisualUiState.withProcessSelection(pid: Long?, processes: List<GradleProcess>): VisualUiState {
+    val summary = pid?.let { chart.selectedSummary(it, processes) }
+    return copy(selectedPid = summary?.pid ?: pid, selectedSummary = summary)
+}
+
+private fun RssTimelineChartData.selectedSummary(
+    pid: Long,
+    processes: List<GradleProcess>,
+): SelectedProcessVisualSummary? {
+    val selectedProcess = processes.firstOrNull { it.pid == pid }
+    val rssValues = points.mapNotNull { it.valuesBySeriesId[VisualChartModel.rssSeriesId(pid)] }
+    if (rssValues.isEmpty()) return null
+    return SelectedProcessVisualSummary(
+        pid = pid,
+        label = selectedProcess?.let { process ->
+            val project = process.projectPath?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+            listOfNotNull(process.type.displayLabel(), project, "PID ${process.pid}").joinToString(" · ")
+        } ?: "PID $pid",
+        currentRssMb = rssValues.last(),
+        peakRssMb = rssValues.maxOrNull() ?: 0,
+        heapLimitMb = selectedProcess?.maxHeapMb,
+        sampleCount = rssValues.count { it > 0 },
+    )
 }

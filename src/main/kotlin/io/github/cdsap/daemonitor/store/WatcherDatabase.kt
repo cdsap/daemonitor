@@ -148,6 +148,10 @@ class WatcherDatabase private constructor(
     override fun recentSamples(limit: Long): List<ProcessSample> =
         recentProcessSamples(limit)
 
+    override fun samplesInRange(fromMs: Long, toMs: Long): List<ProcessSample> =
+        db.watcherQueries.processSamplesInRange(fromMs, toMs).executeAsList()
+            .map { it.toDomain() }
+
     fun processSamplesForPid(pid: Long, limit: Long = DEFAULT_QUERY_LIMIT): List<ProcessSample> =
         db.watcherQueries.processSamplesForPid(pid, limit.coerceQueryLimit()).executeAsList()
             .map { it.toDomain() }

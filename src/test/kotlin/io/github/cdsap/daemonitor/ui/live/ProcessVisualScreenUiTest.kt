@@ -34,13 +34,41 @@ class ProcessVisualScreenUiTest {
         onNodeWithText("Overall RSS").assertDoesNotExist()
         onNodeWithText("Memory by process").assertDoesNotExist()
         onNodeWithText("Process inspector").assertDoesNotExist()
-        onNodeWithText("Total 1536 MB RSS · 2 processes").assertExists()
+        onNodeWithText("Live").assertExists()
+        onNodeWithText("15 min").assertExists()
+        onNodeWithText("1 hour").assertExists()
+        onNodeWithText("All retained").assertExists()
+        onNodeWithText("Live · Total 1536 MB RSS · 2 processes").assertExists()
+        onNodeWithText("Solid = RSS, dashed = configured heap limit (-Xmx). Click a series to show or hide it. Last sample available").assertExists()
         onNodeWithText("Total RSS").assertExists()
         onNodeWithText("Total Heap").assertExists()
         onAllNodesWithText("Gradle daemon · checkout · PID 100 · RSS").onFirst().assertExists()
         onAllNodesWithText("Gradle daemon · checkout · PID 100 · Heap").onFirst().assertExists()
         onAllNodesWithText("Test worker · checkout · PID 101 · RSS").onFirst().assertExists()
-        onNodeWithText("SELECTED HEAP").assertExists()
+        onNodeWithText("HEAP LIMIT").assertExists()
+    }
+
+    @Test
+    fun `historic empty range renders explicit no samples state`() = runVisualUiTest {
+        setContent {
+            WatcherTheme {
+                ProcessVisualScreen(
+                    state = LiveUiState(processes = emptyList(), isLoading = false, isEmpty = true),
+                    visualState = VisualUiState(
+                        selectedRange = VisualRange.ONE_HOUR,
+                        isLoading = false,
+                        isEmpty = true,
+                        statusText = "No samples in this range",
+                    ),
+                )
+            }
+        }
+
+        onNodeWithText("Live").assertExists()
+        onNodeWithText("15 min").assertExists()
+        onNodeWithText("1 hour").assertExists()
+        onNodeWithText("All retained").assertExists()
+        onNodeWithText("No samples in this range").assertExists()
     }
 
     @Test
