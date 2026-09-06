@@ -1,6 +1,5 @@
 package io.github.cdsap.daemonitor.domain
 
-import io.github.cdsap.daemonitor.config.MonitoringConfig
 import io.github.cdsap.daemonitor.domain.model.BuildEnvNames
 import io.github.cdsap.daemonitor.domain.model.BuildEvent
 import io.github.cdsap.daemonitor.domain.model.BuildStart
@@ -99,11 +98,18 @@ class BuildAggregatorTest {
     }
 
     @Test
+    fun `default log snippet limit is 100 lines and 16000 chars`() {
+        val limit = BuildAggregator.DEFAULT_LOG_SNIPPET_LIMIT
+        assertEquals(100, limit.lines)
+        assertEquals(16_000, limit.chars)
+    }
+
+    @Test
     fun `interrupted build retains its bounded in-window log excerpt`() {
-        val agg = BuildAggregator()
+        val snippetLimit = BuildAggregator.LogSnippetLimit(lines = 5, chars = 500)
+        val agg = BuildAggregator(logSnippetLimit = snippetLimit)
         agg.onLogLine(pid, "busy", BusyMark(1_000))
         agg.onLogLine(pid, "start", start(1_010))
-        val snippetLimit = MonitoringConfig.DEFAULT.logSnippetLimit
         repeat(snippetLimit.lines + 5) { index ->
             agg.onLogLine(pid, "line-$index-${"x".repeat(200)}", null)
         }

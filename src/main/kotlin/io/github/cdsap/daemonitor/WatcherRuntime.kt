@@ -8,6 +8,7 @@ import io.github.cdsap.daemonitor.application.ProcessSampleRepository
 import io.github.cdsap.daemonitor.collect.DaemonLog
 import io.github.cdsap.daemonitor.collect.DaemonLogWatcher
 import io.github.cdsap.daemonitor.collect.ProcessCollector
+import io.github.cdsap.daemonitor.config.MonitoringConfig
 import io.github.cdsap.daemonitor.domain.BuildAggregator
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.store.WatcherDatabase
@@ -102,6 +103,9 @@ class WatcherRuntime(
             aggregator = BuildAggregator(
                 sampleProvider = database::samplesInWindow,
                 ambientEnvNames = System.getenv().keys.toSet(),
+                logSnippetLimit = with(MonitoringConfig.DEFAULT.logSnippetLimit) {
+                    BuildAggregator.LogSnippetLimit(lines = lines, chars = chars)
+                },
             ),
             database = database,
         )
