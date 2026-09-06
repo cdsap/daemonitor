@@ -1,6 +1,5 @@
 package io.github.cdsap.daemonitor.domain
 
-import io.github.cdsap.daemonitor.config.MonitoringConfig
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.BuildEnvNames
 import io.github.cdsap.daemonitor.domain.model.BuildEvent
@@ -29,7 +28,14 @@ class BuildAggregator(
     /** Env-var names in the watcher's own process — subtracted from each build's env before agent
      *  fingerprinting so an ambient agent session is not mis-attributed to every build it spawns. */
     private val ambientEnvNames: Set<String> = emptySet(),
+    private val logSnippetLimit: LogSnippetLimit = DEFAULT_LOG_SNIPPET_LIMIT,
 ) {
+    /** Bounds for in-window build log excerpts retained until a build is emitted. */
+    data class LogSnippetLimit(val lines: Int, val chars: Int)
+
+    companion object {
+        val DEFAULT_LOG_SNIPPET_LIMIT = LogSnippetLimit(lines = 100, chars = 16_000)
+    }
     private val daemons = mutableMapOf<Long, DaemonState>()
 
     fun onEvents(daemonPid: Long, events: List<BuildEvent>): List<Build> {
@@ -58,7 +64,7 @@ class BuildAggregator(
                     state.window?.takeIf { it.qualified }?.let { w ->
                         emitted += w.toBuild(daemonPid, state.uid, endMs = event.timestampMs, sampleProvider, ambientEnvNames)
                     }
-                    state.window = Window(busyTimeMs = event.timestampMs)
+                    state.window = Window(busyTimeMs = event.timestampMs, logSnippetLimit = logSnippetLimit)
                     line?.let { state.window?.appendLogLine(it) }
                 }
 
@@ -110,6 +116,7 @@ class BuildAggregator(
 
     private class Window(
         val busyTimeMs: Long,
+        private val logSnippetLimit: LogSnippetLimit,
         var qualified: Boolean = false,
         var buildId: String? = null,
         var currentDir: String? = null,
@@ -121,11 +128,10 @@ class BuildAggregator(
         private var logChars = 0
 
         fun appendLogLine(line: String) {
-            val snippetLimit = MonitoringConfig.DEFAULT.logSnippetLimit
-            val boundedLine = line.takeLast(snippetLimit.chars)
+            val boundedLine = line.takeLast(logSnippetLimit.chars)
             logLines.addLast(boundedLine)
             logChars += boundedLine.length + if (logLines.size > 1) 1 else 0
-            while (logLines.size > snippetLimit.lines || logChars > snippetLimit.chars) {
+            while (logLines.size > logSnippetLimit.lines || logChars > logSnippetLimit.chars) {
                 val removed = logLines.removeFirst()
                 logChars -= removed.length + if (logLines.isNotEmpty()) 1 else 0
             }

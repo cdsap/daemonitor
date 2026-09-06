@@ -36,6 +36,9 @@ class AppContainer(
     val buildAggregator = BuildAggregator(
         sampleProvider = database::samplesInWindow,
         ambientEnvNames = ambientEnvNames,
+        logSnippetLimit = with(MonitoringConfig.DEFAULT.logSnippetLimit) {
+            BuildAggregator.LogSnippetLimit(lines = lines, chars = chars)
+        },
     )
     val runtime = WatcherRuntime(
         collector = processCollector,
