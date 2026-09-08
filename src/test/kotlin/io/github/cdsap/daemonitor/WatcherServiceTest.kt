@@ -181,7 +181,7 @@ class WatcherServiceTest {
     ) = WatcherService.forTests(
         runtime = WatcherRuntime.create(database),
         database = database,
-        settingsStore = SettingsStore(tmp.resolve("settings.properties")),
+        settingsRepository = SettingsStore(tmp.resolve("settings.properties")),
         clock = clock,
         pollAction = pollAction,
         updateService = updateService,
