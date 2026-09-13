@@ -84,6 +84,24 @@ class DefaultDaemonitorQueryServiceTest {
         assertEquals(listOf(99L), queries.currentProcesses().map { it.pid })
     }
 
+    @Test
+    fun `query limits are bounded before repository calls`() {
+        val builds = FakeBuildRepository()
+        val samples = FakeProcessSampleRepository()
+        val queries = DefaultDaemonitorQueryService(builds, samples, ProcessSource { emptyList() })
+
+        queries.searchHistory("", limit = 0)
+        assertEquals(1L, builds.lastSearchLimit)
+
+        queries.buildsForProcess("42", limit = 999)
+        assertEquals(200L, builds.lastFindByDaemonLimit)
+        assertEquals(200L, samples.lastFindByPidLimit)
+
+        queries.buildsForProcess("target", limit = 999)
+        assertEquals(200L, builds.lastSearchLimit)
+        assertEquals(200L, samples.lastRecentSamplesLimit)
+    }
+
     private fun build(
         id: String,
         startMs: Long,
@@ -157,11 +175,15 @@ class DefaultDaemonitorQueryServiceTest {
     private class FakeBuildRepository(
         private val stored: List<Build> = emptyList(),
     ) : BuildRepository {
+        var lastSearchLimit: Long? = null
+        var lastFindByDaemonLimit: Long? = null
+
         override fun save(build: Build) = error("not used")
 
         override fun recent(): List<Build> = stored
 
         override fun search(query: String, limit: Long): List<Build> {
+            lastSearchLimit = limit
             val needle = query.trim()
             if (needle.isEmpty()) return stored.take(limit.toInt())
             return stored.filter { build ->
@@ -172,8 +194,10 @@ class DefaultDaemonitorQueryServiceTest {
             }.take(limit.toInt())
         }
 
-        override fun findByDaemon(pid: Long, limit: Long): List<Build> =
-            stored.filter { it.daemonPid == pid }.take(limit.toInt())
+        override fun findByDaemon(pid: Long, limit: Long): List<Build> {
+            lastFindByDaemonLimit = limit
+            return stored.filter { it.daemonPid == pid }.take(limit.toInt())
+        }
 
         override fun distinctProjects(): List<String> = error("not used")
     }
@@ -181,15 +205,22 @@ class DefaultDaemonitorQueryServiceTest {
     private class FakeProcessSampleRepository(
         private val stored: List<ProcessSample> = emptyList(),
     ) : ProcessSampleRepository {
+        var lastFindByPidLimit: Long? = null
+        var lastRecentSamplesLimit: Long? = null
+
         override fun save(sample: GradleProcess, timestampMs: Long) = error("not used")
 
         override fun samples(pid: Long, fromMs: Long, toMs: Long): List<Pair<Long, Double?>> =
             error("not used")
 
-        override fun recentSamples(limit: Long): List<ProcessSample> =
-            stored.sortedByDescending { it.timestampMs }.take(limit.toInt())
+        override fun recentSamples(limit: Long): List<ProcessSample> {
+            lastRecentSamplesLimit = limit
+            return stored.sortedByDescending { it.timestampMs }.take(limit.toInt())
+        }
 
-        override fun findByPid(pid: Long, limit: Long): List<ProcessSample> =
-            stored.filter { it.pid == pid }.take(limit.toInt())
+        override fun findByPid(pid: Long, limit: Long): List<ProcessSample> {
+            lastFindByPidLimit = limit
+            return stored.filter { it.pid == pid }.take(limit.toInt())
+        }
     }
 }
