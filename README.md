@@ -119,10 +119,17 @@ while running.
 ./gradlew run
 ```
 
-Headless (no Compose / display):
+Headless terminal monitor (no Compose / display):
 
 ```bash
 ./gradlew runHeadless
+```
+
+The headless mode shows active Gradle processes, RSS, CPU, uptime, and project, refreshing every two
+seconds. Press `q` to quit. It is also useful over SSH:
+
+```bash
+ssh -t build-machine daemonitor --headless
 ```
 
 Packaged launchers also accept `--headless`. Desktop and headless share the database and retention
