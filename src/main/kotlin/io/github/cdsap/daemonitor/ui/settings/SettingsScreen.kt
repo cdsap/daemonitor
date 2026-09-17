@@ -2,6 +2,7 @@ package io.github.cdsap.daemonitor.ui.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,11 +15,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.IconButton
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
@@ -29,10 +33,15 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.persistence.AppearancePreference
@@ -42,6 +51,7 @@ import io.github.cdsap.daemonitor.ui.common.Radius
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FilterChipDefaults
 import io.github.cdsap.daemonitor.ui.common.Space
+import androidx.compose.ui.platform.LocalClipboardManager
 
 @Composable
 fun SettingsScreen(
@@ -54,6 +64,9 @@ fun SettingsScreen(
     onRestartAndUpdate: () -> Unit = {},
     onOpenManualDownload: () -> Unit = {},
 ) {
+    val clipboard = LocalClipboardManager.current
+    var copiedValue by remember { mutableStateOf<String?>(null) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -256,19 +269,59 @@ fun SettingsScreen(
                 )
                 if (state.mcpEnabled) {
                     Spacer(Modifier.height(Space.sm))
-                    Text(
-                        "URL: ${state.mcpEndpoint}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    CopyableMcpValue(
+                        label = "URL",
+                        value = state.mcpEndpoint,
+                        copied = copiedValue == "url",
+                        onCopy = {
+                            clipboard.setText(AnnotatedString(state.mcpEndpoint))
+                            copiedValue = "url"
+                        },
                     )
                     Spacer(Modifier.height(Space.xs))
-                    Text(
-                        "Token: ${state.mcpToken}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    CopyableMcpValue(
+                        label = "Token",
+                        value = state.mcpToken,
+                        copied = copiedValue == "token",
+                        onCopy = {
+                            clipboard.setText(AnnotatedString(state.mcpToken))
+                            copiedValue = "token"
+                        },
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun CopyableMcpValue(
+    label: String,
+    value: String,
+    copied: Boolean,
+    onCopy: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        SelectionContainer(modifier = Modifier.weight(1f)) {
+            Text(
+                "$label: $value",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        IconButton(
+            onClick = onCopy,
+            modifier = Modifier,
+        ) {
+            Icon(
+                imageVector = if (copied) Icons.Filled.Check else Icons.Filled.ContentCopy,
+                contentDescription = if (copied) "MCP $label copied" else "Copy MCP $label",
+                tint = if (copied) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
