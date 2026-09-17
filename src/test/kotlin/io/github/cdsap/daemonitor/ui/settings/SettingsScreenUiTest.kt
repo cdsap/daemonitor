@@ -8,6 +8,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -129,6 +130,9 @@ class SettingsScreenUiTest {
 
         onNodeWithText("URL: http://127.0.0.1:18123/mcp").performScrollTo().assertExists()
         onNodeWithText("Token: test-token").assertExists()
+        onNodeWithContentDescription("Copy MCP URL").assertExists().performClick()
+        onNodeWithContentDescription("MCP URL copied").assertExists()
+        onNodeWithContentDescription("Copy MCP Token").assertExists().performClick()
     }
 
     @Test
