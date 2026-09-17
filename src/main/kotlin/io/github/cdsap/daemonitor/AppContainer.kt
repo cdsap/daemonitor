@@ -11,6 +11,8 @@ import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.distribution.DistributionChannel
 import io.github.cdsap.daemonitor.infrastructure.update.updateServiceForDistribution
 import io.github.cdsap.daemonitor.mcp.DaemonitorMcpServer
+import io.github.cdsap.daemonitor.persistence.BuildRepository
+import io.github.cdsap.daemonitor.persistence.ProcessSampleRepository
 import io.github.cdsap.daemonitor.platform.AppDirectories
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
@@ -70,13 +72,17 @@ class AppContainer(
 
     fun createMcpServer(
         currentProcessesProvider: () -> List<GradleProcess> = processCollector::poll,
-    ): DaemonitorMcpServer = DaemonitorMcpServer(
-        DefaultDaemonitorQueryService(
-            builds = database,
-            samples = database,
-            processSource = ProcessSource { currentProcessesProvider() },
-        ),
-    )
+    ): DaemonitorMcpServer {
+        val builds: BuildRepository = database
+        val samples: ProcessSampleRepository = database
+        return DaemonitorMcpServer(
+            DefaultDaemonitorQueryService(
+                builds = builds,
+                samples = samples,
+                processSource = ProcessSource { currentProcessesProvider() },
+            ),
+        )
+    }
 
     override fun close() {
         database.close()
