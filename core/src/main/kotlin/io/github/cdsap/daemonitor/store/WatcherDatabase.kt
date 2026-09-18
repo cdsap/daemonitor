@@ -58,6 +58,8 @@ class WatcherDatabase private constructor(
     override fun save(build: Build) = insertBuild(build)
 
     fun insertSample(sample: GradleProcess, timestampMs: Long) {
+        val live = sample.liveHeap
+        val heapAvailable = live?.available == true
         db.watcherQueries.insertSample(
             timestamp = timestampMs,
             pid = sample.pid,
@@ -69,6 +71,11 @@ class WatcherDatabase private constructor(
             cpu_percent = sample.cpuPercent,
             rss_memory_mb = sample.rssMemoryMb,
             max_heap_mb = sample.maxHeapMb,
+            heap_used_mb = live?.usedMb.takeIf { heapAvailable },
+            heap_committed_mb = live?.committedMb.takeIf { heapAvailable },
+            heap_max_mb = live?.maxMb.takeIf { heapAvailable },
+            heap_sampled_at_ms = live?.sampledAtMs,
+            heap_available = if (live == null) null else if (heapAvailable) 1L else 0L,
             status = sample.status,
         )
     }
@@ -206,6 +213,11 @@ class WatcherDatabase private constructor(
             listOf(
                 "ALTER TABLE builds ADD COLUMN agent TEXT",
                 "ALTER TABLE builds ADD COLUMN agent_provider TEXT",
+                "ALTER TABLE process_samples ADD COLUMN heap_used_mb INTEGER",
+                "ALTER TABLE process_samples ADD COLUMN heap_committed_mb INTEGER",
+                "ALTER TABLE process_samples ADD COLUMN heap_max_mb INTEGER",
+                "ALTER TABLE process_samples ADD COLUMN heap_sampled_at_ms INTEGER",
+                "ALTER TABLE process_samples ADD COLUMN heap_available INTEGER",
             ).forEach { sql -> runCatching { driver.execute(null, sql, 0) } }
         }
 
@@ -246,19 +258,27 @@ class WatcherDatabase private constructor(
             agentProvider = agent_provider,
         )
 
-        private fun Process_samples.toDomain(): ProcessSample = ProcessSample(
-            timestampMs = timestamp,
-            pid = pid,
-            parentPid = parent_pid,
-            processType = runCatching { ProcessType.valueOf(process_type) }
-                .getOrDefault(ProcessType.JAVA_GRADLE_RELATED),
-            commandLine = command_line,
-            workingDirectory = working_directory,
-            projectPath = project_path,
-            cpuPercent = cpu_percent,
-            rssMemoryMb = rss_memory_mb,
-            maxHeapMb = max_heap_mb,
-            status = status,
-        )
+        private fun Process_samples.toDomain(): ProcessSample {
+            val available = heap_available == 1L
+            return ProcessSample(
+                timestampMs = timestamp,
+                pid = pid,
+                parentPid = parent_pid,
+                processType = runCatching { ProcessType.valueOf(process_type) }
+                    .getOrDefault(ProcessType.JAVA_GRADLE_RELATED),
+                commandLine = command_line,
+                workingDirectory = working_directory,
+                projectPath = project_path,
+                cpuPercent = cpu_percent,
+                rssMemoryMb = rss_memory_mb,
+                maxHeapMb = max_heap_mb,
+                status = status,
+                heapUsedMb = heap_used_mb.takeIf { available },
+                heapCommittedMb = heap_committed_mb.takeIf { available },
+                heapMaxMb = heap_max_mb.takeIf { available },
+                heapSampledAtMs = heap_sampled_at_ms,
+                heapAvailable = available,
+            )
+        }
     }
 }

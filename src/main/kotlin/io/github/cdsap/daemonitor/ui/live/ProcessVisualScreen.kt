@@ -75,7 +75,8 @@ private fun VisualDashboard(state: LiveUiState, modifier: Modifier = Modifier) {
             windowDurationMs = VisualChartModel.DEFAULT_TIMELINE_WINDOW_MS,
         )
     }
-    val selectedHeap = selected.maxHeapMb?.let { "$it MB" } ?: "unavailable"
+    val selectedHeapUsed = selected.liveHeap?.takeIf { it.available }?.usedMb?.let { "$it MB" } ?: "unavailable"
+    val selectedHeapLimit = selected.maxHeapMb?.let { "$it MB" } ?: "unavailable"
 
     Column(modifier = modifier.padding(start = Space.lg, end = Space.lg, bottom = Space.lg)) {
         Row(
@@ -84,8 +85,8 @@ private fun VisualDashboard(state: LiveUiState, modifier: Modifier = Modifier) {
         ) {
             StatTile("Processes", state.summary.activeProcessCount.toString(), Modifier.weight(1f), icon = Icons.Filled.Memory)
             StatTile("RSS total", "${chartData.totalRssMb} MB", Modifier.weight(1f), icon = Icons.Filled.Storage, accent = LocalAccentColors.current.info)
-            StatTile("Selected heap", selectedHeap, Modifier.weight(1f), icon = Icons.Filled.Timeline, accent = LocalAccentColors.current.warn)
-            StatTile("Projects", state.summary.activeProjectCount.toString(), Modifier.weight(1f), accent = LocalAccentColors.current.brand)
+            StatTile("Selected heap used", selectedHeapUsed, Modifier.weight(1f), icon = Icons.Filled.Timeline, accent = LocalAccentColors.current.warn)
+            StatTile("Selected heap limit", selectedHeapLimit, Modifier.weight(1f), accent = LocalAccentColors.current.brand)
         }
 
         OverallRssTimelineChart(

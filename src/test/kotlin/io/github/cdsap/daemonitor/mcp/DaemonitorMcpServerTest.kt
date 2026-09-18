@@ -69,6 +69,13 @@ class DaemonitorMcpServerTest {
                 gc = "G1",
                 startTimeMs = 1_000,
                 status = "RUNNING",
+                liveHeap = io.github.cdsap.daemonitor.domain.model.LiveJvmHeap(
+                    usedMb = 300,
+                    committedMb = 400,
+                    maxMb = 2048,
+                    sampledAtMs = 3_100,
+                    available = true,
+                ),
             ),
             timestampMs = 3_100,
         )
@@ -83,6 +90,8 @@ class DaemonitorMcpServerTest {
         val samples = payload.array("matchedProcessSamples")!!.values.filterIsInstance<JsonObject>()
         assertEquals(listOf(42L), samples.map { it.long("pid") })
         assertEquals("GRADLE_DAEMON", samples.single().string("processType"))
+        assertEquals(300L, samples.single().long("heapUsedMb"))
+        assertEquals(JsonBoolean(true), samples.single().values["heapAvailable"])
     }
 
     @Test
@@ -114,6 +123,8 @@ class DaemonitorMcpServerTest {
         val processes = payload.array("processes")!!.values.filterIsInstance<JsonObject>()
         assertEquals(99L, processes.single().long("pid"))
         assertEquals("KOTLIN_DAEMON", processes.single().string("processType"))
+        assertEquals(JsonBoolean(false), processes.single().values["heapAvailable"])
+        assertEquals(JsonNull, processes.single().values["heapUsedMb"])
     }
 
     private fun server(

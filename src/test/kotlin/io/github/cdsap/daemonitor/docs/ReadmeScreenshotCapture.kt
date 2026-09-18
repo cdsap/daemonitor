@@ -19,6 +19,7 @@ import io.github.cdsap.daemonitor.BuildInfo
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
+import io.github.cdsap.daemonitor.domain.model.LiveJvmHeap
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.domain.model.Source
 import io.github.cdsap.daemonitor.ui.common.AppScaffold
@@ -143,8 +144,11 @@ internal object SampleUi {
             atMs = endMs + offsetMs,
             totalRssMb = rssByPid.values.sum(),
             byPid = rssByPid,
-            heapByPid = processes.mapNotNull { process ->
+            heapLimitByPid = processes.mapNotNull { process ->
                 process.maxHeapMb?.let { heap -> process.pid to heap }
+            }.toMap(),
+            heapUsedByPid = processes.mapNotNull { process ->
+                process.liveHeap?.takeIf { it.available }?.usedMb?.let { used -> process.pid to used }
             }.toMap(),
         )
         return LiveUiState(
@@ -207,6 +211,13 @@ internal object SampleUi {
         startTimeMs = startedAt,
         status = "RUNNING",
         automated = automated,
+        liveHeap = LiveJvmHeap(
+            usedMb = (rss * 0.45).toLong().coerceAtLeast(64),
+            committedMb = (rss * 0.55).toLong().coerceAtLeast(96),
+            maxMb = if (type == ProcessType.GRADLE_DAEMON) 4096 else 1536,
+            sampledAtMs = startedAt,
+            available = true,
+        ),
     )
 
     private fun build(

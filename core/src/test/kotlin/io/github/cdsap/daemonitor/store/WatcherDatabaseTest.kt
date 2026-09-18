@@ -61,11 +61,52 @@ class WatcherDatabaseTest {
             commandLine = "java GradleDaemon", workingDirectory = "/p", projectPath = "/p",
             cpuPercent = null, rssMemoryMb = 300, maxHeapMb = null, minHeapMb = null,
             gc = null, startTimeMs = 1, status = "RUNNING",
+            liveHeap = io.github.cdsap.daemonitor.domain.model.LiveJvmHeap.unavailable(1_000),
         )
         db.save(p, timestampMs = 1_000)
         val samples = db.samples(pid = 5, fromMs = 0, toMs = 2_000)
         assertEquals(1, samples.size)
         assertEquals(300L, samples[0].first)
+        val persisted = db.processSamplesForPid(5).single()
+        assertEquals(false, persisted.heapAvailable)
+        assertEquals(null, persisted.heapUsedMb)
+        assertEquals(1_000L, persisted.heapSampledAtMs)
+    }
+
+    @Test
+    fun `live heap metrics round-trip without overwriting rss or xmx`(@TempDirArg tmp: Path) {
+        val db = WatcherDatabase.open(tmp.resolve("watcher.db"))
+        val p = GradleProcess(
+            pid = 11,
+            parentPid = 1,
+            type = ProcessType.GRADLE_DAEMON,
+            commandLine = "java -Xmx2g GradleDaemon",
+            workingDirectory = "/p",
+            projectPath = "/p",
+            cpuPercent = 8.0,
+            rssMemoryMb = 900,
+            maxHeapMb = 2048,
+            minHeapMb = null,
+            gc = "G1",
+            startTimeMs = 1,
+            status = "RUNNING",
+            liveHeap = io.github.cdsap.daemonitor.domain.model.LiveJvmHeap(
+                usedMb = 410,
+                committedMb = 640,
+                maxMb = 2048,
+                sampledAtMs = 2_000,
+                available = true,
+            ),
+        )
+        db.save(p, timestampMs = 2_000)
+        val persisted = db.processSamplesForPid(11).single()
+        assertEquals(900L, persisted.rssMemoryMb)
+        assertEquals(2048L, persisted.maxHeapMb)
+        assertEquals(true, persisted.heapAvailable)
+        assertEquals(410L, persisted.heapUsedMb)
+        assertEquals(640L, persisted.heapCommittedMb)
+        assertEquals(2048L, persisted.heapMaxMb)
+        assertEquals(2_000L, persisted.heapSampledAtMs)
     }
 
     @Test

@@ -29,7 +29,10 @@ class HeadlessTerminalUiTest {
         assertTrue(output.contains("1280 MB RSS"))
         assertTrue(output.contains("1024 MB"))
         assertTrue(output.contains("HEAP LIMIT"))
+        assertTrue(output.contains("HEAP USED"))
+        assertTrue(output.contains("HEAP CMT"))
         assertTrue(output.contains("2048 MB"))
+        assertTrue(output.contains("—")) // missing live heap stays unavailable, not zero
         assertTrue(output.indexOf("large") < output.indexOf("small"))
         assertTrue(output.contains("Press q (or q + Enter) to quit"))
     }

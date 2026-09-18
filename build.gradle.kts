@@ -89,7 +89,15 @@ compose.desktop {
             }
             packageName = "Daemonitor"
             packageVersion = nativePackageVersion
-            modules("java.sql", "java.net.http", "jdk.httpserver")
+            modules(
+                "java.sql",
+                "java.net.http",
+                "jdk.httpserver",
+                // Live JVM heap via Attach + local JMX (issue #159).
+                "jdk.attach",
+                "java.management",
+                "jdk.management.agent",
+            )
 
             // Per-platform installer/app icons (jpackage requires the native format per OS).
             macOS {

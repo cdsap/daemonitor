@@ -231,25 +231,39 @@ class DaemonitorMcpServer(
         "cpuPercent" to jsonNumberOrNull(cpuPercent),
         "rssMemoryMb" to JsonNumber(rssMemoryMb),
         "maxHeapMb" to jsonNumberOrNull(maxHeapMb),
+        "heapUsedMb" to jsonNumberOrNull(heapUsedMb.takeIf { heapAvailable }),
+        "heapCommittedMb" to jsonNumberOrNull(heapCommittedMb.takeIf { heapAvailable }),
+        "heapMaxMb" to jsonNumberOrNull(heapMaxMb.takeIf { heapAvailable }),
+        "heapSampledAtMs" to jsonNumberOrNull(heapSampledAtMs),
+        "heapAvailable" to JsonBoolean(heapAvailable),
         "status" to JsonString(status),
     )
 
-    private fun GradleProcess.toJson(): JsonObject = jsonObject(
-        "pid" to JsonNumber(pid),
-        "parentPid" to JsonNumber(parentPid),
-        "processType" to JsonString(type.name),
-        "commandLine" to JsonString(commandLine),
-        "workingDirectory" to jsonStringOrNull(workingDirectory),
-        "projectPath" to jsonStringOrNull(projectPath),
-        "cpuPercent" to jsonNumberOrNull(cpuPercent),
-        "rssMemoryMb" to JsonNumber(rssMemoryMb),
-        "maxHeapMb" to jsonNumberOrNull(maxHeapMb),
-        "minHeapMb" to jsonNumberOrNull(minHeapMb),
-        "gc" to jsonStringOrNull(gc),
-        "startTimeMs" to JsonNumber(startTimeMs),
-        "status" to JsonString(status),
-        "automated" to JsonBoolean(automated),
-    )
+    private fun GradleProcess.toJson(): JsonObject {
+        val live = liveHeap
+        val available = live?.available == true
+        return jsonObject(
+            "pid" to JsonNumber(pid),
+            "parentPid" to JsonNumber(parentPid),
+            "processType" to JsonString(type.name),
+            "commandLine" to JsonString(commandLine),
+            "workingDirectory" to jsonStringOrNull(workingDirectory),
+            "projectPath" to jsonStringOrNull(projectPath),
+            "cpuPercent" to jsonNumberOrNull(cpuPercent),
+            "rssMemoryMb" to JsonNumber(rssMemoryMb),
+            "maxHeapMb" to jsonNumberOrNull(maxHeapMb),
+            "minHeapMb" to jsonNumberOrNull(minHeapMb),
+            "heapUsedMb" to jsonNumberOrNull(live?.usedMb.takeIf { available }),
+            "heapCommittedMb" to jsonNumberOrNull(live?.committedMb.takeIf { available }),
+            "heapMaxMb" to jsonNumberOrNull(live?.maxMb.takeIf { available }),
+            "heapSampledAtMs" to jsonNumberOrNull(live?.sampledAtMs),
+            "heapAvailable" to JsonBoolean(available),
+            "gc" to jsonStringOrNull(gc),
+            "startTimeMs" to JsonNumber(startTimeMs),
+            "status" to JsonString(status),
+            "automated" to JsonBoolean(automated),
+        )
+    }
 
     private class McpError(val code: Int, val publicMessage: String) : RuntimeException(publicMessage)
 

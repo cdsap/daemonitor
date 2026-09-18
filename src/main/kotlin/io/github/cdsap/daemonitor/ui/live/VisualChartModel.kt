@@ -7,9 +7,13 @@ data class ProcessMemoryBars(
     val pid: Long,
     val label: String,
     val rssMb: Long,
-    val heapAllocationMb: Long?,
+    /** Live heap used when the Attach/JMX probe succeeds; null means unavailable. */
+    val heapUsedMb: Long?,
+    /** Configured `-Xmx` limit; null means unavailable (never treated as zero). */
+    val heapLimitMb: Long?,
     val rssFraction: Float,
-    val heapFraction: Float?,
+    val heapUsedFraction: Float?,
+    val heapLimitFraction: Float?,
 )
 
 data class VisualChartData(
@@ -19,7 +23,8 @@ data class VisualChartData(
 
 enum class TimelineMetric {
     RSS,
-    HEAP,
+    HEAP_USED,
+    HEAP_LIMIT,
 }
 
 data class TimelineSeries(
@@ -29,7 +34,8 @@ data class TimelineSeries(
     val isTotal: Boolean = false,
     val metric: TimelineMetric = TimelineMetric.RSS,
 ) {
-    val dashed: Boolean get() = metric == TimelineMetric.HEAP
+    /** Dashed stroke reserved for configured heap limit (`-Xmx`), not live occupancy. */
+    val dashed: Boolean get() = metric == TimelineMetric.HEAP_LIMIT
 }
 
 data class RssTimelinePoint(
@@ -47,8 +53,12 @@ data class RssTimelineChartData(
 
 object VisualChartModel {
     const val TOTAL_SERIES_ID = "total"
-    const val TOTAL_HEAP_SERIES_ID = "total-heap"
+    const val TOTAL_HEAP_USED_SERIES_ID = "total-heap-used"
+    const val TOTAL_HEAP_LIMIT_SERIES_ID = "total-heap-limit"
     const val DEFAULT_TIMELINE_WINDOW_MS = 30_000L
+
+    /** @deprecated Prefer [TOTAL_HEAP_LIMIT_SERIES_ID]; kept for older test aliases. */
+    const val TOTAL_HEAP_SERIES_ID = TOTAL_HEAP_LIMIT_SERIES_ID
 
     fun fromProcesses(processes: List<GradleProcess>): VisualChartData {
         if (processes.isEmpty()) {
@@ -57,19 +67,28 @@ object VisualChartModel {
 
         val totalRssMb = processes.sumOf { it.rssMemoryMb }
         val scaleMb = processes
-            .flatMap { process -> listOfNotNull(process.rssMemoryMb, process.maxHeapMb) }
+            .flatMap { process ->
+                listOfNotNull(
+                    process.rssMemoryMb,
+                    process.liveHeap?.takeIf { it.available }?.usedMb,
+                    process.maxHeapMb,
+                )
+            }
             .maxOrNull()
             ?.takeIf { it > 0 }
             ?: 1L
 
         val bars = processes.map { process ->
+            val used = process.liveHeap?.takeIf { it.available }?.usedMb
             ProcessMemoryBars(
                 pid = process.pid,
                 label = process.chartLabel(),
                 rssMb = process.rssMemoryMb,
-                heapAllocationMb = process.maxHeapMb,
+                heapUsedMb = used,
+                heapLimitMb = process.maxHeapMb,
                 rssFraction = fraction(process.rssMemoryMb, scaleMb),
-                heapFraction = process.maxHeapMb?.let { fraction(it, scaleMb) },
+                heapUsedFraction = used?.let { fraction(it, scaleMb) },
+                heapLimitFraction = process.maxHeapMb?.let { fraction(it, scaleMb) },
             )
         }
 
@@ -95,14 +114,16 @@ object VisualChartModel {
             .sortedByDescending { it.rssMemoryMb }
             .map { it.pid } +
             visible
-                .flatMap { it.byPid.keys + it.heapByPid.keys }
+                .flatMap { it.byPid.keys + it.heapLimitByPid.keys + it.heapUsedByPid.keys }
                 .distinct()
                 .filterNot { it in liveByPid }
                 .sorted()
 
         val processSeries = orderedPids.flatMap { pid ->
             val baseLabel = liveByPid[pid]?.chartLabel() ?: "PID $pid"
-            val hasHeap = visible.any { pid in it.heapByPid } || liveByPid[pid]?.maxHeapMb != null
+            val hasHeapLimit = visible.any { pid in it.heapLimitByPid } || liveByPid[pid]?.maxHeapMb != null
+            val hasHeapUsed = visible.any { pid in it.heapUsedByPid } ||
+                liveByPid[pid]?.liveHeap?.available == true
             buildList {
                 add(
                     TimelineSeries(
@@ -112,13 +133,23 @@ object VisualChartModel {
                         metric = TimelineMetric.RSS,
                     ),
                 )
-                if (hasHeap) {
+                if (hasHeapUsed) {
                     add(
                         TimelineSeries(
-                            id = heapSeriesId(pid),
-                            label = "$baseLabel · Heap",
+                            id = heapUsedSeriesId(pid),
+                            label = "$baseLabel · Heap used",
                             pid = pid,
-                            metric = TimelineMetric.HEAP,
+                            metric = TimelineMetric.HEAP_USED,
+                        ),
+                    )
+                }
+                if (hasHeapLimit) {
+                    add(
+                        TimelineSeries(
+                            id = heapLimitSeriesId(pid),
+                            label = "$baseLabel · Heap limit",
+                            pid = pid,
+                            metric = TimelineMetric.HEAP_LIMIT,
                         ),
                     )
                 }
@@ -127,18 +158,32 @@ object VisualChartModel {
 
         val series = listOf(
             TimelineSeries(id = TOTAL_SERIES_ID, label = "Total RSS", isTotal = true, metric = TimelineMetric.RSS),
-            TimelineSeries(id = TOTAL_HEAP_SERIES_ID, label = "Total Heap", isTotal = true, metric = TimelineMetric.HEAP),
+            TimelineSeries(
+                id = TOTAL_HEAP_USED_SERIES_ID,
+                label = "Total heap used",
+                isTotal = true,
+                metric = TimelineMetric.HEAP_USED,
+            ),
+            TimelineSeries(
+                id = TOTAL_HEAP_LIMIT_SERIES_ID,
+                label = "Total heap limit",
+                isTotal = true,
+                metric = TimelineMetric.HEAP_LIMIT,
+            ),
         ) + processSeries
 
         val points = visible.map { sample ->
             val values = linkedMapOf<String, Long>()
             values[TOTAL_SERIES_ID] = sample.totalRssMb
-            values[TOTAL_HEAP_SERIES_ID] = sample.heapByPid.values.sum()
+            values[TOTAL_HEAP_USED_SERIES_ID] = sample.heapUsedByPid.values.sum()
+            values[TOTAL_HEAP_LIMIT_SERIES_ID] = sample.heapLimitByPid.values.sum()
             processSeries.forEach { item ->
                 val pid = item.pid ?: return@forEach
                 val value = when (item.metric) {
                     TimelineMetric.RSS -> sample.byPid[pid]
-                    TimelineMetric.HEAP -> sample.heapByPid[pid] ?: liveByPid[pid]?.maxHeapMb
+                    TimelineMetric.HEAP_USED -> sample.heapUsedByPid[pid]
+                        ?: liveByPid[pid]?.liveHeap?.takeIf { it.available }?.usedMb
+                    TimelineMetric.HEAP_LIMIT -> sample.heapLimitByPid[pid] ?: liveByPid[pid]?.maxHeapMb
                 } ?: 0L
                 values[item.id] = value
             }
@@ -149,7 +194,11 @@ object VisualChartModel {
     }
 
     fun rssSeriesId(pid: Long): String = "pid-$pid-rss"
-    fun heapSeriesId(pid: Long): String = "pid-$pid-heap"
+    fun heapUsedSeriesId(pid: Long): String = "pid-$pid-heap-used"
+    fun heapLimitSeriesId(pid: Long): String = "pid-$pid-heap-limit"
+
+    /** @deprecated Prefer [heapLimitSeriesId]. */
+    fun heapSeriesId(pid: Long): String = heapLimitSeriesId(pid)
 
     private fun GradleProcess.chartLabel(): String {
         val project = projectPath?.substringAfterLast('/')?.takeIf { it.isNotBlank() }

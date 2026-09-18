@@ -64,15 +64,18 @@ object HeadlessTerminalRenderer {
         if (result.processes.isEmpty()) {
             appendLine("No Gradle-related processes are running.")
         } else {
-            appendLine(ansi("TYPE             PID     RSS       HEAP LIMIT   CPU   UPTIME   PROJECT", colorEnabled, BOLD))
-            appendLine("──────────────────────────────────────────────────────────────────────")
+            appendLine(ansi("TYPE             PID     RSS      HEAP USED  HEAP CMT   HEAP LIMIT  CPU   UPTIME   PROJECT", colorEnabled, BOLD))
+            appendLine("────────────────────────────────────────────────────────────────────────────────────────")
             result.processes
                 .sortedWith(compareByDescending<GradleProcess> { it.rssMemoryMb }.thenBy { it.pid })
                 .forEach { process ->
+                    val live = process.liveHeap?.takeIf { it.available }
                     appendLine(
                         "${process.type.displayName().padEnd(16)} " +
                             "${process.pid.toString().padStart(6)}  " +
                         "${ansi((process.rssMemoryMb.toString() + " MB").padStart(8), colorEnabled, YELLOW)}  " +
+                            "${ansi((live?.usedMb?.let { "$it MB" } ?: "—").padStart(9), colorEnabled, GREEN)}  " +
+                            "${ansi((live?.committedMb?.let { "$it MB" } ?: "—").padStart(9), colorEnabled, CYAN)}  " +
                             "${ansi((process.maxHeapMb?.let { "$it MB" } ?: "—").padStart(10), colorEnabled, MAGENTA)}  " +
                             "${cpuText(process.cpuPercent, colorEnabled)}  " +
                             "${uptime(process.startTimeMs, updatedAtMs).padStart(7)}  " +
