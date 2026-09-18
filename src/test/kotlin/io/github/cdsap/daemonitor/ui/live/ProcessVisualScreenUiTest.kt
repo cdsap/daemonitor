@@ -104,7 +104,7 @@ class ProcessVisualScreenUiTest {
     private fun timelineFor(processes: List<GradleProcess>): List<RssTimelineSample> {
         val byPid = processes.associate { it.pid to it.rssMemoryMb }
         val heapByPid = processes.mapNotNull { process ->
-            process.maxHeapMb?.let { heap -> process.pid to heap }
+            process.heapUsedMb?.let { heap -> process.pid to heap }
         }.toMap()
         val total = processes.sumOf { it.rssMemoryMb }
         val end = 1_700_000_060_000
@@ -132,6 +132,7 @@ class ProcessVisualScreenUiTest {
         rssMemoryMb = rss,
         maxHeapMb = heap,
         minHeapMb = null,
+        heapUsedMb = heap,
         gc = "G1",
         startTimeMs = 1_700_000_000_000,
         status = "RUNNING",

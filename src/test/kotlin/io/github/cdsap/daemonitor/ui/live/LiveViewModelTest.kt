@@ -19,6 +19,7 @@ class LiveViewModelTest {
         pid = pid, parentPid = 1, type = ProcessType.GRADLE_DAEMON,
         commandLine = "java GradleDaemon", workingDirectory = cwd, projectPath = project,
         cpuPercent = 10.0, rssMemoryMb = rss, maxHeapMb = heap, minHeapMb = null,
+        heapUsedMb = heap,
         gc = "G1", startTimeMs = 1, status = "RUNNING",
     )
 
