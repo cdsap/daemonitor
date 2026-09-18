@@ -76,6 +76,7 @@ internal object CliLauncher {
             var pollError: String? = null
             runBlocking {
                 while (currentCoroutineContext().isActive && running.get()) {
+                    if (terminal?.shouldQuit() == true) break
                     runCatching { container.runtime.pollOnce() }
                         .onSuccess {
                             lastResult = it
@@ -86,7 +87,6 @@ internal object CliLauncher {
                             error.println("Daemonitor poll failed: $pollError")
                         }
                     terminal?.render(lastResult, System.currentTimeMillis(), pollError)
-                    if (terminal?.shouldQuit() == true) break
                     delay(options.pollInterval ?: MonitoringConfig.DEFAULT.pollInterval)
                 }
             }
