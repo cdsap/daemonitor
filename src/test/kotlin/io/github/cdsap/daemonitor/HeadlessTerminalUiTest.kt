@@ -47,6 +47,17 @@ class HeadlessTerminalUiTest {
     }
 
     @Test
+    fun `interactive frames clear the screen before rendering`() {
+        val output = HeadlessTerminalRenderer.render(
+            result = WatcherRuntime.PollResult(emptyList(), emptyList(), false),
+            updatedAtMs = 1_000L,
+            clearScreen = true,
+        )
+
+        assertTrue(output.startsWith("\u001B[2J\u001B[H"))
+    }
+
+    @Test
     fun `renderer adds ansi colors only when enabled`() {
         val result = WatcherRuntime.PollResult(
             processes = listOf(process(pid = 10, rssMb = 256, heapLimitMb = 512, project = "small")),

@@ -124,7 +124,8 @@ object HeadlessTerminalRenderer {
 
     private const val ESC = "\u001B["
     private const val RESET = "\u001B[0m"
-    private const val CLEAR = "\u001B[H\u001B[2J"
+    /** Clear the current screen before moving the cursor home for the next dashboard frame. */
+    private const val CLEAR = "\u001B[2J\u001B[H"
     private const val BOLD = "1"
     private const val DIM = "2"
     private const val RED = "31"
