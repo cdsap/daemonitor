@@ -1,11 +1,11 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
-// Version matrix (U1 / KTD): Kotlin 2.0.21 ↔ Compose 1.7.3 ↔ SQLDelight 2.0.2 ↔ OSHI 6.x.
+// Version matrix (U1 / KTD): Kotlin 2.4.20 ↔ Compose 1.7.3 ↔ SQLDelight 2.0.2 ↔ OSHI 6.x.
 // The Compose Gradle plugin and SQLDelight plugin both pin a Kotlin range; this triple is
 // mutually compatible. Bump as a set, not individually.
 plugins {
-    kotlin("jvm") version "2.0.21"
-    id("org.jetbrains.kotlin.plugin.compose") version "2.0.21"
+    kotlin("jvm") version "2.4.20"
+    id("org.jetbrains.kotlin.plugin.compose") version "2.4.20"
     id("org.jetbrains.compose") version "1.7.3"
 }
 
