@@ -53,6 +53,9 @@ tasks.processResources {
 
 dependencies {
     api("com.github.oshi:oshi-core:6.6.5")
+    // OSHI depends on slf4j-api without a binding. Provide NOP so CLI/desktop startup
+    // does not print provider-missing warnings while Daemonitor still uses System.err for errors.
+    runtimeOnly("org.slf4j:slf4j-nop:2.0.16")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
     implementation("app.cash.sqldelight:sqlite-driver:2.0.2")
     implementation("app.cash.sqldelight:coroutines-extensions:2.0.2")

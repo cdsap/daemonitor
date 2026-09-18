@@ -24,4 +24,9 @@ application {
 
 tasks.test {
     useJUnitPlatform()
+    dependsOn(tasks.named("installDist"))
+    systemProperty(
+        "daemonitor.cli.home",
+        layout.buildDirectory.dir("install/daemonitor-cli").get().asFile.absolutePath,
+    )
 }
