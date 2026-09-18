@@ -69,6 +69,8 @@ class WatcherDatabase private constructor(
             cpu_percent = sample.cpuPercent,
             rss_memory_mb = sample.rssMemoryMb,
             max_heap_mb = sample.maxHeapMb,
+            heap_used_mb = sample.heapUsedMb,
+            heap_committed_mb = sample.heapCommittedMb,
             status = sample.status,
         )
     }
@@ -206,6 +208,8 @@ class WatcherDatabase private constructor(
             listOf(
                 "ALTER TABLE builds ADD COLUMN agent TEXT",
                 "ALTER TABLE builds ADD COLUMN agent_provider TEXT",
+                "ALTER TABLE process_samples ADD COLUMN heap_used_mb INTEGER",
+                "ALTER TABLE process_samples ADD COLUMN heap_committed_mb INTEGER",
             ).forEach { sql -> runCatching { driver.execute(null, sql, 0) } }
         }
 
@@ -259,6 +263,8 @@ class WatcherDatabase private constructor(
             rssMemoryMb = rss_memory_mb,
             maxHeapMb = max_heap_mb,
             status = status,
+            heapUsedMb = heap_used_mb,
+            heapCommittedMb = heap_committed_mb,
         )
     }
 }

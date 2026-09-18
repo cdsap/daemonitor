@@ -7,7 +7,7 @@ data class ProcessMemoryBars(
     val pid: Long,
     val label: String,
     val rssMb: Long,
-    val heapAllocationMb: Long?,
+    val heapUsedMb: Long?,
     val rssFraction: Float,
     val heapFraction: Float?,
 )
@@ -57,7 +57,7 @@ object VisualChartModel {
 
         val totalRssMb = processes.sumOf { it.rssMemoryMb }
         val scaleMb = processes
-            .flatMap { process -> listOfNotNull(process.rssMemoryMb, process.maxHeapMb) }
+            .flatMap { process -> listOfNotNull(process.rssMemoryMb, process.heapUsedMb) }
             .maxOrNull()
             ?.takeIf { it > 0 }
             ?: 1L
@@ -67,9 +67,9 @@ object VisualChartModel {
                 pid = process.pid,
                 label = process.chartLabel(),
                 rssMb = process.rssMemoryMb,
-                heapAllocationMb = process.maxHeapMb,
+                heapUsedMb = process.heapUsedMb,
                 rssFraction = fraction(process.rssMemoryMb, scaleMb),
-                heapFraction = process.maxHeapMb?.let { fraction(it, scaleMb) },
+                heapFraction = process.heapUsedMb?.let { fraction(it, scaleMb) },
             )
         }
 
@@ -102,7 +102,7 @@ object VisualChartModel {
 
         val processSeries = orderedPids.flatMap { pid ->
             val baseLabel = liveByPid[pid]?.chartLabel() ?: "PID $pid"
-            val hasHeap = visible.any { pid in it.heapByPid } || liveByPid[pid]?.maxHeapMb != null
+            val hasHeap = visible.any { pid in it.heapByPid } || liveByPid[pid]?.heapUsedMb != null
             buildList {
                 add(
                     TimelineSeries(
@@ -138,7 +138,7 @@ object VisualChartModel {
                 val pid = item.pid ?: return@forEach
                 val value = when (item.metric) {
                     TimelineMetric.RSS -> sample.byPid[pid]
-                    TimelineMetric.HEAP -> sample.heapByPid[pid] ?: liveByPid[pid]?.maxHeapMb
+                    TimelineMetric.HEAP -> sample.heapByPid[pid] ?: liveByPid[pid]?.heapUsedMb
                 } ?: 0L
                 values[item.id] = value
             }

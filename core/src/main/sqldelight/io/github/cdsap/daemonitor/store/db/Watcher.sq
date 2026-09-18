@@ -15,6 +15,8 @@ CREATE TABLE process_samples (
     cpu_percent       REAL,
     rss_memory_mb     INTEGER NOT NULL,
     max_heap_mb       INTEGER,
+    heap_used_mb      INTEGER,
+    heap_committed_mb INTEGER,
     status            TEXT NOT NULL
 );
 
@@ -44,8 +46,8 @@ CREATE INDEX builds_start ON builds(start_time);
 CREATE INDEX builds_project ON builds(project_path);
 
 insertSample:
-INSERT INTO process_samples(timestamp, pid, parent_pid, process_type, command_line, working_directory, project_path, cpu_percent, rss_memory_mb, max_heap_mb, status)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO process_samples(timestamp, pid, parent_pid, process_type, command_line, working_directory, project_path, cpu_percent, rss_memory_mb, max_heap_mb, heap_used_mb, heap_committed_mb, status)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 samplesInWindow:
 SELECT rss_memory_mb, cpu_percent

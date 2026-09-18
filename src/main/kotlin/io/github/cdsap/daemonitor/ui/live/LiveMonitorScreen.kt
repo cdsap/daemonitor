@@ -262,6 +262,8 @@ private fun ProcessDetails(p: GradleProcess, ended: Boolean, nowMs: Long) {
         DetailRow("Uptime", if (ended) "—" else formatUptime(p.startTimeMs, nowMs))
         DetailRow("Working dir", p.workingDirectory ?: "unavailable")
         DetailRow("RSS", "${p.rssMemoryMb} MB")
+        DetailRow("Heap used", p.heapUsedMb?.let { "$it MB" } ?: "unavailable")
+        DetailRow("Heap committed", p.heapCommittedMb?.let { "$it MB" } ?: "unavailable")
         DetailRow("Heap limit (-Xmx)", p.maxHeapMb?.let { "$it MB" } ?: "unavailable")
         DetailRow("GC", p.gc ?: "—")
         Spacer(Modifier.padding(Space.xs))
