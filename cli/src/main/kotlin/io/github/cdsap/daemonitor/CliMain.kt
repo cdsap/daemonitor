@@ -45,12 +45,16 @@ internal object CliLauncher {
     ): Int {
         val interactive = isInteractiveTerminal()
         val colorEnabled = options.colorEnabled ?: interactive
-        val terminal = HeadlessTerminalUi(
-            output = output,
-            input = input,
-            clearScreen = interactive && colorEnabled,
-            colorEnabled = colorEnabled,
-        )
+        val terminal = if (options.collectOnly) {
+            null
+        } else {
+            HeadlessTerminalUi(
+                output = output,
+                input = input,
+                clearScreen = interactive && colorEnabled,
+                colorEnabled = colorEnabled,
+            )
+        }
         val running = AtomicBoolean(true)
         val pollingThread = Thread.currentThread()
         val cleanupFinished = CountDownLatch(1)
@@ -77,8 +81,8 @@ internal object CliLauncher {
                             pollError = it.message ?: it::class.simpleName ?: "unknown error"
                             error.println("Daemonitor poll failed: $pollError")
                         }
-                    terminal.render(lastResult, System.currentTimeMillis(), pollError)
-                    if (terminal.shouldQuit()) break
+                    terminal?.render(lastResult, System.currentTimeMillis(), pollError)
+                    if (terminal?.shouldQuit() == true) break
                     delay(MonitoringConfig.DEFAULT.pollInterval)
                 }
             }
@@ -100,6 +104,7 @@ internal object CliLauncher {
                 "--help", "-h" -> options.copy(help = true)
                 "--version", "-v" -> options.copy(version = true)
                 "--plain", "--no-color" -> options.copy(colorEnabled = false)
+                "--collect-only" -> options.copy(collectOnly = true)
                 else -> {
                     error.println("Unknown option: $arg")
                     output.println("Use --help for usage.")
@@ -118,6 +123,7 @@ internal object CliLauncher {
         val help: Boolean = false,
         val version: Boolean = false,
         val colorEnabled: Boolean? = null,
+        val collectOnly: Boolean = false,
     )
 
     private const val SHUTDOWN_TIMEOUT_SECONDS = 5L
@@ -131,6 +137,8 @@ Options:
   -v, --version    Show the Daemonitor version.
       --plain      Disable colors and terminal screen clearing.
       --no-color   Alias for --plain.
+      --collect-only
+                   Collect and persist without rendering terminal output.
 
 Press q to quit.
 """
