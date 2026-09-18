@@ -47,7 +47,7 @@ internal object HeadlessLauncher {
         val terminal = HeadlessTerminalUi(
             output = output,
             input = input,
-            clearScreen = System.console() != null,
+            clearScreen = isInteractiveTerminal(),
         )
         val pollingThread = Thread.currentThread()
         val running = AtomicBoolean(true)
@@ -108,6 +108,10 @@ internal object HeadlessLauncher {
             }
         }
     }
+
+    private fun isInteractiveTerminal(): Boolean =
+        System.console() != null ||
+            (!System.getenv("TERM").isNullOrBlank() && System.getenv("TERM") != "dumb")
 
     private const val SHUTDOWN_TIMEOUT_SECONDS = 5L
 }
