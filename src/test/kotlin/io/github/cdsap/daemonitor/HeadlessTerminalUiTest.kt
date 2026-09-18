@@ -28,10 +28,31 @@ class HeadlessTerminalUiTest {
         assertTrue(output.contains("2 processes"))
         assertTrue(output.contains("1280 MB RSS"))
         assertTrue(output.contains("1024 MB"))
+        assertTrue(output.contains("HEAP USED"))
+        assertTrue(output.contains("HEAP CMT"))
         assertTrue(output.contains("HEAP LIMIT"))
         assertTrue(output.contains("2048 MB"))
         assertTrue(output.indexOf("large") < output.indexOf("small"))
         assertTrue(output.contains("Press q (or q + Enter) to quit"))
+    }
+
+    @Test
+    fun `renderer keeps table header and separator aligned`() {
+        val output = HeadlessTerminalRenderer.render(
+            result = WatcherRuntime.PollResult(
+                processes = listOf(process(pid = 10, rssMb = 256, heapLimitMb = 512, project = "small")),
+                daemonLogs = emptyList(),
+                buildsChanged = false,
+            ),
+            updatedAtMs = 1_000L,
+        )
+
+        val lines = output.lines()
+        val headerIndex = lines.indexOfFirst { it.contains("TYPE") && it.contains("PROJECT") }
+        assertTrue(headerIndex >= 0)
+        assertTrue(headerIndex + 1 < lines.size)
+        assertTrue(lines[headerIndex + 1].all { it == '─' })
+        assertTrue(lines[headerIndex + 1].length == lines[headerIndex].length)
     }
 
     @Test
@@ -85,6 +106,8 @@ class HeadlessTerminalUiTest {
         rssMemoryMb = rssMb,
         maxHeapMb = heapLimitMb,
         minHeapMb = null,
+        heapUsedMb = heapLimitMb?.div(2),
+        heapCommittedMb = heapLimitMb,
         gc = null,
         startTimeMs = 0L,
         status = "RUNNING",

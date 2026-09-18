@@ -64,20 +64,17 @@ object HeadlessTerminalRenderer {
         if (result.processes.isEmpty()) {
             appendLine("No Gradle-related processes are running.")
         } else {
-            appendLine(ansi("TYPE             PID     RSS    HEAP USED   HEAP LIMIT   CPU   UPTIME   PROJECT", colorEnabled, BOLD))
-            appendLine("──────────────────────────────────────────────────────────────────────")
+            appendLine(ansi(tableHeader(), colorEnabled, BOLD))
+            appendLine("─".repeat(tableHeader().length))
             result.processes
                 .sortedWith(compareByDescending<GradleProcess> { it.rssMemoryMb }.thenBy { it.pid })
                 .forEach { process ->
                     appendLine(
-                        "${process.type.displayName().padEnd(16)} " +
-                            "${process.pid.toString().padStart(6)}  " +
-                            "${ansi((process.rssMemoryMb.toString() + " MB").padStart(8), colorEnabled, YELLOW)}  " +
-                            "${ansi((process.heapUsedMb?.let { "$it MB" } ?: "—").padStart(9), colorEnabled, CYAN)}  " +
-                            "${ansi((process.maxHeapMb?.let { "$it MB" } ?: "—").padStart(10), colorEnabled, MAGENTA)}  " +
-                            "${cpuText(process.cpuPercent, colorEnabled)}  " +
-                            "${uptime(process.startTimeMs, updatedAtMs).padStart(7)}  " +
-                            projectName(process).take(32),
+                        tableRow(
+                            process = process,
+                            updatedAtMs = updatedAtMs,
+                            colorEnabled = colorEnabled,
+                        ),
                     )
                 }
         }
@@ -90,6 +87,30 @@ object HeadlessTerminalRenderer {
         process.projectPath?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
             ?: process.workingDirectory?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
             ?: "—"
+
+    private fun tableHeader(): String = listOf(
+        "TYPE".padEnd(TYPE_WIDTH),
+        "PID".padStart(PID_WIDTH),
+        "RSS".padStart(RSS_WIDTH),
+        "HEAP USED".padStart(HEAP_USED_WIDTH),
+        "HEAP CMT".padStart(HEAP_COMMITTED_WIDTH),
+        "HEAP LIMIT".padStart(HEAP_LIMIT_WIDTH),
+        "CPU".padStart(CPU_WIDTH),
+        "UPTIME".padStart(UPTIME_WIDTH),
+        "PROJECT",
+    ).joinToString(COLUMN_GAP)
+
+    private fun tableRow(process: GradleProcess, updatedAtMs: Long, colorEnabled: Boolean): String = listOf(
+        process.type.displayName().padEnd(TYPE_WIDTH),
+        process.pid.toString().padStart(PID_WIDTH),
+        ansi((process.rssMemoryMb.toString() + " MB").padStart(RSS_WIDTH), colorEnabled, YELLOW),
+        ansi((process.heapUsedMb?.let { "$it MB" } ?: "—").padStart(HEAP_USED_WIDTH), colorEnabled, CYAN),
+        ansi((process.heapCommittedMb?.let { "$it MB" } ?: "—").padStart(HEAP_COMMITTED_WIDTH), colorEnabled, CYAN),
+        ansi((process.maxHeapMb?.let { "$it MB" } ?: "—").padStart(HEAP_LIMIT_WIDTH), colorEnabled, MAGENTA),
+        cpuText(process.cpuPercent, colorEnabled).padStart(CPU_WIDTH),
+        uptime(process.startTimeMs, updatedAtMs).padStart(UPTIME_WIDTH),
+        projectName(process).take(32),
+    ).joinToString(COLUMN_GAP)
 
     private fun uptime(startTimeMs: Long, nowMs: Long): String {
         val seconds = ((nowMs - startTimeMs).coerceAtLeast(0L)) / 1_000L
@@ -122,6 +143,16 @@ object HeadlessTerminalRenderer {
 
     private fun ansi(text: String, enabled: Boolean, vararg codes: String): String =
         if (enabled) codes.joinToString(prefix = ESC, postfix = "m") + text + RESET else text
+
+    private const val TYPE_WIDTH = 16
+    private const val PID_WIDTH = 6
+    private const val RSS_WIDTH = 8
+    private const val HEAP_USED_WIDTH = 9
+    private const val HEAP_COMMITTED_WIDTH = 10
+    private const val HEAP_LIMIT_WIDTH = 10
+    private const val CPU_WIDTH = 4
+    private const val UPTIME_WIDTH = 7
+    private const val COLUMN_GAP = "  "
 
     private const val ESC = "\u001B["
     private const val RESET = "\u001B[0m"
