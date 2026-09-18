@@ -2,10 +2,13 @@ package io.github.cdsap.daemonitor
 
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
+import kotlinx.coroutines.delay
 import java.io.InputStream
 import java.io.PrintStream
 import java.time.Instant
 import java.util.Locale
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 
 /** Terminal presentation for the UI-independent headless monitoring runtime. */
 class HeadlessTerminalUi(
@@ -40,6 +43,26 @@ class HeadlessTerminalUi(
         }
         quit
     }.getOrDefault(false)
+
+    /**
+     * Waits for the next poll interval while watching for quit input.
+     * Returns false when the session should stop without another refresh.
+     */
+    suspend fun waitForNextPoll(interval: Duration): Boolean {
+        if (shouldQuit()) return false
+        val deadlineNs = System.nanoTime() + interval.inWholeNanoseconds
+        while (System.nanoTime() < deadlineNs) {
+            if (shouldQuit()) return false
+            val remainingMs = ((deadlineNs - System.nanoTime()) / 1_000_000L).coerceAtLeast(0L)
+            if (remainingMs == 0L) break
+            delay(minOf(remainingMs, INPUT_POLL_CHUNK_MS).milliseconds)
+        }
+        return !shouldQuit()
+    }
+
+    private companion object {
+        private const val INPUT_POLL_CHUNK_MS = 50L
+    }
 }
 
 object HeadlessTerminalRenderer {
@@ -50,29 +73,36 @@ object HeadlessTerminalRenderer {
         clearScreen: Boolean = false,
         colorEnabled: Boolean = false,
     ): String = buildString {
-        if (clearScreen) append(CLEAR)
-        appendLine(ansi("DAEMONITOR — HEADLESS", colorEnabled, BOLD, CYAN))
-        appendLine(
+        if (clearScreen) append(CURSOR_HOME)
+
+        fun line(text: String = "") {
+            append(text)
+            if (clearScreen) append(CLEAR_EOL)
+            append('\n')
+        }
+
+        line(ansi("DAEMONITOR — HEADLESS", colorEnabled, BOLD, CYAN))
+        line(
             "Updated ${Instant.ofEpochMilli(updatedAtMs)}  |  " +
                 "${result.processes.size} processes  |  " +
                 ansi("${result.processes.sumOf { it.rssMemoryMb }} MB RSS", colorEnabled, YELLOW) + "  |  " +
                 "${result.daemonLogs.size} daemon logs",
         )
-        if (error != null) appendLine(ansi("Last poll failed: $error", colorEnabled, BOLD, RED))
-        appendLine()
+        if (error != null) line(ansi("Last poll failed: $error", colorEnabled, BOLD, RED))
+        line()
 
         if (result.processes.isEmpty()) {
-            appendLine("No Gradle-related processes are running.")
+            line("No Gradle-related processes are running.")
         } else {
-            appendLine(ansi("TYPE             PID     RSS       HEAP LIMIT   CPU   UPTIME   PROJECT", colorEnabled, BOLD))
-            appendLine("──────────────────────────────────────────────────────────────────────")
+            line(ansi("TYPE             PID     RSS       HEAP LIMIT   CPU   UPTIME   PROJECT", colorEnabled, BOLD))
+            line("──────────────────────────────────────────────────────────────────────")
             result.processes
                 .sortedWith(compareByDescending<GradleProcess> { it.rssMemoryMb }.thenBy { it.pid })
                 .forEach { process ->
-                    appendLine(
+                    line(
                         "${process.type.displayName().padEnd(16)} " +
                             "${process.pid.toString().padStart(6)}  " +
-                        "${ansi((process.rssMemoryMb.toString() + " MB").padStart(8), colorEnabled, YELLOW)}  " +
+                            "${ansi((process.rssMemoryMb.toString() + " MB").padStart(8), colorEnabled, YELLOW)}  " +
                             "${ansi((process.maxHeapMb?.let { "$it MB" } ?: "—").padStart(10), colorEnabled, MAGENTA)}  " +
                             "${cpuText(process.cpuPercent, colorEnabled)}  " +
                             "${uptime(process.startTimeMs, updatedAtMs).padStart(7)}  " +
@@ -81,8 +111,9 @@ object HeadlessTerminalRenderer {
                 }
         }
 
-        appendLine()
-        appendLine("Press q (or q + Enter) to quit · refreshes every 2 seconds")
+        line()
+        line("Press q (or q + Enter) to quit · refreshes every 2 seconds")
+        if (clearScreen) append(ERASE_DOWN)
     }
 
     private fun projectName(process: GradleProcess): String =
@@ -124,7 +155,12 @@ object HeadlessTerminalRenderer {
 
     private const val ESC = "\u001B["
     private const val RESET = "\u001B[0m"
-    private const val CLEAR = "\u001B[H\u001B[2J"
+    /** Move to the top-left without pushing prior frames into scrollback. */
+    private const val CURSOR_HOME = "\u001B[H"
+    /** Clear from the cursor to the end of the current line. */
+    private const val CLEAR_EOL = "\u001B[K"
+    /** Clear from the cursor to the end of the screen (drops stale dynamic rows). */
+    private const val ERASE_DOWN = "\u001B[J"
     private const val BOLD = "1"
     private const val DIM = "2"
     private const val RED = "31"

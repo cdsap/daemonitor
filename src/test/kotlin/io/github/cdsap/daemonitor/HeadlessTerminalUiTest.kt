@@ -2,12 +2,15 @@ package io.github.cdsap.daemonitor
 
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
+import kotlinx.coroutines.runBlocking
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
 class HeadlessTerminalUiTest {
     @Test
@@ -62,6 +65,60 @@ class HeadlessTerminalUiTest {
     }
 
     @Test
+    fun `interactive renderer homes cursor and clears stale rows without full screen clear`() {
+        val tall = HeadlessTerminalRenderer.render(
+            result = WatcherRuntime.PollResult(
+                processes = listOf(
+                    process(pid = 10, rssMb = 256, project = "one"),
+                    process(pid = 11, rssMb = 512, project = "two"),
+                ),
+                daemonLogs = emptyList(),
+                buildsChanged = false,
+            ),
+            updatedAtMs = 1_000L,
+            clearScreen = true,
+        )
+        val short = HeadlessTerminalRenderer.render(
+            result = WatcherRuntime.PollResult(emptyList(), emptyList(), false),
+            updatedAtMs = 2_000L,
+            error = "permission denied",
+            clearScreen = true,
+        )
+
+        assertTrue(tall.startsWith("\u001B[H"))
+        assertTrue(tall.contains("\u001B[K"))
+        assertTrue(tall.endsWith("\u001B[J"))
+        assertFalse(tall.contains("\u001B[2J"))
+
+        assertTrue(short.startsWith("\u001B[H"))
+        assertTrue(short.contains("\u001B[K"))
+        assertTrue(short.endsWith("\u001B[J"))
+        assertTrue(short.contains("No Gradle-related processes are running."))
+        assertTrue(short.contains("Last poll failed: permission denied"))
+        assertTrue(tall.lines().size > short.lines().size)
+    }
+
+    @Test
+    fun `plain renderer stays append-only without clear sequences`() {
+        val output = HeadlessTerminalRenderer.render(
+            result = WatcherRuntime.PollResult(
+                processes = listOf(process(pid = 10, rssMb = 256, project = "plain")),
+                daemonLogs = emptyList(),
+                buildsChanged = false,
+            ),
+            updatedAtMs = 1_000L,
+            clearScreen = false,
+            colorEnabled = false,
+        )
+
+        assertFalse(output.contains("\u001B[H"))
+        assertFalse(output.contains("\u001B[J"))
+        assertFalse(output.contains("\u001B[K"))
+        assertFalse(output.contains("\u001B[2J"))
+        assertTrue(output.startsWith("DAEMONITOR — HEADLESS"))
+    }
+
+    @Test
     fun `input adapter quits on q without blocking`() {
         val output = ByteArrayOutputStream()
         val terminal = HeadlessTerminalUi(
@@ -72,6 +129,66 @@ class HeadlessTerminalUiTest {
 
         assertTrue(terminal.shouldQuit())
         assertFalse(terminal.shouldQuit())
+    }
+
+    @Test
+    fun `input adapter quits on q followed by enter`() {
+        val terminal = HeadlessTerminalUi(
+            output = PrintStream(ByteArrayOutputStream()),
+            input = ByteArrayInputStream("q\n".toByteArray()),
+            clearScreen = false,
+        )
+
+        assertTrue(terminal.shouldQuit())
+    }
+
+    @Test
+    fun `waitForNextPoll returns false promptly when quit is pending`() = runBlocking {
+        val terminal = HeadlessTerminalUi(
+            output = PrintStream(ByteArrayOutputStream()),
+            input = ByteArrayInputStream("q".toByteArray()),
+            clearScreen = false,
+        )
+
+        val startedAt = System.nanoTime()
+        assertFalse(terminal.waitForNextPoll(2.seconds))
+        val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000L
+        assertTrue(elapsedMs < 500, "expected prompt quit, took ${elapsedMs}ms")
+    }
+
+    @Test
+    fun `waitForNextPoll completes interval when quit is not pressed`() = runBlocking {
+        val terminal = HeadlessTerminalUi(
+            output = PrintStream(ByteArrayOutputStream()),
+            input = ByteArrayInputStream(ByteArray(0)),
+            clearScreen = false,
+        )
+
+        val startedAt = System.nanoTime()
+        assertTrue(terminal.waitForNextPoll(120.milliseconds))
+        val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000L
+        assertTrue(elapsedMs >= 100, "expected to wait for interval, took ${elapsedMs}ms")
+    }
+
+    @Test
+    fun `interactive ui flushes an in-place frame`() {
+        val output = ByteArrayOutputStream()
+        val terminal = HeadlessTerminalUi(
+            output = PrintStream(output, true),
+            input = ByteArrayInputStream(ByteArray(0)),
+            clearScreen = true,
+            colorEnabled = true,
+        )
+
+        terminal.render(
+            result = WatcherRuntime.PollResult(emptyList(), emptyList(), false),
+            updatedAtMs = 1_000L,
+        )
+
+        val frame = output.toString()
+        assertTrue(frame.startsWith("\u001B[H"))
+        assertTrue(frame.endsWith("\u001B[J"))
+        assertTrue(frame.contains("\u001B[K"))
     }
 
     private fun process(pid: Long, rssMb: Long, heapLimitMb: Long? = null, project: String) = GradleProcess(

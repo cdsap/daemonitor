@@ -75,7 +75,9 @@ internal object CliLauncher {
             var lastResult = WatcherRuntime.PollResult(emptyList(), emptyList(), false)
             var pollError: String? = null
             runBlocking {
+                val pollInterval = options.pollInterval ?: MonitoringConfig.DEFAULT.pollInterval
                 while (currentCoroutineContext().isActive && running.get()) {
+                    if (terminal?.shouldQuit() == true) break
                     runCatching { container.runtime.pollOnce() }
                         .onSuccess {
                             lastResult = it
@@ -85,9 +87,13 @@ internal object CliLauncher {
                             pollError = it.message ?: it::class.simpleName ?: "unknown error"
                             error.println("Daemonitor poll failed: $pollError")
                         }
+                    if (!running.get() || terminal?.shouldQuit() == true) break
                     terminal?.render(lastResult, System.currentTimeMillis(), pollError)
-                    if (terminal?.shouldQuit() == true) break
-                    delay(options.pollInterval ?: MonitoringConfig.DEFAULT.pollInterval)
+                    val continuePolling = terminal?.waitForNextPoll(pollInterval) ?: run {
+                        delay(pollInterval)
+                        true
+                    }
+                    if (!continuePolling) break
                 }
             }
             0

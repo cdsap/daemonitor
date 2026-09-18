@@ -5,7 +5,6 @@ package io.github.cdsap.daemonitor
 import io.github.cdsap.daemonitor.config.MonitoringConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.runBlocking
 import java.io.InputStream
@@ -80,7 +79,9 @@ internal object HeadlessLauncher {
             var lastResult = WatcherRuntime.PollResult(emptyList(), emptyList(), false)
             var pollError: String? = null
             runBlocking {
+                val pollInterval = MonitoringConfig.DEFAULT.pollInterval
                 while (currentCoroutineContext().isActive && running.get()) {
+                    if (terminal.shouldQuit()) break
                     runCatching { runtime.pollOnce() }
                         .onSuccess {
                             lastResult = it
@@ -90,9 +91,9 @@ internal object HeadlessLauncher {
                             pollError = it.message ?: it::class.simpleName ?: "unknown error"
                             error.println("Daemonitor poll failed: $pollError")
                         }
+                    if (!running.get() || terminal.shouldQuit()) break
                     terminal.render(lastResult, System.currentTimeMillis(), pollError)
-                    if (terminal.shouldQuit()) break
-                    delay(MonitoringConfig.DEFAULT.pollInterval)
+                    if (!terminal.waitForNextPoll(pollInterval)) break
                 }
             }
             0
