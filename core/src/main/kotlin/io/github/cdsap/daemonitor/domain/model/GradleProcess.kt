@@ -57,7 +57,4 @@ data class GradleProcess(
     val status: String,
     /** True when the invocation carries an automation marker like `--non-interactive` (Gradle 9.6+). */
     val automated: Boolean = false,
-    /** Live JVM heap occupancy when local management attachment succeeds. */
-    val heapUsedMb: Long? = null,
-    val heapCommittedMb: Long? = null,
 )

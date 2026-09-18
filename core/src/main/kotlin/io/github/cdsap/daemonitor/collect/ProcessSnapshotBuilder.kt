@@ -23,7 +23,6 @@ object ProcessSnapshotBuilder {
         prior: PriorSample?,
         sampleWallClockMs: Long,
         logicalProcessorCount: Int,
-        heapUsage: JvmHeapUsage? = null,
     ): GradleProcess? {
         val type = GradleProcessClassifier.classify(info.commandLine) ?: return null
         val jvm = JvmArgParser.parse(info.commandLine)
@@ -41,8 +40,6 @@ object ProcessSnapshotBuilder {
             cpuPercent = computeCpuPercent(info, prior, sampleWallClockMs, logicalProcessorCount),
             rssMemoryMb = info.rssBytes / (1024 * 1024),
             maxHeapMb = jvm.maxHeapMb,
-            heapUsedMb = heapUsage?.usedMb,
-            heapCommittedMb = heapUsage?.committedMb,
             minHeapMb = jvm.minHeapMb,
             gc = jvm.gc,
             startTimeMs = info.startTimeMs,

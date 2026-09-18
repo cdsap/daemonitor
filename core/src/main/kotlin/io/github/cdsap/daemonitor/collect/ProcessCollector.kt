@@ -19,7 +19,6 @@ import oshi.software.os.OSProcess
 class ProcessCollector(
     private val systemInfo: SystemInfo = SystemInfo(),
     private val clock: () -> Long = System::currentTimeMillis,
-    private val heapUsageCollector: JvmHeapUsageCollector = JvmHeapUsageCollector(clock),
 ) : ProcessSource {
     private val os = systemInfo.operatingSystem
     private val logicalProcessors = systemInfo.hardware.processor.logicalProcessorCount
@@ -41,13 +40,7 @@ class ProcessCollector(
             val key = ProcessKey(info.pid, info.startTimeMs)
             seen += key
             val prior = priorSamples[key]
-            val snapshot = ProcessSnapshotBuilder.build(
-                info,
-                prior,
-                now,
-                logicalProcessors,
-                heapUsage = heapUsageCollector.read(info.pid),
-            )
+            val snapshot = ProcessSnapshotBuilder.build(info, prior, now, logicalProcessors)
             priorSamples[key] = PriorSample(info.cpuTimeMs, now)
             if (snapshot != null) result += snapshot
         }

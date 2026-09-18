@@ -231,8 +231,6 @@ class DaemonitorMcpServer(
         "cpuPercent" to jsonNumberOrNull(cpuPercent),
         "rssMemoryMb" to JsonNumber(rssMemoryMb),
         "maxHeapMb" to jsonNumberOrNull(maxHeapMb),
-        "heapUsedMb" to jsonNumberOrNull(heapUsedMb),
-        "heapCommittedMb" to jsonNumberOrNull(heapCommittedMb),
         "status" to JsonString(status),
     )
 
@@ -246,8 +244,6 @@ class DaemonitorMcpServer(
         "cpuPercent" to jsonNumberOrNull(cpuPercent),
         "rssMemoryMb" to JsonNumber(rssMemoryMb),
         "maxHeapMb" to jsonNumberOrNull(maxHeapMb),
-        "heapUsedMb" to jsonNumberOrNull(heapUsedMb),
-        "heapCommittedMb" to jsonNumberOrNull(heapCommittedMb),
         "minHeapMb" to jsonNumberOrNull(minHeapMb),
         "gc" to jsonStringOrNull(gc),
         "startTimeMs" to JsonNumber(startTimeMs),
