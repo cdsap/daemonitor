@@ -43,6 +43,20 @@ class ProcessSnapshotBuilderTest {
     }
 
     @Test
+    fun `includes live heap metrics when available`() {
+        val snap = ProcessSnapshotBuilder.build(
+            FakeProcess(commandLine = DAEMON_CL),
+            null,
+            2_000,
+            8,
+            heapUsage = JvmHeapUsage(usedMb = 128, committedMb = 256, maxMb = 4096),
+        )!!
+
+        assertEquals(128L, snap.heapUsedMb)
+        assertEquals(256L, snap.heapCommittedMb)
+    }
+
+    @Test
     fun `gradle daemon working directory is not attributed as a project`() {
         val snap = ProcessSnapshotBuilder.build(
             FakeProcess(commandLine = DAEMON_CL, workingDirectory = "/Users/dev/.gradle/daemon/8.14.3"),

@@ -75,7 +75,7 @@ private fun VisualDashboard(state: LiveUiState, modifier: Modifier = Modifier) {
             windowDurationMs = VisualChartModel.DEFAULT_TIMELINE_WINDOW_MS,
         )
     }
-    val selectedHeap = selected.maxHeapMb?.let { "$it MB" } ?: "unavailable"
+    val selectedHeap = selected.heapUsedMb?.let { "$it MB" } ?: "unavailable"
 
     Column(modifier = modifier.padding(start = Space.lg, end = Space.lg, bottom = Space.lg)) {
         Row(

@@ -134,7 +134,7 @@ fun OverallRssTimelineChart(
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                "Solid = RSS, dashed = Heap (-Xmx). Click a series to show or hide it.",
+                "Solid = RSS, dashed = live heap used. Click a series to show or hide it.",
                 style = MaterialTheme.typography.labelSmall,
                 color = labelColor,
             )

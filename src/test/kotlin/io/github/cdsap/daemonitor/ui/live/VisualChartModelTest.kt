@@ -10,7 +10,7 @@ import kotlin.test.assertTrue
 class VisualChartModelTest {
 
     @Test
-    fun `bars expose rss and optional heap allocation with shared scale`() {
+    fun `bars expose rss and optional heap usage with shared scale`() {
         val data = VisualChartModel.fromProcesses(
             listOf(
                 process(pid = 1, rss = 512, heap = 4096),
@@ -20,22 +20,22 @@ class VisualChartModelTest {
 
         assertEquals(8704L, data.totalRssMb)
         assertEquals(512L, data.bars[0].rssMb)
-        assertEquals(4096L, data.bars[0].heapAllocationMb)
+        assertEquals(4096L, data.bars[0].heapUsedMb)
         assertEquals(0.0625f, data.bars[0].rssFraction)
         assertEquals(0.5f, data.bars[0].heapFraction)
         assertEquals(1.0f, data.bars[1].rssFraction)
-        assertNull(data.bars[1].heapAllocationMb)
+        assertNull(data.bars[1].heapUsedMb)
         assertNull(data.bars[1].heapFraction)
     }
 
     @Test
-    fun `missing heap allocation stays unavailable`() {
+    fun `missing heap usage stays unavailable`() {
         val bar = VisualChartModel.fromProcesses(
             listOf(process(pid = 12, rss = 180, heap = null)),
         ).bars.single()
 
         assertEquals(180L, bar.rssMb)
-        assertNull(bar.heapAllocationMb)
+        assertNull(bar.heapUsedMb)
         assertNull(bar.heapFraction)
     }
 
@@ -122,7 +122,8 @@ class VisualChartModelTest {
         projectPath = projectPath,
         cpuPercent = 10.0,
         rssMemoryMb = rss,
-        maxHeapMb = heap,
+        maxHeapMb = 4096,
+        heapUsedMb = heap,
         minHeapMb = null,
         gc = "G1",
         startTimeMs = 1_700_000_000_000,

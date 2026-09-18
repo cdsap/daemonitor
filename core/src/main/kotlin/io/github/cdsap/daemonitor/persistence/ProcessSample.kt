@@ -15,4 +15,6 @@ data class ProcessSample(
     val rssMemoryMb: Long,
     val maxHeapMb: Long?,
     val status: String,
+    val heapUsedMb: Long? = null,
+    val heapCommittedMb: Long? = null,
 )
