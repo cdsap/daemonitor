@@ -31,7 +31,7 @@ class HeadlessTerminalUiTest {
         assertTrue(output.contains("HEAP LIMIT"))
         assertTrue(output.contains("2048 MB"))
         assertTrue(output.indexOf("large") < output.indexOf("small"))
-        assertTrue(output.contains("Press q to quit"))
+        assertTrue(output.contains("Press q (or q + Enter) to quit"))
     }
 
     @Test
