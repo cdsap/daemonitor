@@ -1,5 +1,7 @@
 rootProject.name = "daemonitor"
 
+include(":core", ":cli")
+
 pluginManagement {
     repositories {
         gradlePluginPortal()
