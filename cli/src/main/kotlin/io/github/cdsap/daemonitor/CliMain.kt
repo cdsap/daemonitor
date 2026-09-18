@@ -49,12 +49,16 @@ internal object CliLauncher {
     ): Int {
         val interactive = isInteractiveTerminal()
         val colorEnabled = options.colorEnabled ?: interactive
-        val terminal = HeadlessTerminalUi(
-            output = output,
-            input = input,
-            clearScreen = interactive && colorEnabled,
-            colorEnabled = colorEnabled,
-        )
+        val terminal = if (options.collectOnly) {
+            null
+        } else {
+            HeadlessTerminalUi(
+                output = output,
+                input = input,
+                clearScreen = interactive && colorEnabled,
+                colorEnabled = colorEnabled,
+            )
+        }
         val running = AtomicBoolean(true)
         val pollingThread = Thread.currentThread()
         val cleanupFinished = CountDownLatch(1)
@@ -81,8 +85,8 @@ internal object CliLauncher {
                             pollError = it.message ?: it::class.simpleName ?: "unknown error"
                             error.println("Daemonitor poll failed: $pollError")
                         }
-                    terminal.render(lastResult, System.currentTimeMillis(), pollError)
-                    if (terminal.shouldQuit()) break
+                    terminal?.render(lastResult, System.currentTimeMillis(), pollError)
+                    if (terminal?.shouldQuit() == true) break
                     delay(options.pollInterval ?: MonitoringConfig.DEFAULT.pollInterval)
                 }
             }
@@ -106,6 +110,7 @@ internal object CliLauncher {
                 "--help", "-h" -> options.copy(help = true)
                 "--version", "-v" -> options.copy(version = true)
                 "--plain", "--no-color" -> options.copy(colorEnabled = false)
+                "--collect-only" -> options.copy(collectOnly = true)
                 "--db" -> options.copy(
                     databasePath = nextValue(args, ++index, arg, error, output)
                         ?.let(Path::of)
@@ -168,6 +173,7 @@ internal object CliLauncher {
         val help: Boolean = false,
         val version: Boolean = false,
         val colorEnabled: Boolean? = null,
+        val collectOnly: Boolean = false,
         val databasePath: Path? = null,
         val pollInterval: Duration? = null,
         val retentionDays: Long? = null,
@@ -184,6 +190,8 @@ Options:
   -v, --version    Show the Daemonitor version.
   --plain      Disable colors and terminal screen clearing.
       --no-color   Alias for --plain.
+      --collect-only
+                   Collect and persist without rendering terminal output.
       --db PATH    Store data in this SQLite database.
       --poll-interval SECONDS
                    Poll at this interval (default: 2).

@@ -19,6 +19,7 @@ class CliMainTest {
         assertEquals(0, exitCode)
         assertTrue(output.toString().contains("Usage: daemonitor-cli [options]"))
         assertTrue(output.toString().contains("--no-color"))
+        assertTrue(output.toString().contains("--collect-only"))
     }
 
     @Test
