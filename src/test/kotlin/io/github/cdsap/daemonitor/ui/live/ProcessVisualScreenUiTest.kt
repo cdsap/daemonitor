@@ -9,6 +9,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runSkikoComposeUiTest
 import androidx.compose.ui.unit.Density
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
+import io.github.cdsap.daemonitor.domain.model.LiveJvmHeap
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.ui.common.WatcherTheme
 import kotlin.test.Test
@@ -19,8 +20,8 @@ class ProcessVisualScreenUiTest {
     @Test
     fun `visual screen renders rss and heap timeline series`() = runVisualUiTest {
         val processes = listOf(
-            process(pid = 100, type = ProcessType.GRADLE_DAEMON, project = "checkout", rss = 1024, heap = 4096, cpu = 24.0),
-            process(pid = 101, type = ProcessType.TEST_WORKER, project = "checkout", rss = 512, heap = null, cpu = 64.0),
+            process(pid = 100, type = ProcessType.GRADLE_DAEMON, project = "checkout", rss = 1024, heap = 4096, used = 700, cpu = 24.0),
+            process(pid = 101, type = ProcessType.TEST_WORKER, project = "checkout", rss = 512, heap = null, used = null, cpu = 64.0),
         )
 
         setContent {
@@ -36,18 +37,21 @@ class ProcessVisualScreenUiTest {
         onNodeWithText("Process inspector").assertDoesNotExist()
         onNodeWithText("Total 1536 MB RSS · 2 processes").assertExists()
         onNodeWithText("Total RSS").assertExists()
-        onNodeWithText("Total Heap").assertExists()
+        onNodeWithText("Total heap used").assertExists()
+        onNodeWithText("Total heap limit").assertExists()
         onAllNodesWithText("Gradle daemon · checkout · PID 100 · RSS").onFirst().assertExists()
-        onAllNodesWithText("Gradle daemon · checkout · PID 100 · Heap").onFirst().assertExists()
+        onAllNodesWithText("Gradle daemon · checkout · PID 100 · Heap used").onFirst().assertExists()
+        onAllNodesWithText("Gradle daemon · checkout · PID 100 · Heap limit").onFirst().assertExists()
         onAllNodesWithText("Test worker · checkout · PID 101 · RSS").onFirst().assertExists()
-        onNodeWithText("SELECTED HEAP").assertExists()
+        onNodeWithText("SELECTED HEAP USED").assertExists()
+        onNodeWithText("SELECTED HEAP LIMIT").assertExists()
     }
 
     @Test
-    fun `selecting timeline legend updates selected heap tile`() = runVisualUiTest {
+    fun `selecting timeline legend updates selected heap limit tile`() = runVisualUiTest {
         val processes = listOf(
-            process(pid = 100, type = ProcessType.GRADLE_DAEMON, project = "checkout", rss = 1024, heap = 4096, cpu = 24.0),
-            process(pid = 101, type = ProcessType.KOTLIN_DAEMON, project = "design-system", rss = 768, heap = 1536, cpu = 12.0),
+            process(pid = 100, type = ProcessType.GRADLE_DAEMON, project = "checkout", rss = 1024, heap = 4096, used = 700, cpu = 24.0),
+            process(pid = 101, type = ProcessType.KOTLIN_DAEMON, project = "design-system", rss = 768, heap = 1536, used = 400, cpu = 12.0),
         )
 
         setContent {
@@ -56,12 +60,12 @@ class ProcessVisualScreenUiTest {
             }
         }
 
-        // Default selection is the highest-RSS process.
+        // Default selection is the highest-RSS process (Gradle daemon · 4096 MB limit).
         onNodeWithText("4096 MB").assertExists()
-        onAllNodesWithText("Kotlin daemon · design-system · PID 101 · Heap").onFirst().performClick()
+        onAllNodesWithText("Kotlin daemon · design-system · PID 101 · RSS").onFirst().performClick()
 
         onNodeWithText("1536 MB").assertExists()
-        onNodeWithText("4096 MB").assertDoesNotExist()
+        onNodeWithText("400 MB").assertExists()
         onNodeWithText("Process inspector").assertDoesNotExist()
     }
 
@@ -103,14 +107,29 @@ class ProcessVisualScreenUiTest {
 
     private fun timelineFor(processes: List<GradleProcess>): List<RssTimelineSample> {
         val byPid = processes.associate { it.pid to it.rssMemoryMb }
-        val heapByPid = processes.mapNotNull { process ->
+        val heapLimitByPid = processes.mapNotNull { process ->
             process.maxHeapMb?.let { heap -> process.pid to heap }
+        }.toMap()
+        val heapUsedByPid = processes.mapNotNull { process ->
+            process.liveHeap?.takeIf { it.available }?.usedMb?.let { used -> process.pid to used }
         }.toMap()
         val total = processes.sumOf { it.rssMemoryMb }
         val end = 1_700_000_060_000
         return listOf(
-            RssTimelineSample(atMs = end - 20_000, totalRssMb = total - 100, byPid = byPid, heapByPid = heapByPid),
-            RssTimelineSample(atMs = end, totalRssMb = total, byPid = byPid, heapByPid = heapByPid),
+            RssTimelineSample(
+                atMs = end - 20_000,
+                totalRssMb = total - 100,
+                byPid = byPid,
+                heapLimitByPid = heapLimitByPid,
+                heapUsedByPid = heapUsedByPid,
+            ),
+            RssTimelineSample(
+                atMs = end,
+                totalRssMb = total,
+                byPid = byPid,
+                heapLimitByPid = heapLimitByPid,
+                heapUsedByPid = heapUsedByPid,
+            ),
         )
     }
 
@@ -120,6 +139,7 @@ class ProcessVisualScreenUiTest {
         project: String,
         rss: Long,
         heap: Long?,
+        used: Long?,
         cpu: Double,
     ) = GradleProcess(
         pid = pid,
@@ -135,5 +155,14 @@ class ProcessVisualScreenUiTest {
         gc = "G1",
         startTimeMs = 1_700_000_000_000,
         status = "RUNNING",
+        liveHeap = used?.let {
+            LiveJvmHeap(
+                usedMb = it,
+                committedMb = it + 64,
+                maxMb = heap,
+                sampledAtMs = 1_700_000_000_000,
+                available = true,
+            )
+        },
     )
 }

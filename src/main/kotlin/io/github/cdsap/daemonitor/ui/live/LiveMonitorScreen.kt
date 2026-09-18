@@ -68,12 +68,13 @@ import io.github.cdsap.daemonitor.ui.common.TableHeader
 import io.github.cdsap.daemonitor.ui.common.cycleIndex
 
 private val COLS = listOf(
-    Col("Type", 1.4f),
-    Col("Project", 2.0f),
-    Col("RSS", 0.9f, end = true),
-    Col("CPU", 0.7f, end = true),
-    Col("Uptime", 1.0f, end = true),
-    Col("Flags", 1.7f),
+    Col("Type", 1.3f),
+    Col("Project", 1.7f),
+    Col("RSS", 0.8f, end = true),
+    Col("Heap used", 0.9f, end = true),
+    Col("CPU", 0.6f, end = true),
+    Col("Uptime", 0.9f, end = true),
+    Col("Flags", 1.5f),
 )
 
 @Composable
@@ -219,9 +220,10 @@ private fun ProcessRow(
         }
         Cell(p.projectPath?.substringAfterLast('/') ?: "—", COLS[1], muted = p.projectPath == null)
         Cell("${p.rssMemoryMb} MB", COLS[2])
-        Cell(p.cpuPercent?.let { "%.0f%%".format(it) } ?: "—", COLS[3])
-        Cell(formatUptime(p.startTimeMs, nowMs), COLS[4])
-        Row(modifier = Modifier.weight(COLS[5].weight), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
+        Cell(p.liveHeapUsedLabel(), COLS[3], muted = p.liveHeap?.available != true)
+        Cell(p.cpuPercent?.let { "%.0f%%".format(it) } ?: "—", COLS[4])
+        Cell(formatUptime(p.startTimeMs, nowMs), COLS[5])
+        Row(modifier = Modifier.weight(COLS[6].weight), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
             Badges.memoryBadge(p.rssMemoryMb)?.let { MemoryBadge(it) }
             if (concurrent) ConcurrentBadge()
             if (p.automated) AutomatedBadge()
@@ -262,13 +264,25 @@ private fun ProcessDetails(p: GradleProcess, ended: Boolean, nowMs: Long) {
         DetailRow("Uptime", if (ended) "—" else formatUptime(p.startTimeMs, nowMs))
         DetailRow("Working dir", p.workingDirectory ?: "unavailable")
         DetailRow("RSS", "${p.rssMemoryMb} MB")
+        DetailRow("Heap used", p.liveHeap?.takeIf { it.available }?.usedMb?.let { "$it MB" } ?: "unavailable")
+        DetailRow(
+            "Heap committed",
+            p.liveHeap?.takeIf { it.available }?.committedMb?.let { "$it MB" } ?: "unavailable",
+        )
         DetailRow("Heap limit (-Xmx)", p.maxHeapMb?.let { "$it MB" } ?: "unavailable")
+        DetailRow(
+            "Heap max (runtime)",
+            p.liveHeap?.takeIf { it.available }?.maxMb?.let { "$it MB" } ?: "unavailable",
+        )
         DetailRow("GC", p.gc ?: "—")
         Spacer(Modifier.padding(Space.xs))
         Text("Command line", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(p.commandLine, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
     }
 }
+
+private fun GradleProcess.liveHeapUsedLabel(): String =
+    liveHeap?.takeIf { it.available }?.usedMb?.let { "$it MB" } ?: "—"
 
 @Composable
 private fun LogCard(tail: List<String>, modifier: Modifier = Modifier) {

@@ -2,8 +2,10 @@ package io.github.cdsap.daemonitor.collect
 
 import io.github.cdsap.daemonitor.application.ProcessSource
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
+import io.github.cdsap.daemonitor.domain.model.LiveJvmHeap
 import io.github.cdsap.daemonitor.domain.model.PriorSample
 import io.github.cdsap.daemonitor.domain.model.ProcessInfo
+import io.github.cdsap.daemonitor.domain.model.ProcessType
 import oshi.SystemInfo
 import oshi.software.os.OSProcess
 
@@ -19,6 +21,7 @@ import oshi.software.os.OSProcess
 class ProcessCollector(
     private val systemInfo: SystemInfo = SystemInfo(),
     private val clock: () -> Long = System::currentTimeMillis,
+    private val heapProbe: JvmHeapProbe = AttachJvmHeapProbe(),
 ) : ProcessSource {
     private val os = systemInfo.operatingSystem
     private val logicalProcessors = systemInfo.hardware.processor.logicalProcessorCount
@@ -42,11 +45,21 @@ class ProcessCollector(
             val prior = priorSamples[key]
             val snapshot = ProcessSnapshotBuilder.build(info, prior, now, logicalProcessors)
             priorSamples[key] = PriorSample(info.cpuTimeMs, now)
-            if (snapshot != null) result += snapshot
+            if (snapshot != null) {
+                // Live heap is orthogonal to RSS / -Xmx; probe failures stay unavailable (not zero).
+                // Scope Attach/JMX to daemon JVMs (issue #159); wrappers/workers stay unavailable.
+                val liveHeap = when (snapshot.type) {
+                    ProcessType.GRADLE_DAEMON, ProcessType.KOTLIN_DAEMON ->
+                        heapProbe.probe(info.pid, now)
+                    else -> LiveJvmHeap.unavailable(now)
+                }
+                result += snapshot.copy(liveHeap = liveHeap)
+            }
         }
 
         // Drop prior samples for processes that have disappeared.
         priorSamples.keys.retainAll(seen)
+        heapProbe.retainOnly(seen.map { it.pid }.toSet())
         return result
     }
 

@@ -27,6 +27,8 @@ class MacAppStoreDistributionDocTest {
             "`APP_STORE`",
             "security-scoped bookmark",
             "127.0.0.1",
+            "Read CPU and RSS",
+            "Read live JVM heap",
             "Likely incompatible",
         ).forEach { requiredText ->
             assertTrue(document.contains(requiredText), "$documentPath should include: $requiredText")

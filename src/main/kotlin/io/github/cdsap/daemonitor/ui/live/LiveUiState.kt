@@ -34,8 +34,10 @@ data class RssTimelineSample(
     val atMs: Long,
     val totalRssMb: Long,
     val byPid: Map<Long, Long> = emptyMap(),
-    /** Configured max heap (-Xmx) per PID when recoverable; live heap occupancy is unavailable. */
-    val heapByPid: Map<Long, Long> = emptyMap(),
+    /** Configured max heap (-Xmx) per PID when recoverable from argv. */
+    val heapLimitByPid: Map<Long, Long> = emptyMap(),
+    /** Live heap used (Attach/JMX) per PID when the probe succeeds. */
+    val heapUsedByPid: Map<Long, Long> = emptyMap(),
 )
 
 /** Full immutable state the Live Monitor renders. */

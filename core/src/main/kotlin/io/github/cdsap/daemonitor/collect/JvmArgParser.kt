@@ -4,7 +4,7 @@ import io.github.cdsap.daemonitor.domain.model.JvmArgs
 
 /**
  * Parses JVM memory and GC flags from a command line (KTD-3). `max_heap_mb` is recoverable only
- * when `-Xmx` is explicit; live heap occupancy is not observable externally and is out of scope.
+ * when `-Xmx` is explicit. Live heap used/committed comes from [JvmHeapProbe], not argv parsing.
  */
 object JvmArgParser {
 

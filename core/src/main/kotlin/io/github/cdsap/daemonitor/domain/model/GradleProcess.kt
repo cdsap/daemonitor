@@ -18,6 +18,30 @@ data class JvmArgs(
 )
 
 /**
+ * Live JVM heap snapshot from a diagnostic probe (Attach/JMX), distinct from OS RSS and the
+ * configured `-Xmx` limit on [GradleProcess.maxHeapMb].
+ *
+ * Missing values stay `null` — never coerced to zero — when [available] is false.
+ */
+data class LiveJvmHeap(
+    val usedMb: Long? = null,
+    val committedMb: Long? = null,
+    val maxMb: Long? = null,
+    val sampledAtMs: Long,
+    val available: Boolean,
+) {
+    companion object {
+        fun unavailable(sampledAtMs: Long): LiveJvmHeap = LiveJvmHeap(
+            usedMb = null,
+            committedMb = null,
+            maxMb = null,
+            sampledAtMs = sampledAtMs,
+            available = false,
+        )
+    }
+}
+
+/**
  * Minimal, OSHI-independent view of one OS process. The OSHI adapter (ProcessCollector) maps
  * `oshi.software.os.OSProcess` onto this so the pure snapshot logic stays unit-testable.
  */
@@ -57,4 +81,10 @@ data class GradleProcess(
     val status: String,
     /** True when the invocation carries an automation marker like `--non-interactive` (Gradle 9.6+). */
     val automated: Boolean = false,
+    /**
+     * Live heap from Attach/JMX when available. Distinct from [rssMemoryMb] (OS RSS) and
+     * [maxHeapMb] (configured `-Xmx`). Null means not probed; [LiveJvmHeap.available] false means
+     * probed but unavailable.
+     */
+    val liveHeap: LiveJvmHeap? = null,
 )

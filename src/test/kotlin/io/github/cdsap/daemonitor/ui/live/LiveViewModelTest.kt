@@ -15,11 +15,21 @@ class LiveViewModelTest {
         project: String? = "/p",
         cwd: String? = "/p",
         heap: Long? = 512,
+        heapUsed: Long? = null,
     ) = GradleProcess(
         pid = pid, parentPid = 1, type = ProcessType.GRADLE_DAEMON,
         commandLine = "java GradleDaemon", workingDirectory = cwd, projectPath = project,
         cpuPercent = 10.0, rssMemoryMb = rss, maxHeapMb = heap, minHeapMb = null,
         gc = "G1", startTimeMs = 1, status = "RUNNING",
+        liveHeap = heapUsed?.let {
+            io.github.cdsap.daemonitor.domain.model.LiveJvmHeap(
+                usedMb = it,
+                committedMb = it + 32,
+                maxMb = heap,
+                sampledAtMs = 1,
+                available = true,
+            )
+        },
     )
 
     @Test
@@ -134,18 +144,19 @@ class LiveViewModelTest {
     }
 
     @Test
-    fun `poll samples configured heap alongside rss`() {
+    fun `poll samples configured heap limit and live used alongside rss`() {
         val vm = LiveViewModel(clockMs = { 5_000L })
 
         vm.onPoll(
             listOf(
-                proc(1, rss = 100, heap = 4096),
-                proc(2, rss = 80, heap = null),
+                proc(1, rss = 100, heap = 4096, heapUsed = 220),
+                proc(2, rss = 80, heap = null, heapUsed = null),
             ),
         )
 
         val sample = vm.state.value.rssTimeline.single()
         assertEquals(mapOf(1L to 100L, 2L to 80L), sample.byPid)
-        assertEquals(mapOf(1L to 4096L), sample.heapByPid)
+        assertEquals(mapOf(1L to 4096L), sample.heapLimitByPid)
+        assertEquals(mapOf(1L to 220L), sample.heapUsedByPid)
     }
 }

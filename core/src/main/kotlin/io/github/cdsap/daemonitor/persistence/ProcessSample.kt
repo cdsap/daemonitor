@@ -15,4 +15,10 @@ data class ProcessSample(
     val rssMemoryMb: Long,
     val maxHeapMb: Long?,
     val status: String,
+    /** Live heap used (MB); null when unavailable — never coerced from missing to zero. */
+    val heapUsedMb: Long? = null,
+    val heapCommittedMb: Long? = null,
+    val heapMaxMb: Long? = null,
+    val heapSampledAtMs: Long? = null,
+    val heapAvailable: Boolean = false,
 )

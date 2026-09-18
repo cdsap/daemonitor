@@ -14,7 +14,12 @@ CREATE TABLE process_samples (
     project_path      TEXT,
     cpu_percent       REAL,
     rss_memory_mb     INTEGER NOT NULL,
-    max_heap_mb       INTEGER,
+    max_heap_mb       INTEGER,           -- configured -Xmx (argv), not live occupancy
+    heap_used_mb      INTEGER,           -- live heap used (Attach/JMX); NULL = unavailable
+    heap_committed_mb INTEGER,           -- live heap committed; NULL = unavailable
+    heap_max_mb       INTEGER,           -- runtime heap max from MemoryMXBean; NULL = unavailable
+    heap_sampled_at_ms INTEGER,          -- probe wall clock; set even when unavailable
+    heap_available    INTEGER,           -- 1 = live heap fields present; 0/NULL = unavailable
     status            TEXT NOT NULL
 );
 
@@ -44,8 +49,8 @@ CREATE INDEX builds_start ON builds(start_time);
 CREATE INDEX builds_project ON builds(project_path);
 
 insertSample:
-INSERT INTO process_samples(timestamp, pid, parent_pid, process_type, command_line, working_directory, project_path, cpu_percent, rss_memory_mb, max_heap_mb, status)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO process_samples(timestamp, pid, parent_pid, process_type, command_line, working_directory, project_path, cpu_percent, rss_memory_mb, max_heap_mb, heap_used_mb, heap_committed_mb, heap_max_mb, heap_sampled_at_ms, heap_available, status)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 samplesInWindow:
 SELECT rss_memory_mb, cpu_percent

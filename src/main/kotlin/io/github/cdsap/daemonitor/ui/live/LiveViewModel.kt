@@ -25,8 +25,11 @@ class LiveViewModel(
             atMs = clockMs(),
             totalRssMb = processes.sumOf { it.rssMemoryMb },
             byPid = processes.associate { it.pid to it.rssMemoryMb },
-            heapByPid = processes.mapNotNull { process ->
+            heapLimitByPid = processes.mapNotNull { process ->
                 process.maxHeapMb?.let { heapMb -> process.pid to heapMb }
+            }.toMap(),
+            heapUsedByPid = processes.mapNotNull { process ->
+                process.liveHeap?.takeIf { it.available }?.usedMb?.let { used -> process.pid to used }
             }.toMap(),
         )
         _state.value = current.copy(

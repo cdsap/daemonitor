@@ -1,9 +1,11 @@
 package io.github.cdsap.daemonitor
 
 import io.github.cdsap.daemonitor.collect.DaemonLogWatcher
+import io.github.cdsap.daemonitor.collect.JvmHeapProbe
 import io.github.cdsap.daemonitor.collect.ProcessCollector
 import io.github.cdsap.daemonitor.domain.BuildAggregator
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
+import io.github.cdsap.daemonitor.domain.model.LiveJvmHeap
 import io.github.cdsap.daemonitor.store.WatcherDatabase
 import java.nio.file.Files
 import java.nio.file.Path
@@ -18,6 +20,10 @@ import kotlin.test.assertTrue
 
 class WatcherRuntimeTest {
 
+    private fun collectorWithoutHeapAttach() = ProcessCollector(
+        heapProbe = JvmHeapProbe { _, sampledAtMs -> LiveJvmHeap.unavailable(sampledAtMs) },
+    )
+
     @Test
     fun `appended daemon log window is redacted and persisted with its build`(
         @org.junit.jupiter.api.io.TempDir tmp: Path,
@@ -28,7 +34,7 @@ class WatcherRuntimeTest {
 
         WatcherDatabase.open(tmp.resolve("watcher.db")).use { database ->
             val runtime = WatcherRuntime(
-                collector = ProcessCollector(),
+                collector = collectorWithoutHeapAttach(),
                 logWatcher = DaemonLogWatcher(gradleUserHome = tmp.resolve("gradle")),
                 aggregator = BuildAggregator(sampleProvider = database::samples),
                 builds = database,
@@ -78,7 +84,7 @@ class WatcherRuntimeTest {
         WatcherDatabase.open(tmp.resolve("watcher.db")).use { database ->
             val logWatcher = DaemonLogWatcher(gradleUserHome = tmp.resolve("gradle"))
             val runtime = WatcherRuntime(
-                collector = ProcessCollector(),
+                collector = collectorWithoutHeapAttach(),
                 logWatcher = logWatcher,
                 aggregator = BuildAggregator(sampleProvider = database::samples),
                 builds = database,

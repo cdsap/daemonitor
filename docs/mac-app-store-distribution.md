@@ -45,6 +45,7 @@ Status meanings:
 |---------|--------|-------|
 | Detect running Gradle/JVM processes | Runtime proof required / Likely incompatible | OSHI enumerates same-UID processes via sysctl/`proc_*`. App Sandbox commonly blanks or denies other-process argv; without command lines, Gradle classification degrades or fails. |
 | Read CPU and RSS | Runtime proof required | Often still available for same-UID processes, but must be confirmed under the App Store sandbox + JVM runtime entitlements. |
+| Read live JVM heap (Attach/JMX) | Likely incompatible | Requires `jdk.attach` into other same-UID JVMs. App Sandbox commonly denies attach; Daemonitor marks heap unavailable and keeps RSS / `-Xmx`. See [jvm-heap-collection.md](jvm-heap-collection.md). |
 | Read process command line / JVM arguments | Likely incompatible | `KERN_PROCARGS2` / equivalent access is typically denied in App Sandbox. No public entitlement restores it. |
 | Resolve process working directories | Likely incompatible | Same restriction family as argv; cwd is best-effort today even outside the sandbox. |
 | Read and monitor `~/.gradle/daemon/` | Requires user grant | Outside the container. Direct home access is blocked unless a temporary home-relative exception is approved (App Review risk) or the user grants folder access. |

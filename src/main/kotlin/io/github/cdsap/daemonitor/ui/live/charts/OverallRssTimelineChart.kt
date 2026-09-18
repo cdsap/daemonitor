@@ -100,7 +100,8 @@ fun OverallRssTimelineChart(
         chart.series.associate { series ->
             val color = when {
                 series.isTotal && series.metric == TimelineMetric.RSS -> accents.info
-                series.isTotal && series.metric == TimelineMetric.HEAP -> accents.info.copy(alpha = 0.85f)
+                series.isTotal && series.metric == TimelineMetric.HEAP_USED -> accents.warn.copy(alpha = 0.9f)
+                series.isTotal && series.metric == TimelineMetric.HEAP_LIMIT -> accents.info.copy(alpha = 0.85f)
                 else -> processColorByPid.getValue(series.pid!!)
             }
             series.id to color
@@ -134,7 +135,7 @@ fun OverallRssTimelineChart(
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                "Solid = RSS, dashed = Heap (-Xmx). Click a series to show or hide it.",
+                "Solid = RSS / heap used, dashed = heap limit (-Xmx). Click a series to show or hide it.",
                 style = MaterialTheme.typography.labelSmall,
                 color = labelColor,
             )
