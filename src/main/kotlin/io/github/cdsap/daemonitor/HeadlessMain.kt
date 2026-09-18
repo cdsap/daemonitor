@@ -8,6 +8,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.runBlocking
+import java.io.InputStream
 import java.io.PrintStream
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.CountDownLatch
@@ -18,6 +19,7 @@ internal object HeadlessLauncher {
         args: Array<String>,
         output: PrintStream = System.out,
         error: PrintStream = System.err,
+        input: InputStream = System.`in`,
     ): Int {
         if (args.any { it == "--help" || it == "-h" }) {
             output.println("Usage: daemonitor --headless")
@@ -30,7 +32,7 @@ internal object HeadlessLauncher {
 
         HeadlessMacMode.configure()
         return AppContainer().use { container ->
-            runHeadless(container, output, error)
+            runHeadless(container, output, error, input)
         }
     }
 
@@ -38,9 +40,16 @@ internal object HeadlessLauncher {
         container: AppContainer,
         output: PrintStream,
         error: PrintStream,
+        input: InputStream,
     ): Int {
         val runtime = container.runtime
         val retentionDays = container.settingsStore.load().retentionDays
+        val terminal = HeadlessTerminalUi(
+            output = output,
+            input = input,
+            clearScreen = isInteractiveTerminal(),
+            colorEnabled = isInteractiveTerminal(),
+        )
         val pollingThread = Thread.currentThread()
         val running = AtomicBoolean(true)
         val cleanupFinished = CountDownLatch(1)
@@ -68,11 +77,21 @@ internal object HeadlessLauncher {
         return try {
             container.database.purgeOlderThan(System.currentTimeMillis(), retentionDays)
             Runtime.getRuntime().addShutdownHook(shutdownHook)
-            output.println("Daemonitor headless collector started")
+            var lastResult = WatcherRuntime.PollResult(emptyList(), emptyList(), false)
+            var pollError: String? = null
             runBlocking {
                 while (currentCoroutineContext().isActive && running.get()) {
                     runCatching { runtime.pollOnce() }
-                        .onFailure { error.println("Daemonitor poll failed: ${it.message}") }
+                        .onSuccess {
+                            lastResult = it
+                            pollError = null
+                        }
+                        .onFailure {
+                            pollError = it.message ?: it::class.simpleName ?: "unknown error"
+                            error.println("Daemonitor poll failed: $pollError")
+                        }
+                    terminal.render(lastResult, System.currentTimeMillis(), pollError)
+                    if (terminal.shouldQuit()) break
                     delay(MonitoringConfig.DEFAULT.pollInterval)
                 }
             }
@@ -90,6 +109,10 @@ internal object HeadlessLauncher {
             }
         }
     }
+
+    private fun isInteractiveTerminal(): Boolean =
+        System.console() != null ||
+            (!System.getenv("TERM").isNullOrBlank() && System.getenv("TERM") != "dumb")
 
     private const val SHUTDOWN_TIMEOUT_SECONDS = 5L
 }

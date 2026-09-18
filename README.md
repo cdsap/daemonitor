@@ -57,9 +57,10 @@ Website: <https://cdsap.github.io/daemonitor/>
 
 ### Headless collection
 
-Keep collecting without the desktop window via the toolbar or `--headless`. Same local database and
-settings as the desktop app. On supported OSes, a tray/menu-bar icon offers **Open Daemonitor** and
-**Quit Daemonitor**.
+Keep collecting without the desktop window via the toolbar or `--headless`. On macOS, the toolbar
+opens a new Terminal window running the headless monitor; on other platforms its output remains
+attached to the launching process. Same local database and settings as the desktop app. On
+supported OSes, a tray/menu-bar icon offers **Open Daemonitor** and **Quit Daemonitor**.
 
 ### MCP access
 
@@ -119,10 +120,17 @@ while running.
 ./gradlew run
 ```
 
-Headless (no Compose / display):
+Headless terminal monitor (no Compose / display):
 
 ```bash
 ./gradlew runHeadless
+```
+
+The headless mode shows active Gradle processes, RSS, CPU, uptime, and project, refreshing every two
+seconds. Press `q` to quit. It is also useful over SSH:
+
+```bash
+ssh -t build-machine daemonitor --headless
 ```
 
 Packaged launchers also accept `--headless`. Desktop and headless share the database and retention
