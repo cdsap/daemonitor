@@ -11,6 +11,49 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  cli-package:
+    name: Package standalone CLI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build CLI distribution
+        run: ./gradlew :cli:test :cli:distZip --no-daemon --stacktrace
+
+      - name: Verify CLI archive excludes desktop runtime
+        run: |
+          archive=(cli/build/distributions/*.zip)
+          if (( ${#archive[@]} != 1 )); then
+            echo "Expected one CLI archive, found ${#archive[@]}" >&2
+            exit 1
+          fi
+          listing=$(unzip -l "${archive[0]}")
+          for forbidden in compose skiko swing; do
+            if grep -Eiq "$forbidden" <<< "$listing"; then
+              echo "Standalone CLI archive contains forbidden desktop runtime: $forbidden" >&2
+              exit 1
+            fi
+          done
+          echo "### Standalone CLI" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Archive: ${archive[0]}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload CLI archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: daemonitor-cli-${{ github.sha }}
+          path: cli/build/distributions/*.zip
+          if-no-files-found: error
+          retention-days: 14
+
   test:
     name: Test (${{ matrix.os }})
     strategy:
