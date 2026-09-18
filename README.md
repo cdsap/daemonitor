@@ -136,6 +136,19 @@ ssh -t build-machine daemonitor --headless
 Packaged launchers also accept `--headless`. Desktop and headless share the database and retention
 setting. Stop a source-run headless process with `Ctrl+C`.
 
+### Standalone CLI
+
+The standalone terminal distribution is built without Compose or desktop UI dependencies:
+
+```bash
+./gradlew :cli:run --args="--help"
+./gradlew :cli:installDist
+build/install/daemonitor-cli/bin/daemonitor-cli
+```
+
+Use `--plain` or `--no-color` for redirected output. The CLI and desktop application share the
+same core runtime, database format, and retention settings.
+
 ## Connect MCP
 
 From the desktop app:

@@ -8,7 +8,7 @@ import java.time.Instant
 import java.util.Locale
 
 /** Terminal presentation for the UI-independent headless monitoring runtime. */
-internal class HeadlessTerminalUi(
+class HeadlessTerminalUi(
     private val output: PrintStream,
     private val input: InputStream,
     private val clearScreen: Boolean,
@@ -42,7 +42,7 @@ internal class HeadlessTerminalUi(
     }.getOrDefault(false)
 }
 
-internal object HeadlessTerminalRenderer {
+object HeadlessTerminalRenderer {
     fun render(
         result: WatcherRuntime.PollResult,
         updatedAtMs: Long,
