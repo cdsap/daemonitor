@@ -50,4 +50,30 @@ class CliMainTest {
         assertTrue(error.toString().contains("Unknown option: --wat"))
         assertTrue(output.toString().contains("Use --help for usage."))
     }
+
+    @Test
+    fun `configuration options are documented`() {
+        val output = ByteArrayOutputStream()
+
+        assertEquals(0, CliLauncher.run(arrayOf("--help"), output = PrintStream(output)))
+        val usage = output.toString()
+        assertTrue(usage.contains("--db PATH"))
+        assertTrue(usage.contains("--poll-interval SECONDS"))
+        assertTrue(usage.contains("--retention DAYS"))
+    }
+
+    @Test
+    fun `invalid configuration values fail before starting the runtime`() {
+        val output = ByteArrayOutputStream()
+        val error = ByteArrayOutputStream()
+
+        val exitCode = CliLauncher.run(
+            args = arrayOf("--poll-interval", "zero"),
+            output = PrintStream(output),
+            error = PrintStream(error),
+        )
+
+        assertEquals(2, exitCode)
+        assertTrue(error.toString().contains("Invalid value for --poll-interval"))
+    }
 }
