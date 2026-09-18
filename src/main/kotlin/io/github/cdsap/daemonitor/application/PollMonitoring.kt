@@ -7,13 +7,13 @@ import io.github.cdsap.daemonitor.domain.model.ProcessType
 
 /**
  * Application polling use case: collect processes and daemon logs through ports, persist samples
- * and builds through repositories, and correlate builds with [BuildAggregator].
+ * and builds through write ports, and correlate builds with [BuildAggregator].
  */
 class PollMonitoring(
     private val processSource: ProcessSource,
     private val logSource: DaemonLogSource,
-    private val builds: BuildRepository,
-    private val samples: ProcessSampleRepository,
+    private val builds: BuildWriter,
+    private val samples: ProcessSampleWriter,
     private val aggregator: BuildAggregator,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {

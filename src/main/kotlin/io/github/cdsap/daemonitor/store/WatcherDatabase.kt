@@ -4,8 +4,8 @@ import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
-import io.github.cdsap.daemonitor.application.BuildRepository as ApplicationBuildRepository
-import io.github.cdsap.daemonitor.application.ProcessSampleRepository as ApplicationProcessSampleRepository
+import io.github.cdsap.daemonitor.application.BuildWriter
+import io.github.cdsap.daemonitor.application.ProcessSampleWriter
 import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
@@ -45,8 +45,8 @@ class WatcherDatabase private constructor(
     private val driver: SqlDriver,
     private val ioDispatcher: CoroutineDispatcher,
 ) : AutoCloseable,
-    ApplicationBuildRepository,
-    ApplicationProcessSampleRepository,
+    BuildWriter,
+    ProcessSampleWriter,
     PersistenceBuildRepository,
     PersistenceProcessSampleRepository,
     RetentionRepository {

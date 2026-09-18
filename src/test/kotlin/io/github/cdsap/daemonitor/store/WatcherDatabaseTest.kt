@@ -1,5 +1,7 @@
 package io.github.cdsap.daemonitor.store
 
+import io.github.cdsap.daemonitor.application.BuildWriter
+import io.github.cdsap.daemonitor.application.ProcessSampleWriter
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
@@ -130,13 +132,15 @@ class WatcherDatabaseTest {
     }
 
     @Test
-    fun `repository ports expose build sample and retention operations`(@TempDirArg tmp: Path) {
+    fun `write and query ports expose build sample and retention operations`(@TempDirArg tmp: Path) {
         val database = WatcherDatabase.open(tmp.resolve("watcher.db"))
+        val buildWriter: BuildWriter = database
+        val sampleWriter: ProcessSampleWriter = database
         val builds: BuildRepository = database
         val samples: ProcessSampleRepository = database
         val retention: RetentionRepository = database
 
-        samples.save(
+        sampleWriter.save(
             GradleProcess(
                 pid = 11,
                 parentPid = 1,
@@ -154,7 +158,7 @@ class WatcherDatabaseTest {
             ),
             timestampMs = 5_000,
         )
-        builds.save(build("port-build", 5_000, project = "/repo"))
+        buildWriter.save(build("port-build", 5_000, project = "/repo"))
 
         assertEquals(listOf("port-build"), builds.recent().map { it.buildId })
         assertEquals(listOf("/repo"), builds.distinctProjects())

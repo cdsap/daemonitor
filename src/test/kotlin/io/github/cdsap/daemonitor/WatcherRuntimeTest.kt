@@ -1,5 +1,7 @@
 package io.github.cdsap.daemonitor
 
+import io.github.cdsap.daemonitor.application.BuildWriter
+import io.github.cdsap.daemonitor.application.ProcessSampleWriter
 import io.github.cdsap.daemonitor.collect.DaemonLogWatcher
 import io.github.cdsap.daemonitor.collect.ProcessCollector
 import io.github.cdsap.daemonitor.domain.BuildAggregator
@@ -27,12 +29,14 @@ class WatcherRuntimeTest {
         log.writeText("outside before window -Ptoken=before-secret\n")
 
         WatcherDatabase.open(tmp.resolve("watcher.db")).use { database ->
+            val builds: BuildWriter = database
+            val processSamples: ProcessSampleWriter = database
             val runtime = WatcherRuntime(
                 collector = ProcessCollector(),
                 logWatcher = DaemonLogWatcher(gradleUserHome = tmp.resolve("gradle")),
                 aggregator = BuildAggregator(sampleProvider = database::samples),
-                builds = database,
-                processSamples = database,
+                builds = builds,
+                processSamples = processSamples,
             )
 
             runtime.pollOnce() // Establish the incremental-read offset.
@@ -77,12 +81,14 @@ class WatcherRuntimeTest {
 
         WatcherDatabase.open(tmp.resolve("watcher.db")).use { database ->
             val logWatcher = DaemonLogWatcher(gradleUserHome = tmp.resolve("gradle"))
+            val builds: BuildWriter = database
+            val processSamples: ProcessSampleWriter = database
             val runtime = WatcherRuntime(
                 collector = ProcessCollector(),
                 logWatcher = logWatcher,
                 aggregator = BuildAggregator(sampleProvider = database::samples),
-                builds = database,
-                processSamples = database,
+                builds = builds,
+                processSamples = processSamples,
             )
 
             val changed = runtime.processForBuilds(logWatcher.discover(), activeDaemonPids = emptySet())
