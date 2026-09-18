@@ -57,9 +57,10 @@ Website: <https://cdsap.github.io/daemonitor/>
 
 ### Headless collection
 
-Keep collecting without the desktop window via the toolbar or `--headless`. Same local database and
-settings as the desktop app. On supported OSes, a tray/menu-bar icon offers **Open Daemonitor** and
-**Quit Daemonitor**.
+Keep collecting without the desktop window via the toolbar or `--headless`. On macOS, the toolbar
+opens a new Terminal window running the headless monitor; on other platforms its output remains
+attached to the launching process. Same local database and settings as the desktop app. On
+supported OSes, a tray/menu-bar icon offers **Open Daemonitor** and **Quit Daemonitor**.
 
 ### MCP access
 

@@ -119,4 +119,15 @@ class RelaunchCommandTest {
             headless,
         )
     }
+
+    @Test
+    fun `shellCommand safely quotes terminal arguments`() {
+        assertEquals(
+            "'/Applications/Daemonitor.app/Contents/MacOS/Daemonitor' '--headless'",
+            RelaunchCommand.shellCommand(
+                listOf("/Applications/Daemonitor.app/Contents/MacOS/Daemonitor", "--headless"),
+            ),
+        )
+        assertEquals("'a'\\''b'", RelaunchCommand.shellCommand(listOf("a'b")))
+    }
 }

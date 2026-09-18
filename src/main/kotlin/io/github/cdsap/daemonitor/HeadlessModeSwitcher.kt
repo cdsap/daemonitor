@@ -3,7 +3,7 @@ package io.github.cdsap.daemonitor
 internal object HeadlessModeSwitcher {
     private val options = RelaunchCommand.Options(extraArgs = listOf("--headless"))
 
-    fun launch(): Process = RelaunchCommand.launch(options)
+    fun launch(): Process = RelaunchCommand.launchInTerminal(options)
 
     internal fun commandForCurrentProcess(
         executable: String?,

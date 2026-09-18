@@ -23,6 +23,24 @@ internal object RelaunchCommand {
         )
     }
 
+    /** Opens a visible macOS Terminal session for terminal-oriented modes. */
+    fun launchInTerminal(options: Options): Process {
+        val process = currentProcess()
+        val command = buildCommand(
+            executable = process.executable,
+            javaHome = process.javaHome,
+            classpath = process.classpath,
+            osName = System.getProperty("os.name"),
+            options = options,
+        )
+        if (!isMacOs(System.getProperty("os.name"))) return start(command)
+
+        val script = "tell application \"Terminal\" to do script \"${appleScriptString(shellCommand(command))}\""
+        return ProcessBuilder("/usr/bin/osascript", "-e", script)
+            .redirectError(ProcessBuilder.Redirect.INHERIT)
+            .start()
+    }
+
     private fun start(command: List<String>): Process =
         ProcessBuilder(command)
             .directory(File(System.getProperty("user.dir")))
@@ -83,6 +101,14 @@ internal object RelaunchCommand {
             "${javaHome.trimEnd('/')}/bin/$executableName"
         }
     }
+
+    internal fun shellCommand(command: List<String>): String =
+        command.joinToString(" ") { argument ->
+            "'${argument.replace("'", "'\\''")}'"
+        }
+
+    private fun appleScriptString(value: String): String =
+        value.replace("\\", "\\\\").replace("\"", "\\\"")
 
     private fun isMacOs(osName: String): Boolean = osName.lowercase().contains("mac")
 

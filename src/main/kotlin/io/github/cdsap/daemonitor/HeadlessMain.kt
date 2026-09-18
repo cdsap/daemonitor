@@ -48,6 +48,7 @@ internal object HeadlessLauncher {
             output = output,
             input = input,
             clearScreen = isInteractiveTerminal(),
+            colorEnabled = isInteractiveTerminal(),
         )
         val pollingThread = Thread.currentThread()
         val running = AtomicBoolean(true)

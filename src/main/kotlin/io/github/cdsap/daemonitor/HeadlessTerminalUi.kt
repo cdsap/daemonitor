@@ -12,6 +12,7 @@ internal class HeadlessTerminalUi(
     private val output: PrintStream,
     private val input: InputStream,
     private val clearScreen: Boolean,
+    private val colorEnabled: Boolean = false,
 ) {
     fun render(
         result: WatcherRuntime.PollResult,
@@ -24,6 +25,7 @@ internal class HeadlessTerminalUi(
                 updatedAtMs = updatedAtMs,
                 error = error,
                 clearScreen = clearScreen,
+                colorEnabled = colorEnabled,
             ),
         )
         output.flush()
@@ -46,30 +48,33 @@ internal object HeadlessTerminalRenderer {
         updatedAtMs: Long,
         error: String? = null,
         clearScreen: Boolean = false,
+        colorEnabled: Boolean = false,
     ): String = buildString {
-        if (clearScreen) append("\u001B[H\u001B[2J")
-        appendLine("DAEMONITOR — HEADLESS")
+        if (clearScreen) append(CLEAR)
+        appendLine(ansi("DAEMONITOR — HEADLESS", colorEnabled, BOLD, CYAN))
         appendLine(
             "Updated ${Instant.ofEpochMilli(updatedAtMs)}  |  " +
-                "${result.processes.size} processes  |  ${result.processes.sumOf { it.rssMemoryMb }} MB RSS  |  " +
+                "${result.processes.size} processes  |  " +
+                ansi("${result.processes.sumOf { it.rssMemoryMb }} MB RSS", colorEnabled, YELLOW) + "  |  " +
                 "${result.daemonLogs.size} daemon logs",
         )
-        if (error != null) appendLine("Last poll failed: $error")
+        if (error != null) appendLine(ansi("Last poll failed: $error", colorEnabled, BOLD, RED))
         appendLine()
 
         if (result.processes.isEmpty()) {
             appendLine("No Gradle-related processes are running.")
         } else {
-            appendLine("TYPE             PID     RSS       CPU   UPTIME   PROJECT")
-            appendLine("────────────────────────────────────────────────────────────")
+            appendLine(ansi("TYPE             PID     RSS       HEAP LIMIT   CPU   UPTIME   PROJECT", colorEnabled, BOLD))
+            appendLine("──────────────────────────────────────────────────────────────────────")
             result.processes
                 .sortedWith(compareByDescending<GradleProcess> { it.rssMemoryMb }.thenBy { it.pid })
                 .forEach { process ->
                     appendLine(
                         "${process.type.displayName().padEnd(16)} " +
                             "${process.pid.toString().padStart(6)}  " +
-                            "${(process.rssMemoryMb.toString() + " MB").padStart(8)}  " +
-                            "${process.cpuPercent?.let { String.format(Locale.ROOT, "%3.0f%%", it) } ?: "  —"}  " +
+                        "${ansi((process.rssMemoryMb.toString() + " MB").padStart(8), colorEnabled, YELLOW)}  " +
+                            "${ansi((process.maxHeapMb?.let { "$it MB" } ?: "—").padStart(10), colorEnabled, MAGENTA)}  " +
+                            "${cpuText(process.cpuPercent, colorEnabled)}  " +
                             "${uptime(process.startTimeMs, updatedAtMs).padStart(7)}  " +
                             projectName(process).take(32),
                     )
@@ -102,4 +107,29 @@ internal object HeadlessTerminalRenderer {
         ProcessType.TEST_WORKER -> "Test worker"
         ProcessType.JAVA_GRADLE_RELATED -> "Java (Gradle)"
     }
+
+    private fun cpuText(cpuPercent: Double?, colorEnabled: Boolean): String {
+        val text = cpuPercent?.let { String.format(Locale.ROOT, "%3.0f%%", it) } ?: "  —"
+        val color = when {
+            cpuPercent == null -> DIM
+            cpuPercent >= 80.0 -> RED
+            cpuPercent >= 40.0 -> YELLOW
+            else -> GREEN
+        }
+        return ansi(text, colorEnabled, color)
+    }
+
+    private fun ansi(text: String, enabled: Boolean, vararg codes: String): String =
+        if (enabled) codes.joinToString(prefix = ESC, postfix = "m") + text + RESET else text
+
+    private const val ESC = "\u001B["
+    private const val RESET = "\u001B[0m"
+    private const val CLEAR = "\u001B[H\u001B[2J"
+    private const val BOLD = "1"
+    private const val DIM = "2"
+    private const val RED = "31"
+    private const val GREEN = "32"
+    private const val YELLOW = "33"
+    private const val CYAN = "36"
+    private const val MAGENTA = "35"
 }

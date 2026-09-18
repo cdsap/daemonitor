@@ -15,8 +15,8 @@ class HeadlessTerminalUiTest {
         val output = HeadlessTerminalRenderer.render(
             result = WatcherRuntime.PollResult(
                 processes = listOf(
-                    process(pid = 10, rssMb = 256, project = "small"),
-                    process(pid = 11, rssMb = 1_024, project = "large"),
+                    process(pid = 10, rssMb = 256, heapLimitMb = 512, project = "small"),
+                    process(pid = 11, rssMb = 1_024, heapLimitMb = 2_048, project = "large"),
                 ),
                 daemonLogs = emptyList(),
                 buildsChanged = false,
@@ -28,6 +28,8 @@ class HeadlessTerminalUiTest {
         assertTrue(output.contains("2 processes"))
         assertTrue(output.contains("1280 MB RSS"))
         assertTrue(output.contains("1024 MB"))
+        assertTrue(output.contains("HEAP LIMIT"))
+        assertTrue(output.contains("2048 MB"))
         assertTrue(output.indexOf("large") < output.indexOf("small"))
         assertTrue(output.contains("Press q to quit"))
     }
@@ -45,6 +47,21 @@ class HeadlessTerminalUiTest {
     }
 
     @Test
+    fun `renderer adds ansi colors only when enabled`() {
+        val result = WatcherRuntime.PollResult(
+            processes = listOf(process(pid = 10, rssMb = 256, heapLimitMb = 512, project = "small")),
+            daemonLogs = emptyList(),
+            buildsChanged = false,
+        )
+
+        val plain = HeadlessTerminalRenderer.render(result, updatedAtMs = 1_000L)
+        val colored = HeadlessTerminalRenderer.render(result, updatedAtMs = 1_000L, colorEnabled = true)
+
+        assertFalse(plain.contains("\u001B["))
+        assertTrue(colored.contains("\u001B["))
+    }
+
+    @Test
     fun `input adapter quits on q without blocking`() {
         val output = ByteArrayOutputStream()
         val terminal = HeadlessTerminalUi(
@@ -57,7 +74,7 @@ class HeadlessTerminalUiTest {
         assertFalse(terminal.shouldQuit())
     }
 
-    private fun process(pid: Long, rssMb: Long, project: String) = GradleProcess(
+    private fun process(pid: Long, rssMb: Long, heapLimitMb: Long? = null, project: String) = GradleProcess(
         pid = pid,
         parentPid = 1,
         type = ProcessType.GRADLE_DAEMON,
@@ -66,7 +83,7 @@ class HeadlessTerminalUiTest {
         projectPath = "/tmp/$project",
         cpuPercent = 12.0,
         rssMemoryMb = rssMb,
-        maxHeapMb = null,
+        maxHeapMb = heapLimitMb,
         minHeapMb = null,
         gc = null,
         startTimeMs = 0L,
