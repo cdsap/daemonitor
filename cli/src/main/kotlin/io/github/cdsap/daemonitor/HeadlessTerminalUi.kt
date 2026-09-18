@@ -82,7 +82,7 @@ object HeadlessTerminalRenderer {
         }
 
         appendLine()
-        appendLine("Press q to quit · refreshes every 2 seconds")
+        appendLine("Press q (or q + Enter) to quit · refreshes every 2 seconds")
     }
 
     private fun projectName(process: GradleProcess): String =
