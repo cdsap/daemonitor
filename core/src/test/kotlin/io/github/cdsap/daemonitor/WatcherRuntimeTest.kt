@@ -34,11 +34,11 @@ class WatcherRuntimeTest {
 
         WatcherDatabase.open(tmp.resolve("watcher.db")).use { database ->
             val runtime = WatcherRuntime(
-                collector = collectorWithoutHeapAttach(),
-                logWatcher = DaemonLogWatcher(gradleUserHome = tmp.resolve("gradle")),
+                processSource = collectorWithoutHeapAttach(),
+                logSource = DaemonLogWatcher(gradleUserHome = tmp.resolve("gradle")),
                 aggregator = BuildAggregator(sampleProvider = database::samples),
                 builds = database,
-                processSamples = database,
+                samples = database,
             )
 
             runtime.pollOnce() // Establish the incremental-read offset.
@@ -84,11 +84,11 @@ class WatcherRuntimeTest {
         WatcherDatabase.open(tmp.resolve("watcher.db")).use { database ->
             val logWatcher = DaemonLogWatcher(gradleUserHome = tmp.resolve("gradle"))
             val runtime = WatcherRuntime(
-                collector = collectorWithoutHeapAttach(),
-                logWatcher = logWatcher,
+                processSource = collectorWithoutHeapAttach(),
+                logSource = logWatcher,
                 aggregator = BuildAggregator(sampleProvider = database::samples),
                 builds = database,
-                processSamples = database,
+                samples = database,
             )
 
             val changed = runtime.processForBuilds(logWatcher.discover(), activeDaemonPids = emptySet())
