@@ -17,17 +17,30 @@ import oshi.software.os.OSProcess
  * cross-user credential-reading target.
  *
  * Implements [ProcessSource] so application polling depends on the port, not OSHI.
+ *
+ * Heap attachment runs only after classification retains a Gradle/Kotlin daemon snapshot
+ * (issue #168 / #159): ordinary same-user processes are never probed.
  */
-class ProcessCollector(
-    private val systemInfo: SystemInfo = SystemInfo(),
-    private val clock: () -> Long = System::currentTimeMillis,
-    heapProbe: JvmHeapProbe = AttachJvmHeapProbe(),
+class ProcessCollector internal constructor(
+    private val clock: () -> Long,
+    heapProbe: JvmHeapProbe,
+    private val logicalProcessors: Int,
+    private val enumerateProcesses: () -> List<ProcessInfo>,
     heapRefreshIntervalMs: Long = JvmHeapUsageCollector.DEFAULT_REFRESH_INTERVAL_MS,
 ) : ProcessSource {
-    private val os = systemInfo.operatingSystem
-    private val logicalProcessors = systemInfo.hardware.processor.logicalProcessorCount
-    private val selfPid: Int = os.processId
-    private val selfUid: String? = runCatching { os.getProcess(selfPid).userID }.getOrNull()
+    constructor(
+        systemInfo: SystemInfo = SystemInfo(),
+        clock: () -> Long = System::currentTimeMillis,
+        heapProbe: JvmHeapProbe = AttachJvmHeapProbe(),
+        heapRefreshIntervalMs: Long = JvmHeapUsageCollector.DEFAULT_REFRESH_INTERVAL_MS,
+    ) : this(
+        clock = clock,
+        heapProbe = heapProbe,
+        logicalProcessors = systemInfo.hardware.processor.logicalProcessorCount,
+        enumerateProcesses = oshiEnumerate(systemInfo),
+        heapRefreshIntervalMs = heapRefreshIntervalMs,
+    )
+
     private val heapUsageCollector = JvmHeapUsageCollector(
         probe = heapProbe,
         clock = clock,
@@ -42,13 +55,11 @@ class ProcessCollector(
         val seen = mutableSetOf<ProcessIdentity>()
         val result = mutableListOf<GradleProcess>()
 
-        for (p in os.processes) {
-            if (p.processID == selfPid) continue // don't monitor ourselves
-            if (selfUid != null && p.userID != selfUid) continue
-            val info = p.toProcessInfo()
+        for (info in enumerateProcesses()) {
             val key = ProcessIdentity(info.pid, info.startTimeMs)
             seen += key
             val prior = priorSamples[key]
+            // Classify before any heap attachment (issue #168).
             val snapshot = ProcessSnapshotBuilder.build(info, prior, now, logicalProcessors)
             priorSamples[key] = PriorSample(info.cpuTimeMs, now)
             if (snapshot != null) {
@@ -72,7 +83,22 @@ class ProcessCollector(
     /** Compatibility alias for [currentProcesses]. */
     fun poll(): List<GradleProcess> = currentProcesses()
 
-    private fun OSProcess.toProcessInfo(): ProcessInfo = OshiProcessInfo(this)
+    private companion object {
+        private fun oshiEnumerate(systemInfo: SystemInfo): () -> List<ProcessInfo> {
+            val os = systemInfo.operatingSystem
+            val selfPid: Int = os.processId
+            val selfUid: String? = runCatching { os.getProcess(selfPid).userID }.getOrNull()
+            return {
+                buildList {
+                    for (p in os.processes) {
+                        if (p.processID == selfPid) continue // don't monitor ourselves
+                        if (selfUid != null && p.userID != selfUid) continue
+                        add(OshiProcessInfo(p))
+                    }
+                }
+            }
+        }
+    }
 
     private class OshiProcessInfo(private val p: OSProcess) : ProcessInfo {
         override val pid: Long get() = p.processID.toLong()
