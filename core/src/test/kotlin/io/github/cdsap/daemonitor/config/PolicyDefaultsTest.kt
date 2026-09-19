@@ -31,4 +31,12 @@ class PolicyDefaultsTest {
         assertEquals(90, policy.clamp(9_999))
         assertEquals(30, policy.clamp(30))
     }
+
+    @Test
+    fun `retention cutoff is now minus clamped days in millis`() {
+        val policy = RetentionPolicy.DEFAULT
+        val now = 100L * RetentionPolicy.MILLIS_PER_DAY
+        assertEquals(now - 7 * RetentionPolicy.MILLIS_PER_DAY, policy.cutoffEpochMs(now, retentionDays = 7))
+        assertEquals(now - policy.maxDays * RetentionPolicy.MILLIS_PER_DAY, policy.cutoffEpochMs(now, retentionDays = 9_999))
+    }
 }

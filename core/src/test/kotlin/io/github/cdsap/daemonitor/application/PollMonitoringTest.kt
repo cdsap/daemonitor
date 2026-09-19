@@ -2,6 +2,7 @@ package io.github.cdsap.daemonitor.application
 
 import io.github.cdsap.daemonitor.collect.DaemonLog
 import io.github.cdsap.daemonitor.collect.DaemonLogLine
+import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.domain.BuildAggregator
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.BuildStart
@@ -13,6 +14,7 @@ import io.github.cdsap.daemonitor.domain.model.ProcessType
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class PollMonitoringTest {
@@ -54,6 +56,40 @@ class PollMonitoringTest {
         assertEquals(1, processSource.calls)
         assertEquals(1, logSource.discoverCalls)
         assertEquals(listOf(log), logSource.readCalls)
+    }
+
+    @Test
+    fun `log replay does not persist builds older than retention`() {
+        val day = RetentionPolicy.MILLIS_PER_DAY
+        val now = 100L * day
+        val oldStart = now - 8 * day
+        val log = DaemonLog(pid = 42, gradleVersion = "8.14.3", path = Path.of("/tmp/daemon-42.out.log"))
+        val logSource = FakeDaemonLogSource(
+            logs = listOf(log),
+            linesByPid = mapOf(
+                42L to listOf(
+                    DaemonLogLine("busy", BusyMark(oldStart)),
+                    DaemonLogLine("start", BuildStart(oldStart + 1, "aged-build", "/project")),
+                    DaemonLogLine("ok", Outcome(success = true, durationSeconds = 1.0)),
+                    DaemonLogLine("idle", IdleMark(oldStart + 1_000)),
+                ),
+            ),
+        )
+        val builds = RecordingBuildRepository()
+        val monitoring = PollMonitoring(
+            processSource = FakeProcessSource(emptyList()),
+            logSource = logSource,
+            builds = builds,
+            samples = RecordingSampleRepository(),
+            aggregator = BuildAggregator(),
+            retentionDays = { 7 },
+            clock = { now },
+        )
+
+        val result = monitoring.pollOnce()
+
+        assertFalse(result.buildsChanged)
+        assertTrue(builds.saved.isEmpty())
     }
 
     @Test
