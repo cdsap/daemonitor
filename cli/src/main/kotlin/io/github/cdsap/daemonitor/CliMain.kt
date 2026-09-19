@@ -49,6 +49,7 @@ internal object CliLauncher {
     ): Int {
         val interactive = isInteractiveTerminal()
         val colorEnabled = options.colorEnabled ?: interactive
+        val pollInterval = options.pollInterval ?: MonitoringConfig.DEFAULT.pollInterval
         val terminal = if (options.collectOnly) {
             null
         } else {
@@ -57,6 +58,7 @@ internal object CliLauncher {
                 input = input,
                 clearScreen = interactive && colorEnabled,
                 colorEnabled = colorEnabled,
+                pollInterval = pollInterval,
             )
         }
         val running = AtomicBoolean(true)
@@ -87,7 +89,7 @@ internal object CliLauncher {
                             error.println("Daemonitor poll failed: $pollError")
                         }
                     terminal?.render(lastResult, System.currentTimeMillis(), pollError)
-                    delay(options.pollInterval ?: MonitoringConfig.DEFAULT.pollInterval)
+                    delay(pollInterval)
                 }
             }
             0
