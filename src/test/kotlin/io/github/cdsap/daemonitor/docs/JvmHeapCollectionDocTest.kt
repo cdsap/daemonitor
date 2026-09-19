@@ -9,6 +9,8 @@ class JvmHeapCollectionDocTest {
     private val documentPath = Path.of("docs/jvm-heap-collection.md")
     private val document = Files.readString(documentPath)
     private val buildFile = Files.readString(Path.of("build.gradle.kts"))
+    private val smokeScriptPath = Path.of("scripts/smoke-test-native-distribution.sh")
+    private val smokeScript = Files.readString(smokeScriptPath)
 
     @Test
     fun `heap collection doc covers overhead and failure behavior`() {
@@ -30,8 +32,45 @@ class JvmHeapCollectionDocTest {
 
     @Test
     fun `native packaging includes attach and management modules`() {
-        assertTrue(buildFile.contains("jdk.attach"), buildFile)
-        assertTrue(buildFile.contains("java.management"), buildFile)
-        assertTrue(buildFile.contains("jdk.management.agent"), buildFile)
+        val nativeModules = buildFile
+            .substringAfter("nativeDistributions")
+            .substringAfter("modules(")
+            .lineSequence()
+            .takeWhile { !it.trimStart().startsWith(")") }
+            .joinToString("\n")
+        listOf("jdk.attach", "java.management", "jdk.management.agent").forEach { module ->
+            assertTrue(nativeModules.contains("\"$module\""), nativeModules)
+        }
+    }
+
+    @Test
+    fun `native smoke test verifies packaged runtime includes jdk_attach and heap columns`() {
+        assertTrue(Files.isRegularFile(smokeScriptPath), "$smokeScriptPath should be checked in")
+        assertTrue(Files.isExecutable(smokeScriptPath), "$smokeScriptPath should be executable")
+        listOf(
+            "jdk.attach",
+            "HEAP USED",
+            "HEAP CMT",
+            "HEAP LIMIT",
+            "DAEMONITOR — HEADLESS",
+            "--headless --help",
+        ).forEach { required ->
+            assertTrue(smokeScript.contains(required), "$smokeScriptPath should include: $required")
+        }
+
+        listOf(
+            Path.of(".github/workflows/ci.yml"),
+            Path.of(".github/workflows/release.yml"),
+        ).forEach { workflowPath ->
+            val workflow = Files.readString(workflowPath)
+            assertTrue(
+                workflow.contains("scripts/smoke-test-native-distribution.sh"),
+                "$workflowPath should invoke the native distribution smoke test",
+            )
+            assertTrue(
+                workflow.contains("\${{ matrix.app_path }}"),
+                "$workflowPath should pass the platform app image path",
+            )
+        }
     }
 }

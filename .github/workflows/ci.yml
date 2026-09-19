@@ -65,16 +65,19 @@ jobs:
             package_task: packageDeb
             package_glob: build/compose/binaries/main/deb/*.deb
             launcher: build/compose/binaries/main/app/Daemonitor/bin/Daemonitor
+            app_path: build/compose/binaries/main/app/Daemonitor
           - os: windows-latest
             platform: windows
             package_task: packageMsi
             package_glob: build/compose/binaries/main/msi/*.msi
             launcher: build/compose/binaries/main/app/Daemonitor/Daemonitor.exe
+            app_path: build/compose/binaries/main/app/Daemonitor
           - os: macos-latest
             platform: macos
             package_task: packageDmg
             package_glob: build/compose/binaries/main/dmg/*.dmg
             launcher: build/compose/binaries/main/app/Daemonitor.app/Contents/MacOS/Daemonitor
+            app_path: build/compose/binaries/main/app/Daemonitor.app
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -108,9 +111,9 @@ jobs:
 
       - name: Smoke test packaged launcher
         run: |
-          output=$("${{ matrix.launcher }}" --headless --help)
-          printf '%s\n' "$output"
-          [[ "$output" == *"Usage: daemonitor --headless"* ]]
+          ./scripts/smoke-test-native-distribution.sh \
+            "${{ matrix.launcher }}" \
+            "${{ matrix.app_path }}"
 
       - name: Read package version
         id: package-version
