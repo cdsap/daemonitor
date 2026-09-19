@@ -139,40 +139,49 @@ class WatcherDatabaseTest {
     @Test
     fun `purge removes rows older than retention window`(@TempDirArg tmp: Path) = runTest {
         val db = WatcherDatabase.open(tmp.resolve("watcher.db"))
-        val now = 100L * 24 * 60 * 60 * 1000 // day 100
-        val old = now - 8L * 24 * 60 * 60 * 1000 // 8 days ago (> 7d retention)
-        val recent = now - 1L * 24 * 60 * 60 * 1000 // 1 day ago
-        db.save(build("old", old))
-        db.save(build("recent", recent))
-        db.purgeOlderThan(now, retentionDays = 7)
-        val rows = db.buildsFlow().first()
-        assertEquals(listOf("recent"), rows.map { it.buildId })
+        try {
+            val now = 100L * 24 * 60 * 60 * 1000 // day 100
+            val old = now - 8L * 24 * 60 * 60 * 1000 // 8 days ago (> 7d retention)
+            val recent = now - 1L * 24 * 60 * 60 * 1000 // 1 day ago
+            db.save(build("old", old))
+            db.save(build("recent", recent))
+            db.purgeOlderThan(now, retentionDays = 7)
+            val rows = db.buildsFlow().first()
+            assertEquals(listOf("recent"), rows.map { it.buildId })
+        } finally {
+            // VACUUM/incremental_vacuum keep Windows file locks until the JDBC driver closes.
+            db.close()
+        }
     }
 
     @Test
     fun `purge compacts released sqlite pages`(@TempDirArg tmp: Path) {
         val path = tmp.resolve("watcher.db")
         val db = WatcherDatabase.open(path)
-        val now = 100L * 24 * 60 * 60 * 1000
-        val old = now - 8L * 24 * 60 * 60 * 1000
+        try {
+            val now = 100L * 24 * 60 * 60 * 1000
+            val old = now - 8L * 24 * 60 * 60 * 1000
 
-        repeat(500) { index ->
-            db.save(
-                sample(timestampMs = old + index, commandLine = "java GradleDaemon --sample=$index"),
-                old + index,
+            repeat(500) { index ->
+                db.save(
+                    sample(timestampMs = old + index, commandLine = "java GradleDaemon --sample=$index"),
+                    old + index,
+                )
+            }
+            val sizeBeforePurge = Files.size(path)
+
+            db.purgeOlderThan(now, retentionDays = 7)
+
+            val sizeAfterPurge = Files.size(path)
+            assertTrue(
+                sizeAfterPurge < sizeBeforePurge,
+                "database did not shrink: $sizeBeforePurge -> $sizeAfterPurge",
             )
+            assertTrue(db.freelistPageCount() < 100L, "freelist remains unexpectedly large")
+            assertEquals(2L, db.autoVacuumMode(), "new databases should use incremental auto_vacuum")
+        } finally {
+            db.close()
         }
-        val sizeBeforePurge = Files.size(path)
-
-        db.purgeOlderThan(now, retentionDays = 7)
-
-        val sizeAfterPurge = Files.size(path)
-        assertTrue(
-            sizeAfterPurge < sizeBeforePurge,
-            "database did not shrink: $sizeBeforePurge -> $sizeAfterPurge",
-        )
-        assertTrue(db.freelistPageCount() < 100L, "freelist remains unexpectedly large")
-        assertEquals(2L, db.autoVacuumMode(), "new databases should use incremental auto_vacuum")
     }
 
     @Test
@@ -184,26 +193,30 @@ class WatcherDatabaseTest {
         }
 
         val db = WatcherDatabase.open(path)
-        assertEquals(0L, db.autoVacuumMode(), "legacy fixture should start with auto_vacuum=NONE")
+        try {
+            assertEquals(0L, db.autoVacuumMode(), "legacy fixture should start with auto_vacuum=NONE")
 
-        val now = 100L * 24 * 60 * 60 * 1000
-        val old = now - 8L * 24 * 60 * 60 * 1000
-        repeat(500) { index ->
-            db.save(
-                sample(timestampMs = old + index, commandLine = "java GradleDaemon --legacy=$index"),
-                old + index,
+            val now = 100L * 24 * 60 * 60 * 1000
+            val old = now - 8L * 24 * 60 * 60 * 1000
+            repeat(500) { index ->
+                db.save(
+                    sample(timestampMs = old + index, commandLine = "java GradleDaemon --legacy=$index"),
+                    old + index,
+                )
+            }
+            val sizeBeforePurge = Files.size(path)
+
+            db.purgeOlderThan(now, retentionDays = 7)
+
+            assertTrue(
+                Files.size(path) < sizeBeforePurge,
+                "legacy database did not shrink after purge",
             )
+            assertTrue(db.freelistPageCount() < 100L, "legacy freelist remains unexpectedly large")
+            assertEquals(2L, db.autoVacuumMode(), "legacy database should migrate to incremental auto_vacuum")
+        } finally {
+            db.close()
         }
-        val sizeBeforePurge = Files.size(path)
-
-        db.purgeOlderThan(now, retentionDays = 7)
-
-        assertTrue(
-            Files.size(path) < sizeBeforePurge,
-            "legacy database did not shrink after purge",
-        )
-        assertTrue(db.freelistPageCount() < 100L, "legacy freelist remains unexpectedly large")
-        assertEquals(2L, db.autoVacuumMode(), "legacy database should migrate to incremental auto_vacuum")
     }
 
     @Test
@@ -232,40 +245,44 @@ class WatcherDatabaseTest {
     @Test
     fun `repository ports expose build sample and retention operations`(@TempDirArg tmp: Path) {
         val database = WatcherDatabase.open(tmp.resolve("watcher.db"))
-        val builds: BuildRepository = database
-        val samples: ProcessSampleRepository = database
-        val retention: RetentionRepository = database
+        try {
+            val builds: BuildRepository = database
+            val samples: ProcessSampleRepository = database
+            val retention: RetentionRepository = database
 
-        samples.save(
-            GradleProcess(
-                pid = 11,
-                parentPid = 1,
-                type = ProcessType.GRADLE_DAEMON,
-                commandLine = "java GradleDaemon",
-                workingDirectory = "/repo",
-                projectPath = "/repo",
-                cpuPercent = 1.0,
-                rssMemoryMb = 400,
-                maxHeapMb = 1024,
-                minHeapMb = null,
-                gc = null,
-                startTimeMs = 1,
-                status = "RUNNING",
-            ),
-            timestampMs = 5_000,
-        )
-        builds.save(build("port-build", 5_000, project = "/repo"))
+            samples.save(
+                GradleProcess(
+                    pid = 11,
+                    parentPid = 1,
+                    type = ProcessType.GRADLE_DAEMON,
+                    commandLine = "java GradleDaemon",
+                    workingDirectory = "/repo",
+                    projectPath = "/repo",
+                    cpuPercent = 1.0,
+                    rssMemoryMb = 400,
+                    maxHeapMb = 1024,
+                    minHeapMb = null,
+                    gc = null,
+                    startTimeMs = 1,
+                    status = "RUNNING",
+                ),
+                timestampMs = 5_000,
+            )
+            builds.save(build("port-build", 5_000, project = "/repo"))
 
-        assertEquals(listOf("port-build"), builds.recent().map { it.buildId })
-        assertEquals(listOf("/repo"), builds.distinctProjects())
-        assertEquals(1, builds.search("port", limit = 10).size)
-        assertEquals(1, builds.findByDaemon(1, limit = 10).size)
-        assertEquals(listOf(400L to 1.0), samples.samples(11, fromMs = 0, toMs = 10_000))
-        assertEquals(1, samples.findByPid(11, limit = 10).size)
-        assertEquals(1, samples.recentSamples(limit = 10).size)
+            assertEquals(listOf("port-build"), builds.recent().map { it.buildId })
+            assertEquals(listOf("/repo"), builds.distinctProjects())
+            assertEquals(1, builds.search("port", limit = 10).size)
+            assertEquals(1, builds.findByDaemon(1, limit = 10).size)
+            assertEquals(listOf(400L to 1.0), samples.samples(11, fromMs = 0, toMs = 10_000))
+            assertEquals(1, samples.findByPid(11, limit = 10).size)
+            assertEquals(1, samples.recentSamples(limit = 10).size)
 
-        retention.purgeOlderThan(nowMs = 5_000 + 8L * 24 * 60 * 60 * 1000, retentionDays = 7)
-        assertTrue(builds.recent().isEmpty())
+            retention.purgeOlderThan(nowMs = 5_000 + 8L * 24 * 60 * 60 * 1000, retentionDays = 7)
+            assertTrue(builds.recent().isEmpty())
+        } finally {
+            database.close()
+        }
     }
 
     private fun sample(timestampMs: Long, commandLine: String) = GradleProcess(

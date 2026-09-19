@@ -205,6 +205,9 @@ class WatcherDatabase private constructor(
 
             val autoVacuum = pragmaLong("auto_vacuum")
             driver.getConnection().createStatement().use { statement ->
+                // Flush WAL so VACUUM can take an exclusive lock on Windows (and TempDir can
+                // delete the file after the driver is closed).
+                runCatching { statement.execute("PRAGMA wal_checkpoint(TRUNCATE)") }
                 if (autoVacuum == AUTO_VACUUM_NONE) {
                     // Setting the mode without VACUUM must not happen alone: the pragma would
                     // report INCREMENTAL while the file still used NONE, and incremental_vacuum
