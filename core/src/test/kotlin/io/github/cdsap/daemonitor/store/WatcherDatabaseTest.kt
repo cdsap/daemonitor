@@ -1,5 +1,6 @@
 package io.github.cdsap.daemonitor.store
 
+import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
@@ -8,6 +9,7 @@ import io.github.cdsap.daemonitor.domain.model.Source
 import io.github.cdsap.daemonitor.persistence.BuildRepository
 import io.github.cdsap.daemonitor.persistence.ProcessSampleRepository
 import io.github.cdsap.daemonitor.persistence.RetentionRepository
+import io.github.cdsap.daemonitor.store.db.WatcherDb
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import java.nio.file.Files
@@ -148,6 +150,63 @@ class WatcherDatabaseTest {
     }
 
     @Test
+    fun `purge compacts released sqlite pages`(@TempDirArg tmp: Path) {
+        val path = tmp.resolve("watcher.db")
+        val db = WatcherDatabase.open(path)
+        val now = 100L * 24 * 60 * 60 * 1000
+        val old = now - 8L * 24 * 60 * 60 * 1000
+
+        repeat(500) { index ->
+            db.save(
+                sample(timestampMs = old + index, commandLine = "java GradleDaemon --sample=$index"),
+                old + index,
+            )
+        }
+        val sizeBeforePurge = Files.size(path)
+
+        db.purgeOlderThan(now, retentionDays = 7)
+
+        val sizeAfterPurge = Files.size(path)
+        assertTrue(
+            sizeAfterPurge < sizeBeforePurge,
+            "database did not shrink: $sizeBeforePurge -> $sizeAfterPurge",
+        )
+        assertTrue(db.freelistPageCount() < 100L, "freelist remains unexpectedly large")
+        assertEquals(2L, db.autoVacuumMode(), "new databases should use incremental auto_vacuum")
+    }
+
+    @Test
+    fun `purge migrates legacy none auto_vacuum and shrinks freelist`(@TempDirArg tmp: Path) {
+        val path = tmp.resolve("watcher.db")
+        // Simulate a pre-compaction database: schema without auto_vacuum=INCREMENTAL.
+        JdbcSqliteDriver("jdbc:sqlite:${path.toAbsolutePath()}").use { driver ->
+            WatcherDb.Schema.create(driver)
+        }
+
+        val db = WatcherDatabase.open(path)
+        assertEquals(0L, db.autoVacuumMode(), "legacy fixture should start with auto_vacuum=NONE")
+
+        val now = 100L * 24 * 60 * 60 * 1000
+        val old = now - 8L * 24 * 60 * 60 * 1000
+        repeat(500) { index ->
+            db.save(
+                sample(timestampMs = old + index, commandLine = "java GradleDaemon --legacy=$index"),
+                old + index,
+            )
+        }
+        val sizeBeforePurge = Files.size(path)
+
+        db.purgeOlderThan(now, retentionDays = 7)
+
+        assertTrue(
+            Files.size(path) < sizeBeforePurge,
+            "legacy database did not shrink after purge",
+        )
+        assertTrue(db.freelistPageCount() < 100L, "legacy freelist remains unexpectedly large")
+        assertEquals(2L, db.autoVacuumMode(), "legacy database should migrate to incremental auto_vacuum")
+    }
+
+    @Test
     fun `database file is created owner-only`(@TempDirArg tmp: Path) {
         val path = tmp.resolve("watcher.db")
         WatcherDatabase.open(path)
@@ -208,6 +267,22 @@ class WatcherDatabaseTest {
         retention.purgeOlderThan(nowMs = 5_000 + 8L * 24 * 60 * 60 * 1000, retentionDays = 7)
         assertTrue(builds.recent().isEmpty())
     }
+
+    private fun sample(timestampMs: Long, commandLine: String) = GradleProcess(
+        pid = 5,
+        parentPid = 1,
+        type = ProcessType.GRADLE_DAEMON,
+        commandLine = commandLine,
+        workingDirectory = "/p",
+        projectPath = "/p",
+        cpuPercent = 1.0,
+        rssMemoryMb = 300,
+        maxHeapMb = 1024,
+        minHeapMb = null,
+        gc = null,
+        startTimeMs = timestampMs,
+        status = "RUNNING",
+    )
 }
 
 private typealias TempDirArg = org.junit.jupiter.api.io.TempDir

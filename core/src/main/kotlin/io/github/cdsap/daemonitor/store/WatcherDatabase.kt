@@ -2,7 +2,6 @@ package io.github.cdsap.daemonitor.store
 
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
-import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import io.github.cdsap.daemonitor.application.BuildRepository as ApplicationBuildRepository
 import io.github.cdsap.daemonitor.application.ProcessSampleRepository as ApplicationProcessSampleRepository
@@ -42,7 +41,7 @@ import kotlin.io.path.exists
  */
 class WatcherDatabase private constructor(
     private val db: WatcherDb,
-    private val driver: SqlDriver,
+    private val driver: JdbcSqliteDriver,
     private val ioDispatcher: CoroutineDispatcher,
 ) : AutoCloseable,
     ApplicationBuildRepository,
@@ -116,6 +115,10 @@ class WatcherDatabase private constructor(
 
     fun countByType(type: ProcessType): Long = processSampleCount(type)
 
+    internal fun freelistPageCount(): Long = pragmaLong("freelist_count")
+
+    internal fun autoVacuumMode(): Long = pragmaLong("auto_vacuum")
+
     /** One-shot snapshot of all retained builds, newest first. */
     fun recentBuilds(): List<Build> =
         db.watcherQueries.recentBuilds().executeAsList().map { it.toDomain() }
@@ -184,7 +187,44 @@ class WatcherDatabase private constructor(
         val cutoff = nowMs - retentionDays * 24 * 60 * 60 * 1000
         db.watcherQueries.purgeSamplesOlderThan(cutoff)
         db.watcherQueries.purgeBuildsOlderThan(cutoff)
+        compactAfterPurge()
     }
+
+    /**
+     * Reclaim pages released by retention without allowing one purge to monopolize SQLite.
+     *
+     * Legacy databases (`auto_vacuum=NONE`) get a one-time full `VACUUM` only when the freelist
+     * is non-empty, which both shrinks the file and migrates to incremental auto-vacuum.
+     * New databases and later purges reclaim at most [MAX_INCREMENTAL_VACUUM_PAGES] per call so
+     * a large freelist cannot hold an exclusive lock indefinitely.
+     */
+    private fun compactAfterPurge() {
+        runCatching {
+            val freelist = pragmaLong("freelist_count")
+            if (freelist <= 0L) return@runCatching
+
+            val autoVacuum = pragmaLong("auto_vacuum")
+            driver.getConnection().createStatement().use { statement ->
+                if (autoVacuum == AUTO_VACUUM_NONE) {
+                    // Setting the mode without VACUUM must not happen alone: the pragma would
+                    // report INCREMENTAL while the file still used NONE, and incremental_vacuum
+                    // would no-op. Use JDBC statements — SqlDriver.execute does not reliably
+                    // apply auto_vacuum changes on an existing schema.
+                    statement.execute("PRAGMA auto_vacuum = INCREMENTAL")
+                    statement.execute("VACUUM")
+                } else {
+                    statement.execute("PRAGMA incremental_vacuum($MAX_INCREMENTAL_VACUUM_PAGES)")
+                }
+            }
+        }
+    }
+
+    private fun pragmaLong(name: String): Long =
+        driver.getConnection().createStatement().use { statement ->
+            statement.executeQuery("PRAGMA $name").use { resultSet ->
+                if (resultSet.next()) resultSet.getLong(1) else 0L
+            }
+        }
 
     companion object {
         /** Open (creating if necessary) the database at [path], applying privacy hardening. */
@@ -197,6 +237,7 @@ class WatcherDatabase private constructor(
 
             val driver = JdbcSqliteDriver("jdbc:sqlite:${path.absolutePathString()}")
             if (isNew) {
+                driver.execute(null, "PRAGMA auto_vacuum = INCREMENTAL", 0)
                 WatcherDb.Schema.create(driver)
                 hardenFilePrivacy(path)
             } else {
@@ -223,6 +264,8 @@ class WatcherDatabase private constructor(
 
         private const val DEFAULT_QUERY_LIMIT = 50L
         private const val MAX_QUERY_LIMIT = 200L
+        private const val AUTO_VACUUM_NONE = 0L
+        private const val MAX_INCREMENTAL_VACUUM_PAGES = 100_000
 
         private fun Long.coerceQueryLimit(): Long = coerceIn(1, MAX_QUERY_LIMIT)
 
