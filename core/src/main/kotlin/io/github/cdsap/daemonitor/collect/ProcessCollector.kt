@@ -23,31 +23,40 @@ import oshi.software.os.OSProcess
  */
 class ProcessCollector internal constructor(
     private val clock: () -> Long,
-    private val heapProbe: JvmHeapProbe,
+    heapProbe: JvmHeapProbe,
     private val logicalProcessors: Int,
     private val enumerateProcesses: () -> List<ProcessInfo>,
+    heapRefreshIntervalMs: Long = JvmHeapUsageCollector.DEFAULT_REFRESH_INTERVAL_MS,
 ) : ProcessSource {
     constructor(
         systemInfo: SystemInfo = SystemInfo(),
         clock: () -> Long = System::currentTimeMillis,
         heapProbe: JvmHeapProbe = AttachJvmHeapProbe(),
+        heapRefreshIntervalMs: Long = JvmHeapUsageCollector.DEFAULT_REFRESH_INTERVAL_MS,
     ) : this(
         clock = clock,
         heapProbe = heapProbe,
         logicalProcessors = systemInfo.hardware.processor.logicalProcessorCount,
         enumerateProcesses = oshiEnumerate(systemInfo),
+        heapRefreshIntervalMs = heapRefreshIntervalMs,
+    )
+
+    private val heapUsageCollector = JvmHeapUsageCollector(
+        probe = heapProbe,
+        clock = clock,
+        refreshIntervalMs = heapRefreshIntervalMs,
     )
 
     /** Prior CPU sample per process, keyed by (pid, startTime) to survive PID reuse (KTD-4). */
-    private val priorSamples = mutableMapOf<ProcessKey, PriorSample>()
+    private val priorSamples = mutableMapOf<ProcessIdentity, PriorSample>()
 
     override fun currentProcesses(): List<GradleProcess> {
         val now = clock()
-        val seen = mutableSetOf<ProcessKey>()
+        val seen = mutableSetOf<ProcessIdentity>()
         val result = mutableListOf<GradleProcess>()
 
         for (info in enumerateProcesses()) {
-            val key = ProcessKey(info.pid, info.startTimeMs)
+            val key = ProcessIdentity(info.pid, info.startTimeMs)
             seen += key
             val prior = priorSamples[key]
             // Classify before any heap attachment (issue #168).
@@ -58,23 +67,21 @@ class ProcessCollector internal constructor(
                 // Scope Attach/JMX to daemon JVMs (issue #159); wrappers/workers stay unavailable.
                 val liveHeap = when (snapshot.type) {
                     ProcessType.GRADLE_DAEMON, ProcessType.KOTLIN_DAEMON ->
-                        heapProbe.probe(info.pid, now)
+                        heapUsageCollector.read(info.pid, info.startTimeMs, now)
                     else -> LiveJvmHeap.unavailable(now)
                 }
                 result += snapshot.copy(liveHeap = liveHeap)
             }
         }
 
-        // Drop prior samples for processes that have disappeared.
+        // Drop prior CPU samples and live-heap cache entries for processes that disappeared.
         priorSamples.keys.retainAll(seen)
-        heapProbe.retainOnly(seen.map { it.pid }.toSet())
+        heapUsageCollector.retainOnly(seen)
         return result
     }
 
     /** Compatibility alias for [currentProcesses]. */
     fun poll(): List<GradleProcess> = currentProcesses()
-
-    private data class ProcessKey(val pid: Long, val startTimeMs: Long)
 
     private companion object {
         private fun oshiEnumerate(systemInfo: SystemInfo): () -> List<ProcessInfo> {
