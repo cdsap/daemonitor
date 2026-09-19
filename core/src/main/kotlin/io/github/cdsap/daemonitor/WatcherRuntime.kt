@@ -6,12 +6,8 @@ import io.github.cdsap.daemonitor.application.DaemonLogSource
 import io.github.cdsap.daemonitor.application.BuildRepository
 import io.github.cdsap.daemonitor.application.ProcessSampleRepository
 import io.github.cdsap.daemonitor.collect.DaemonLog
-import io.github.cdsap.daemonitor.collect.DaemonLogWatcher
-import io.github.cdsap.daemonitor.collect.ProcessCollector
-import io.github.cdsap.daemonitor.config.MonitoringConfig
 import io.github.cdsap.daemonitor.domain.BuildAggregator
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
-import io.github.cdsap.daemonitor.store.WatcherDatabase
 
 /**
  * UI-independent collection and persistence runtime shared by desktop and headless launchers.
@@ -20,59 +16,20 @@ import io.github.cdsap.daemonitor.store.WatcherDatabase
  * application-layer [PollMonitoring] use case.
  */
 class WatcherRuntime(
-    private val monitoring: PollMonitoring,
+    processSource: ProcessSource,
+    logSource: DaemonLogSource,
+    builds: BuildRepository,
+    samples: ProcessSampleRepository,
+    aggregator: BuildAggregator,
+    clock: () -> Long = System::currentTimeMillis,
 ) {
-    constructor(
-        collector: ProcessSource = ProcessCollector(),
-        logWatcher: DaemonLogSource = DaemonLogWatcher(),
-        aggregator: BuildAggregator,
-        builds: BuildRepository,
-        processSamples: ProcessSampleRepository,
-        clock: () -> Long = System::currentTimeMillis,
-    ) : this(
-        PollMonitoring(
-            processSource = collector,
-            logSource = logWatcher,
-            builds = builds,
-            samples = processSamples,
-            aggregator = aggregator,
-            clock = clock,
-        ),
-    )
-
-    constructor(
-        collector: ProcessSource,
-        logWatcher: DaemonLogSource,
-        aggregator: BuildAggregator,
-        database: WatcherDatabase,
-        clock: () -> Long = System::currentTimeMillis,
-    ) : this(
-        PollMonitoring(
-            processSource = collector,
-            logSource = logWatcher,
-            builds = database,
-            samples = database,
-            aggregator = aggregator,
-            clock = clock,
-        ),
-    )
-
-    constructor(
-        processSource: ProcessSource,
-        logSource: DaemonLogSource,
-        builds: BuildRepository,
-        samples: ProcessSampleRepository,
-        aggregator: BuildAggregator,
-        clock: () -> Long = System::currentTimeMillis,
-    ) : this(
-        PollMonitoring(
-            processSource = processSource,
-            logSource = logSource,
-            builds = builds,
-            samples = samples,
-            aggregator = aggregator,
-            clock = clock,
-        ),
+    private val monitoring = PollMonitoring(
+        processSource = processSource,
+        logSource = logSource,
+        builds = builds,
+        samples = samples,
+        aggregator = aggregator,
+        clock = clock,
     )
 
     data class PollResult(
@@ -94,20 +51,4 @@ class WatcherRuntime(
         daemonLogs = daemonLogs,
         buildsChanged = buildsChanged,
     )
-
-    companion object {
-        /** Test/helper factory. Production wiring lives in [AppContainer]. */
-        fun create(database: WatcherDatabase): WatcherRuntime = WatcherRuntime(
-            collector = ProcessCollector(),
-            logWatcher = DaemonLogWatcher(),
-            aggregator = BuildAggregator(
-                sampleProvider = database::samplesInWindow,
-                ambientEnvNames = System.getenv().keys.toSet(),
-                logSnippetLimit = with(MonitoringConfig.DEFAULT.logSnippetLimit) {
-                    BuildAggregator.LogSnippetLimit(lines = lines, chars = chars)
-                },
-            ),
-            database = database,
-        )
-    }
 }

@@ -28,10 +28,11 @@ class CoreContainer(
         },
     )
     val runtime = WatcherRuntime(
-        collector = processCollector,
-        logWatcher = daemonLogWatcher,
+        processSource = processCollector,
+        logSource = daemonLogWatcher,
         aggregator = buildAggregator,
-        database = database,
+        builds = database,
+        samples = database,
         clock = clock,
     )
 
