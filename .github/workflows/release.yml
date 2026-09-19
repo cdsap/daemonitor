@@ -133,9 +133,9 @@ jobs:
 
       - name: Smoke test packaged launcher
         run: |
-          output=$("${{ matrix.launcher }}" --headless --help)
-          printf '%s\n' "$output"
-          [[ "$output" == *"Usage: daemonitor --headless"* ]]
+          ./scripts/smoke-test-native-distribution.sh \
+            "${{ matrix.launcher }}" \
+            "${{ matrix.app_path }}"
 
       - name: Read package version
         id: package-version
