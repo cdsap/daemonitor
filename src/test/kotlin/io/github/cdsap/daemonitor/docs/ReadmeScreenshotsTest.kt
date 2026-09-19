@@ -40,4 +40,26 @@ class ReadmeScreenshotsTest {
         assertTrue("token=" !in renderedData.lowercase())
         assertTrue("password=" !in renderedData.lowercase())
     }
+
+    @Test
+    fun `sample timeline distinguishes live heap used from configured heap limit`() {
+        val state = SampleUi.liveState()
+        val sample = state.rssTimeline.last()
+
+        assertEquals(1200L, sample.heapUsedByPid[4821L])
+        assertEquals(4096L, sample.heapLimitByPid[4821L])
+        assertEquals(220L, sample.heapUsedByPid[4914L])
+        assertEquals(410L, sample.heapUsedByPid[4930L])
+        assertEquals(300L, sample.heapUsedByPid[5077L])
+
+        state.processes.forEach { process ->
+            val used = sample.heapUsedByPid[process.pid]
+            val limit = sample.heapLimitByPid[process.pid]
+            assertNotNull(used, "pid ${process.pid} should contribute live heap used")
+            assertNotNull(limit, "pid ${process.pid} should contribute heap limit")
+            assertTrue(used != limit, "pid ${process.pid} live heap must stay distinct from -Xmx")
+            assertEquals(process.liveHeap?.usedMb, used)
+            assertEquals(process.maxHeapMb, limit)
+        }
+    }
 }
