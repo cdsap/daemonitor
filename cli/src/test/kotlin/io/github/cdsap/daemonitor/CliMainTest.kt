@@ -17,9 +17,46 @@ class CliMainTest {
         )
 
         assertEquals(0, exitCode)
-        assertTrue(output.toString().contains("Usage: daemonitor-cli [options]"))
-        assertTrue(output.toString().contains("--no-color"))
-        assertTrue(output.toString().contains("--collect-only"))
+        val usage = output.toString()
+        assertTrue(usage.startsWith("Usage: daemonitor-cli [options]"))
+        assertTrue(usage.contains("--no-color"))
+        assertTrue(usage.contains("--collect-only"))
+    }
+
+    @Test
+    fun `help formatting has no leading blank line and aligned options`() {
+        val output = ByteArrayOutputStream()
+
+        assertEquals(0, CliLauncher.run(arrayOf("--help"), output = PrintStream(output)))
+        val usage = output.toString()
+        val lines = usage.lines()
+
+        assertEquals("Usage: daemonitor-cli [options]", lines.first())
+
+        val optionLines = lines.filter { it.startsWith("  -") || it.startsWith("  --") }
+        assertEquals(
+            listOf(
+                "  -h, --help       Show this help.",
+                "  -v, --version    Show the Daemonitor version.",
+                "  --plain          Disable colors and terminal screen clearing.",
+                "  --no-color       Alias for --plain.",
+                "  --collect-only   Collect and persist without rendering terminal output.",
+                "  --db PATH        Store data in this SQLite database.",
+                "  --poll-interval SECONDS",
+                "  --retention DAYS",
+            ),
+            optionLines,
+        )
+
+        val descriptionColumns = listOf(
+            optionLines[0].indexOf("Show"),
+            optionLines[1].indexOf("Show"),
+            optionLines[2].indexOf("Disable"),
+            optionLines[3].indexOf("Alias"),
+            optionLines[4].indexOf("Collect"),
+            optionLines[5].indexOf("Store"),
+        )
+        assertEquals(setOf(19), descriptionColumns.toSet(), "option descriptions should share one alignment column")
     }
 
     @Test
