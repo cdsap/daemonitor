@@ -13,8 +13,10 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.requestFocus
@@ -27,6 +29,8 @@ import io.github.cdsap.daemonitor.persistence.AppearancePreference
 import io.github.cdsap.daemonitor.ui.common.WatcherTheme
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 @OptIn(ExperimentalTestApi::class)
 class LiveMonitorScreenUiTest {
@@ -36,6 +40,7 @@ class LiveMonitorScreenUiTest {
         type: ProcessType = ProcessType.GRADLE_DAEMON,
         commandLine: String = "java org.gradle.launcher.daemon.bootstrap.GradleDaemon 9.5",
         maxHeapMb: Long? = 4096,
+        rssMemoryMb: Long = 1024,
     ) = GradleProcess(
         pid = pid,
         parentPid = 1,
@@ -44,7 +49,7 @@ class LiveMonitorScreenUiTest {
         workingDirectory = "/Users/dev/my-app",
         projectPath = "/Users/dev/my-app",
         cpuPercent = 12.0,
-        rssMemoryMb = 1024,
+        rssMemoryMb = rssMemoryMb,
         maxHeapMb = maxHeapMb,
         minHeapMb = 256,
         gc = "G1",
@@ -223,5 +228,76 @@ class LiveMonitorScreenUiTest {
         }
         waitForIdle()
         assertEquals(300L, selectedPid) // wraps
+    }
+
+    @Test
+    fun `process table shows PID so peak memory PID can be matched without opening detail`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+
+        val peak = sampleProcess(pid = 6227, type = ProcessType.GRADLE_DAEMON)
+        val other = sampleProcess(pid = 1001, type = ProcessType.KOTLIN_DAEMON, rssMemoryMb = 512)
+        val state = LiveUiState(
+            processes = listOf(peak, other),
+            summary = LiveSummary(
+                activeProcessCount = 2,
+                totalRssMb = 1536,
+                highestMemoryPid = 6227,
+                activeProjectCount = 1,
+            ),
+            isLoading = false,
+            isEmpty = false,
+        )
+        setContent {
+            WatcherTheme(appearance = AppearancePreference.DARK) {
+                LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+            }
+        }
+
+        onNodeWithText("PID").assertExists()
+        // Peak tile and the matching table cell both show the PID.
+        assertTrue(onAllNodesWithText("6227").fetchSemanticsNodes().size >= 2)
+        onNodeWithText("PEAK MEMORY PID").assertExists()
+        onNodeWithTag("peak-memory-pid-tile").assertExists()
+    }
+
+    @Test
+    fun `clicking peak memory PID tile selects that process`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+
+        val peak = sampleProcess(pid = 6227, type = ProcessType.GRADLE_DAEMON)
+        val other = sampleProcess(pid = 1001, type = ProcessType.KOTLIN_DAEMON, rssMemoryMb = 512)
+        val processes = listOf(peak, other)
+        val state = LiveUiState(
+            processes = processes,
+            summary = LiveSummary(
+                activeProcessCount = 2,
+                totalRssMb = 1536,
+                highestMemoryPid = 6227,
+                activeProjectCount = 1,
+            ),
+            isLoading = false,
+            isEmpty = false,
+        )
+        var selectedPid by mutableStateOf<Long?>(null)
+
+        setContent {
+            WatcherTheme(appearance = AppearancePreference.DARK) {
+                LiveMonitorScreen(
+                    state = state.copy(
+                        detail = selectedPid?.let { pid ->
+                            DetailState.Selected(processes.first { it.pid == pid })
+                        } ?: DetailState.NoSelection,
+                    ),
+                    onSelect = { selectedPid = it },
+                    onClearSelection = { selectedPid = null },
+                )
+            }
+        }
+
+        assertNull(selectedPid)
+        onNodeWithTag("peak-memory-pid-tile").assertExists().performClick()
+        waitForIdle()
+        assertEquals(6227L, selectedPid)
+        onNodeWithText("PID 6227 · Gradle daemon").assertExists()
     }
 }
