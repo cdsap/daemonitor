@@ -128,7 +128,7 @@ internal object CliLauncher {
                 "--retention" -> options.copy(
                     retentionDays = nextValue(args, ++index, arg, error, output)
                         ?.toLongOrNull()
-                        ?.let { RetentionPolicy.DEFAULT.clamp(it) }
+                        ?.takeIf { it in RetentionPolicy.DEFAULT.minDays..RetentionPolicy.DEFAULT.maxDays }
                         ?: return invalidValue(arg, error, output),
                 )
                 else -> return unknownOption(arg, error, output)
