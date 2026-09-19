@@ -46,6 +46,9 @@ class HeadlessTerminalUiTest {
         )
 
         assertTrue(output.contains("No Gradle-related processes are running."))
+        assertTrue(output.contains("HEAP USED"))
+        assertTrue(output.contains("HEAP CMT"))
+        assertTrue(output.contains("HEAP LIMIT"))
         assertTrue(output.contains("Last poll failed: permission denied"))
     }
 
