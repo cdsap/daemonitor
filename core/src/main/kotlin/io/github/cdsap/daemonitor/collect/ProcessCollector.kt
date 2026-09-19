@@ -21,26 +21,32 @@ import oshi.software.os.OSProcess
 class ProcessCollector(
     private val systemInfo: SystemInfo = SystemInfo(),
     private val clock: () -> Long = System::currentTimeMillis,
-    private val heapProbe: JvmHeapProbe = AttachJvmHeapProbe(),
+    heapProbe: JvmHeapProbe = AttachJvmHeapProbe(),
+    heapRefreshIntervalMs: Long = JvmHeapUsageCollector.DEFAULT_REFRESH_INTERVAL_MS,
 ) : ProcessSource {
     private val os = systemInfo.operatingSystem
     private val logicalProcessors = systemInfo.hardware.processor.logicalProcessorCount
     private val selfPid: Int = os.processId
     private val selfUid: String? = runCatching { os.getProcess(selfPid).userID }.getOrNull()
+    private val heapUsageCollector = JvmHeapUsageCollector(
+        probe = heapProbe,
+        clock = clock,
+        refreshIntervalMs = heapRefreshIntervalMs,
+    )
 
     /** Prior CPU sample per process, keyed by (pid, startTime) to survive PID reuse (KTD-4). */
-    private val priorSamples = mutableMapOf<ProcessKey, PriorSample>()
+    private val priorSamples = mutableMapOf<ProcessIdentity, PriorSample>()
 
     override fun currentProcesses(): List<GradleProcess> {
         val now = clock()
-        val seen = mutableSetOf<ProcessKey>()
+        val seen = mutableSetOf<ProcessIdentity>()
         val result = mutableListOf<GradleProcess>()
 
         for (p in os.processes) {
             if (p.processID == selfPid) continue // don't monitor ourselves
             if (selfUid != null && p.userID != selfUid) continue
             val info = p.toProcessInfo()
-            val key = ProcessKey(info.pid, info.startTimeMs)
+            val key = ProcessIdentity(info.pid, info.startTimeMs)
             seen += key
             val prior = priorSamples[key]
             val snapshot = ProcessSnapshotBuilder.build(info, prior, now, logicalProcessors)
@@ -50,23 +56,21 @@ class ProcessCollector(
                 // Scope Attach/JMX to daemon JVMs (issue #159); wrappers/workers stay unavailable.
                 val liveHeap = when (snapshot.type) {
                     ProcessType.GRADLE_DAEMON, ProcessType.KOTLIN_DAEMON ->
-                        heapProbe.probe(info.pid, now)
+                        heapUsageCollector.read(info.pid, info.startTimeMs, now)
                     else -> LiveJvmHeap.unavailable(now)
                 }
                 result += snapshot.copy(liveHeap = liveHeap)
             }
         }
 
-        // Drop prior samples for processes that have disappeared.
+        // Drop prior CPU samples and live-heap cache entries for processes that disappeared.
         priorSamples.keys.retainAll(seen)
-        heapProbe.retainOnly(seen.map { it.pid }.toSet())
+        heapUsageCollector.retainOnly(seen)
         return result
     }
 
     /** Compatibility alias for [currentProcesses]. */
     fun poll(): List<GradleProcess> = currentProcesses()
-
-    private data class ProcessKey(val pid: Long, val startTimeMs: Long)
 
     private fun OSProcess.toProcessInfo(): ProcessInfo = OshiProcessInfo(this)
 

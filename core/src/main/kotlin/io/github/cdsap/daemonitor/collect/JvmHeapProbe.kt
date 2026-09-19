@@ -19,58 +19,79 @@ import javax.management.remote.JMXServiceURL
  * process, sandbox restrictions, timeouts — return [LiveJvmHeap.unavailable] rather than fabricating
  * zeros.
  *
- * Overhead: the first successful probe per PID loads the management agent into the target JVM
- * (one-time cost). Subsequent polls reuse the cached local connector address and perform a short
- * JMX round-trip. Connector addresses are dropped when the PID disappears or a read fails.
- * Each attach/read attempt is bounded by [PROBE_TIMEOUT_MS] so a stuck target cannot stall the
- * poll loop.
+ * Overhead: the first successful probe per process identity loads the management agent into the
+ * target JVM (one-time cost). Subsequent polls reuse the cached local connector address and perform
+ * a short JMX round-trip. Connector addresses are keyed by [ProcessIdentity] (pid + start time) so
+ * PID reuse cannot reuse another lifetime's address, and are dropped when the process disappears or
+ * a read fails. Each attach/read attempt is bounded by [PROBE_TIMEOUT_MS] so a stuck target cannot
+ * stall the poll loop.
+ *
+ * Sample refresh throttling lives in [JvmHeapUsageCollector]; this type only caches connector
+ * addresses.
  *
  * See `docs/jvm-heap-collection.md`.
  */
 fun interface JvmHeapProbe {
     fun probe(pid: Long, sampledAtMs: Long): LiveJvmHeap
 
+    /** Prefer this overload when process start time is known so caches can key on identity. */
+    fun probe(pid: Long, startTimeMs: Long, sampledAtMs: Long): LiveJvmHeap =
+        probe(pid, sampledAtMs)
+
     /** Drop cached connector state for PIDs that are no longer live. */
     fun retainOnly(livePids: Set<Long>) {}
+
+    /** Drop cached connector state for process identities that are no longer live. */
+    fun retainOnly(liveProcesses: Collection<ProcessIdentity>) {
+        retainOnly(liveProcesses.map { it.pid }.toSet())
+    }
 }
 
 class AttachJvmHeapProbe(
     private val timeoutMs: Long = PROBE_TIMEOUT_MS,
 ) : JvmHeapProbe {
-    private val connectorAddresses = ConcurrentHashMap<Long, String>()
+    private val connectorAddresses = ConcurrentHashMap<ProcessIdentity, String>()
     private val executor = Executors.newCachedThreadPool { runnable ->
         Thread(runnable, "daemonitor-jvm-heap-probe").apply { isDaemon = true }
     }
 
-    override fun probe(pid: Long, sampledAtMs: Long): LiveJvmHeap {
+    override fun probe(pid: Long, sampledAtMs: Long): LiveJvmHeap =
+        probe(pid, startTimeMs = 0L, sampledAtMs)
+
+    override fun probe(pid: Long, startTimeMs: Long, sampledAtMs: Long): LiveJvmHeap {
         if (pid <= 0L) return LiveJvmHeap.unavailable(sampledAtMs)
         // Self-attach can deadlock HotSpot; treat as unavailable.
         if (pid == ProcessHandle.current().pid()) return LiveJvmHeap.unavailable(sampledAtMs)
-        return readWithCachedAddress(pid, sampledAtMs)
-            ?: readAfterFreshAttach(pid, sampledAtMs)
+        val key = ProcessIdentity(pid, startTimeMs)
+        return readWithCachedAddress(key, sampledAtMs)
+            ?: readAfterFreshAttach(key, sampledAtMs)
             ?: LiveJvmHeap.unavailable(sampledAtMs)
     }
 
     override fun retainOnly(livePids: Set<Long>) {
-        connectorAddresses.keys.retainAll(livePids)
+        connectorAddresses.keys.removeIf { it.pid !in livePids }
     }
 
-    private fun readWithCachedAddress(pid: Long, sampledAtMs: Long): LiveJvmHeap? {
-        val address = connectorAddresses[pid] ?: return null
+    override fun retainOnly(liveProcesses: Collection<ProcessIdentity>) {
+        connectorAddresses.keys.retainAll(liveProcesses.toSet())
+    }
+
+    private fun readWithCachedAddress(key: ProcessIdentity, sampledAtMs: Long): LiveJvmHeap? {
+        val address = connectorAddresses[key] ?: return null
         return runTimed {
             readHeap(address, sampledAtMs)
         }.onFailure {
-            connectorAddresses.remove(pid)
+            connectorAddresses.remove(key)
         }.getOrNull()
     }
 
-    private fun readAfterFreshAttach(pid: Long, sampledAtMs: Long): LiveJvmHeap? =
+    private fun readAfterFreshAttach(key: ProcessIdentity, sampledAtMs: Long): LiveJvmHeap? =
         runTimed {
-            val address = resolveConnectorAddress(pid)
-            connectorAddresses[pid] = address
+            val address = resolveConnectorAddress(key.pid)
+            connectorAddresses[key] = address
             readHeap(address, sampledAtMs)
         }.onFailure {
-            connectorAddresses.remove(pid)
+            connectorAddresses.remove(key)
         }.getOrNull()
 
     private fun <T> runTimed(block: Callable<T>): Result<T> {

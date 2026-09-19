@@ -14,20 +14,29 @@ Missing live-heap values are reported as **unavailable** (UI `unavailable` / CLI
 
 ## Mechanism
 
-For each classified Gradle-related process on each poll (~2s):
+For each classified Gradle / Kotlin **daemon** process on each poll (~2s):
 
-1. Attach to the target PID with the JDK Attach API (`VirtualMachine.attach`).
-2. Call `startLocalManagementAgent()` once per PID (address cached afterward).
-3. Connect over the local JMX connector and read `MemoryMXBean.heapMemoryUsage`.
-4. Detach; map bytes to megabytes for used, committed, and runtime max.
+1. Consult the process-aware live-heap sample cache (`JvmHeapUsageCollector`), keyed by
+   `(pid, startTimeMs)`. Within the refresh interval (~10s) the prior sample is reused.
+2. On a cache miss, attach to the target PID with the JDK Attach API (`VirtualMachine.attach`).
+3. Call `startLocalManagementAgent()` once per process identity (address cached afterward).
+4. Connect over the local JMX connector and read `MemoryMXBean.heapMemoryUsage`.
+5. Detach; map bytes to megabytes for used, committed, and runtime max.
 
 Same-UID HotSpot JVMs are supported. Non-Java processes are never classified into the snapshot path.
+Caches are keyed by process start time so PID reuse cannot return another lifetime's sample or
+connector address. Entries for processes that disappear are evicted each poll.
 
 ## Overhead
 
-- **First successful probe per PID:** loads the local management agent into the target JVM (one-time attach cost).
-- **Later polls:** reuse the cached connector address and perform a short JMX round-trip (no re-attach when the address still works).
-- **PID exit / attach failure / timeout:** drop the cached address and mark heap unavailable for that sample; RSS and `-Xmx` collection continue unchanged.
+- **First successful probe per process identity:** loads the local management agent into the target
+  JVM (one-time attach cost).
+- **Later polls within the refresh interval (~10s):** return the cached live-heap sample (no attach /
+  JMX round-trip).
+- **Later polls after refresh:** reuse the cached connector address when still valid and perform a
+  short JMX round-trip (no re-attach when the address still works).
+- **PID exit / attach failure / timeout:** drop the cached address and sample for that identity and
+  mark heap unavailable for that sample; RSS and `-Xmx` collection continue unchanged.
 - Each attach/JMX attempt is bounded (~750ms). Self-attach is skipped to avoid HotSpot deadlocks.
 - Only Gradle and Kotlin **daemon** processes are probed; wrappers and test workers stay unavailable.
 - Probes run on the existing IO poll path; they do not block the UI thread.
@@ -39,7 +48,8 @@ Attach/JMX can fail when:
 - the process has exited between enumeration and attach;
 - the target is not a HotSpot JVM that accepts attach;
 - OS permissions or App Sandbox deny attach (common for Mac App Store builds);
-- the local connector address is stale after a JVM restart under the same PID (rare; cleared on read failure).
+- the local connector address is stale after a JVM restart under the same PID (cleared by
+  process-identity keys and on read failure).
 
 In all of those cases Daemonitor keeps RSS and configured `-Xmx` and surfaces live heap as unavailable for that poll.
 
@@ -50,6 +60,7 @@ Native distributions include `jdk.attach`, `java.management`, and `jdk.managemen
 ## Tests
 
 - Collector unit tests cover unavailable/success mapping without inventing zero values.
+- Live-heap cache tests cover refresh throttling, process disappearance eviction, and PID reuse.
 - Persistence round-trips nullable live-heap columns and migrates existing databases.
 - UI/CLI/MCP tests assert labels distinguish RSS, heap used, heap committed, and heap limit.
 - Packaging tests assert the Attach/management modules are listed for native distributions.
