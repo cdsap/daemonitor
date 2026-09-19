@@ -9,6 +9,10 @@ import io.github.cdsap.daemonitor.application.update.CheckForUpdate
 import io.github.cdsap.daemonitor.application.update.PrepareUpdate
 import io.github.cdsap.daemonitor.application.update.UpdateService
 import io.github.cdsap.daemonitor.application.update.UpdateSource
+import io.github.cdsap.daemonitor.collect.DaemonLogWatcher
+import io.github.cdsap.daemonitor.collect.ProcessCollector
+import io.github.cdsap.daemonitor.config.MonitoringConfig
+import io.github.cdsap.daemonitor.domain.BuildAggregator
 import io.github.cdsap.daemonitor.mcp.DaemonitorMcpServer
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
@@ -179,7 +183,19 @@ class WatcherServiceTest {
         ),
         pollAction: suspend () -> WatcherRuntime.PollResult,
     ) = WatcherService.forTests(
-        runtime = WatcherRuntime.create(database),
+        runtime = WatcherRuntime(
+            processSource = ProcessCollector(),
+            logSource = DaemonLogWatcher(),
+            aggregator = BuildAggregator(
+                sampleProvider = database::samplesInWindow,
+                ambientEnvNames = System.getenv().keys.toSet(),
+                logSnippetLimit = with(MonitoringConfig.DEFAULT.logSnippetLimit) {
+                    BuildAggregator.LogSnippetLimit(lines = lines, chars = chars)
+                },
+            ),
+            builds = database,
+            samples = database,
+        ),
         database = database,
         settingsRepository = SettingsStore(tmp.resolve("settings.properties")),
         clock = clock,
