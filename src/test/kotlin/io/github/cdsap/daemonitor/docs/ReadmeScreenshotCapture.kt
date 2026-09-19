@@ -129,15 +129,16 @@ internal object SampleUi {
             type = ProcessType.GRADLE_DAEMON,
             project = "checkout-service",
             rss = 2340,
+            heapUsedMb = 1200,
             cpu = 38.0,
             startedAt = now - 18 * 60 * 1_000,
             command = "java -Xmx4096m org.gradle.launcher.daemon.bootstrap.GradleDaemon 9.0",
         )
         val processes = listOf(
             daemon,
-            process(4914, ProcessType.GRADLE_WRAPPER, "checkout-service", 612, 14.0, now - 4 * 60 * 1_000, "java org.gradle.wrapper.GradleWrapperMain test", automated = true),
-            process(4930, ProcessType.TEST_WORKER, "checkout-service", 768, 71.0, now - 75 * 1_000, "java -Xmx1024m GradleWorkerMain 'Test Executor 2'"),
-            process(5077, ProcessType.KOTLIN_DAEMON, "design-system", 544, 9.0, now - 11 * 60 * 1_000, "java -Xmx1536m org.jetbrains.kotlin.daemon.KotlinCompileDaemon"),
+            process(4914, ProcessType.GRADLE_WRAPPER, "checkout-service", 612, 220, 14.0, now - 4 * 60 * 1_000, "java org.gradle.wrapper.GradleMain test", automated = true),
+            process(4930, ProcessType.TEST_WORKER, "checkout-service", 768, 410, 71.0, now - 75 * 1_000, "java -Xmx1024m GradleWorkerMain 'Test Executor 2'"),
+            process(5077, ProcessType.KOTLIN_DAEMON, "design-system", 544, 300, 9.0, now - 11 * 60 * 1_000, "java -Xmx1536m org.jetbrains.kotlin.daemon.KotlinCompileDaemon"),
         )
         val endMs = 1_700_000_060_000L
         fun sample(offsetMs: Long, rssByPid: Map<Long, Long>) = RssTimelineSample(
@@ -192,6 +193,7 @@ internal object SampleUi {
         type: ProcessType,
         project: String,
         rss: Long,
+        heapUsedMb: Long,
         cpu: Double,
         startedAt: Long,
         command: String,
@@ -212,8 +214,8 @@ internal object SampleUi {
         status = "RUNNING",
         automated = automated,
         liveHeap = LiveJvmHeap(
-            usedMb = (rss * 0.45).toLong().coerceAtLeast(64),
-            committedMb = (rss * 0.55).toLong().coerceAtLeast(96),
+            usedMb = heapUsedMb,
+            committedMb = (heapUsedMb * 1.2).toLong(),
             maxMb = if (type == ProcessType.GRADLE_DAEMON) 4096 else 1536,
             sampledAtMs = startedAt,
             available = true,

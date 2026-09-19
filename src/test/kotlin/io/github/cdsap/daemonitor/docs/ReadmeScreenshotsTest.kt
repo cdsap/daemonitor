@@ -40,4 +40,12 @@ class ReadmeScreenshotsTest {
         assertTrue("token=" !in renderedData.lowercase())
         assertTrue("password=" !in renderedData.lowercase())
     }
+
+    @Test
+    fun `sample timeline distinguishes live heap used from configured heap limit`() {
+        val sample = SampleUi.liveState().rssTimeline.last()
+
+        assertEquals(1200L, sample.heapUsedByPid[4821L])
+        assertEquals(4096L, sample.heapLimitByPid[4821L])
+    }
 }
