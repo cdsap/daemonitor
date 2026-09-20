@@ -35,8 +35,8 @@ class PollMonitoringTest {
                 ),
             ),
         )
-        val builds = RecordingBuildRepository()
-        val samples = RecordingSampleRepository()
+        val builds = RecordingBuildWriter()
+        val samples = RecordingSampleWriter()
         val monitoring = PollMonitoring(
             processSource = processSource,
             logSource = logSource,
@@ -75,12 +75,12 @@ class PollMonitoringTest {
                 ),
             ),
         )
-        val builds = RecordingBuildRepository()
+        val builds = RecordingBuildWriter()
         val monitoring = PollMonitoring(
             processSource = FakeProcessSource(emptyList()),
             logSource = logSource,
             builds = builds,
-            samples = RecordingSampleRepository(),
+            samples = RecordingSampleWriter(),
             aggregator = BuildAggregator(),
             retentionDays = { 7 },
             clock = { now },
@@ -102,8 +102,8 @@ class PollMonitoringTest {
         val monitoring = PollMonitoring(
             processSource = FakeProcessSource(emptyList()),
             logSource = logSource,
-            builds = RecordingBuildRepository(),
-            samples = RecordingSampleRepository(),
+            builds = RecordingBuildWriter(),
+            samples = RecordingSampleWriter(),
             aggregator = BuildAggregator(),
         )
 
@@ -161,14 +161,14 @@ class PollMonitoringTest {
         override fun tailFor(log: DaemonLog): List<String> = tails[log].orEmpty()
     }
 
-    private class RecordingBuildRepository : BuildRepository {
+    private class RecordingBuildWriter : BuildWriter {
         val saved = mutableListOf<Build>()
         override fun save(build: Build) {
             saved += build
         }
     }
 
-    private class RecordingSampleRepository : ProcessSampleRepository {
+    private class RecordingSampleWriter : ProcessSampleWriter {
         val saved = mutableListOf<Pair<GradleProcess, Long>>()
         override fun save(sample: GradleProcess, timestampMs: Long) {
             saved += sample to timestampMs

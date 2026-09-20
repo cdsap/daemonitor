@@ -3,8 +3,8 @@ package io.github.cdsap.daemonitor
 import io.github.cdsap.daemonitor.application.PollMonitoring
 import io.github.cdsap.daemonitor.application.ProcessSource
 import io.github.cdsap.daemonitor.application.DaemonLogSource
-import io.github.cdsap.daemonitor.application.BuildRepository
-import io.github.cdsap.daemonitor.application.ProcessSampleRepository
+import io.github.cdsap.daemonitor.application.BuildWriter
+import io.github.cdsap.daemonitor.application.ProcessSampleWriter
 import io.github.cdsap.daemonitor.collect.DaemonLog
 import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.domain.BuildAggregator
@@ -19,8 +19,8 @@ import io.github.cdsap.daemonitor.domain.model.GradleProcess
 class WatcherRuntime(
     processSource: ProcessSource,
     logSource: DaemonLogSource,
-    builds: BuildRepository,
-    samples: ProcessSampleRepository,
+    builds: BuildWriter,
+    samples: ProcessSampleWriter,
     aggregator: BuildAggregator,
     retentionDays: () -> Long = { RetentionPolicy.DEFAULT.defaultDays },
     clock: () -> Long = System::currentTimeMillis,
