@@ -218,7 +218,10 @@ class WatcherDatabaseTest {
             assertTrue(db.freelistPageCount() < 100L, "freelist remains unexpectedly large")
             assertEquals(2L, db.autoVacuumMode(), "new databases should use incremental auto_vacuum")
         } finally {
+            // VACUUM leaves Windows file locks until the driver is closed and sidecars are gone;
+            // remove them so @TempDir cleanup does not fail with IOException.
             db.close()
+            deleteSqliteFiles(path)
         }
     }
 
@@ -254,18 +257,20 @@ class WatcherDatabaseTest {
             assertEquals(2L, db.autoVacuumMode(), "legacy database should migrate to incremental auto_vacuum")
         } finally {
             db.close()
+            deleteSqliteFiles(path)
         }
     }
 
     @Test
     fun `database file is created owner-only`(@TempDirArg tmp: Path) {
         val path = tmp.resolve("watcher.db")
-        WatcherDatabase.open(path)
-        assertTrue(path.exists())
-        val view = Files.getFileAttributeView(path, PosixFileAttributeView::class.java)
-        if (view != null) {
-            val perms = view.readAttributes().permissions().map { it.name }
-            assertTrue(perms.none { it.startsWith("GROUP") || it.startsWith("OTHERS") }, perms.toString())
+        WatcherDatabase.open(path).use {
+            assertTrue(path.exists())
+            val view = Files.getFileAttributeView(path, PosixFileAttributeView::class.java)
+            if (view != null) {
+                val perms = view.readAttributes().permissions().map { it.name }
+                assertTrue(perms.none { it.startsWith("GROUP") || it.startsWith("OTHERS") }, perms.toString())
+            }
         }
     }
 
@@ -338,6 +343,25 @@ class WatcherDatabaseTest {
         startTimeMs = timestampMs,
         status = "RUNNING",
     )
+
+    /** Best-effort removal so Windows @TempDir cleanup is not blocked by leftover SQLite files. */
+    private fun deleteSqliteFiles(path: Path) {
+        sequenceOf(
+            path,
+            path.resolveSibling("${path.fileName}-wal"),
+            path.resolveSibling("${path.fileName}-shm"),
+            path.resolveSibling("${path.fileName}-journal"),
+        ).forEach { candidate ->
+            repeat(8) { attempt ->
+                try {
+                    Files.deleteIfExists(candidate)
+                    return@forEach
+                } catch (_: java.io.IOException) {
+                    Thread.sleep(25L * (attempt + 1))
+                }
+            }
+        }
+    }
 }
 
 private typealias TempDirArg = org.junit.jupiter.api.io.TempDir
