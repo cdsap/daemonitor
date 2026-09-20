@@ -1,5 +1,6 @@
 package io.github.cdsap.daemonitor.store
 
+import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
@@ -8,6 +9,7 @@ import io.github.cdsap.daemonitor.domain.model.Source
 import io.github.cdsap.daemonitor.persistence.BuildRepository
 import io.github.cdsap.daemonitor.persistence.ProcessSampleRepository
 import io.github.cdsap.daemonitor.persistence.RetentionRepository
+import io.github.cdsap.daemonitor.store.db.WatcherDb
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import java.nio.file.Files
@@ -137,63 +139,140 @@ class WatcherDatabaseTest {
     @Test
     fun `purge removes rows older than retention window`(@TempDirArg tmp: Path) = runTest {
         val db = WatcherDatabase.open(tmp.resolve("watcher.db"))
-        val now = 100L * 24 * 60 * 60 * 1000 // day 100
-        val old = now - 8L * 24 * 60 * 60 * 1000 // 8 days ago (> 7d retention)
-        val recent = now - 1L * 24 * 60 * 60 * 1000 // 1 day ago
-        db.save(build("old", old))
-        db.save(build("recent", recent))
-        db.save(
-            GradleProcess(
-                pid = 11,
-                parentPid = 1,
-                type = ProcessType.GRADLE_DAEMON,
-                commandLine = "java GradleDaemon",
-                workingDirectory = "/repo",
-                projectPath = "/repo",
-                cpuPercent = 1.0,
-                rssMemoryMb = 400,
-                maxHeapMb = 1024,
-                minHeapMb = null,
-                gc = null,
-                startTimeMs = 1,
-                status = "RUNNING",
-            ),
-            timestampMs = old,
-        )
-        db.save(
-            GradleProcess(
-                pid = 11,
-                parentPid = 1,
-                type = ProcessType.GRADLE_DAEMON,
-                commandLine = "java GradleDaemon",
-                workingDirectory = "/repo",
-                projectPath = "/repo",
-                cpuPercent = 1.0,
-                rssMemoryMb = 400,
-                maxHeapMb = 1024,
-                minHeapMb = null,
-                gc = null,
-                startTimeMs = 1,
-                status = "RUNNING",
-            ),
-            timestampMs = recent,
-        )
-        db.purgeOlderThan(now, retentionDays = 7)
-        val rows = db.buildsFlow().first()
-        assertEquals(listOf("recent"), rows.map { it.buildId })
-        assertEquals(1, db.recentSamples(limit = 10).size)
-        assertEquals(recent, db.recentSamples(limit = 10).single().timestampMs)
+        try {
+            val now = 100L * 24 * 60 * 60 * 1000 // day 100
+            val old = now - 8L * 24 * 60 * 60 * 1000 // 8 days ago (> 7d retention)
+            val recent = now - 1L * 24 * 60 * 60 * 1000 // 1 day ago
+            db.save(build("old", old))
+            db.save(build("recent", recent))
+            db.save(
+                GradleProcess(
+                    pid = 11,
+                    parentPid = 1,
+                    type = ProcessType.GRADLE_DAEMON,
+                    commandLine = "java GradleDaemon",
+                    workingDirectory = "/repo",
+                    projectPath = "/repo",
+                    cpuPercent = 1.0,
+                    rssMemoryMb = 400,
+                    maxHeapMb = 1024,
+                    minHeapMb = null,
+                    gc = null,
+                    startTimeMs = 1,
+                    status = "RUNNING",
+                ),
+                timestampMs = old,
+            )
+            db.save(
+                GradleProcess(
+                    pid = 11,
+                    parentPid = 1,
+                    type = ProcessType.GRADLE_DAEMON,
+                    commandLine = "java GradleDaemon",
+                    workingDirectory = "/repo",
+                    projectPath = "/repo",
+                    cpuPercent = 1.0,
+                    rssMemoryMb = 400,
+                    maxHeapMb = 1024,
+                    minHeapMb = null,
+                    gc = null,
+                    startTimeMs = 1,
+                    status = "RUNNING",
+                ),
+                timestampMs = recent,
+            )
+            db.purgeOlderThan(now, retentionDays = 7)
+            val rows = db.buildsFlow().first()
+            assertEquals(listOf("recent"), rows.map { it.buildId })
+            assertEquals(1, db.recentSamples(limit = 10).size)
+            assertEquals(recent, db.recentSamples(limit = 10).single().timestampMs)
+        } finally {
+            // VACUUM/incremental_vacuum keep Windows file locks until the JDBC driver closes.
+            db.close()
+        }
+    }
+
+    @Test
+    fun `purge compacts released sqlite pages`() {
+        // Avoid JUnit @TempDir: after VACUUM, Windows keeps SQLite locks and TempDir cleanup
+        // fails the test with IOException even when assertions passed.
+        val tmp = Files.createTempDirectory("daemonitor-compact-")
+        val path = tmp.resolve("watcher.db")
+        val db = WatcherDatabase.open(path)
+        try {
+            val now = 100L * 24 * 60 * 60 * 1000
+            val old = now - 8L * 24 * 60 * 60 * 1000
+
+            repeat(500) { index ->
+                db.save(
+                    sample(timestampMs = old + index, commandLine = "java GradleDaemon --sample=$index"),
+                    old + index,
+                )
+            }
+            val sizeBeforePurge = Files.size(path)
+
+            db.purgeOlderThan(now, retentionDays = 7)
+
+            val sizeAfterPurge = Files.size(path)
+            assertTrue(
+                sizeAfterPurge < sizeBeforePurge,
+                "database did not shrink: $sizeBeforePurge -> $sizeAfterPurge",
+            )
+            assertTrue(db.freelistPageCount() < 100L, "freelist remains unexpectedly large")
+            assertEquals(2L, db.autoVacuumMode(), "new databases should use incremental auto_vacuum")
+        } finally {
+            db.close()
+            runCatching { tmp.toFile().deleteRecursively() }
+        }
+    }
+
+    @Test
+    fun `purge migrates legacy none auto_vacuum and shrinks freelist`() {
+        val tmp = Files.createTempDirectory("daemonitor-legacy-vacuum-")
+        val path = tmp.resolve("watcher.db")
+        // Simulate a pre-compaction database: schema without auto_vacuum=INCREMENTAL.
+        JdbcSqliteDriver("jdbc:sqlite:${path.toAbsolutePath()}").use { driver ->
+            WatcherDb.Schema.create(driver)
+        }
+
+        val db = WatcherDatabase.open(path)
+        try {
+            assertEquals(0L, db.autoVacuumMode(), "legacy fixture should start with auto_vacuum=NONE")
+
+            val now = 100L * 24 * 60 * 60 * 1000
+            val old = now - 8L * 24 * 60 * 60 * 1000
+            repeat(500) { index ->
+                db.save(
+                    sample(timestampMs = old + index, commandLine = "java GradleDaemon --legacy=$index"),
+                    old + index,
+                )
+            }
+            val sizeBeforePurge = Files.size(path)
+
+            db.purgeOlderThan(now, retentionDays = 7)
+
+            assertTrue(
+                Files.size(path) < sizeBeforePurge,
+                "legacy database did not shrink after purge",
+            )
+            assertTrue(db.freelistPageCount() < 100L, "legacy freelist remains unexpectedly large")
+            assertEquals(2L, db.autoVacuumMode(), "legacy database should migrate to incremental auto_vacuum")
+        } finally {
+            db.close()
+            runCatching { tmp.toFile().deleteRecursively() }
+        }
     }
 
     @Test
     fun `database file is created owner-only`(@TempDirArg tmp: Path) {
         val path = tmp.resolve("watcher.db")
-        WatcherDatabase.open(path)
-        assertTrue(path.exists())
-        val view = Files.getFileAttributeView(path, PosixFileAttributeView::class.java)
-        if (view != null) {
-            val perms = view.readAttributes().permissions().map { it.name }
-            assertTrue(perms.none { it.startsWith("GROUP") || it.startsWith("OTHERS") }, perms.toString())
+        WatcherDatabase.open(path).use {
+            assertTrue(path.exists())
+            val view = Files.getFileAttributeView(path, PosixFileAttributeView::class.java)
+            if (view != null) {
+                val perms = view.readAttributes().permissions().map { it.name }
+                assertTrue(perms.none { it.startsWith("GROUP") || it.startsWith("OTHERS") }, perms.toString())
+            }
         }
     }
 
@@ -211,41 +290,61 @@ class WatcherDatabaseTest {
     @Test
     fun `repository ports expose build sample and retention operations`(@TempDirArg tmp: Path) {
         val database = WatcherDatabase.open(tmp.resolve("watcher.db"))
-        val builds: BuildRepository = database
-        val samples: ProcessSampleRepository = database
-        val retention: RetentionRepository = database
+        try {
+            val builds: BuildRepository = database
+            val samples: ProcessSampleRepository = database
+            val retention: RetentionRepository = database
 
-        samples.save(
-            GradleProcess(
-                pid = 11,
-                parentPid = 1,
-                type = ProcessType.GRADLE_DAEMON,
-                commandLine = "java GradleDaemon",
-                workingDirectory = "/repo",
-                projectPath = "/repo",
-                cpuPercent = 1.0,
-                rssMemoryMb = 400,
-                maxHeapMb = 1024,
-                minHeapMb = null,
-                gc = null,
-                startTimeMs = 1,
-                status = "RUNNING",
-            ),
-            timestampMs = 5_000,
-        )
-        builds.save(build("port-build", 5_000, project = "/repo"))
+            samples.save(
+                GradleProcess(
+                    pid = 11,
+                    parentPid = 1,
+                    type = ProcessType.GRADLE_DAEMON,
+                    commandLine = "java GradleDaemon",
+                    workingDirectory = "/repo",
+                    projectPath = "/repo",
+                    cpuPercent = 1.0,
+                    rssMemoryMb = 400,
+                    maxHeapMb = 1024,
+                    minHeapMb = null,
+                    gc = null,
+                    startTimeMs = 1,
+                    status = "RUNNING",
+                ),
+                timestampMs = 5_000,
+            )
+            builds.save(build("port-build", 5_000, project = "/repo"))
 
-        assertEquals(listOf("port-build"), builds.recent().map { it.buildId })
-        assertEquals(listOf("/repo"), builds.distinctProjects())
-        assertEquals(1, builds.search("port", limit = 10).size)
-        assertEquals(1, builds.findByDaemon(1, limit = 10).size)
-        assertEquals(listOf(400L to 1.0), samples.samples(11, fromMs = 0, toMs = 10_000))
-        assertEquals(1, samples.findByPid(11, limit = 10).size)
-        assertEquals(1, samples.recentSamples(limit = 10).size)
+            assertEquals(listOf("port-build"), builds.recent().map { it.buildId })
+            assertEquals(listOf("/repo"), builds.distinctProjects())
+            assertEquals(1, builds.search("port", limit = 10).size)
+            assertEquals(1, builds.findByDaemon(1, limit = 10).size)
+            assertEquals(listOf(400L to 1.0), samples.samples(11, fromMs = 0, toMs = 10_000))
+            assertEquals(1, samples.findByPid(11, limit = 10).size)
+            assertEquals(1, samples.recentSamples(limit = 10).size)
 
-        retention.purgeOlderThan(nowMs = 5_000 + 8L * 24 * 60 * 60 * 1000, retentionDays = 7)
-        assertTrue(builds.recent().isEmpty())
+            retention.purgeOlderThan(nowMs = 5_000 + 8L * 24 * 60 * 60 * 1000, retentionDays = 7)
+            assertTrue(builds.recent().isEmpty())
+        } finally {
+            database.close()
+        }
     }
+
+    private fun sample(timestampMs: Long, commandLine: String) = GradleProcess(
+        pid = 5,
+        parentPid = 1,
+        type = ProcessType.GRADLE_DAEMON,
+        commandLine = commandLine,
+        workingDirectory = "/p",
+        projectPath = "/p",
+        cpuPercent = 1.0,
+        rssMemoryMb = 300,
+        maxHeapMb = 1024,
+        minHeapMb = null,
+        gc = null,
+        startTimeMs = timestampMs,
+        status = "RUNNING",
+    )
 }
 
 private typealias TempDirArg = org.junit.jupiter.api.io.TempDir

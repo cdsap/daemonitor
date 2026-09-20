@@ -58,7 +58,11 @@ for overhead, failure behavior, and when heap is expected to stay unavailable.
 
 ### Settings
 
-- History retention (default 15 days, range 1–90). Lowering it deletes older entries right away.
+- History retention (default 15 days, range 1–90). Lowering it deletes older entries right away
+  and incrementally compacts the SQLite database so the on-disk file tracks retained data.
+  There is no separate “compacting…” UI; purge/compact runs during startup and when retention
+  changes. A legacy database may pause longer on its first purge (seconds to minutes on multi-GB
+  files) while SQLite performs a one-time full compaction into incremental auto-vacuum mode.
 
 ### Headless collection
 
