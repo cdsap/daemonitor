@@ -11,8 +11,10 @@ val buildCommit = providers.environmentVariable("GITHUB_SHA")
     .map { it.take(8) }
     .orElse(providers.provider {
         runCatching {
+            // Use rootDir (the checkout / worktree being built), not parentFile —
+            // from .worktrees/<name>, parent is .worktrees/ and git reports the primary HEAD.
             val process = ProcessBuilder("git", "rev-parse", "--short=8", "HEAD")
-                .directory(rootDir.parentFile)
+                .directory(rootDir)
                 .redirectErrorStream(true)
                 .start()
             val output = process.inputStream.bufferedReader().use { it.readText() }.trim()
