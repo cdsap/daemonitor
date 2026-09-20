@@ -6,6 +6,7 @@ import io.github.cdsap.daemonitor.application.DaemonLogSource
 import io.github.cdsap.daemonitor.application.BuildRepository
 import io.github.cdsap.daemonitor.application.ProcessSampleRepository
 import io.github.cdsap.daemonitor.collect.DaemonLog
+import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.domain.BuildAggregator
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 
@@ -21,6 +22,7 @@ class WatcherRuntime(
     builds: BuildRepository,
     samples: ProcessSampleRepository,
     aggregator: BuildAggregator,
+    retentionDays: () -> Long = { RetentionPolicy.DEFAULT.defaultDays },
     clock: () -> Long = System::currentTimeMillis,
 ) {
     private val monitoring = PollMonitoring(
@@ -29,6 +31,7 @@ class WatcherRuntime(
         builds = builds,
         samples = samples,
         aggregator = aggregator,
+        retentionDays = retentionDays,
         clock = clock,
     )
 
