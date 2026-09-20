@@ -23,7 +23,9 @@ import androidx.compose.ui.test.requestFocus
 import androidx.compose.ui.test.runComposeUiTest
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.unit.dp
+import io.github.cdsap.daemonitor.domain.LiveMetricLabels
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
+import io.github.cdsap.daemonitor.domain.model.LiveJvmHeap
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.persistence.AppearancePreference
 import io.github.cdsap.daemonitor.ui.common.WatcherTheme
@@ -40,7 +42,9 @@ class LiveMonitorScreenUiTest {
         type: ProcessType = ProcessType.GRADLE_DAEMON,
         commandLine: String = "java org.gradle.launcher.daemon.bootstrap.GradleDaemon 9.5",
         maxHeapMb: Long? = 4096,
+        cpuPercent: Double? = 12.0,
         rssMemoryMb: Long = 1024,
+        liveHeap: LiveJvmHeap? = null,
     ) = GradleProcess(
         pid = pid,
         parentPid = 1,
@@ -48,7 +52,7 @@ class LiveMonitorScreenUiTest {
         commandLine = commandLine,
         workingDirectory = "/Users/dev/my-app",
         projectPath = "/Users/dev/my-app",
-        cpuPercent = 12.0,
+        cpuPercent = cpuPercent,
         rssMemoryMb = rssMemoryMb,
         maxHeapMb = maxHeapMb,
         minHeapMb = 256,
@@ -56,6 +60,7 @@ class LiveMonitorScreenUiTest {
         startTimeMs = 1_700_000_000_000,
         status = "RUNNING",
         automated = false,
+        liveHeap = liveHeap,
     )
 
     @Test
@@ -101,6 +106,53 @@ class LiveMonitorScreenUiTest {
 
         onNodeWithText("UPTIME").assertExists()        // new column header
         onNodeWithText("Gradle daemon").assertExists() // classified type label in the row
+    }
+
+    @Test
+    fun `first-poll cpu shows sampling and wrapper heap explains not probed`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+
+        val wrapper = sampleProcess(
+            pid = 99,
+            type = ProcessType.GRADLE_WRAPPER,
+            commandLine = "java org.gradle.wrapper.GradleWrapperMain test",
+            cpuPercent = null,
+            liveHeap = LiveJvmHeap.unavailable(1_000L),
+        )
+        val idleDaemon = sampleProcess(
+            pid = 100,
+            cpuPercent = 0.0,
+            liveHeap = LiveJvmHeap(
+                usedMb = 400,
+                committedMb = 512,
+                maxMb = 4096,
+                sampledAtMs = 1_000L,
+                available = true,
+            ),
+        )
+        val state = LiveUiState(
+            processes = listOf(wrapper, idleDaemon),
+            summary = LiveSummary(activeProcessCount = 2, totalRssMb = 2048, highestMemoryPid = 99, activeProjectCount = 1),
+            detail = DetailState.Selected(wrapper),
+            isLoading = false,
+            isEmpty = false,
+        )
+
+        setContent {
+            WatcherTheme(appearance = AppearancePreference.DARK) {
+                LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+            }
+        }
+
+        onNodeWithText(LiveMetricLabels.CPU_SAMPLING_COMPACT, useUnmergedTree = true).assertExists()
+        onNodeWithText("0%", useUnmergedTree = true).assertExists()
+        onNodeWithText(LiveMetricLabels.HEAP_UNAVAILABLE_COMPACT, useUnmergedTree = true).assertExists()
+        onNodeWithText("400 MB", useUnmergedTree = true).assertExists()
+        onNodeWithText(LiveMetricLabels.cpuDetail(null), useUnmergedTree = true).assertExists()
+        onNodeWithText(
+            LiveMetricLabels.liveHeapUsedDetail(wrapper.liveHeap, wrapper.type),
+            useUnmergedTree = true,
+        ).assertExists()
     }
 
     @Test

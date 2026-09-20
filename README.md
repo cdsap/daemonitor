@@ -30,6 +30,8 @@ Website: <https://cdsap.github.io/daemonitor/>
 - Running Gradle-related JVMs, by type:
   - 🐘 Gradle daemon · 🐘+🔧 wrapper · Kotlin daemon · 🧪 test worker · ☕ other related JVM
 - RSS, live JVM heap used/committed (when Attach/JMX succeeds), CPU, and uptime per process
+  - CPU shows `…` / `sampling…` on the first poll until a delta sample exists; `0%` means idle after that
+  - Live heap stays `n/a` for wrappers, test workers, and other non-daemon related JVMs (daemons only)
 - Summary stats: active processes, total RSS, highest-memory PID (clickable; PID also shown in the table), active projects
 - Badges for high/critical memory, `MULTI-BUILD`, and `AUTOMATED`
 - Detail panel: heap used/committed, `-Xmx` limit, runtime heap max, GC, working dir, redacted command line, live daemon-log tail
@@ -43,7 +45,8 @@ Website: <https://cdsap.github.io/daemonitor/>
 - Solid lines for RSS / heap used, dashed for `-Xmx` when known
 - Click the legend to hide or focus a series
 
-Live heap collection uses JDK Attach + local JMX; see [JVM heap collection](docs/jvm-heap-collection.md) for overhead and failure behavior.
+Live heap collection uses JDK Attach + local JMX; see [JVM heap collection](docs/jvm-heap-collection.md)
+for overhead, failure behavior, and when heap is expected to stay unavailable.
 
 ### Historical
 

@@ -1,12 +1,12 @@
 package io.github.cdsap.daemonitor
 
+import io.github.cdsap.daemonitor.domain.LiveMetricLabels
 import io.github.cdsap.daemonitor.config.MonitoringConfig
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import java.io.InputStream
 import java.io.PrintStream
 import java.time.Instant
-import java.util.Locale
 import kotlin.time.Duration
 
 /** Terminal presentation for the UI-independent headless monitoring runtime. */
@@ -79,9 +79,9 @@ object HeadlessTerminalRenderer {
                         "${process.type.displayName().padEnd(16)} " +
                             "${process.pid.toString().padStart(6)}  " +
                         "${ansi((process.rssMemoryMb.toString() + " MB").padStart(8), colorEnabled, YELLOW)}  " +
-                            "${ansi((live?.usedMb?.let { "$it MB" } ?: "—").padStart(9), colorEnabled, GREEN)}  " +
-                            "${ansi((live?.committedMb?.let { "$it MB" } ?: "—").padStart(9), colorEnabled, CYAN)}  " +
-                            "${ansi((process.maxHeapMb?.let { "$it MB" } ?: "—").padStart(10), colorEnabled, MAGENTA)}  " +
+                            "${ansi(LiveMetricLabels.liveHeapUsedCompact(process.liveHeap).padStart(9), colorEnabled, GREEN)}  " +
+                            "${ansi((live?.committedMb?.let { "$it MB" } ?: LiveMetricLabels.HEAP_UNAVAILABLE_COMPACT).padStart(9), colorEnabled, CYAN)}  " +
+                            "${ansi((process.maxHeapMb?.let { "$it MB" } ?: LiveMetricLabels.HEAP_UNAVAILABLE_COMPACT).padStart(10), colorEnabled, MAGENTA)}  " +
                             "${cpuText(process.cpuPercent, colorEnabled)}  " +
                             "${uptime(process.startTimeMs, updatedAtMs).padStart(7)}  " +
                             projectName(process).take(32),
@@ -122,7 +122,7 @@ object HeadlessTerminalRenderer {
     }
 
     private fun cpuText(cpuPercent: Double?, colorEnabled: Boolean): String {
-        val text = cpuPercent?.let { String.format(Locale.ROOT, "%3.0f%%", it) } ?: "  —"
+        val text = LiveMetricLabels.cpuCli(cpuPercent)
         val color = when {
             cpuPercent == null -> DIM
             cpuPercent >= 80.0 -> RED

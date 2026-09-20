@@ -10,7 +10,29 @@ Daemonitor collects three distinct memory signals for Gradle-related JVMs:
 | **Heap limit (`-Xmx`)** | Argv parse (`JvmArgParser`) | Configured maximum heap from the process command line |
 | **Live heap** | JDK Attach + local JMX `MemoryMXBean` | Runtime used / committed / max heap inside the JVM |
 
-Missing live-heap values are reported as **unavailable** (UI `unavailable` / CLI `—` / JSON `null` + `heapAvailable: false`). They are never coerced to zero.
+Missing live-heap values are reported as **unavailable** (UI detail `unavailable` / table+CLI `n/a` /
+JSON `null` + `heapAvailable: false`). They are never coerced to zero.
+
+## When live heap stays unavailable
+
+Live heap is **intentionally not probed** for:
+
+- Gradle wrappers
+- Test workers
+- Other non-daemon Gradle-related JVMs (`JAVA_GRADLE_RELATED`)
+
+Those rows keep RSS and configured `-Xmx` (when present) but show heap used/committed as `n/a` /
+`unavailable`. That is expected, not a broken metric.
+
+Gradle and Kotlin **daemon** processes are probed; they can still show unavailable when Attach/JMX
+fails (permissions, exited PID, non-HotSpot target — see Failure behavior below).
+
+## Live CPU first sample
+
+CPU% is a delta over the prior poll (OSHI cumulative CPU time ÷ wall clock ÷ logical processors).
+On the **first observation** of a process there is no prior sample, so Live/CLI show `…` /
+`sampling…` rather than an em dash or `0%`. After the next ~2s poll, `0%` means idle and a
+non-zero value means measured usage.
 
 ## Mechanism
 
@@ -38,7 +60,8 @@ connector address. Entries for processes that disappear are evicted each poll.
 - **PID exit / attach failure / timeout:** drop the cached address and sample for that identity and
   mark heap unavailable for that sample; RSS and `-Xmx` collection continue unchanged.
 - Each attach/JMX attempt is bounded (~750ms). Self-attach is skipped to avoid HotSpot deadlocks.
-- Only Gradle and Kotlin **daemon** processes are probed; wrappers and test workers stay unavailable.
+- Only Gradle and Kotlin **daemon** processes are probed; wrappers, test workers, and other
+  non-daemon related JVMs stay unavailable by design (see When live heap stays unavailable).
 - Probes run on the existing IO poll path; they do not block the UI thread.
 
 ## Failure behavior
