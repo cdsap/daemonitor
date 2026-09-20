@@ -30,7 +30,7 @@ Website: <https://cdsap.github.io/daemonitor/>
 - Running Gradle-related JVMs, by type:
   - 🐘 Gradle daemon · 🐘+🔧 wrapper · Kotlin daemon · 🧪 test worker · ☕ other related JVM
 - RSS, live JVM heap used/committed (when Attach/JMX succeeds), CPU, and uptime per process
-- Summary stats: active processes, total RSS, highest-memory PID, active projects
+- Summary stats: active processes, total RSS, highest-memory PID (clickable; PID also shown in the table), active projects
 - Badges for high/critical memory, `MULTI-BUILD`, and `AUTOMATED`
 - Detail panel: heap used/committed, `-Xmx` limit, runtime heap max, GC, working dir, redacted command line, live daemon-log tail
 - Toolbar action to switch to headless collection (and MCP status when enabled)

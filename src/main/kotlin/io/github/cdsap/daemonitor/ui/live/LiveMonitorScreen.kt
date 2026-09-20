@@ -68,13 +68,14 @@ import io.github.cdsap.daemonitor.ui.common.TableHeader
 import io.github.cdsap.daemonitor.ui.common.cycleIndex
 
 private val COLS = listOf(
-    Col("Type", 1.3f),
-    Col("Project", 1.7f),
-    Col("RSS", 0.8f, end = true),
-    Col("Heap used", 0.9f, end = true),
-    Col("CPU", 0.6f, end = true),
-    Col("Uptime", 0.9f, end = true),
-    Col("Flags", 1.5f),
+    Col("Type", 1.2f),
+    Col("Project", 1.5f),
+    Col("PID", 0.55f, end = true),
+    Col("RSS", 0.75f, end = true),
+    Col("Heap used", 0.85f, end = true),
+    Col("CPU", 0.55f, end = true),
+    Col("Uptime", 0.85f, end = true),
+    Col("Flags", 1.4f),
 )
 
 @Composable
@@ -96,7 +97,7 @@ fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit, onClearSelec
     }
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        SummaryHeader(state)
+        SummaryHeader(state, onSelectPeakMemoryPid = onSelect)
         if (state.isLoading) {
             EmptyState("Scanning for Gradle processes...", modifier = Modifier.weight(1f))
         } else if (state.isEmpty) {
@@ -165,7 +166,7 @@ fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit, onClearSelec
 }
 
 @Composable
-private fun SummaryHeader(state: LiveUiState) {
+private fun SummaryHeader(state: LiveUiState, onSelectPeakMemoryPid: (Long) -> Unit) {
     Column {
         ScreenHeader("Process monitor") {
             val degraded = state.pollError != null
@@ -187,7 +188,15 @@ private fun SummaryHeader(state: LiveUiState) {
         ) {
             StatTile("Processes", state.summary.activeProcessCount.toString(), Modifier.weight(1f), icon = Icons.Filled.Memory)
             StatTile("Resident memory", "${state.summary.totalRssMb} MB", Modifier.weight(1f), icon = Icons.Filled.Storage, accent = LocalAccentColors.current.info)
-            StatTile("Peak memory PID", state.summary.highestMemoryPid?.toString() ?: "—", Modifier.weight(1f), icon = Icons.Filled.TrendingUp, accent = LocalAccentColors.current.warn)
+            val peakPid = state.summary.highestMemoryPid
+            StatTile(
+                label = "Peak memory PID",
+                value = peakPid?.toString() ?: "—",
+                modifier = Modifier.weight(1f).testTag("peak-memory-pid-tile"),
+                icon = Icons.Filled.TrendingUp,
+                accent = LocalAccentColors.current.warn,
+                onClick = peakPid?.let { pid -> { onSelectPeakMemoryPid(pid) } },
+            )
             StatTile("Projects", state.summary.activeProjectCount.toString(), Modifier.weight(1f), icon = Icons.Filled.FolderOpen, accent = LocalAccentColors.current.brand)
         }
     }
@@ -219,11 +228,12 @@ private fun ProcessRow(
             }
         }
         Cell(p.projectPath?.substringAfterLast('/') ?: "—", COLS[1], muted = p.projectPath == null)
-        Cell("${p.rssMemoryMb} MB", COLS[2])
-        Cell(p.liveHeapUsedLabel(), COLS[3], muted = p.liveHeap?.available != true)
-        Cell(p.cpuPercent?.let { "%.0f%%".format(it) } ?: "—", COLS[4])
-        Cell(formatUptime(p.startTimeMs, nowMs), COLS[5])
-        Row(modifier = Modifier.weight(COLS[6].weight), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
+        Cell(p.pid.toString(), COLS[2])
+        Cell("${p.rssMemoryMb} MB", COLS[3])
+        Cell(p.liveHeapUsedLabel(), COLS[4], muted = p.liveHeap?.available != true)
+        Cell(p.cpuPercent?.let { "%.0f%%".format(it) } ?: "—", COLS[5])
+        Cell(formatUptime(p.startTimeMs, nowMs), COLS[6])
+        Row(modifier = Modifier.weight(COLS[7].weight), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
             Badges.memoryBadge(p.rssMemoryMb)?.let { MemoryBadge(it) }
             if (concurrent) ConcurrentBadge()
             if (p.automated) AutomatedBadge()
