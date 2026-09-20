@@ -218,7 +218,9 @@ jobs:
 
   publish-assets:
     name: Publish release assets and metadata
-    needs: build-assets
+    needs:
+      - build-assets
+      - build-cli-asset
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -279,3 +281,95 @@ jobs:
             release-metadata/update.json \
             release-metadata/checksums.txt \
             --clobber
+
+  update-homebrew-tap:
+    name: Update Homebrew tap formula
+    needs: publish-assets
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for Homebrew tap deploy key
+        id: tap-key
+        env:
+          HOMEBREW_TAP_SSH_KEY: ${{ secrets.HOMEBREW_TAP_SSH_KEY }}
+        run: |
+          if [[ -z "${HOMEBREW_TAP_SSH_KEY}" ]]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "HOMEBREW_TAP_SSH_KEY not configured; skipping Homebrew tap update"
+            echo "### Homebrew tap" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Skipped (add repository secret HOMEBREW_TAP_SSH_KEY: write deploy key for cdsap/homebrew-tap)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up JDK 21
+        if: steps.tap-key.outputs.available == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        if: steps.tap-key.outputs.available == 'true'
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Download standalone CLI asset
+        if: steps.tap-key.outputs.available == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: standalone-cli
+          path: cli-release
+
+      - name: Read package version
+        if: steps.tap-key.outputs.available == 'true'
+        id: package-version
+        run: echo "value=$(./gradlew -q printNativePackageVersion --no-daemon)" >> "$GITHUB_OUTPUT"
+
+      - name: Compute CLI archive checksum
+        if: steps.tap-key.outputs.available == 'true'
+        id: cli
+        run: |
+          set -euo pipefail
+          version="${{ steps.package-version.outputs.value }}"
+          archive="cli-release/daemonitor-cli-${version}.zip"
+          test -s "$archive"
+          echo "sha256=$(sha256sum "$archive" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout homebrew-tap
+        if: steps.tap-key.outputs.available == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: cdsap/homebrew-tap
+          ssh-key: ${{ secrets.HOMEBREW_TAP_SSH_KEY }}
+          path: homebrew-tap
+
+      - name: Bump daemonitor-cli formula
+        if: steps.tap-key.outputs.available == 'true'
+        run: |
+          scripts/update-homebrew-formula.sh \
+            "${{ steps.package-version.outputs.value }}" \
+            "${{ steps.cli.outputs.sha256 }}" \
+            homebrew-tap
+
+      - name: Commit and push formula bump
+        if: steps.tap-key.outputs.available == 'true'
+        working-directory: homebrew-tap
+        env:
+          VERSION: ${{ steps.package-version.outputs.value }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- Formula/daemonitor-cli.rb; then
+            echo "Homebrew formula already up to date for v${VERSION}"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/daemonitor-cli.rb
+          git commit -m "daemonitor-cli ${VERSION}"
+          git push
+          echo "### Homebrew tap" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Updated cdsap/homebrew-tap to daemonitor-cli ${VERSION}" >> "$GITHUB_STEP_SUMMARY"

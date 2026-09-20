@@ -3,17 +3,17 @@ package io.github.cdsap.daemonitor.store
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
-import io.github.cdsap.daemonitor.application.BuildRepository as ApplicationBuildRepository
-import io.github.cdsap.daemonitor.application.ProcessSampleRepository as ApplicationProcessSampleRepository
+import io.github.cdsap.daemonitor.application.BuildWriter
+import io.github.cdsap.daemonitor.application.ProcessSampleWriter
 import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.domain.model.Source
-import io.github.cdsap.daemonitor.persistence.BuildRepository as PersistenceBuildRepository
+import io.github.cdsap.daemonitor.persistence.BuildRepository
 import io.github.cdsap.daemonitor.persistence.ProcessSample
-import io.github.cdsap.daemonitor.persistence.ProcessSampleRepository as PersistenceProcessSampleRepository
+import io.github.cdsap.daemonitor.persistence.ProcessSampleRepository
 import io.github.cdsap.daemonitor.persistence.RetentionRepository
 import io.github.cdsap.daemonitor.platform.AppDirectories
 import io.github.cdsap.daemonitor.store.db.Process_samples
@@ -44,10 +44,10 @@ class WatcherDatabase private constructor(
     private val driver: JdbcSqliteDriver,
     private val ioDispatcher: CoroutineDispatcher,
 ) : AutoCloseable,
-    ApplicationBuildRepository,
-    ApplicationProcessSampleRepository,
-    PersistenceBuildRepository,
-    PersistenceProcessSampleRepository,
+    BuildWriter,
+    ProcessSampleWriter,
+    BuildRepository,
+    ProcessSampleRepository,
     RetentionRepository {
 
     override fun close() = driver.close()

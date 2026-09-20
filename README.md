@@ -30,7 +30,7 @@ Website: <https://cdsap.github.io/daemonitor/>
 - Running Gradle-related JVMs, by type:
   - 🐘 Gradle daemon · 🐘+🔧 wrapper · Kotlin daemon · 🧪 test worker · ☕ other related JVM
 - RSS, live JVM heap used/committed (when Attach/JMX succeeds), CPU, and uptime per process
-- Summary stats: active processes, total RSS, highest-memory PID, active projects
+- Summary stats: active processes, total RSS, highest-memory PID (clickable; PID also shown in the table), active projects
 - Badges for high/critical memory, `MULTI-BUILD`, and `AUTOMATED`
 - Detail panel: heap used/committed, `-Xmx` limit, runtime heap max, GC, working dir, redacted command line, live daemon-log tail
 - Toolbar action to switch to headless collection (and MCP status when enabled)
@@ -98,6 +98,8 @@ variables are not treated as proof that every build came from Claude.
 
 ## Install
 
+### Desktop app
+
 | OS | First-time installer | In-app update package |
 |----|----------------------|------------------------|
 | macOS | `.dmg` | `.zip` app bundle |
@@ -113,6 +115,17 @@ the current user.
 On Linux, prefer the GitHub Releases `.deb` for installs and `.tar.gz` for writable standalone
 updates. Package-managed prompts stay advisory; see
 [Linux Update Distribution](docs/linux-update-distribution.md).
+
+### CLI (Homebrew)
+
+```bash
+brew tap cdsap/tap
+brew trust cdsap/tap   # Homebrew 7+
+brew install daemonitor-cli
+```
+
+Requires JDK 21 (`openjdk@21` is pulled in as a dependency). The formula tracks the
+`daemonitor-cli-*.zip` asset on [GitHub Releases](https://github.com/cdsap/daemonitor/releases).
 
 ## Updates
 
@@ -144,9 +157,10 @@ ssh -t build-machine daemonitor --headless
 Packaged launchers also accept `--headless`. Desktop and headless share the database and retention
 setting. Stop a source-run headless process with `Ctrl+C`.
 
-### Standalone CLI
+### Standalone CLI (from source)
 
-The standalone terminal distribution is built without Compose or desktop UI dependencies:
+Prefer Homebrew when you only need the terminal monitor. From source, the standalone distribution is
+built without Compose or desktop UI dependencies:
 
 ```bash
 ./gradlew :cli:run --args="--help"
@@ -217,8 +231,12 @@ Mac App Store experiments use a separate channel (see
 ./gradlew packagePkg -Pdaemonitor.distribution=APP_STORE
 ```
 
-Tag-triggered releases also publish `latest.json`, `update.json`, and `checksums.txt`. See
-[docs/update-metadata.md](docs/update-metadata.md).
+Tag-triggered releases also publish `latest.json`, `update.json`, `checksums.txt`, and
+`daemonitor-cli-<version>.zip`. See [docs/update-metadata.md](docs/update-metadata.md).
+
+To auto-bump the Homebrew formula on each tag, the release workflow uses repository secret
+`HOMEBREW_TAP_SSH_KEY` (write deploy key on [cdsap/homebrew-tap](https://github.com/cdsap/homebrew-tap)).
+Without it, update the formula manually with `scripts/update-homebrew-formula.sh`.
 
 ## Test
 

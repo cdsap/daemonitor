@@ -86,10 +86,16 @@ internal object HeadlessLauncher {
                             lastResult = it
                             pollError = null
                         }
-                        .onFailure {
-                            pollError = it.message ?: it::class.simpleName ?: "unknown error"
-                            error.println("Daemonitor poll failed: $pollError")
+                        .onFailure { failure ->
+                            if (ShutdownInterrupts.matches(failure)) {
+                                running.set(false)
+                                Thread.currentThread().interrupt()
+                            } else {
+                                pollError = failure.message ?: failure::class.simpleName ?: "unknown error"
+                                error.println("Daemonitor poll failed: $pollError")
+                            }
                         }
+                    if (!running.get()) break
                     terminal.render(lastResult, System.currentTimeMillis(), pollError)
                     if (terminal.shouldQuit()) break
                     delay(MonitoringConfig.DEFAULT.pollInterval)
@@ -118,6 +124,7 @@ internal object HeadlessLauncher {
 }
 
 fun main(args: Array<String>) {
+    PosixStopSignals.ensureDeliverable()
     val exitCode = HeadlessLauncher.run(args)
     if (exitCode != 0) kotlin.system.exitProcess(exitCode)
 }
