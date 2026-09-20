@@ -71,11 +71,13 @@ supported OSes, a tray/menu-bar icon offers **Open Daemonitor** and **Quit Daemo
 ### MCP access
 
 Optional local, read-only MCP server so agent tools can inspect retained history and current
-Gradle-related processes. Same SQLite database as the desktop app. Tools:
+Gradle-related processes. Same SQLite database as the desktop app. Live process command lines from
+`daemonitor_current_processes` are redacted with the same policy as stored samples and the UI
+(sensitive `-P`/`-D`/`--` values and credentialed URLs). Tools:
 
 - `daemonitor_search_history` — search builds by id, command, project, status, source, or agent
 - `daemonitor_builds_for_process` — builds and samples for a daemon PID or process text
-- `daemonitor_current_processes` — Gradle-related processes visible right now
+- `daemonitor_current_processes` — Gradle-related processes visible right now (redacted command lines)
 
 ### Agent attribution
 

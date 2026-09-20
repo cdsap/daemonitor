@@ -145,9 +145,47 @@ class WatcherDatabaseTest {
             val recent = now - 1L * 24 * 60 * 60 * 1000 // 1 day ago
             db.save(build("old", old))
             db.save(build("recent", recent))
+            db.save(
+                GradleProcess(
+                    pid = 11,
+                    parentPid = 1,
+                    type = ProcessType.GRADLE_DAEMON,
+                    commandLine = "java GradleDaemon",
+                    workingDirectory = "/repo",
+                    projectPath = "/repo",
+                    cpuPercent = 1.0,
+                    rssMemoryMb = 400,
+                    maxHeapMb = 1024,
+                    minHeapMb = null,
+                    gc = null,
+                    startTimeMs = 1,
+                    status = "RUNNING",
+                ),
+                timestampMs = old,
+            )
+            db.save(
+                GradleProcess(
+                    pid = 11,
+                    parentPid = 1,
+                    type = ProcessType.GRADLE_DAEMON,
+                    commandLine = "java GradleDaemon",
+                    workingDirectory = "/repo",
+                    projectPath = "/repo",
+                    cpuPercent = 1.0,
+                    rssMemoryMb = 400,
+                    maxHeapMb = 1024,
+                    minHeapMb = null,
+                    gc = null,
+                    startTimeMs = 1,
+                    status = "RUNNING",
+                ),
+                timestampMs = recent,
+            )
             db.purgeOlderThan(now, retentionDays = 7)
             val rows = db.buildsFlow().first()
             assertEquals(listOf("recent"), rows.map { it.buildId })
+            assertEquals(1, db.recentSamples(limit = 10).size)
+            assertEquals(recent, db.recentSamples(limit = 10).single().timestampMs)
         } finally {
             // VACUUM/incremental_vacuum keep Windows file locks until the JDBC driver closes.
             db.close()

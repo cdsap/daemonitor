@@ -33,6 +33,7 @@ class CoreContainer(
         aggregator = buildAggregator,
         builds = database,
         samples = database,
+        retentionDays = { settingsStore.load().retentionDays },
         clock = clock,
     )
 

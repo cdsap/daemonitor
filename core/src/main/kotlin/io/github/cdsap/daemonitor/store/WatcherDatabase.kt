@@ -184,7 +184,7 @@ class WatcherDatabase private constructor(
 
     /** Delete samples and builds older than [retentionDays] before [nowMs] (KTD-5). */
     override fun purgeOlderThan(nowMs: Long, retentionDays: Long) {
-        val cutoff = nowMs - retentionDays * 24 * 60 * 60 * 1000
+        val cutoff = RetentionPolicy.DEFAULT.cutoffEpochMs(nowMs, retentionDays)
         db.watcherQueries.purgeSamplesOlderThan(cutoff)
         db.watcherQueries.purgeBuildsOlderThan(cutoff)
         compactAfterPurge()
