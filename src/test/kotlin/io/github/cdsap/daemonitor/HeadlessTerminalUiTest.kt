@@ -32,9 +32,34 @@ class HeadlessTerminalUiTest {
         assertTrue(output.contains("HEAP USED"))
         assertTrue(output.contains("HEAP CMT"))
         assertTrue(output.contains("2048 MB"))
-        assertTrue(output.contains("—")) // missing live heap stays unavailable, not zero
+        assertTrue(output.contains("n/a")) // missing live heap stays unavailable, not zero
         assertTrue(output.indexOf("large") < output.indexOf("small"))
         assertTrue(output.contains("Press q (or q + Enter) to quit"))
+    }
+
+    @Test
+    fun `renderer shows sampling for first-poll cpu and zero after sample`() {
+        val sampling = HeadlessTerminalRenderer.render(
+            result = WatcherRuntime.PollResult(
+                processes = listOf(process(pid = 10, rssMb = 256, heapLimitMb = 512, project = "app", cpu = null)),
+                daemonLogs = emptyList(),
+                buildsChanged = false,
+            ),
+            updatedAtMs = 1_000L,
+        )
+        val idle = HeadlessTerminalRenderer.render(
+            result = WatcherRuntime.PollResult(
+                processes = listOf(process(pid = 10, rssMb = 256, heapLimitMb = 512, project = "app", cpu = 0.0)),
+                daemonLogs = emptyList(),
+                buildsChanged = false,
+            ),
+            updatedAtMs = 3_000L,
+        )
+
+        assertTrue(sampling.contains("…"), sampling)
+        assertFalse(sampling.contains("  0%"), sampling)
+        assertTrue(idle.contains("  0%"), idle)
+        assertFalse(idle.contains("…"), idle)
     }
 
     @Test
@@ -88,14 +113,20 @@ class HeadlessTerminalUiTest {
         assertFalse(terminal.shouldQuit())
     }
 
-    private fun process(pid: Long, rssMb: Long, heapLimitMb: Long? = null, project: String) = GradleProcess(
+    private fun process(
+        pid: Long,
+        rssMb: Long,
+        heapLimitMb: Long? = null,
+        project: String,
+        cpu: Double? = 12.0,
+    ) = GradleProcess(
         pid = pid,
         parentPid = 1,
         type = ProcessType.GRADLE_DAEMON,
         commandLine = "GradleDaemon",
         workingDirectory = "/tmp/$project",
         projectPath = "/tmp/$project",
-        cpuPercent = 12.0,
+        cpuPercent = cpu,
         rssMemoryMb = rssMb,
         maxHeapMb = heapLimitMb,
         minHeapMb = null,

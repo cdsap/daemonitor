@@ -46,6 +46,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import io.github.cdsap.daemonitor.domain.LiveMetricLabels
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.ui.common.LocalAccentColors
 import io.github.cdsap.daemonitor.ui.common.AutomatedBadge
@@ -220,8 +221,8 @@ private fun ProcessRow(
         }
         Cell(p.projectPath?.substringAfterLast('/') ?: "—", COLS[1], muted = p.projectPath == null)
         Cell("${p.rssMemoryMb} MB", COLS[2])
-        Cell(p.liveHeapUsedLabel(), COLS[3], muted = p.liveHeap?.available != true)
-        Cell(p.cpuPercent?.let { "%.0f%%".format(it) } ?: "—", COLS[4])
+        Cell(LiveMetricLabels.liveHeapUsedCompact(p.liveHeap), COLS[3], muted = p.liveHeap?.available != true)
+        Cell(LiveMetricLabels.cpuCompact(p.cpuPercent), COLS[4], muted = p.cpuPercent == null)
         Cell(formatUptime(p.startTimeMs, nowMs), COLS[5])
         Row(modifier = Modifier.weight(COLS[6].weight), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
             Badges.memoryBadge(p.rssMemoryMb)?.let { MemoryBadge(it) }
@@ -264,15 +265,16 @@ private fun ProcessDetails(p: GradleProcess, ended: Boolean, nowMs: Long) {
         DetailRow("Uptime", if (ended) "—" else formatUptime(p.startTimeMs, nowMs))
         DetailRow("Working dir", p.workingDirectory ?: "unavailable")
         DetailRow("RSS", "${p.rssMemoryMb} MB")
-        DetailRow("Heap used", p.liveHeap?.takeIf { it.available }?.usedMb?.let { "$it MB" } ?: "unavailable")
+        DetailRow("CPU", LiveMetricLabels.cpuDetail(p.cpuPercent))
+        DetailRow("Heap used", LiveMetricLabels.liveHeapUsedDetail(p.liveHeap, p.type))
         DetailRow(
             "Heap committed",
-            p.liveHeap?.takeIf { it.available }?.committedMb?.let { "$it MB" } ?: "unavailable",
+            p.liveHeap?.takeIf { it.available }?.committedMb?.let { "$it MB" } ?: LiveMetricLabels.HEAP_UNAVAILABLE_DETAIL,
         )
-        DetailRow("Heap limit (-Xmx)", p.maxHeapMb?.let { "$it MB" } ?: "unavailable")
+        DetailRow("Heap limit (-Xmx)", p.maxHeapMb?.let { "$it MB" } ?: LiveMetricLabels.HEAP_UNAVAILABLE_DETAIL)
         DetailRow(
             "Heap max (runtime)",
-            p.liveHeap?.takeIf { it.available }?.maxMb?.let { "$it MB" } ?: "unavailable",
+            p.liveHeap?.takeIf { it.available }?.maxMb?.let { "$it MB" } ?: LiveMetricLabels.HEAP_UNAVAILABLE_DETAIL,
         )
         DetailRow("GC", p.gc ?: "—")
         Spacer(Modifier.padding(Space.xs))
@@ -280,9 +282,6 @@ private fun ProcessDetails(p: GradleProcess, ended: Boolean, nowMs: Long) {
         Text(p.commandLine, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
     }
 }
-
-private fun GradleProcess.liveHeapUsedLabel(): String =
-    liveHeap?.takeIf { it.available }?.usedMb?.let { "$it MB" } ?: "—"
 
 @Composable
 private fun LogCard(tail: List<String>, modifier: Modifier = Modifier) {

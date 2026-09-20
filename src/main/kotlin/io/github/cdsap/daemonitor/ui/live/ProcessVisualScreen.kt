@@ -20,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import io.github.cdsap.daemonitor.domain.LiveMetricLabels
 import io.github.cdsap.daemonitor.ui.common.EmptyState
 import io.github.cdsap.daemonitor.ui.common.LocalAccentColors
 import io.github.cdsap.daemonitor.ui.common.ScreenHeader
@@ -75,8 +76,8 @@ private fun VisualDashboard(state: LiveUiState, modifier: Modifier = Modifier) {
             windowDurationMs = VisualChartModel.DEFAULT_TIMELINE_WINDOW_MS,
         )
     }
-    val selectedHeapUsed = selected.liveHeap?.takeIf { it.available }?.usedMb?.let { "$it MB" } ?: "unavailable"
-    val selectedHeapLimit = selected.maxHeapMb?.let { "$it MB" } ?: "unavailable"
+    val selectedHeapUsed = LiveMetricLabels.liveHeapUsedDetail(selected.liveHeap, selected.type)
+    val selectedHeapLimit = selected.maxHeapMb?.let { "$it MB" } ?: LiveMetricLabels.HEAP_UNAVAILABLE_DETAIL
 
     Column(modifier = modifier.padding(start = Space.lg, end = Space.lg, bottom = Space.lg)) {
         Row(
