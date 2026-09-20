@@ -193,7 +193,10 @@ class WatcherDatabaseTest {
     }
 
     @Test
-    fun `purge compacts released sqlite pages`(@TempDirArg tmp: Path) {
+    fun `purge compacts released sqlite pages`() {
+        // Avoid JUnit @TempDir: after VACUUM, Windows keeps SQLite locks and TempDir cleanup
+        // fails the test with IOException even when assertions passed.
+        val tmp = Files.createTempDirectory("daemonitor-compact-")
         val path = tmp.resolve("watcher.db")
         val db = WatcherDatabase.open(path)
         try {
@@ -218,15 +221,14 @@ class WatcherDatabaseTest {
             assertTrue(db.freelistPageCount() < 100L, "freelist remains unexpectedly large")
             assertEquals(2L, db.autoVacuumMode(), "new databases should use incremental auto_vacuum")
         } finally {
-            // VACUUM leaves Windows file locks until the driver is closed and sidecars are gone;
-            // remove them so @TempDir cleanup does not fail with IOException.
             db.close()
-            deleteSqliteFiles(path)
+            runCatching { tmp.toFile().deleteRecursively() }
         }
     }
 
     @Test
-    fun `purge migrates legacy none auto_vacuum and shrinks freelist`(@TempDirArg tmp: Path) {
+    fun `purge migrates legacy none auto_vacuum and shrinks freelist`() {
+        val tmp = Files.createTempDirectory("daemonitor-legacy-vacuum-")
         val path = tmp.resolve("watcher.db")
         // Simulate a pre-compaction database: schema without auto_vacuum=INCREMENTAL.
         JdbcSqliteDriver("jdbc:sqlite:${path.toAbsolutePath()}").use { driver ->
@@ -257,7 +259,7 @@ class WatcherDatabaseTest {
             assertEquals(2L, db.autoVacuumMode(), "legacy database should migrate to incremental auto_vacuum")
         } finally {
             db.close()
-            deleteSqliteFiles(path)
+            runCatching { tmp.toFile().deleteRecursively() }
         }
     }
 
@@ -343,25 +345,6 @@ class WatcherDatabaseTest {
         startTimeMs = timestampMs,
         status = "RUNNING",
     )
-
-    /** Best-effort removal so Windows @TempDir cleanup is not blocked by leftover SQLite files. */
-    private fun deleteSqliteFiles(path: Path) {
-        sequenceOf(
-            path,
-            path.resolveSibling("${path.fileName}-wal"),
-            path.resolveSibling("${path.fileName}-shm"),
-            path.resolveSibling("${path.fileName}-journal"),
-        ).forEach { candidate ->
-            repeat(8) { attempt ->
-                try {
-                    Files.deleteIfExists(candidate)
-                    return@forEach
-                } catch (_: java.io.IOException) {
-                    Thread.sleep(25L * (attempt + 1))
-                }
-            }
-        }
-    }
 }
 
 private typealias TempDirArg = org.junit.jupiter.api.io.TempDir
