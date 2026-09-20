@@ -42,7 +42,7 @@ dashboard_output=$( {
 } | "$launcher" --headless 2>&1 )
 printf '%s\n' "$dashboard_output"
 
-# Match ASCII tokens only: Windows runners can mangled Unicode dashes in captured stdout.
+# Match ASCII tokens only: Windows runners can mangle Unicode dashes in captured stdout.
 [[ "$dashboard_output" == *"DAEMONITOR"* ]]
 [[ "$dashboard_output" == *"HEADLESS"* ]]
 [[ "$dashboard_output" == *"HEAP USED"* ]]
