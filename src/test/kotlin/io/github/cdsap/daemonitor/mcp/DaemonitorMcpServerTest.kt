@@ -127,6 +127,49 @@ class DaemonitorMcpServerTest {
         assertEquals(JsonNull, processes.single().values["heapUsedMb"])
     }
 
+    @Test
+    fun `current processes redacts sensitive command-line tokens`(@TempDirArg tmp: Path) {
+        val secret = "supersecret-live-token"
+        val server = server(
+            tmp = tmp,
+            currentProcesses = listOf(
+                GradleProcess(
+                    pid = 77,
+                    parentPid = 1,
+                    type = ProcessType.GRADLE_DAEMON,
+                    commandLine =
+                        "/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home/bin/java " +
+                            "-javaagent:/Users/dev/.gradle/agents/gradle-agent.jar " +
+                            "org.gradle.launcher.daemon.bootstrap.GradleDaemon " +
+                            "-Psigning.password=$secret -Dapi.token=$secret",
+                    workingDirectory = "/repo",
+                    projectPath = "/repo",
+                    cpuPercent = null,
+                    rssMemoryMb = 512,
+                    maxHeapMb = 2048,
+                    minHeapMb = null,
+                    gc = "G1",
+                    startTimeMs = 10,
+                    status = "RUNNING",
+                    automated = false,
+                ),
+            ),
+        )
+
+        val payload = server.callTool("daemonitor_current_processes", jsonObject())
+        val commandLine = payload.array("processes")!!
+            .values
+            .filterIsInstance<JsonObject>()
+            .single()
+            .string("commandLine")!!
+
+        assertTrue(commandLine.contains("-Psigning.password=***"), commandLine)
+        assertTrue(commandLine.contains("-Dapi.token=***"), commandLine)
+        assertTrue(!commandLine.contains(secret), commandLine)
+        // Non-secret argv (paths, main class) remains visible after Redactor.
+        assertTrue(commandLine.contains("GradleDaemon"), commandLine)
+    }
+
     private fun server(
         tmp: Path,
         currentProcesses: List<GradleProcess> = emptyList(),

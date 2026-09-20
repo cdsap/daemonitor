@@ -3,6 +3,7 @@ package io.github.cdsap.daemonitor.mcp
 import io.github.cdsap.daemonitor.AppContainer
 import io.github.cdsap.daemonitor.BuildInfo
 import io.github.cdsap.daemonitor.application.DaemonitorQueryService
+import io.github.cdsap.daemonitor.domain.Redactor
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.persistence.ProcessSample
@@ -113,7 +114,9 @@ class DaemonitorMcpServer(
         ),
         tool(
             name = "daemonitor_current_processes",
-            description = "Return the current Gradle-related processes visible to Daemonitor.",
+            description =
+                "Return the current Gradle-related processes visible to Daemonitor. " +
+                    "Command lines are redacted with the same policy as stored samples and the UI.",
             properties = jsonObject(),
             required = JsonArray(emptyList()),
         ),
@@ -246,7 +249,9 @@ class DaemonitorMcpServer(
             "pid" to JsonNumber(pid),
             "parentPid" to JsonNumber(parentPid),
             "processType" to JsonString(type.name),
-            "commandLine" to JsonString(commandLine),
+            // Defense-in-depth: ProcessSource may return pre-redacted snapshots, but MCP
+            // exposure must always apply Redactor before shipping argv to clients (issue #181).
+            "commandLine" to JsonString(Redactor.redactCommandLine(commandLine)),
             "workingDirectory" to jsonStringOrNull(workingDirectory),
             "projectPath" to jsonStringOrNull(projectPath),
             "cpuPercent" to jsonNumberOrNull(cpuPercent),

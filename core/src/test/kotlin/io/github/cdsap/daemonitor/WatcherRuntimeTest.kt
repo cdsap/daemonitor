@@ -3,13 +3,20 @@ package io.github.cdsap.daemonitor
 import io.github.cdsap.daemonitor.collect.DaemonLogWatcher
 import io.github.cdsap.daemonitor.collect.JvmHeapProbe
 import io.github.cdsap.daemonitor.collect.ProcessCollector
+import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.domain.BuildAggregator
+import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.LiveJvmHeap
+import io.github.cdsap.daemonitor.domain.model.Source
 import io.github.cdsap.daemonitor.store.WatcherDatabase
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
+import java.time.Instant
+import java.time.OffsetDateTime
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
 import kotlin.test.Test
@@ -31,6 +38,8 @@ class WatcherRuntimeTest {
         val versionDir = tmp.resolve("gradle/daemon/8.14.3").also { it.createDirectories() }
         val log = versionDir.resolve("daemon-75597.out.log")
         log.writeText("outside before window -Ptoken=before-secret\n")
+        val clockMs = OffsetDateTime.of(2026, 6, 24, 10, 0, 1, 0, ZoneOffset.ofHours(-7))
+            .toInstant().toEpochMilli()
 
         WatcherDatabase.open(tmp.resolve("watcher.db")).use { database ->
             val runtime = WatcherRuntime(
@@ -39,6 +48,7 @@ class WatcherRuntimeTest {
                 aggregator = BuildAggregator(sampleProvider = database::samples),
                 builds = database,
                 samples = database,
+                clock = { clockMs },
             )
 
             runtime.pollOnce() // Establish the incremental-read offset.
@@ -80,6 +90,8 @@ class WatcherRuntimeTest {
                 appendLine("BUILD SUCCESSFUL in 2s")
             },
         )
+        val clockMs = OffsetDateTime.of(2026, 7, 28, 10, 20, 47, 0, ZoneOffset.ofHours(-7))
+            .toInstant().toEpochMilli()
 
         WatcherDatabase.open(tmp.resolve("watcher.db")).use { database ->
             val logWatcher = DaemonLogWatcher(gradleUserHome = tmp.resolve("gradle"))
@@ -89,6 +101,7 @@ class WatcherRuntimeTest {
                 aggregator = BuildAggregator(sampleProvider = database::samples),
                 builds = database,
                 samples = database,
+                clock = { clockMs },
             )
 
             val changed = runtime.processForBuilds(logWatcher.discover(), activeDaemonPids = emptySet())
@@ -97,6 +110,65 @@ class WatcherRuntimeTest {
             val build = database.recent().single()
             assertEquals("build-96", build.buildId)
             assertEquals(FinalStatus.SUCCESS, build.finalStatus)
+        }
+    }
+
+    @Test
+    fun `purge plus log replay does not resurrect builds outside retention`(
+        @org.junit.jupiter.api.io.TempDir tmp: Path,
+    ) {
+        val versionDir = tmp.resolve("gradle/daemon/8.14.3").also { it.createDirectories() }
+        val log = versionDir.resolve("daemon-9001.out.log")
+        val day = RetentionPolicy.MILLIS_PER_DAY
+        val now = 200L * day
+        val agedStart = now - 10 * day
+        val ts = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSZ")
+            .withZone(ZoneOffset.ofHours(-7))
+            .format(Instant.ofEpochMilli(agedStart))
+        log.writeText(
+            buildString {
+                appendLine("$ts [INFO] [daemon] Marking the daemon as busy, address: []")
+                appendLine("$ts [INFO] [daemon] Daemon is about to start building Build{id=aged-replay, currentDir=/old}")
+                appendLine("BUILD SUCCESSFUL in 1s")
+                appendLine("$ts [INFO] [daemon] Marking the daemon as idle, address: []")
+            },
+        )
+
+        WatcherDatabase.open(tmp.resolve("watcher.db")).use { database ->
+            database.save(
+                Build(
+                    buildId = "aged-replay",
+                    daemonPid = 9001,
+                    daemonIdentity = null,
+                    commandLine = null,
+                    workingDirectory = "/old",
+                    projectPath = "/old",
+                    startTimeMs = agedStart,
+                    endTimeMs = agedStart + 1_000,
+                    durationSeconds = 1.0,
+                    peakMemoryMb = null,
+                    avgMemoryMb = null,
+                    peakCpuPercent = null,
+                    inferredSource = Source.UNKNOWN,
+                    finalStatus = FinalStatus.SUCCESS,
+                    logSnippet = null,
+                ),
+            )
+            database.purgeOlderThan(now, retentionDays = 7)
+            assertTrue(database.recent().isEmpty())
+
+            val runtime = WatcherRuntime(
+                processSource = collectorWithoutHeapAttach(),
+                logSource = DaemonLogWatcher(gradleUserHome = tmp.resolve("gradle")),
+                aggregator = BuildAggregator(sampleProvider = database::samples),
+                builds = database,
+                samples = database,
+                retentionDays = { 7 },
+                clock = { now },
+            )
+
+            assertFalse(runtime.pollOnce().buildsChanged)
+            assertTrue(database.recent().isEmpty())
         }
     }
 }

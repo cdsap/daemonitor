@@ -1,5 +1,6 @@
 package io.github.cdsap.daemonitor
 
+import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -12,5 +13,23 @@ class BuildInfoTest {
         assertEquals("1.0.7", buildInfo.version)
         assertTrue(buildInfo.commit.matches(Regex("[0-9a-f]{7,40}|unknown")), buildInfo.commit)
         assertEquals(io.github.cdsap.daemonitor.distribution.DistributionChannel.DIRECT, buildInfo.distribution)
+    }
+
+    @Test
+    fun `commit matches this checkout HEAD or GITHUB_SHA`() {
+        val expected = System.getenv("GITHUB_SHA")?.take(8) ?: shortHeadFromProjectRoot()
+        assertEquals(expected, BuildInfo.current.commit)
+    }
+
+    private fun shortHeadFromProjectRoot(): String {
+        val projectRoot = generateSequence(File(System.getProperty("user.dir")).canonicalFile) { it.parentFile }
+            .first { File(it, "settings.gradle.kts").isFile }
+        val process = ProcessBuilder("git", "rev-parse", "--short=8", "HEAD")
+            .directory(projectRoot)
+            .redirectErrorStream(true)
+            .start()
+        val output = process.inputStream.bufferedReader().use { it.readText() }.trim()
+        check(process.waitFor() == 0) { "git rev-parse failed in $projectRoot: $output" }
+        return output
     }
 }
