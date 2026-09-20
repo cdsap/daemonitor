@@ -188,26 +188,25 @@ internal object CliLauncher {
     )
 
     private const val SHUTDOWN_TIMEOUT_SECONDS = 5L
-    private const val USAGE = """
-Usage: daemonitor-cli [options]
+    private val USAGE = """
+        Usage: daemonitor-cli [options]
 
-Monitor Gradle-related processes in the terminal.
+        Monitor Gradle-related processes in the terminal.
 
-Options:
-  -h, --help       Show this help.
-  -v, --version    Show the Daemonitor version.
-  --plain      Disable colors and terminal screen clearing.
-      --no-color   Alias for --plain.
-      --collect-only
-                   Collect and persist without rendering terminal output.
-      --db PATH    Store data in this SQLite database.
-      --poll-interval SECONDS
-                   Poll at this interval (default: 2).
-      --retention DAYS
-                   Retain history for this many days (1-90).
+        Options:
+          -h, --help       Show this help.
+          -v, --version    Show the Daemonitor version.
+          --plain          Disable colors and terminal screen clearing.
+          --no-color       Alias for --plain.
+          --collect-only   Collect and persist without rendering terminal output.
+          --db PATH        Store data in this SQLite database.
+          --poll-interval SECONDS
+                           Poll at this interval (default: 2).
+          --retention DAYS
+                           Retain history for this many days (1-90).
 
-Press q to quit.
-"""
+        Press q to quit.
+    """.trimIndent()
 }
 
 fun main(args: Array<String>) {
