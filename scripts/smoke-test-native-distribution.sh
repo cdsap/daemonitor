@@ -42,7 +42,9 @@ dashboard_output=$( {
 } | "$launcher" --headless 2>&1 )
 printf '%s\n' "$dashboard_output"
 
-[[ "$dashboard_output" == *"DAEMONITOR — HEADLESS"* ]]
+# Match ASCII tokens only: Windows runners can mangled Unicode dashes in captured stdout.
+[[ "$dashboard_output" == *"DAEMONITOR"* ]]
+[[ "$dashboard_output" == *"HEADLESS"* ]]
 [[ "$dashboard_output" == *"HEAP USED"* ]]
 [[ "$dashboard_output" == *"HEAP CMT"* ]]
 [[ "$dashboard_output" == *"HEAP LIMIT"* ]]
