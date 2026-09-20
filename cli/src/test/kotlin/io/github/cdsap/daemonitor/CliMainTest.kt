@@ -66,6 +66,7 @@ class CliMainTest {
         assertTrue(usage.contains("--db PATH"))
         assertTrue(usage.contains("--poll-interval SECONDS"))
         assertTrue(usage.contains("--retention DAYS"))
+        assertTrue(usage.contains("1-90"))
     }
 
     @Test
@@ -81,6 +82,27 @@ class CliMainTest {
 
         assertEquals(2, exitCode)
         assertTrue(error.toString().contains("Invalid value for --poll-interval"))
+    }
+
+    @Test
+    fun `out-of-range retention values fail before starting the runtime`() {
+        for (value in listOf("0", "999")) {
+            val output = ByteArrayOutputStream()
+            val error = ByteArrayOutputStream()
+
+            val exitCode = CliLauncher.run(
+                args = arrayOf("--retention", value),
+                output = PrintStream(output),
+                error = PrintStream(error),
+            )
+
+            assertEquals(2, exitCode, "expected non-zero exit for --retention $value")
+            assertTrue(
+                error.toString().contains("Invalid value for --retention"),
+                "expected invalid-value message for --retention $value",
+            )
+            assertTrue(output.toString().contains("Use --help for usage."))
+        }
     }
 
     @Test
