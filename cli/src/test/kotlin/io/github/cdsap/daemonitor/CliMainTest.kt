@@ -23,9 +23,46 @@ class CliMainTest {
         )
 
         assertEquals(0, exitCode)
-        assertTrue(output.toString().contains("Usage: daemonitor-cli [options]"))
-        assertTrue(output.toString().contains("--no-color"))
-        assertTrue(output.toString().contains("--collect-only"))
+        val usage = output.toString()
+        assertTrue(usage.startsWith("Usage: daemonitor-cli [options]"))
+        assertTrue(usage.contains("--no-color"))
+        assertTrue(usage.contains("--collect-only"))
+    }
+
+    @Test
+    fun `help formatting has no leading blank line and aligned options`() {
+        val output = ByteArrayOutputStream()
+
+        assertEquals(0, CliLauncher.run(arrayOf("--help"), output = PrintStream(output)))
+        val usage = output.toString()
+        val lines = usage.lines()
+
+        assertEquals("Usage: daemonitor-cli [options]", lines.first())
+
+        val optionLines = lines.filter { it.startsWith("  -") || it.startsWith("  --") }
+        assertEquals(
+            listOf(
+                "  -h, --help       Show this help.",
+                "  -v, --version    Show the Daemonitor version.",
+                "  --plain          Disable colors and terminal screen clearing.",
+                "  --no-color       Alias for --plain.",
+                "  --collect-only   Collect and persist without rendering terminal output.",
+                "  --db PATH        Store data in this SQLite database.",
+                "  --poll-interval SECONDS",
+                "  --retention DAYS",
+            ),
+            optionLines,
+        )
+
+        val descriptionColumns = listOf(
+            optionLines[0].indexOf("Show"),
+            optionLines[1].indexOf("Show"),
+            optionLines[2].indexOf("Disable"),
+            optionLines[3].indexOf("Alias"),
+            optionLines[4].indexOf("Collect"),
+            optionLines[5].indexOf("Store"),
+        )
+        assertEquals(setOf(19), descriptionColumns.toSet(), "option descriptions should share one alignment column")
     }
 
     @Test
@@ -66,6 +103,7 @@ class CliMainTest {
         assertTrue(usage.contains("--db PATH"))
         assertTrue(usage.contains("--poll-interval SECONDS"))
         assertTrue(usage.contains("--retention DAYS"))
+        assertTrue(usage.contains("1-90"))
     }
 
     @Test
@@ -81,6 +119,27 @@ class CliMainTest {
 
         assertEquals(2, exitCode)
         assertTrue(error.toString().contains("Invalid value for --poll-interval"))
+    }
+
+    @Test
+    fun `out-of-range retention values fail before starting the runtime`() {
+        for (value in listOf("0", "999")) {
+            val output = ByteArrayOutputStream()
+            val error = ByteArrayOutputStream()
+
+            val exitCode = CliLauncher.run(
+                args = arrayOf("--retention", value),
+                output = PrintStream(output),
+                error = PrintStream(error),
+            )
+
+            assertEquals(2, exitCode, "expected non-zero exit for --retention $value")
+            assertTrue(
+                error.toString().contains("Invalid value for --retention"),
+                "expected invalid-value message for --retention $value",
+            )
+            assertTrue(output.toString().contains("Use --help for usage."))
+        }
     }
 
     @Test
