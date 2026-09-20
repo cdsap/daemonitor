@@ -1,7 +1,9 @@
 package io.github.cdsap.daemonitor.application
 
 import io.github.cdsap.daemonitor.collect.DaemonLog
+import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.domain.BuildAggregator
+import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 
@@ -15,6 +17,7 @@ class PollMonitoring(
     private val builds: BuildRepository,
     private val samples: ProcessSampleRepository,
     private val aggregator: BuildAggregator,
+    private val retentionDays: () -> Long = { RetentionPolicy.DEFAULT.defaultDays },
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
     private var knownDaemonPids = emptySet<Long>()
@@ -47,27 +50,35 @@ class PollMonitoring(
         for (log in logs) {
             val lines = logSource.readNewLines(log)
             if (lines.isNotEmpty()) {
-                lines.flatMap { aggregator.onLogLine(log.pid, it.text, it.event) }.forEach {
-                    builds.save(it)
-                    inserted = true
+                lines.flatMap { aggregator.onLogLine(log.pid, it.text, it.event) }.forEach { build ->
+                    if (saveIfWithinRetention(build)) inserted = true
                 }
             }
             if (log.pid !in activeDaemonPids) {
-                aggregator.onDaemonGone(log.pid)?.let {
-                    builds.save(it)
-                    inserted = true
+                aggregator.onDaemonGone(log.pid)?.let { build ->
+                    if (saveIfWithinRetention(build)) inserted = true
                 }
             }
         }
 
         (knownDaemonPids - activeDaemonPids).forEach { gonePid ->
-            aggregator.onDaemonGone(gonePid)?.let {
-                builds.save(it)
-                inserted = true
+            aggregator.onDaemonGone(gonePid)?.let { build ->
+                if (saveIfWithinRetention(build)) inserted = true
             }
         }
         knownDaemonPids = activeDaemonPids
         return inserted
+    }
+
+    /**
+     * Daemon-log replay can re-emit builds with their original timestamps. Skip anything outside
+     * the configured retention window so purge is not undone by the next poll.
+     */
+    private fun saveIfWithinRetention(build: Build): Boolean {
+        val cutoff = RetentionPolicy.DEFAULT.cutoffEpochMs(clock(), retentionDays())
+        if (build.startTimeMs < cutoff) return false
+        builds.save(build)
+        return true
     }
 
     private fun List<GradleProcess>.activeDaemonPids(): Set<Long> =

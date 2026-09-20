@@ -12,7 +12,13 @@ data class RetentionPolicy(
 ) {
     fun clamp(days: Long): Long = days.coerceIn(minDays, maxDays)
 
+    /** Earliest [start_time]/[timestamp] (epoch millis) still inside the retention window. */
+    fun cutoffEpochMs(nowMs: Long, retentionDays: Long = defaultDays): Long =
+        nowMs - clamp(retentionDays) * MILLIS_PER_DAY
+
     companion object {
+        const val MILLIS_PER_DAY: Long = 24L * 60 * 60 * 1000
+
         /** Hard-coded MVP defaults (KTD-5 / KTD-9); values unchanged from the previous Defaults. */
         val DEFAULT: RetentionPolicy = RetentionPolicy(
             defaultDays = 15,

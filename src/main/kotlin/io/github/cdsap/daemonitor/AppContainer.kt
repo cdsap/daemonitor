@@ -48,6 +48,7 @@ class AppContainer(
         aggregator = buildAggregator,
         builds = database,
         samples = database,
+        retentionDays = { settingsStore.load().retentionDays },
         clock = clock,
     )
     val distributionChannel: DistributionChannel = distribution

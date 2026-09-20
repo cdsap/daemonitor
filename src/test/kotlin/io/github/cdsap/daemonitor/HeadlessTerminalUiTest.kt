@@ -1,5 +1,6 @@
 package io.github.cdsap.daemonitor
 
+import io.github.cdsap.daemonitor.config.MonitoringConfig
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import java.io.ByteArrayInputStream
@@ -8,6 +9,7 @@ import java.io.PrintStream
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 
 class HeadlessTerminalUiTest {
     @Test
@@ -34,7 +36,33 @@ class HeadlessTerminalUiTest {
         assertTrue(output.contains("2048 MB"))
         assertTrue(output.contains("n/a")) // missing live heap stays unavailable, not zero
         assertTrue(output.indexOf("large") < output.indexOf("small"))
-        assertTrue(output.contains("Press q (or q + Enter) to quit"))
+        assertTrue(output.contains("Press q (or q + Enter) to quit · refreshes every 2 seconds"))
+    }
+
+    @Test
+    fun `renderer footer labels the active poll interval with pluralization`() {
+        val empty = WatcherRuntime.PollResult(emptyList(), emptyList(), false)
+
+        val defaultFooter = HeadlessTerminalRenderer.render(
+            result = empty,
+            updatedAtMs = 1_000L,
+            pollInterval = MonitoringConfig.DEFAULT.pollInterval,
+        )
+        val oneSecond = HeadlessTerminalRenderer.render(
+            result = empty,
+            updatedAtMs = 1_000L,
+            pollInterval = 1.seconds,
+        )
+        val fiveSeconds = HeadlessTerminalRenderer.render(
+            result = empty,
+            updatedAtMs = 1_000L,
+            pollInterval = 5.seconds,
+        )
+
+        assertTrue(defaultFooter.contains("refreshes every 2 seconds"))
+        assertTrue(oneSecond.contains("refreshes every 1 second"))
+        assertFalse(oneSecond.contains("refreshes every 1 seconds"))
+        assertTrue(fiveSeconds.contains("refreshes every 5 seconds"))
     }
 
     @Test

@@ -49,6 +49,7 @@ internal object CliLauncher {
     ): Int {
         val interactive = isInteractiveTerminal()
         val colorEnabled = options.colorEnabled ?: interactive
+        val pollInterval = options.pollInterval ?: MonitoringConfig.DEFAULT.pollInterval
         val terminal = if (options.collectOnly) {
             null
         } else {
@@ -57,6 +58,7 @@ internal object CliLauncher {
                 input = input,
                 clearScreen = interactive && colorEnabled,
                 colorEnabled = colorEnabled,
+                pollInterval = pollInterval,
             )
         }
         val running = AtomicBoolean(true)
@@ -82,12 +84,18 @@ internal object CliLauncher {
                             lastResult = it
                             pollError = null
                         }
-                        .onFailure {
-                            pollError = it.message ?: it::class.simpleName ?: "unknown error"
-                            error.println("Daemonitor poll failed: $pollError")
+                        .onFailure { failure ->
+                            if (ShutdownInterrupts.matches(failure)) {
+                                running.set(false)
+                                Thread.currentThread().interrupt()
+                            } else {
+                                pollError = failure.message ?: failure::class.simpleName ?: "unknown error"
+                                error.println("Daemonitor poll failed: $pollError")
+                            }
                         }
+                    if (!running.get()) break
                     terminal?.render(lastResult, System.currentTimeMillis(), pollError)
-                    delay(options.pollInterval ?: MonitoringConfig.DEFAULT.pollInterval)
+                    delay(pollInterval)
                 }
             }
             0
@@ -203,6 +211,7 @@ Press q to quit.
 }
 
 fun main(args: Array<String>) {
+    PosixStopSignals.ensureDeliverable()
     val exitCode = CliLauncher.run(args)
     if (exitCode != 0) kotlin.system.exitProcess(exitCode)
 }

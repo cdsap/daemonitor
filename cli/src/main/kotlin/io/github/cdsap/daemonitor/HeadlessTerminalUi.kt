@@ -1,11 +1,13 @@
 package io.github.cdsap.daemonitor
 
 import io.github.cdsap.daemonitor.domain.LiveMetricLabels
+import io.github.cdsap.daemonitor.config.MonitoringConfig
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import java.io.InputStream
 import java.io.PrintStream
 import java.time.Instant
+import kotlin.time.Duration
 
 /** Terminal presentation for the UI-independent headless monitoring runtime. */
 class HeadlessTerminalUi(
@@ -13,6 +15,7 @@ class HeadlessTerminalUi(
     private val input: InputStream,
     private val clearScreen: Boolean,
     private val colorEnabled: Boolean = false,
+    private val pollInterval: Duration = MonitoringConfig.DEFAULT.pollInterval,
 ) {
     fun render(
         result: WatcherRuntime.PollResult,
@@ -26,6 +29,7 @@ class HeadlessTerminalUi(
                 error = error,
                 clearScreen = clearScreen,
                 colorEnabled = colorEnabled,
+                pollInterval = pollInterval,
             ),
         )
         output.flush()
@@ -49,6 +53,7 @@ object HeadlessTerminalRenderer {
         error: String? = null,
         clearScreen: Boolean = false,
         colorEnabled: Boolean = false,
+        pollInterval: Duration = MonitoringConfig.DEFAULT.pollInterval,
     ): String = buildString {
         if (clearScreen) append(CLEAR)
         appendLine(ansi("DAEMONITOR — HEADLESS", colorEnabled, BOLD, CYAN))
@@ -85,7 +90,12 @@ object HeadlessTerminalRenderer {
         }
 
         appendLine()
-        appendLine("Press q (or q + Enter) to quit · refreshes every 2 seconds")
+        appendLine("Press q (or q + Enter) to quit · refreshes every ${formatPollInterval(pollInterval)}")
+    }
+
+    private fun formatPollInterval(pollInterval: Duration): String {
+        val seconds = pollInterval.inWholeSeconds
+        return if (seconds == 1L) "1 second" else "$seconds seconds"
     }
 
     private fun projectName(process: GradleProcess): String =
