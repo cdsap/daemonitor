@@ -14,8 +14,8 @@ import io.github.cdsap.daemonitor.domain.model.ProcessType
 class PollMonitoring(
     private val processSource: ProcessSource,
     private val logSource: DaemonLogSource,
-    private val builds: BuildRepository,
-    private val samples: ProcessSampleRepository,
+    private val builds: BuildWriter,
+    private val samples: ProcessSampleWriter,
     private val aggregator: BuildAggregator,
     private val retentionDays: () -> Long = { RetentionPolicy.DEFAULT.defaultDays },
     private val clock: () -> Long = System::currentTimeMillis,
