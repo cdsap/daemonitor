@@ -769,3 +769,107 @@ code {
     gap: var(--space-3xs);
   }
 }
+
+.install-snippet {
+  margin: var(--space-sm) 0 0;
+  padding: var(--space-sm);
+  overflow-x: auto;
+  border: 1px solid var(--color-rule-soft);
+  border-radius: var(--radius-md);
+  background: #111714;
+  color: #e8ece8;
+  font-family: var(--font-mono);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+.install-snippet code {
+  font-family: inherit;
+  white-space: pre;
+}
+
+.docs-hero {
+  padding-top: calc(var(--header-h) + var(--space-xl));
+}
+
+.docs-hero h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 1.08;
+}
+
+.docs-lede-follow {
+  margin: var(--space-sm) 0 0;
+  color: var(--color-ink-2);
+}
+
+.docs-list {
+  margin: var(--space-sm) 0 0;
+  padding-left: 1.2rem;
+  color: var(--color-ink);
+}
+
+.docs-list li + li {
+  margin-top: var(--space-2xs);
+}
+
+.docs-figure {
+  margin: var(--space-lg) 0 0;
+}
+
+.docs-back {
+  margin-top: var(--space-lg);
+  color: var(--color-ink-2);
+}
+
+.options-table-wrap {
+  margin-top: var(--space-md);
+  overflow-x: auto;
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-lg);
+  background: var(--color-paper-2);
+}
+
+.options-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.98rem;
+}
+
+.options-table th,
+.options-table td {
+  padding: var(--space-sm);
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--color-rule-soft);
+}
+
+.options-table th {
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-ink-2);
+  background: color-mix(in srgb, var(--color-paper-3) 70%, transparent);
+}
+
+.options-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.options-table code,
+.docs-list code,
+.docs-lede-follow code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
+kbd {
+  display: inline-block;
+  padding: 0.1em 0.45em;
+  border: 1px solid var(--color-rule);
+  border-radius: 4px;
+  background: var(--color-paper-3);
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}

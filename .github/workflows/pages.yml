@@ -31,10 +31,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p _site/assets
-          cp site/index.html site/styles.css site/app.js _site/
+          cp site/index.html site/cli.html site/styles.css site/app.js _site/
           cp site/assets/favicon.png site/assets/icon-192.png _site/assets/
           cp docs/images/live-monitor.png docs/images/process-visual.png docs/images/build-history.png docs/images/cli-monitor.png _site/assets/
           test -f _site/index.html
+          test -f _site/cli.html
           test -f _site/styles.css
           test -f _site/app.js
           test -f _site/assets/favicon.png
