@@ -35,6 +35,7 @@
       </a>
       <nav class="site-nav" aria-label="Primary">
         <a href="#features">Features</a>
+        <a href="#cli">CLI</a>
         <a href="#privacy">Privacy</a>
         <a href="https://github.com/cdsap/daemonitor" rel="noopener noreferrer">GitHub</a>
         <a class="button button-primary button-compact" href="#download">Download</a>
@@ -118,7 +119,8 @@
         <div class="feature-intro">
           <h2 id="features-heading">Feature highlights</h2>
           <p class="section-lede">
-            Live processes, memory timelines, and searchable build history — including AI-agent attribution.
+            Live processes, a terminal CLI, memory timelines, and searchable build history —
+            including AI-agent attribution.
           </p>
         </div>
 
@@ -204,6 +206,39 @@
           </article>
         </div>
 
+        <article class="feature feature-cli" id="cli" aria-labelledby="cli-heading">
+          <div class="feature-copy">
+            <p class="feature-kicker">Terminal</p>
+            <h3 id="cli-heading">CLI</h3>
+            <p>
+              The same live monitor in your terminal — for SSH sessions, build machines, and anyone
+              who prefers a lighter footprint than the desktop window.
+            </p>
+            <ul>
+              <li>Live process table with RSS, heap, CPU, and uptime</li>
+              <li>Shares the desktop app’s local database and retention settings</li>
+              <li>Install with Homebrew, or grab the release zip</li>
+            </ul>
+            <pre class="install-snippet" tabindex="0"><code>brew tap cdsap/tap
+brew install daemonitor-cli
+daemonitor-cli</code></pre>
+            <p class="feature-footnote">
+              Needs JDK 21. Flag reference:
+              <a href="cli.html">CLI options</a>.
+            </p>
+          </div>
+          <figure class="feature-visual">
+            <img
+              class="screenshot reveal"
+              src="assets/cli-monitor.png"
+              width="1488"
+              height="418"
+              alt="Daemonitor CLI terminal showing Gradle daemon, Kotlin daemon, wrapper, and test worker rows with RSS, heap, CPU, and uptime"
+              loading="lazy"
+            >
+          </figure>
+        </article>
+
         <article class="mcp" id="mcp" aria-labelledby="mcp-heading">
           <div>
             <p class="feature-kicker">Local agent access</p>
@@ -240,8 +275,8 @@
         <div>
           <h2 id="download-heading">Download</h2>
           <p class="section-lede">
-            Packaged builds are ready for macOS, Windows, and Linux. They do not require you to install
-            or configure Gradle locally. Source is available on GitHub for contributors.
+            Packaged desktop builds are ready for macOS, Windows, and Linux. Prefer the CLI for a
+            terminal-only install via Homebrew or the release zip.
           </p>
           <p class="release-note" id="release-note" hidden></p>
         </div>
@@ -277,9 +312,19 @@
               <span class="download-os">Linux</span>
               <span class="download-hint">Choose DEB in GitHub Releases</span>
             </a>
+            <a
+              class="download-option"
+              role="listitem"
+              data-os="cli"
+              href="#cli"
+            >
+              <span class="download-os">CLI</span>
+              <span class="download-hint">Homebrew · <code>daemonitor-cli</code></span>
+            </a>
           </div>
           <p class="download-footnote">
-            All platform links open the latest GitHub Release so the page never hardcodes a stale version.
+            Desktop links open the latest GitHub Release so the page never hardcodes a stale version.
+            CLI install steps are in the <a href="#cli">CLI</a> section.
           </p>
         </div>
       </div>
