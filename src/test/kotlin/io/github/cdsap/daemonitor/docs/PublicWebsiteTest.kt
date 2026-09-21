@@ -9,6 +9,7 @@ import kotlin.test.assertTrue
 class PublicWebsiteTest {
     private val siteRoot = Path.of("site")
     private val indexHtml = Files.readString(siteRoot.resolve("index.html"))
+    private val cliHtml = Files.readString(siteRoot.resolve("cli.html"))
     private val stylesCss = Files.readString(siteRoot.resolve("styles.css"))
     private val appJs = Files.readString(siteRoot.resolve("app.js"))
     private val pagesWorkflow = Files.readString(Path.of(".github/workflows/pages.yml"))
@@ -18,6 +19,7 @@ class PublicWebsiteTest {
     fun `landing page files and screenshots are checked in`() {
         listOf(
             "index.html",
+            "cli.html",
             "styles.css",
             "app.js",
             "assets/favicon.png",
@@ -25,6 +27,7 @@ class PublicWebsiteTest {
             "assets/live-monitor.png",
             "assets/process-visual.png",
             "assets/build-history.png",
+            "assets/cli-monitor.png",
         ).forEach { relativePath ->
             val path = siteRoot.resolve(relativePath)
             assertTrue(Files.isRegularFile(path), "$relativePath should exist under site/")
@@ -35,6 +38,7 @@ class PublicWebsiteTest {
             "live-monitor.png",
             "process-visual.png",
             "build-history.png",
+            "cli-monitor.png",
         ).forEach { filename ->
             val docsImage = Path.of("docs/images").resolve(filename)
             val siteImage = siteRoot.resolve("assets").resolve(filename)
@@ -70,6 +74,7 @@ class PublicWebsiteTest {
             "assets/live-monitor.png",
             "assets/process-visual.png",
             "assets/build-history.png",
+            "href=\"cli.html\"",
             "MIT License",
         ).forEach { required ->
             assertTrue(indexHtml.contains(required), "index.html should include: $required")
@@ -90,11 +95,38 @@ class PublicWebsiteTest {
     }
 
     @Test
+    fun `cli options page documents flags and install`() {
+        listOf(
+            "CLI options",
+            "daemonitor-cli",
+            "--help",
+            "--version",
+            "--plain",
+            "--no-color",
+            "--collect-only",
+            "--db PATH",
+            "--poll-interval",
+            "--retention",
+            "brew install daemonitor-cli",
+            "assets/cli-monitor.png",
+            "Press",
+        ).forEach { required ->
+            assertTrue(cliHtml.contains(required), "cli.html should include: $required")
+        }
+        assertFalse(cliHtml.contains("href=\"/"), "Absolute root hrefs break under /daemonitor/")
+        assertFalse(cliHtml.contains("src=\"/"), "Absolute root src paths break under /daemonitor/")
+    }
+
+    @Test
     fun `download links do not hardcode a release version`() {
         val versionPattern = Regex("""Daemonitor-\d+\.\d+\.\d+""")
         assertFalse(
             versionPattern.containsMatchIn(indexHtml),
             "Landing page must not hardcode a Daemonitor release version",
+        )
+        assertFalse(
+            versionPattern.containsMatchIn(cliHtml),
+            "CLI options page must not hardcode a Daemonitor release version",
         )
         assertFalse(
             versionPattern.containsMatchIn(appJs),
@@ -111,6 +143,7 @@ class PublicWebsiteTest {
         assertTrue(stylesCss.contains("prefers-color-scheme"))
         assertTrue(stylesCss.contains("prefers-reduced-motion"))
         assertTrue(stylesCss.contains("system-ui"))
+        assertTrue(stylesCss.contains(".options-table"))
 
         listOf(
             "googletagmanager",
@@ -125,6 +158,10 @@ class PublicWebsiteTest {
             assertFalse(
                 indexHtml.lowercase().contains(tracker),
                 "Landing page must not include tracker reference: $tracker",
+            )
+            assertFalse(
+                cliHtml.lowercase().contains(tracker),
+                "CLI page must not include tracker reference: $tracker",
             )
             assertFalse(
                 appJs.lowercase().contains(tracker),
@@ -146,6 +183,8 @@ class PublicWebsiteTest {
             "name: github-pages",
             "page_url",
             "cp docs/images/live-monitor.png",
+            "site/cli.html",
+            "docs/images/cli-monitor.png",
         ).forEach { required ->
             assertTrue(pagesWorkflow.contains(required), "pages.yml should include: $required")
         }

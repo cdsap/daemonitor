@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Daemonitor CLI options — terminal monitor for Gradle daemons</title>
+  <meta name="description" content="Command-line options for daemonitor-cli: help, version, plain output, collect-only, custom database path, poll interval, and retention.">
+  <meta name="theme-color" content="#E9EFEA" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#101513" media="(prefers-color-scheme: dark)">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Daemonitor">
+  <meta property="og:url" content="https://cdsap.github.io/daemonitor/cli.html">
+  <meta property="og:title" content="Daemonitor CLI options">
+  <meta property="og:description" content="Command-line options for daemonitor-cli, the terminal Activity Monitor for Gradle daemons.">
+  <meta property="og:image" content="https://cdsap.github.io/daemonitor/assets/cli-monitor.png">
+
+  <link rel="icon" type="image/png" href="assets/favicon.png">
+  <link rel="apple-touch-icon" href="assets/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header" id="top">
+    <div class="header-inner">
+      <a class="brand" href="index.html#top" aria-label="Daemonitor home">
+        <img src="assets/icon-192.png" width="32" height="32" alt="" aria-hidden="true">
+        <span>Daemonitor</span>
+      </a>
+      <nav class="site-nav" aria-label="Primary">
+        <a href="index.html#features">Features</a>
+        <a href="index.html#cli">CLI</a>
+        <a href="cli.html" aria-current="page">CLI options</a>
+        <a href="https://github.com/cdsap/daemonitor" rel="noopener noreferrer">GitHub</a>
+        <a class="button button-primary button-compact" href="index.html#download">Download</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="section docs-hero" aria-labelledby="cli-options-heading">
+      <div class="section-inner narrow">
+        <p class="feature-kicker">Reference</p>
+        <h1 id="cli-options-heading">CLI options</h1>
+        <p class="section-lede">
+          <code>daemonitor-cli</code> is the standalone terminal monitor. It shares the desktop app’s
+          core runtime, SQLite database, and retention settings.
+        </p>
+        <pre class="install-snippet" tabindex="0"><code>brew tap cdsap/tap
+brew install daemonitor-cli
+daemonitor-cli --help</code></pre>
+        <p class="docs-lede-follow">
+          Also available as <code>daemonitor-cli-*.zip</code> on
+          <a href="https://github.com/cdsap/daemonitor/releases/latest" rel="noopener noreferrer">GitHub Releases</a>
+          (requires JDK 21).
+        </p>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="options-table-heading">
+      <div class="section-inner narrow">
+        <h2 id="options-table-heading">Flags</h2>
+        <div class="options-table-wrap">
+          <table class="options-table">
+            <thead>
+              <tr>
+                <th scope="col">Option</th>
+                <th scope="col">What it does</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>-h</code>, <code>--help</code></td>
+                <td>Print usage and exit.</td>
+              </tr>
+              <tr>
+                <td><code>-v</code>, <code>--version</code></td>
+                <td>Print the Daemonitor version and exit.</td>
+              </tr>
+              <tr>
+                <td><code>--plain</code></td>
+                <td>Disable colors and terminal screen clearing. Prefer this when redirecting output or using a limited terminal.</td>
+              </tr>
+              <tr>
+                <td><code>--no-color</code></td>
+                <td>Alias for <code>--plain</code>.</td>
+              </tr>
+              <tr>
+                <td><code>--collect-only</code></td>
+                <td>Collect and persist samples without rendering the live table. Useful for background collection.</td>
+              </tr>
+              <tr>
+                <td><code>--db PATH</code></td>
+                <td>Use this SQLite database file instead of the default app data location.</td>
+              </tr>
+              <tr>
+                <td><code>--poll-interval SECONDS</code></td>
+                <td>How often to poll processes. Default: <code>2</code>.</td>
+              </tr>
+              <tr>
+                <td><code>--retention DAYS</code></td>
+                <td>How long to retain history (1–90 days). Matches the desktop Settings retention window.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="usage-heading">Everyday usage</h2>
+        <ul class="docs-list">
+          <li>Press <kbd>q</kbd> to quit the interactive monitor.</li>
+          <li>Over SSH, allocate a TTY: <code>ssh -t host daemonitor-cli</code>.</li>
+          <li>First-poll CPU shows sampling placeholders until a delta exists; <code>0%</code> means idle afterward.</li>
+          <li>Live heap shows <code>n/a</code> for wrappers and test workers; daemons are probed when Attach/JMX succeeds.</li>
+        </ul>
+
+        <figure class="docs-figure">
+          <img
+            class="screenshot"
+            src="assets/cli-monitor.png"
+            width="1180"
+            height="520"
+            alt="Daemonitor CLI terminal showing live Gradle-related processes with RSS, heap, CPU, and uptime"
+          >
+        </figure>
+
+        <p class="docs-back">
+          <a href="index.html#cli">Back to CLI overview</a>
+          ·
+          <a href="index.html">Home</a>
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <p class="footer-brand">
+        <img src="assets/icon-192.png" width="28" height="28" alt="" aria-hidden="true">
+        <span>Daemonitor</span>
+      </p>
+      <p class="footer-blurb">
+        An open-source developer tool: a local Activity Monitor for Gradle daemons, wrappers,
+        Kotlin daemons, and test workers.
+      </p>
+      <nav class="footer-nav" aria-label="Footer">
+        <a href="https://github.com/cdsap/daemonitor" rel="noopener noreferrer">GitHub repository</a>
+        <a href="https://github.com/cdsap/daemonitor/releases" rel="noopener noreferrer">Releases</a>
+        <a href="https://github.com/cdsap/daemonitor/blob/main/LICENSE" rel="noopener noreferrer">MIT License</a>
+      </nav>
+    </div>
+  </footer>
+
+  <script src="app.js" defer></script>
+</body>
+</html>
