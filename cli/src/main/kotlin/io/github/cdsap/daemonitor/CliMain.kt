@@ -4,6 +4,7 @@ package io.github.cdsap.daemonitor
 
 import io.github.cdsap.daemonitor.config.MonitoringConfig
 import io.github.cdsap.daemonitor.config.RetentionPolicy
+import io.github.cdsap.daemonitor.coreipc.GoCoreProcessSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -35,7 +36,15 @@ internal object CliLauncher {
             return 0
         }
 
-        return CoreContainer(databasePath = options.databasePath ?: io.github.cdsap.daemonitor.platform.AppDirectories.system.databasePath).use { container ->
+        val processSource = options.coreSocket?.let { GoCoreProcessSource(it) }
+        if (processSource != null) {
+            error.println("Experimental: reading processes from Go core at ${options.coreSocket}")
+        }
+
+        return CoreContainer(
+            databasePath = options.databasePath ?: io.github.cdsap.daemonitor.platform.AppDirectories.system.databasePath,
+            processSource = processSource,
+        ).use { container ->
             runMonitor(container, options, output, error, input)
         }
     }
@@ -139,6 +148,13 @@ internal object CliLauncher {
                         ?.takeIf { it in RetentionPolicy.DEFAULT.minDays..RetentionPolicy.DEFAULT.maxDays }
                         ?: return invalidValue(arg, error, output),
                 )
+                "--core-socket" -> options.copy(
+                    coreSocket = nextValue(args, ++index, arg, error, output)
+                        ?.let(Path::of)
+                        ?.toAbsolutePath()
+                        ?.normalize()
+                        ?: return null,
+                )
                 else -> return unknownOption(arg, error, output)
             }
             index++
@@ -185,6 +201,7 @@ internal object CliLauncher {
         val databasePath: Path? = null,
         val pollInterval: Duration? = null,
         val retentionDays: Long? = null,
+        val coreSocket: Path? = null,
     )
 
     private const val SHUTDOWN_TIMEOUT_SECONDS = 5L
@@ -204,6 +221,8 @@ internal object CliLauncher {
                            Poll at this interval (default: 2).
           --retention DAYS
                            Retain history for this many days (1-90).
+          --core-socket PATH
+                           Experimental: read processes from daemonitor-cored.
 
         Press q to quit.
     """.trimIndent()

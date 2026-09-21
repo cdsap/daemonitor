@@ -6,3 +6,9 @@ build/
 .DS_Store
 .claude/
 local.properties
+spikes/go-core/bin/
+spikes/go-core/clients/jvm/*.class
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm

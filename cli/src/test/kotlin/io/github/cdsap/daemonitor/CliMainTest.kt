@@ -50,6 +50,7 @@ class CliMainTest {
                 "  --db PATH        Store data in this SQLite database.",
                 "  --poll-interval SECONDS",
                 "  --retention DAYS",
+                "  --core-socket PATH",
             ),
             optionLines,
         )
@@ -103,7 +104,24 @@ class CliMainTest {
         assertTrue(usage.contains("--db PATH"))
         assertTrue(usage.contains("--poll-interval SECONDS"))
         assertTrue(usage.contains("--retention DAYS"))
+        assertTrue(usage.contains("--core-socket PATH"))
         assertTrue(usage.contains("1-90"))
+    }
+
+    @Test
+    fun `core socket option requires a path`() {
+        val output = ByteArrayOutputStream()
+        val error = ByteArrayOutputStream()
+
+        val exitCode = CliLauncher.run(
+            args = arrayOf("--core-socket"),
+            output = PrintStream(output),
+            error = PrintStream(error),
+        )
+
+        assertEquals(2, exitCode)
+        assertTrue(error.toString().contains("Missing value for --core-socket"))
+        assertTrue(output.toString().contains("Use --help for usage."))
     }
 
     @Test
