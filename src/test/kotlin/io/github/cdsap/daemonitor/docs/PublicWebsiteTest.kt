@@ -25,6 +25,7 @@ class PublicWebsiteTest {
             "assets/live-monitor.png",
             "assets/process-visual.png",
             "assets/build-history.png",
+            "assets/cli-monitor.png",
         ).forEach { relativePath ->
             val path = siteRoot.resolve(relativePath)
             assertTrue(Files.isRegularFile(path), "$relativePath should exist under site/")
@@ -35,6 +36,7 @@ class PublicWebsiteTest {
             "live-monitor.png",
             "process-visual.png",
             "build-history.png",
+            "cli-monitor.png",
         ).forEach { filename ->
             val docsImage = Path.of("docs/images").resolve(filename)
             val siteImage = siteRoot.resolve("assets").resolve(filename)
@@ -61,6 +63,9 @@ class PublicWebsiteTest {
             "macOS · Windows · Linux",
             "id=\"features\"",
             "Live Monitor",
+            "id=\"cli\"",
+            "CLI",
+            "brew install daemonitor-cli",
             "Build History",
             "MCP / Agent workflows",
             "id=\"privacy\"",
@@ -70,6 +75,7 @@ class PublicWebsiteTest {
             "assets/live-monitor.png",
             "assets/process-visual.png",
             "assets/build-history.png",
+            "assets/cli-monitor.png",
             "MIT License",
         ).forEach { required ->
             assertTrue(indexHtml.contains(required), "index.html should include: $required")
@@ -86,6 +92,10 @@ class PublicWebsiteTest {
         assertTrue(
             indexHtml.contains("alt=\"Daemonitor Build History"),
             "Build History screenshot should have meaningful alt text",
+        )
+        assertTrue(
+            indexHtml.contains("alt=\"Daemonitor CLI"),
+            "CLI screenshot should have meaningful alt text",
         )
     }
 
@@ -146,6 +156,7 @@ class PublicWebsiteTest {
             "name: github-pages",
             "page_url",
             "cp docs/images/live-monitor.png",
+            "docs/images/cli-monitor.png",
         ).forEach { required ->
             assertTrue(pagesWorkflow.contains(required), "pages.yml should include: $required")
         }

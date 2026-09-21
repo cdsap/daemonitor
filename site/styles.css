@@ -512,6 +512,41 @@ code {
   background: var(--color-paper-2);
 }
 
+.feature-cli {
+  display: grid;
+  grid-template-columns: minmax(0, 0.62fr) minmax(0, 1fr);
+  gap: var(--space-lg);
+  align-items: center;
+  margin-top: var(--space-md);
+  padding: var(--space-md);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-paper-3) 70%, var(--color-paper-2));
+}
+
+.install-snippet {
+  margin: var(--space-sm) 0 0;
+  padding: var(--space-sm);
+  overflow-x: auto;
+  border: 1px solid var(--color-rule-soft);
+  border-radius: var(--radius-md);
+  background: #111714;
+  color: #e8ece8;
+  font-family: var(--font-mono);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+.install-snippet code {
+  font-family: inherit;
+  white-space: pre;
+}
+
+.feature-footnote {
+  margin-top: var(--space-sm) !important;
+  font-size: 0.95rem;
+}
+
 .feature-pair {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -684,6 +719,7 @@ code {
   .download-layout,
   .feature-intro,
   .feature-live,
+  .feature-cli,
   .mcp {
     grid-template-columns: 1fr;
   }
