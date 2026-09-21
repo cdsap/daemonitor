@@ -34,7 +34,7 @@ Grab the installer for your OS from
 | Linux | `.deb` | `.tar.gz` standalone image |
 
 Asset names include the CPU architecture (`x64` or `arm64`), for example
-`Daemonitor-1.0.7-macos-arm64.dmg`. No project-local Gradle setup is required.
+`Daemonitor-1.1.0-macos-arm64.dmg`. No project-local Gradle setup is required.
 
 On Linux, prefer the `.deb` for installs and the `.tar.gz` for writable standalone updates. See
 [Linux Update Distribution](docs/linux-update-distribution.md).
@@ -225,4 +225,4 @@ Review `docs/images/` before committing (synthetic samples only).
 **Privacy:** Local-only storage, redacted command lines/logs, owner-only database. Outbound traffic
 is limited to GitHub Releases checks and downloads you approve.
 
-**Status:** Early (v1.0.7). See `requirements.md` for the original spec.
+**Status:** Early (v1.1.0). See `requirements.md` for the original spec.

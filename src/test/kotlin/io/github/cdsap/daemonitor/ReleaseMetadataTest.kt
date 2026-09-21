@@ -12,11 +12,11 @@ import kotlin.test.assertTrue
 
 class ReleaseMetadataTest {
     @Test
-    fun `Gradle project and native package versions are aligned for v1_0_7`() {
+    fun `Gradle project and native package versions are aligned for v1_1_0`() {
         val buildFile = Path.of("build.gradle.kts").readText()
 
-        assertTrue(buildFile.contains("version = \"1.0.7\""), buildFile)
-        assertTrue(buildFile.contains("val nativePackageVersion = \"1.0.7\""), buildFile)
+        assertTrue(buildFile.contains("version = \"1.1.0\""), buildFile)
+        assertTrue(buildFile.contains("val nativePackageVersion = \"1.1.0\""), buildFile)
     }
 
     @Test
@@ -25,12 +25,12 @@ class ReleaseMetadataTest {
         val outputDir = tempDir.resolve("metadata")
 
         val assets = mapOf(
-            "Daemonitor-1.0.7-linux-x64.deb" to "linux package",
-            "Daemonitor-1.0.7-linux-x64.tar.gz" to "linux update",
-            "Daemonitor-1.0.7-windows-x64.msi" to "windows package",
-            "Daemonitor-1.0.7-windows-x64.zip" to "windows update",
-            "Daemonitor-1.0.7-macos-arm64.dmg" to "macos package",
-            "Daemonitor-1.0.7-macos-arm64.zip" to "macos update",
+            "Daemonitor-1.1.0-linux-x64.deb" to "linux package",
+            "Daemonitor-1.1.0-linux-x64.tar.gz" to "linux update",
+            "Daemonitor-1.1.0-windows-x64.msi" to "windows package",
+            "Daemonitor-1.1.0-windows-x64.zip" to "windows update",
+            "Daemonitor-1.1.0-macos-arm64.dmg" to "macos package",
+            "Daemonitor-1.1.0-macos-arm64.zip" to "macos update",
         )
         assets.forEach { (name, content) -> assetsDir.resolve(name).writeText(content) }
 
@@ -39,8 +39,8 @@ class ReleaseMetadataTest {
             "scripts/generate-release-metadata.sh",
             assetsDir.toString(),
             outputDir.toString(),
-            "1.0.7",
-            "v1.0.7",
+            "1.1.0",
+            "v1.1.0",
             "cdsap/daemonitor",
         )
             .redirectErrorStream(true)
@@ -58,8 +58,8 @@ class ReleaseMetadataTest {
 
         val latest = outputDir.resolve("latest.json").readText()
         assertTrue(latest.contains("\"schemaVersion\": 2"), latest)
-        assertTrue(latest.contains("\"version\": \"1.0.7\""), latest)
-        assertTrue(latest.contains("\"tag\": \"v1.0.7\""), latest)
+        assertTrue(latest.contains("\"version\": \"1.1.0\""), latest)
+        assertTrue(latest.contains("\"tag\": \"v1.1.0\""), latest)
         assertTrue(latest.contains("\"platform\": \"linux\""), latest)
         assertTrue(latest.contains("\"platform\": \"windows\""), latest)
         assertTrue(latest.contains("\"platform\": \"macos\""), latest)
@@ -69,11 +69,11 @@ class ReleaseMetadataTest {
         assertTrue(latest.contains("\"role\": \"installer\""), latest)
         assertTrue(
             latest.contains(
-                "\"url\": \"https://github.com/cdsap/daemonitor/releases/download/v1.0.7/Daemonitor-1.0.7-macos-arm64.zip\"",
+                "\"url\": \"https://github.com/cdsap/daemonitor/releases/download/v1.1.0/Daemonitor-1.1.0-macos-arm64.zip\"",
             ),
             latest,
         )
-        assertTrue(latest.contains("\"sha256\": \"${sha256(assetsDir.resolve("Daemonitor-1.0.7-linux-x64.deb"))}\""), latest)
+        assertTrue(latest.contains("\"sha256\": \"${sha256(assetsDir.resolve("Daemonitor-1.1.0-linux-x64.deb"))}\""), latest)
 
         assertEquals(latest, outputDir.resolve("update.json").readText())
     }

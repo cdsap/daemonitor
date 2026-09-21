@@ -10,9 +10,9 @@ plugins {
 }
 
 group = "io.github.cdsap.daemonitor"
-version = "1.0.7"
+version = "1.1.0"
 
-val nativePackageVersion = "1.0.7"
+val nativePackageVersion = "1.1.0"
 
 val distributionChannel = (findProperty("daemonitor.distribution") as String?)
     ?.trim()
