@@ -181,9 +181,18 @@ jobs:
           go build -o bin/daemonitor-cored ./cmd/daemonitor-cored
           go build -o bin/daemonitor-corectl ./cmd/daemonitor-corectl
 
+      # Full bash smoke (Go client + JDK Unix socket client) on Unix runners.
       - name: Smoke Unix-socket IPC (Go + JVM clients)
+        if: runner.os != 'Windows'
         working-directory: spikes/go-core
         run: ./scripts/smoke.sh
+
+      # Windows: AF_UNIX works in Go, but Git Bash path mapping breaks the shell smoke +
+      # JDK client. The Go integration test above already covers IPC on this OS.
+      - name: Confirm Windows IPC covered by Go tests
+        if: runner.os == 'Windows'
+        working-directory: spikes/go-core
+        run: go test ./internal/api -count=1 -v
 
       - name: Summarize
         if: always()

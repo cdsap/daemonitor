@@ -53,8 +53,10 @@ java -cp clients/jvm UnixHttpClient "$TMPDIR/daemonitor-core.sock" /v1/processes
 ./scripts/smoke.sh
 ```
 
-GitHub Actions runs `go test`, builds both binaries, and executes the smoke script on
-**ubuntu-latest**, **windows-latest**, and **macos-latest** (`Go core spike` job in `.github/workflows/ci.yml`).
+GitHub Actions runs `go test` (including Unix-socket IPC integration) and builds binaries on
+**ubuntu-latest**, **windows-latest**, and **macos-latest**. Full shell smoke (Go + JVM clients)
+runs on Linux and macOS; Windows relies on the Go IPC integration test (Git Bash path mapping
+breaks the shell/JDK smoke there).
 
 ## API sketch
 
