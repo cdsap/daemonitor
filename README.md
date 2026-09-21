@@ -6,183 +6,142 @@
 
 > Activity Monitor for your Gradle daemons — what's building now, and what built recently.
 
-Daemonitor is a local desktop app for Gradle on your machine. It shows which daemons, wrappers, and
-test workers are running, how much memory and CPU they use, recent daemon-log lines, and a searchable
-history of past builds — including which coding agent started them when that can be detected.
+Daemonitor watches the Gradle-related JVMs on your machine: daemons, wrappers, Kotlin daemons, and
+test workers. Use the **desktop app** for a full Activity Monitor UI, or the **CLI** for the same
+live view in a terminal (including over SSH).
 
-Data stays on your machine. Command lines and logs are redacted before storage. The only outbound
-network use is GitHub Releases update checks (at startup or from Settings) and installer downloads
-you approve.
+Everything stays local. Command lines and logs are redacted before storage. The only outbound
+network use is GitHub Releases update checks and installer downloads you approve.
 
 [![CI](https://github.com/cdsap/daemonitor/actions/workflows/ci.yml/badge.svg)](https://github.com/cdsap/daemonitor/actions/workflows/ci.yml)
 ![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue)
 
-Website: <https://cdsap.github.io/daemonitor/>
+**Website:** <https://cdsap.github.io/daemonitor/> · **CLI options:** <https://cdsap.github.io/daemonitor/cli.html>
 
 ---
-
-## Features
-
-### Live Monitor
-
-![Daemonitor Live monitor showing active Gradle processes, metrics, status badges, process details, MCP status, and the headless toolbar action](docs/images/live-monitor.png)
-
-- Running Gradle-related JVMs, by type:
-  - 🐘 Gradle daemon · 🐘+🔧 wrapper · Kotlin daemon · 🧪 test worker · ☕ other related JVM
-- RSS, live JVM heap used/committed (when Attach/JMX succeeds), CPU, and uptime per process
-  - CPU shows `…` / `sampling…` on the first poll until a delta sample exists; `0%` means idle after that
-  - Live heap stays `n/a` for wrappers, test workers, and other non-daemon related JVMs (daemons only)
-- Summary stats: active processes, total RSS, highest-memory PID (clickable; PID also shown in the table), active projects
-- Badges for high/critical memory, `MULTI-BUILD`, and `AUTOMATED`
-- Detail panel: heap used/committed, `-Xmx` limit, runtime heap max, GC, working dir, redacted command line, live daemon-log tail
-- Toolbar action to switch to headless collection (and MCP status when enabled)
-
-### Visual
-
-![Daemonitor Visual tab showing per-process RSS, live heap used, and configured heap (-Xmx) timelines](docs/images/process-visual.png)
-
-- Rolling RSS, live heap used, and configured-heap (`-Xmx`) timelines
-- Solid lines for RSS / heap used, dashed for `-Xmx` when known
-- Click the legend to hide or focus a series
-
-Live heap collection uses JDK Attach + local JMX; see [JVM heap collection](docs/jvm-heap-collection.md)
-for overhead, failure behavior, and when heap is expected to stay unavailable.
-
-### Historical
-
-![Daemonitor build history showing status and source tags, agent attribution, metrics, and build details](docs/images/build-history.png)
-
-- Reconstructed builds with time, project, duration, peak RSS, status, source, and agent
-- Filter by project and time range
-- Detail view with resource peaks and a log excerpt
-
-### Settings
-
-- History retention (default 15 days, range 1–90). Lowering it deletes older entries right away
-  and incrementally compacts the SQLite database so the on-disk file tracks retained data.
-  There is no separate “compacting…” UI; purge/compact runs during startup and when retention
-  changes. A legacy database may pause longer on its first purge (seconds to minutes on multi-GB
-  files) while SQLite performs a one-time full compaction into incremental auto-vacuum mode.
-
-### Headless collection
-
-Keep collecting without the desktop window via the toolbar or `--headless`. On macOS, the toolbar
-opens a new Terminal window running the headless monitor; on other platforms its output remains
-attached to the launching process. Same local database and settings as the desktop app. On
-supported OSes, a tray/menu-bar icon offers **Open Daemonitor** and **Quit Daemonitor**.
-
-### MCP access
-
-Optional local, read-only MCP server so agent tools can inspect retained history and current
-Gradle-related processes. Same SQLite database as the desktop app. Live process command lines from
-`daemonitor_current_processes` are redacted with the same policy as stored samples and the UI
-(sensitive `-P`/`-D`/`--` values and credentialed URLs). Tools:
-
-- `daemonitor_search_history` — search builds by id, command, project, status, source, or agent
-- `daemonitor_builds_for_process` — builds and samples for a daemon PID or process text
-- `daemonitor_current_processes` — Gradle-related processes visible right now (redacted command lines)
-
-### Agent attribution
-
-Daemonitor guesses the coding agent from environment-variable *names* in the daemon log (never
-values). It knows Claude Code, Cursor, Codex, Gemini CLI, and Aider, and marks unknown agents
-explicitly.
-
-It also ignores its own ambient environment. If Daemonitor is running inside Claude Code, those
-variables are not treated as proof that every build came from Claude.
-
----
-
-## Requirements
-
-- **JDK 17+** to run Gradle from source (the build uses a Java 21 toolchain; Gradle can provision it)
-- macOS, Linux, or Windows
-- Permission to read your own process list and Gradle daemon logs under `~/.gradle/daemon/<version>/`
 
 ## Install
 
 ### Desktop app
 
-| OS | First-time installer | In-app update package |
-|----|----------------------|------------------------|
+Grab the installer for your OS from
+[GitHub Releases](https://github.com/cdsap/daemonitor/releases/latest):
+
+| OS | Installer | In-app update package |
+|----|-----------|------------------------|
 | macOS | `.dmg` | `.zip` app bundle |
 | Windows | `.msi` | `.zip` app directory |
 | Linux | `.deb` | `.tar.gz` standalone image |
 
-Release asset names include the CPU architecture (`x64` or `arm64`), e.g.
-`Daemonitor-1.0.7-macos-arm64.dmg`.
+Asset names include the CPU architecture (`x64` or `arm64`), for example
+`Daemonitor-1.0.7-macos-arm64.dmg`. No project-local Gradle setup is required.
 
-No project-local Gradle setup is required. The app only reads process metadata and daemon logs for
-the current user.
-
-On Linux, prefer the GitHub Releases `.deb` for installs and `.tar.gz` for writable standalone
-updates. Package-managed prompts stay advisory; see
+On Linux, prefer the `.deb` for installs and the `.tar.gz` for writable standalone updates. See
 [Linux Update Distribution](docs/linux-update-distribution.md).
 
-### CLI (Homebrew)
+### CLI
 
 ```bash
 brew tap cdsap/tap
 brew trust cdsap/tap   # Homebrew 7+
 brew install daemonitor-cli
+daemonitor-cli
 ```
 
-Requires JDK 21 (`openjdk@21` is pulled in as a dependency). The formula tracks the
-`daemonitor-cli-*.zip` asset on [GitHub Releases](https://github.com/cdsap/daemonitor/releases).
+Needs JDK 21 (`openjdk@21` is installed as a Homebrew dependency). You can also download
+`daemonitor-cli-*.zip` from [Releases](https://github.com/cdsap/daemonitor/releases/latest).
 
-## Updates
+Full flag reference: [CLI options on the website](https://cdsap.github.io/daemonitor/cli.html).
 
-Daemonitor checks GitHub Releases once at startup and marks Settings with `(1)` when a newer version
-exists. You can also check manually from Settings. After you approve a download, it picks the
-matching artifact for your OS and arch, verifies the SHA-256 checksum, then either stages a
-**Restart and Update** package or opens the platform installer. It does not install updates silently
-while running.
+---
 
-## Run from source
+## What you get
+
+### Live Monitor (desktop)
+
+![Daemonitor Live monitor showing active Gradle processes, metrics, status badges, process details, MCP status, and the headless toolbar action](docs/images/live-monitor.png)
+
+- Gradle-related JVMs by type (daemon, wrapper, Kotlin daemon, test worker, other)
+- RSS, live heap (when Attach/JMX works), CPU, and uptime
+- Summary tiles, memory-pressure badges, and a detail panel with log tail
+- Switch to terminal collection from the toolbar when you want a lighter footprint
+
+First-poll CPU shows `…` / `sampling…` until a delta exists; `0%` means idle after that. Live heap
+stays `n/a` for wrappers and test workers (daemons only). More detail:
+[JVM heap collection](docs/jvm-heap-collection.md).
+
+### CLI (terminal)
+
+![Daemonitor CLI showing a live terminal table of Gradle-related processes with RSS, heap, CPU, and uptime](docs/images/cli-monitor.png)
+
+Same core monitor in your terminal — useful on build machines and over SSH:
 
 ```bash
-./gradlew run
+daemonitor-cli
+ssh -t build-machine daemonitor-cli
 ```
 
-Headless terminal monitor (no Compose / display):
+Press `q` to quit. Desktop and CLI share the same local database and retention settings. Packaged
+desktop apps also accept `--headless` for a similar terminal mode.
+
+### Visual
+
+![Daemonitor Visual tab showing per-process RSS, live heap used, and configured heap (-Xmx) timelines](docs/images/process-visual.png)
+
+Rolling RSS / live-heap timelines with configured `-Xmx` when known. Click the legend to hide or
+focus a series.
+
+### Build history
+
+![Daemonitor build history showing status and source tags, agent attribution, metrics, and build details](docs/images/build-history.png)
+
+Reconstructed builds with duration, peak RSS, status, source, and coding-agent attribution when
+detectable. Filter by project and time range.
+
+### MCP (optional)
+
+A local, read-only MCP server so agent tools can inspect history and current processes — same
+SQLite database, same redaction rules. Enable it in **Settings**, then paste the URL and token into
+your MCP client. Details and examples:
+[website](https://cdsap.github.io/daemonitor/#mcp) and the MCP section below.
+
+---
+
+## Quick start from source
 
 ```bash
-./gradlew runHeadless
-```
-
-The headless mode shows active Gradle processes, RSS, CPU, uptime, and project, refreshing every two
-seconds. Press `q` to quit. It is also useful over SSH:
-
-```bash
-ssh -t build-machine daemonitor --headless
-```
-
-Packaged launchers also accept `--headless`. Desktop and headless share the database and retention
-setting. Stop a source-run headless process with `Ctrl+C`.
-
-### Standalone CLI (from source)
-
-Prefer Homebrew when you only need the terminal monitor. From source, the standalone distribution is
-built without Compose or desktop UI dependencies:
-
-```bash
+./gradlew run                 # desktop app
+./gradlew runHeadless         # terminal mode via the desktop module
 ./gradlew :cli:run --args="--help"
+```
+
+Standalone CLI without Compose:
+
+```bash
 ./gradlew :cli:installDist
 build/install/daemonitor-cli/bin/daemonitor-cli
 ```
 
-Use `--plain` or `--no-color` for redirected output. The CLI and desktop application share the
-same core runtime, database format, and retention settings.
+Requires **JDK 17+** to run Gradle (the build uses a Java 21 toolchain). Daemonitor needs permission
+to read your process list and Gradle daemon logs under `~/.gradle/daemon/<version>/`.
+
+---
+
+## Updates
+
+At startup (and from Settings) Daemonitor checks GitHub Releases. When a newer version is available,
+Settings shows `(1)`. After you approve a download it verifies the SHA-256 checksum, then stages
+**Restart and Update** or opens the platform installer. It never installs silently while running.
+
+---
 
 ## Connect MCP
 
-From the desktop app:
-
-1. Open Daemonitor → Settings
+1. Open **Daemonitor → Settings**
 2. Enable MCP
-3. Copy the local URL and token into your MCP client
+3. Copy the local URL and token into your client
 
-Example HTTP config:
+HTTP example:
 
 ```json
 {
@@ -197,12 +156,10 @@ Example HTTP config:
 }
 ```
 
-The server binds to `127.0.0.1` only and needs the Settings token. Keep Daemonitor open while
-connected. It is read-only — it does not start, stop, or change builds.
+The server binds to `127.0.0.1` only. Keep Daemonitor open while connected. It is read-only.
 
-For stdio clients, use the packaged launcher with `--mcp`. Do not point a stdio client at
-`./gradlew run`; Gradle's own stdout will corrupt MCP messages. For local development, package first
-and use the launcher under `build/compose/binaries/main/app/`.
+For stdio clients, use the packaged launcher with `--mcp` (not `./gradlew run` — Gradle stdout
+corrupts MCP messages):
 
 ```json
 {
@@ -215,88 +172,57 @@ and use the launcher under `build/compose/binaries/main/app/`.
 }
 ```
 
-Replace `command` with your install path. The stdio server exits when the client disconnects.
-
-## Build a native distribution
-
-Build on the target OS:
-
-```bash
-./gradlew packageDmg          # macOS (.dmg)
-./gradlew packageMsi          # Windows (.msi)
-./gradlew packageDeb          # Linux (.deb)
-```
-
-Mac App Store experiments use a separate channel (see
-[docs/mac-app-store-distribution.md](docs/mac-app-store-distribution.md)):
-
-```bash
-./gradlew packagePkg -Pdaemonitor.distribution=APP_STORE
-```
-
-Tag-triggered releases also publish `latest.json`, `update.json`, `checksums.txt`, and
-`daemonitor-cli-<version>.zip`. See [docs/update-metadata.md](docs/update-metadata.md).
-
-To auto-bump the Homebrew formula on each tag, the release workflow uses repository secret
-`HOMEBREW_TAP_SSH_KEY` (write deploy key on [cdsap/homebrew-tap](https://github.com/cdsap/homebrew-tap)).
-Without it, update the formula manually with `scripts/update-homebrew-formula.sh`.
-
-## Test
-
-```bash
-./gradlew test
-```
-
-Unit tests cover collection, classification, and aggregation. Compose UI tests mount the real
-screens. CI runs on Linux, Windows, and macOS (Linux uses a virtual display for UI tests).
-
-### Updating README screenshots
-
-Screenshots are rendered from synthetic sample state at the app's 1180×760 window size. After a UI
-change:
-
-```bash
-./gradlew captureReadmeScreenshots test
-```
-
-Review `docs/images/` before committing. Keep samples synthetic — don't capture a live session with
-personal paths or secrets.
+Tools: `daemonitor_search_history`, `daemonitor_builds_for_process`,
+`daemonitor_current_processes`.
 
 ---
 
 ## How it works
 
-Two signals:
+1. **Process polling** ([OSHI](https://github.com/oshi/oshi), every 2s) — RSS, CPU, uptime, JVM flags
+2. **Daemon-log parsing** — build start/end, outcome, working directory, env-var *names* for
+   source/agent attribution
 
-1. **Process polling** ([OSHI](https://github.com/oshi/oshi), every 2s) — RSS, CPU, uptime, and JVM
-   flags for your Gradle-related JVMs.
-2. **Daemon-log parsing** — build start/end, outcome, working directory, and env-var names for
-   source/agent attribution.
+Builds are reconstructed from a daemon's busy→idle window matched to samples in that window, then
+stored in local SQLite and purged by retention (default 15 days, range 1–90). Lowering retention
+deletes older rows and incrementally compacts the database.
 
-A build is reconstructed by matching a daemon's busy→idle window (with a real build start inside it)
-to resource samples in that window. Confirmed builds go to a local SQLite database (owner-only
-permissions; excluded from Time Machine on macOS) and are purged by the retention setting.
-
-### Where data lives
-
-| OS | Path |
-|----|------|
+| OS | Data directory |
+|----|----------------|
 | macOS | `~/Library/Application Support/Daemonitor` |
-| Linux | `$XDG_DATA_HOME/Daemonitor` (or `~/.local/share/Daemonitor`) |
+| Linux | `$XDG_DATA_HOME/Daemonitor` or `~/.local/share/Daemonitor` |
 | Windows | `%LOCALAPPDATA%\Daemonitor` |
 
-Contains `watcher.db` (history) and `settings.properties` (retention).
+Contains `watcher.db` and `settings.properties`.
 
-## Tech stack
+Agent attribution uses env-var names in the daemon log (never values). Known agents: Claude Code,
+Cursor, Codex, Gemini CLI, Aider. Ambient variables from Daemonitor's own process are ignored.
 
-Kotlin · Compose for Desktop (Material 3) · OSHI · SQLDelight + JDBC SQLite · Kotlin Coroutines
+---
 
-## Privacy
+## Develop
 
-Everything is local. Command lines and daemon-log lines are redacted before storage; the database is
-owner-only. Outbound requests are limited to GitHub Releases update checks and downloads you
-approve.
+```bash
+./gradlew test
+./gradlew packageDmg   # macOS
+./gradlew packageMsi   # Windows
+./gradlew packageDeb   # Linux
+```
 
-## Status
+Tag releases publish installers, `daemonitor-cli-*.zip`, `latest.json`, `update.json`, and
+checksums. See [docs/update-metadata.md](docs/update-metadata.md).
 
-Early (v1.0.7). Heuristics are still evolving; see `requirements.md` for the original spec.
+Refresh desktop README screenshots after UI changes:
+
+```bash
+./gradlew captureReadmeScreenshots test
+```
+
+Review `docs/images/` before committing (synthetic samples only).
+
+**Stack:** Kotlin · Compose for Desktop · OSHI · SQLDelight · Coroutines
+
+**Privacy:** Local-only storage, redacted command lines/logs, owner-only database. Outbound traffic
+is limited to GitHub Releases checks and downloads you approve.
+
+**Status:** Early (v1.0.7). See `requirements.md` for the original spec.
