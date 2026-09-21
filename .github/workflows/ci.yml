@@ -144,3 +144,61 @@ jobs:
           name: test-report-${{ matrix.os }}
           path: build/reports/tests/test
           if-no-files-found: ignore
+
+  go-core-spike:
+    name: Go core spike (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        # Match the JVM matrix: bash everywhere, including Windows (Git Bash).
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: spikes/go-core/go.mod
+          cache-dependency-path: spikes/go-core/go.sum
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Test Go packages
+        working-directory: spikes/go-core
+        run: go test ./...
+
+      - name: Build binaries
+        working-directory: spikes/go-core
+        run: |
+          go build -o bin/daemonitor-cored ./cmd/daemonitor-cored
+          go build -o bin/daemonitor-corectl ./cmd/daemonitor-corectl
+
+      # Full bash smoke (Go client + JDK Unix socket client) on Unix runners.
+      - name: Smoke Unix-socket IPC (Go + JVM clients)
+        if: runner.os != 'Windows'
+        working-directory: spikes/go-core
+        run: ./scripts/smoke.sh
+
+      # Windows: AF_UNIX works in Go, but Git Bash path mapping breaks the shell smoke +
+      # JDK client. The Go integration test above already covers IPC on this OS.
+      - name: Confirm Windows IPC covered by Go tests
+        if: runner.os == 'Windows'
+        working-directory: spikes/go-core
+        run: go test ./internal/api -count=1 -v
+
+      - name: Summarize
+        if: always()
+        working-directory: spikes/go-core
+        run: |
+          echo "### Go core spike" >> "$GITHUB_STEP_SUMMARY"
+          echo "- OS: ${{ matrix.os }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Module: spikes/go-core" >> "$GITHUB_STEP_SUMMARY"
+          go version >> "$GITHUB_STEP_SUMMARY"

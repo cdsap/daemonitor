@@ -1,0 +1,164 @@
+package api
+
+import (
+	"context"
+	"encoding/json"
+	"net"
+	"net/http"
+	"os"
+	"strconv"
+	"sync"
+	"time"
+
+	"github.com/cdsap/daemonitor/spikes/go-core/internal/model"
+	"github.com/cdsap/daemonitor/spikes/go-core/internal/poll"
+	"github.com/cdsap/daemonitor/spikes/go-core/internal/store"
+)
+
+const Version = "0.0.2-spike"
+
+// Server exposes a tiny HTTP API over a Unix domain socket.
+type Server struct {
+	SocketPath string
+	DBPath     string
+	Collector  *poll.Collector
+	Store      *store.Store
+	Retention  time.Duration
+
+	mu       sync.RWMutex
+	last     model.Snapshot
+	interval time.Duration
+}
+
+func NewServer(socketPath, dbPath string, interval, retention time.Duration) (*Server, error) {
+	st, err := store.Open(dbPath)
+	if err != nil {
+		return nil, err
+	}
+	return &Server{
+		SocketPath: socketPath,
+		DBPath:     dbPath,
+		Collector:  poll.NewCollector(),
+		Store:      st,
+		Retention:  retention,
+		interval:   interval,
+		last:       model.Snapshot{Processes: []model.Process{}},
+	}, nil
+}
+
+func (s *Server) Run(ctx context.Context) error {
+	defer s.Store.Close()
+
+	_ = os.Remove(s.SocketPath)
+
+	ln, err := net.Listen("unix", s.SocketPath)
+	if err != nil {
+		return err
+	}
+	defer ln.Close()
+	defer os.Remove(s.SocketPath)
+
+	_ = os.Chmod(s.SocketPath, 0o600)
+
+	poll.WarmCPU(ctx)
+	s.refresh(ctx)
+
+	go s.loop(ctx)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/health", s.handleHealth)
+	mux.HandleFunc("/v1/processes", s.handleProcesses)
+	mux.HandleFunc("/v1/processes/history", s.handleHistory)
+
+	srv := &http.Server{Handler: mux}
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+	}()
+
+	err = srv.Serve(ln)
+	if err == http.ErrServerClosed {
+		return nil
+	}
+	return err
+}
+
+func (s *Server) loop(ctx context.Context) {
+	t := time.NewTicker(s.interval)
+	defer t.Stop()
+	purgeEvery := time.NewTicker(30 * time.Second)
+	defer purgeEvery.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			s.refresh(ctx)
+		case <-purgeEvery.C:
+			_, _ = s.Store.PurgeOlderThan(s.Retention)
+		}
+	}
+}
+
+func (s *Server) refresh(ctx context.Context) {
+	snap, err := s.Collector.Snapshot(ctx)
+	if err != nil {
+		return
+	}
+	_ = s.Store.InsertSnapshot(snap)
+	s.mu.Lock()
+	s.last = snap
+	s.mu.Unlock()
+}
+
+func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
+	n, _ := s.Store.Count()
+	writeJSON(w, model.Health{
+		Status:      "ok",
+		Version:     Version,
+		Socket:      s.SocketPath,
+		SampleCount: n,
+		DBPath:      s.DBPath,
+	})
+}
+
+func (s *Server) handleProcesses(w http.ResponseWriter, _ *http.Request) {
+	s.mu.RLock()
+	snap := s.last
+	s.mu.RUnlock()
+	writeJSON(w, snap)
+}
+
+func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
+	sinceMs := time.Now().Add(-15 * time.Minute).UnixMilli()
+	if raw := r.URL.Query().Get("since_ms"); raw != "" {
+		if v, err := strconv.ParseInt(raw, 10, 64); err == nil {
+			sinceMs = v
+		}
+	}
+	limit := 500
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		if v, err := strconv.Atoi(raw); err == nil {
+			limit = v
+		}
+	}
+	rows, err := s.Store.History(sinceMs, limit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, model.History{
+		SinceMs:   sinceMs,
+		Count:     len(rows),
+		Processes: rows,
+	})
+}
+
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(v)
+}
