@@ -39,16 +39,16 @@ are used for installer names, update package names, and metadata.
 {
   "schemaVersion": 2,
   "name": "Daemonitor",
-  "version": "1.0.7",
-  "tag": "v1.0.7",
+  "version": "1.1.0",
+  "tag": "v1.1.0",
   "repository": "https://github.com/cdsap/daemonitor",
   "assets": [
     {
       "platform": "macos",
       "arch": "arm64",
       "role": "update",
-      "fileName": "Daemonitor-1.0.7-macos-arm64.zip",
-      "url": "https://github.com/cdsap/daemonitor/releases/download/v1.0.7/Daemonitor-1.0.7-macos-arm64.zip",
+      "fileName": "Daemonitor-1.1.0-macos-arm64.zip",
+      "url": "https://github.com/cdsap/daemonitor/releases/download/v1.1.0/Daemonitor-1.1.0-macos-arm64.zip",
       "sha256": "<64 lowercase hex characters>",
       "size": 123456
     },
@@ -56,8 +56,8 @@ are used for installer names, update package names, and metadata.
       "platform": "macos",
       "arch": "arm64",
       "role": "installer",
-      "fileName": "Daemonitor-1.0.7-macos-arm64.dmg",
-      "url": "https://github.com/cdsap/daemonitor/releases/download/v1.0.7/Daemonitor-1.0.7-macos-arm64.dmg",
+      "fileName": "Daemonitor-1.1.0-macos-arm64.dmg",
+      "url": "https://github.com/cdsap/daemonitor/releases/download/v1.1.0/Daemonitor-1.1.0-macos-arm64.dmg",
       "sha256": "<64 lowercase hex characters>",
       "size": 123456
     }
