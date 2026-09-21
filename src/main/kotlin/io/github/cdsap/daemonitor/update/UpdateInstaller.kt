@@ -124,23 +124,32 @@ class DesktopUpdateApplier(
             pid=$processId
             app_path=${shellEscape(installRoot.toString())}
             staged=${shellEscape(staged.payloadPath.toString())}
-            backup="${"$"}{app_path}.pre-update"
+            # Clear leftovers from older helpers that kept a sibling .pre-update bundle.
+            rm -rf "${"$"}{app_path}.pre-update"
             while kill -0 "${"$"}pid" 2>/dev/null; do sleep 0.2; done
             sleep 0.4
             if [[ ! -e "${"$"}app_path" || ! -e "${"$"}staged" ]]; then
               echo "Update apply aborted: installation or staged payload missing" >&2
               exit 1
             fi
-            rm -rf "${"$"}backup"
+            backup_root="${"$"}(mktemp -d "${"$"}{TMPDIR:-/tmp}/daemonitor-pre-update.XXXXXX")"
+            backup="${"$"}{backup_root}/previous"
             mv "${"$"}app_path" "${"$"}backup"
             if ! mv "${"$"}staged" "${"$"}app_path"; then
               mv "${"$"}backup" "${"$"}app_path"
+              rm -rf "${"$"}backup_root"
               echo "Update apply failed; restored the previous installation" >&2
               exit 1
             fi
+            cleanup_backup() {
+              rm -rf "${"$"}backup_root"
+            }
+            trap cleanup_backup EXIT
+            # Remove the rollback backup before relaunch so a failed open/start cannot
+            # leave a previous bundle behind.
+            rm -rf "${"$"}backup_root"
             $quarantine
             $relaunch
-            rm -rf "${"$"}backup"
             rm -rf ${shellEscape(stagedDir.toString())}
             rm -f ${shellEscape(staged.artifactPath.toString())}
             rm -f "${"$"}0"
@@ -161,7 +170,10 @@ class DesktopUpdateApplier(
             set PID=$processId
             set APP_PATH=${windowsQuote(installRoot.toString())}
             set STAGED=${windowsQuote(staged.payloadPath.toString())}
-            set BACKUP=%APP_PATH%.pre-update
+            rem Clear leftovers from older helpers that kept a sibling .pre-update folder.
+            if exist "%APP_PATH%.pre-update" rmdir /s /q "%APP_PATH%.pre-update"
+            set BACKUP=%TEMP%\daemonitor-pre-update-%RANDOM%%RANDOM%
+            if exist "%BACKUP%" rmdir /s /q "%BACKUP%"
             :wait
             tasklist /FI "PID eq %PID%" 2>NUL | find "%PID%" >NUL
             if not errorlevel 1 (
@@ -170,7 +182,6 @@ class DesktopUpdateApplier(
             )
             if not exist "%APP_PATH%" exit /b 1
             if not exist "%STAGED%" exit /b 1
-            if exist "%BACKUP%" rmdir /s /q "%BACKUP%"
             move /Y "%APP_PATH%" "%BACKUP%"
             if errorlevel 1 exit /b 1
             move /Y "%STAGED%" "%APP_PATH%"
@@ -178,8 +189,9 @@ class DesktopUpdateApplier(
               move /Y "%BACKUP%" "%APP_PATH%"
               exit /b 1
             )
-            start "" $relaunch
+            rem Remove the rollback backup before relaunch so a failed start cannot leave it behind.
             rmdir /s /q "%BACKUP%"
+            start "" $relaunch
             rmdir /s /q ${windowsQuote(stagedDir.toString())}
             del /f /q ${windowsQuote(staged.artifactPath.toString())}
             del /f /q "%~f0"
