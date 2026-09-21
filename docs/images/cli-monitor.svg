@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="520" viewBox="0 0 1180 520" role="img" aria-label="Daemonitor CLI terminal monitor">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#101513"/>
+      <stop offset="100%" stop-color="#171d1a"/>
+    </linearGradient>
+  </defs>
+  <rect width="1180" height="520" rx="14" fill="url(#bg)" stroke="#334039"/>
+  <rect width="1180" height="42" rx="14" fill="#222b27"/>
+  <rect y="28" width="1180" height="14" fill="#222b27"/>
+  <circle cx="28" cy="21" r="6" fill="#ff5f57"/>
+  <circle cx="48" cy="21" r="6" fill="#febc2e"/>
+  <circle cx="68" cy="21" r="6" fill="#28c840"/>
+  <text x="96" y="26" fill="#b8c5be" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14">daemonitor-cli</text>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15" fill="#e8ece8">
+    <text x="28" y="78" fill="#80d5c4" font-weight="700">DAEMONITOR - HEADLESS</text>
+    <text x="28" y="104" fill="#b8c5be">Updated 2026-09-20T21:00:02Z  |  4 processes  |  4824 MB RSS  |  2 daemon logs</text>
+    <text x="28" y="148" fill="#dfe7e1" font-weight="700">TYPE             PID     RSS      HEAP USED  HEAP CMT   HEAP LIMIT  CPU   UPTIME   PROJECT</text>
+    <text x="28" y="168" fill="#5f6e66">----------------------------------------------------------------------------------------</text>
+    <text x="28" y="196">Gradle daemon     6227  2104 MB    812 MB     1024 MB    4096 MB     18%   1h 12m   my-app</text>
+    <text x="28" y="220">Kotlin daemon     6401   980 MB    410 MB      640 MB    2048 MB      3%   1h 12m   my-app</text>
+    <text x="28" y="244">Gradle wrapper    6510   420 MB      n/a         -          -         9%      45s   my-app</text>
+    <text x="28" y="268">Test worker       6588   320 MB      n/a         -          -        22%      12s   my-app</text>
+    <text x="28" y="320" fill="#b8c5be">Press q to quit.  Poll every 2s.</text>
+    <text x="28" y="360" fill="#8a9a92">$ brew install cdsap/tap/daemonitor-cli</text>
+    <text x="28" y="384" fill="#8a9a92">$ daemonitor-cli</text>
+  </g>
+</svg>
