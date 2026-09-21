@@ -65,6 +65,9 @@ class PublicWebsiteTest {
             "macOS · Windows · Linux",
             "id=\"features\"",
             "Live Monitor",
+            "id=\"cli\"",
+            "CLI",
+            "brew install daemonitor-cli",
             "Build History",
             "MCP / Agent workflows",
             "id=\"privacy\"",
@@ -74,6 +77,7 @@ class PublicWebsiteTest {
             "assets/live-monitor.png",
             "assets/process-visual.png",
             "assets/build-history.png",
+            "assets/cli-monitor.png",
             "href=\"cli.html\"",
             "MIT License",
         ).forEach { required ->
@@ -91,6 +95,10 @@ class PublicWebsiteTest {
         assertTrue(
             indexHtml.contains("alt=\"Daemonitor Build History"),
             "Build History screenshot should have meaningful alt text",
+        )
+        assertTrue(
+            indexHtml.contains("alt=\"Daemonitor CLI"),
+            "CLI screenshot should have meaningful alt text",
         )
     }
 
