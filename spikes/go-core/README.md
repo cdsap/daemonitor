@@ -47,11 +47,14 @@ javac clients/jvm/UnixHttpClient.java
 java -cp clients/jvm UnixHttpClient "$TMPDIR/daemonitor-core.sock" /v1/processes
 ```
 
-## Smoke
+## Smoke / CI
 
 ```bash
 ./scripts/smoke.sh
 ```
+
+GitHub Actions runs `go test`, builds both binaries, and executes the smoke script on
+**ubuntu-latest**, **windows-latest**, and **macos-latest** (`Go core spike` job in `.github/workflows/ci.yml`).
 
 ## API sketch
 

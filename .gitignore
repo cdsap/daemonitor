@@ -8,6 +8,7 @@ build/
 local.properties
 spikes/go-core/bin/
 spikes/go-core/clients/jvm/*.class
+spikes/go-core/.smoke-tmp/
 *.sqlite
 *.sqlite-journal
 *.sqlite-wal
