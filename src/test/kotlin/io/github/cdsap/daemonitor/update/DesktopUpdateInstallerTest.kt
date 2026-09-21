@@ -1,6 +1,8 @@
 package io.github.cdsap.daemonitor.update
 
 import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.condition.EnabledOnOs
+import org.junit.jupiter.api.condition.OS
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
@@ -179,6 +181,7 @@ class DesktopUpdateInstallerTest {
     }
 
     @Test
+    @EnabledOnOs(OS.LINUX, OS.MAC)
     fun `unix apply helper removes backup before relaunch and on exit`(@TempDir tmp: Path) {
         val app = tmp.resolve("Daemonitor.app").also { Files.writeString(it, "previous") }
         val leftover = tmp.resolve("Daemonitor.app.pre-update").also { Files.writeString(it, "stale") }
@@ -213,6 +216,7 @@ class DesktopUpdateInstallerTest {
     }
 
     @Test
+    @EnabledOnOs(OS.LINUX, OS.MAC)
     fun `unix apply helper removes backup even when relaunch fails`(@TempDir tmp: Path) {
         val app = tmp.resolve("Daemonitor.app").also { Files.writeString(it, "previous") }
         val staged = tmp.resolve("staged/Daemonitor.app").also {
