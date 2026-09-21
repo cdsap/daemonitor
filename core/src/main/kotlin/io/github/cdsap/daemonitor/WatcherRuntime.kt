@@ -4,8 +4,8 @@ import io.github.cdsap.daemonitor.application.PollMonitoring
 import io.github.cdsap.daemonitor.application.ProcessSource
 import io.github.cdsap.daemonitor.application.DaemonLogSource
 import io.github.cdsap.daemonitor.application.BuildWriter
+import io.github.cdsap.daemonitor.application.DaemonLog
 import io.github.cdsap.daemonitor.application.ProcessSampleWriter
-import io.github.cdsap.daemonitor.collect.DaemonLog
 import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.domain.BuildAggregator
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
