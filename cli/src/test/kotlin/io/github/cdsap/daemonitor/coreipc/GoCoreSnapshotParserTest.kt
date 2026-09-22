@@ -130,4 +130,17 @@ class GoCoreSnapshotParserTest {
         assertEquals("BUILD SUCCESSFUL in 1s", build.logSnippet)
         assertNull(build.agent)
     }
+
+    @Test
+    fun `parses multi-kilobyte command lines without stack overflow`() {
+        val longCmd = "java " + (1..800).joinToString(" ") { "-Dprop$it=value$it" } +
+            " org.gradle.launcher.daemon.bootstrap.GradleDaemon"
+        val json = """
+            {"processes":[{"pid":1,"parent_pid":0,"type":"GRADLE_DAEMON","command_line":"$longCmd",
+            "rss_memory_mb":100,"cpu_percent":1.0,"start_time_ms":1,"status":"R","automated":false}]}
+        """.trimIndent()
+        val processes = GoCoreSnapshotParser.parseProcesses(json)
+        assertEquals(1, processes.size)
+        assertEquals(longCmd, processes.single().commandLine)
+    }
 }

@@ -182,27 +182,105 @@ internal object GoCoreSnapshotParser {
     }
 
     private fun stringField(obj: String, name: String): String? {
-        val nullRegex = Regex(""""$name"\s*:\s*null""")
-        if (nullRegex.containsMatchIn(obj)) return null
-        val regex = Regex(""""$name"\s*:\s*"((?:\\.|[^"\\])*)"""")
-        val match = regex.find(obj) ?: return null
-        return match.groupValues[1]
-            .replace("\\\"", "\"")
-            .replace("\\\\", "\\")
-            .replace("\\n", "\n")
-            .replace("\\t", "\t")
+        val key = "\"$name\""
+        var searchFrom = 0
+        while (true) {
+            val keyIndex = obj.indexOf(key, searchFrom)
+            if (keyIndex < 0) return null
+            var i = keyIndex + key.length
+            while (i < obj.length && obj[i].isWhitespace()) i++
+            if (i >= obj.length || obj[i] != ':') {
+                searchFrom = keyIndex + 1
+                continue
+            }
+            i++
+            while (i < obj.length && obj[i].isWhitespace()) i++
+            if (i >= obj.length) return null
+            if (obj.startsWith("null", i) &&
+                (i + 4 == obj.length || obj[i + 4] in ",}] \r\n\t")
+            ) {
+                return null
+            }
+            if (obj[i] != '"') return null
+            return decodeJsonString(obj, i + 1)
+        }
+    }
+
+    /** Linear scan — avoids regex StackOverflowError on multi-KB Gradle command lines. */
+    private fun decodeJsonString(source: String, start: Int): String {
+        val out = StringBuilder()
+        var i = start
+        while (i < source.length) {
+            when (val c = source[i]) {
+                '"' -> return out.toString()
+                '\\' -> {
+                    i++
+                    if (i >= source.length) break
+                    when (val escaped = source[i]) {
+                        '"', '\\', '/' -> out.append(escaped)
+                        'n' -> out.append('\n')
+                        't' -> out.append('\t')
+                        'r' -> out.append('\r')
+                        'u' -> if (i + 4 < source.length) {
+                            val code = source.substring(i + 1, i + 5).toIntOrNull(16)
+                            if (code != null) {
+                                out.append(code.toChar())
+                                i += 4
+                            }
+                        }
+                        else -> out.append(escaped)
+                    }
+                }
+                else -> out.append(c)
+            }
+            i++
+        }
+        return out.toString()
     }
 
     private fun numberField(obj: String, name: String): Double? {
-        val nullRegex = Regex(""""$name"\s*:\s*null""")
-        if (nullRegex.containsMatchIn(obj)) return null
-        val regex = Regex(""""$name"\s*:\s*(-?\d+(?:\.\d+)?)""")
-        return regex.find(obj)?.groupValues?.get(1)?.toDoubleOrNull()
+        val key = "\"$name\""
+        var searchFrom = 0
+        while (true) {
+            val keyIndex = obj.indexOf(key, searchFrom)
+            if (keyIndex < 0) return null
+            var i = keyIndex + key.length
+            while (i < obj.length && obj[i].isWhitespace()) i++
+            if (i >= obj.length || obj[i] != ':') {
+                searchFrom = keyIndex + 1
+                continue
+            }
+            i++
+            while (i < obj.length && obj[i].isWhitespace()) i++
+            if (i >= obj.length) return null
+            if (obj.startsWith("null", i)) return null
+            val start = i
+            if (obj[i] == '-') i++
+            while (i < obj.length && (obj[i].isDigit() || obj[i] == '.')) i++
+            return obj.substring(start, i).toDoubleOrNull()
+        }
     }
 
     private fun booleanField(obj: String, name: String): Boolean? {
-        val regex = Regex(""""$name"\s*:\s*(true|false)""")
-        return regex.find(obj)?.groupValues?.get(1)?.toBooleanStrictOrNull()
+        val key = "\"$name\""
+        var searchFrom = 0
+        while (true) {
+            val keyIndex = obj.indexOf(key, searchFrom)
+            if (keyIndex < 0) return null
+            var i = keyIndex + key.length
+            while (i < obj.length && obj[i].isWhitespace()) i++
+            if (i >= obj.length || obj[i] != ':') {
+                searchFrom = keyIndex + 1
+                continue
+            }
+            i++
+            while (i < obj.length && obj[i].isWhitespace()) i++
+            return when {
+                obj.startsWith("true", i) -> true
+                obj.startsWith("false", i) -> false
+                else -> null
+            }
+        }
     }
 }
 
