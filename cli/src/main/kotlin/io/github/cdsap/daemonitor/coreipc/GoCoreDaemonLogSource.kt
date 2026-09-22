@@ -13,6 +13,9 @@ import kotlin.io.path.exists
  *
  * Build-event correlation stays on the JVM: each poll diffs the Go redacted tail window
  * and feeds new lines through [DaemonLogParser].
+ *
+ * [PollMonitoring] only invokes [readNewLines] for live / previously known Gradle daemon
+ * PIDs, so large `~/.gradle/daemon` discovers do not HTTP-tail every historical log (#221).
  */
 class GoCoreDaemonLogSource(
     private val socketPath: Path,

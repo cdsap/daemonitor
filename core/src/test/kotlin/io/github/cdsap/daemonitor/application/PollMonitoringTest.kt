@@ -109,6 +109,84 @@ class PollMonitoringTest {
         assertEquals(emptyList(), monitoring.tailFor(listOf(log), pid = 99))
     }
 
+    @Test
+    fun `pollOnce only reads tails for live or previously known gradle daemons`() {
+        val live = DaemonLog(pid = 42, gradleVersion = "8.14.3", path = Path.of("/tmp/daemon-42.out.log"))
+        val historical = DaemonLog(pid = 99, gradleVersion = "8.14.3", path = Path.of("/tmp/daemon-99.out.log"))
+        val logSource = FakeDaemonLogSource(
+            logs = listOf(live, historical),
+            linesByPid = mapOf(
+                42L to listOf(
+                    DaemonLogLine("busy", BusyMark(1_000)),
+                    DaemonLogLine("start", BuildStart(1_001, "build-1", "/project")),
+                    DaemonLogLine("ok", Outcome(success = true, durationSeconds = 1.0)),
+                    DaemonLogLine("idle", IdleMark(1_003)),
+                ),
+                99L to listOf(
+                    DaemonLogLine("busy", BusyMark(1_000)),
+                    DaemonLogLine("start", BuildStart(1_001, "stale", "/old")),
+                    DaemonLogLine("idle", IdleMark(1_003)),
+                ),
+            ),
+        )
+        val builds = RecordingBuildWriter()
+        val monitoring = PollMonitoring(
+            processSource = FakeProcessSource(listOf(gradleDaemon(pid = 42))),
+            logSource = logSource,
+            builds = builds,
+            samples = RecordingSampleWriter(),
+            aggregator = BuildAggregator(),
+            clock = { 5_000 },
+        )
+
+        val result = monitoring.pollOnce()
+
+        assertEquals(listOf(live, historical), result.daemonLogs)
+        assertEquals(listOf(live), logSource.readCalls)
+        assertEquals(listOf("build-1"), builds.saved.map { it.buildId })
+    }
+
+    @Test
+    fun `pollOnce still reads a daemon that just left the live set`() {
+        val log = DaemonLog(pid = 42, gradleVersion = "8.14.3", path = Path.of("/tmp/daemon-42.out.log"))
+        val logSource = FakeDaemonLogSource(
+            logs = listOf(log),
+            linesByPid = mapOf(
+                42L to listOf(
+                    DaemonLogLine("busy", BusyMark(1_000)),
+                    DaemonLogLine("start", BuildStart(1_001, "build-1", "/project")),
+                ),
+            ),
+        )
+        val builds = RecordingBuildWriter()
+        val processSource = FakeProcessSource(listOf(gradleDaemon(pid = 42)))
+        val monitoring = PollMonitoring(
+            processSource = processSource,
+            logSource = logSource,
+            builds = builds,
+            samples = RecordingSampleWriter(),
+            aggregator = BuildAggregator(),
+            clock = { 5_000 },
+        )
+
+        monitoring.pollOnce()
+        assertEquals(listOf(log), logSource.readCalls)
+
+        processSource.processes = emptyList()
+        logSource.linesByPid = mapOf(
+            42L to listOf(
+                DaemonLogLine("ok", Outcome(success = true, durationSeconds = 1.0)),
+                DaemonLogLine("idle", IdleMark(2_000)),
+            ),
+        )
+        logSource.readCalls.clear()
+        val second = monitoring.pollOnce()
+
+        assertEquals(listOf(log), logSource.readCalls)
+        assertTrue(second.buildsChanged)
+        assertEquals(listOf("build-1"), builds.saved.map { it.buildId })
+    }
+
     private fun gradleDaemon(pid: Long) = GradleProcess(
         pid = pid,
         parentPid = 1,
@@ -126,7 +204,7 @@ class PollMonitoringTest {
     )
 
     private class FakeProcessSource(
-        private val processes: List<GradleProcess>,
+        var processes: List<GradleProcess>,
     ) : ProcessSource {
         var calls = 0
             private set
@@ -139,7 +217,7 @@ class PollMonitoringTest {
 
     private class FakeDaemonLogSource(
         private val logs: List<DaemonLog>,
-        private val linesByPid: Map<Long, List<DaemonLogLine>> = emptyMap(),
+        var linesByPid: Map<Long, List<DaemonLogLine>> = emptyMap(),
         private val tails: Map<DaemonLog, List<String>> = emptyMap(),
     ) : DaemonLogSource {
         var discoverCalls = 0
