@@ -35,7 +35,7 @@ func TestDiscoverAndTailWithRedaction(t *testing.T) {
 	}
 
 	w := logs.NewWatcher(root)
-	if err := w.Poll(nil); err != nil {
+	if _, err := w.Poll(nil); err != nil {
 		t.Fatal(err)
 	}
 	list := w.List()
@@ -79,7 +79,7 @@ func TestIncrementalAppend(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := logs.NewWatcher(root)
-	_ = w.Poll(nil)
+	_, _ = w.Poll(nil)
 	tail, _ := w.TailFor(7)
 	if len(tail.Lines) != 1 {
 		t.Fatalf("first poll lines=%v", tail.Lines)
@@ -92,7 +92,7 @@ func TestIncrementalAppend(t *testing.T) {
 	_, _ = f.WriteString("line-two\n")
 	_ = f.Close()
 
-	_ = w.Poll(nil)
+	_, _ = w.Poll(nil)
 	tail, _ = w.TailFor(7)
 	if len(tail.Lines) != 2 || tail.Lines[1] != "line-two" {
 		t.Fatalf("after append=%v", tail.Lines)
@@ -113,7 +113,7 @@ func TestPollActivePIDsOnly(t *testing.T) {
 	}
 
 	w := logs.NewWatcher(root)
-	if err := w.Poll(map[int64]struct{}{1: {}}); err != nil {
+	if _, err := w.Poll(map[int64]struct{}{1: {}}); err != nil {
 		t.Fatal(err)
 	}
 	if len(w.List()) != 2 {

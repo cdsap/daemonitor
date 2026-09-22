@@ -1,6 +1,6 @@
 # Go core ↔ Kotlin collector parity
 
-Status as of the `feat/go-core-log-parser` slice.
+Status as of the `feat/go-core-build-aggregator` slice.
 
 ## Classifier
 
@@ -30,17 +30,17 @@ Redactor fixtures live in `spikes/go-core/internal/poll/redactor_test.go` (mirro
 | Discover `daemon-<pid>.out.log` | `DaemonLogWatcher.discover` | `logs.Watcher.Discover` |
 | Incremental redacted tail | `DaemonLogWatcher.readNewLines` | `logs.Watcher.Poll` + `TailFor` |
 | Build-event parse (U3) | `DaemonLogParser` | `logs.ParseLine` / `ParseLines` (events on `/tail`) |
-| IPC | (in-process) | `GET /v1/daemon-logs`, `/v1/daemon-logs/{pid}/tail` |
+| Build aggregation (U5) | `BuildAggregator` | `build.Aggregator` + `GET /v1/builds` |
+| Source / agent (U6) | `SourceDetector` / `AgentDetector` | `build.DetectSource` / `DetectAgent` |
+| IPC | (in-process) | `GET /v1/daemon-logs`, `/v1/daemon-logs/{pid}/tail`, `/v1/builds` |
 
-Go lists every discovered log, but only continuously tails **active** `GRADLE_DAEMON` PIDs from the process snapshot (large `~/.gradle/daemon` trees). `TailFor` lazily seeds inactive PIDs on demand. Tail responses include `events` parsed from the retained redacted lines (busy/idle/start/env/context/outcome). Build **aggregation** into `Build` rows remains on the JVM for now.
+Go lists every discovered log, but only continuously tails **active** `GRADLE_DAEMON` PIDs from the process snapshot (large `~/.gradle/daemon` trees). `TailFor` lazily seeds inactive PIDs on demand. Tail responses include `events` parsed from the retained redacted lines. Confirmed builds are stored in the spike SQLite DB and listed via `/v1/builds`.
 
 ## Still divergent
 
 - Live JVM heap Attach / JMX (Kotlin only)
-- Build aggregation / correlation (`BuildAggregator`) — Go parses events; JVM still owns windows → builds
-- Shared SQLite schema with the desktop app (Go has its own spike DB)
-- Kotlin CLI still uses JVM `DaemonLogWatcher` unless `--core-socket` is set (then
-  `GoCoreDaemonLogSource` consumes Go tails; build events still parse on the JVM today)
+- Shared SQLite schema with the desktop app (Go spike `builds` table is separate from app `WatcherDatabase`)
+- Kotlin CLI `--core-socket` still re-parses/aggregates builds in-process unless a future client consumes `/v1/builds`
 
 ## Dual-run check
 

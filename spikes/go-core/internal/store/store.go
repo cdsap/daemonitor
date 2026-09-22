@@ -58,6 +58,25 @@ CREATE TABLE IF NOT EXISTS process_samples (
 );
 CREATE INDEX IF NOT EXISTS process_samples_ts ON process_samples(timestamp_ms);
 CREATE INDEX IF NOT EXISTS process_samples_pid_ts ON process_samples(pid, timestamp_ms);
+CREATE TABLE IF NOT EXISTS builds (
+  build_id TEXT PRIMARY KEY,
+  daemon_pid INTEGER NOT NULL,
+  daemon_identity TEXT,
+  working_directory TEXT,
+  project_path TEXT,
+  start_time_ms INTEGER NOT NULL,
+  end_time_ms INTEGER,
+  duration_seconds REAL,
+  peak_memory_mb INTEGER,
+  avg_memory_mb INTEGER,
+  peak_cpu_percent REAL,
+  inferred_source TEXT NOT NULL,
+  final_status TEXT NOT NULL,
+  log_snippet TEXT,
+  agent TEXT,
+  agent_provider TEXT
+);
+CREATE INDEX IF NOT EXISTS builds_start ON builds(start_time_ms);
 `)
 	return err
 }
@@ -143,6 +162,42 @@ func (s *Store) Count() (int64, error) {
 	var n int64
 	err := s.db.QueryRow(`SELECT COUNT(*) FROM process_samples`).Scan(&n)
 	return n, err
+}
+
+func (s *Store) SamplesInWindow(pid, startMs, endMs int64) ([]struct {
+	RSS int64
+	CPU *float64
+}, error) {
+	rows, err := s.db.Query(`
+SELECT rss_memory_mb, cpu_percent
+FROM process_samples
+WHERE pid = ? AND timestamp_ms >= ? AND timestamp_ms <= ?
+ORDER BY timestamp_ms ASC`, pid, startMs, endMs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]struct {
+		RSS int64
+		CPU *float64
+	}, 0)
+	for rows.Next() {
+		var rss int64
+		var cpu sql.NullFloat64
+		if err := rows.Scan(&rss, &cpu); err != nil {
+			return nil, err
+		}
+		item := struct {
+			RSS int64
+			CPU *float64
+		}{RSS: rss}
+		if cpu.Valid {
+			v := cpu.Float64
+			item.CPU = &v
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
 }
 
 func DefaultDBPath(dir string) string {

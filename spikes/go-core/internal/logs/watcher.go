@@ -119,12 +119,14 @@ func ParseLogPath(path string) (DaemonLog, bool) {
 // Poll discovers logs and reads newly appended redacted lines into tails.
 // When activePIDs is non-nil, only those PIDs are read (list/discover still covers all).
 // Pass nil to read every discovered log (tests / full replay).
-func (w *Watcher) Poll(activePIDs map[int64]struct{}) error {
+// The returned map contains newly read redacted lines keyed by daemon PID.
+func (w *Watcher) Poll(activePIDs map[int64]struct{}) (map[int64][]string, error) {
 	logs, err := w.Discover()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	seen := make(map[string]struct{}, len(logs))
+	newByPID := make(map[int64][]string)
 	for _, log := range logs {
 		seen[log.Path] = struct{}{}
 		w.mu.Lock()
@@ -135,8 +137,12 @@ func (w *Watcher) Poll(activePIDs map[int64]struct{}) error {
 				continue
 			}
 		}
-		if _, err := w.readNewLines(log.Path); err != nil {
+		lines, err := w.readNewLines(log.Path)
+		if err != nil {
 			continue
+		}
+		if len(lines) > 0 {
+			newByPID[log.PID] = append(newByPID[log.PID], lines...)
 		}
 	}
 	w.mu.Lock()
@@ -149,7 +155,7 @@ func (w *Watcher) Poll(activePIDs map[int64]struct{}) error {
 		}
 	}
 	w.mu.Unlock()
-	return nil
+	return newByPID, nil
 }
 
 // List returns currently known daemon logs.
