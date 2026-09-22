@@ -1,7 +1,7 @@
 package io.github.cdsap.daemonitor.coreipc
 
+import io.github.cdsap.daemonitor.application.DaemonLog
 import io.github.cdsap.daemonitor.application.ProcessSource
-import io.github.cdsap.daemonitor.collect.DaemonLog
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import java.net.StandardProtocolFamily

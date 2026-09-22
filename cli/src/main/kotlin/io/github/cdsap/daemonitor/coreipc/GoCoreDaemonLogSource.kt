@@ -1,8 +1,8 @@
 package io.github.cdsap.daemonitor.coreipc
 
+import io.github.cdsap.daemonitor.application.DaemonLog
+import io.github.cdsap.daemonitor.application.DaemonLogLine
 import io.github.cdsap.daemonitor.application.DaemonLogSource
-import io.github.cdsap.daemonitor.collect.DaemonLog
-import io.github.cdsap.daemonitor.collect.DaemonLogLine
 import io.github.cdsap.daemonitor.collect.DaemonLogParser
 import java.nio.file.Path
 import kotlin.io.path.exists
