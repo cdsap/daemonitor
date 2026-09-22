@@ -19,7 +19,7 @@ import kotlin.test.assertIs
 
 class AppContainerTest {
     @Test
-    fun `container owns concrete infrastructure wiring`(@TempDir tmp: Path) {
+    fun `container exposes concrete infrastructure from the shared core wiring`(@TempDir tmp: Path) {
         AppContainer(
             databasePath = tmp.resolve("watcher.db"),
             settingsPath = tmp.resolve("settings.properties"),

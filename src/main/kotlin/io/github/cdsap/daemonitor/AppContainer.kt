@@ -21,8 +21,9 @@ import kotlinx.coroutines.Dispatchers
 import java.nio.file.Path
 
 /**
- * Application composition root. Owns concrete infrastructure wiring so entry points stay thin
- * bootstrappers and application/presentation code receives dependencies through constructors.
+ * Application composition root. Delegates shared monitoring infrastructure to [CoreContainer]
+ * and keeps desktop-specific services, distribution, and update wiring here so entry points
+ * stay thin bootstrappers.
  */
 class AppContainer(
     databasePath: Path = AppDirectories.system.databasePath,
@@ -31,26 +32,20 @@ class AppContainer(
     ambientEnvNames: Set<String> = System.getenv().keys.toSet(),
     distribution: DistributionChannel = BuildInfo.current.distribution,
 ) : AutoCloseable {
-    val processCollector = ProcessCollector()
-    val daemonLogWatcher = DaemonLogWatcher()
-    val database = WatcherDatabase.open(databasePath)
-    val settingsStore = SettingsStore(settingsPath)
-    val buildAggregator = BuildAggregator(
-        sampleProvider = database::samplesInWindow,
-        ambientEnvNames = ambientEnvNames,
-        logSnippetLimit = with(MonitoringConfig.DEFAULT.logSnippetLimit) {
-            BuildAggregator.LogSnippetLimit(lines = lines, chars = chars)
-        },
-    )
-    val runtime = WatcherRuntime(
-        processSource = processCollector,
-        logSource = daemonLogWatcher,
-        aggregator = buildAggregator,
-        builds = database,
-        samples = database,
-        retentionDays = { settingsStore.load().retentionDays },
+    private val core = CoreContainer(
+        databasePath = databasePath,
+        settingsPath = settingsPath,
         clock = clock,
+        ambientEnvNames = ambientEnvNames,
     )
+
+    val processCollector: ProcessCollector = core.processCollector
+    val daemonLogWatcher: DaemonLogWatcher = core.daemonLogWatcher
+    val database: WatcherDatabase = core.database
+    val settingsStore: SettingsStore = core.settingsStore
+    val buildAggregator: BuildAggregator = core.buildAggregator
+    val runtime: WatcherRuntime = core.runtime
+
     val distributionChannel: DistributionChannel = distribution
     val updateService: UpdateService = updateServiceForDistribution(distribution)
 
@@ -87,6 +82,6 @@ class AppContainer(
     }
 
     override fun close() {
-        database.close()
+        core.close()
     }
 }
