@@ -26,12 +26,13 @@ type DaemonLog struct {
 	Path          string `json:"path"`
 }
 
-// Tail is the retained redacted lines for one log.
+// Tail is the retained redacted lines for one log, plus parsed build events (U3).
 type Tail struct {
 	PID           int64    `json:"pid"`
 	GradleVersion string   `json:"gradle_version"`
 	Path          string   `json:"path"`
 	Lines         []string `json:"lines"`
+	Events        []Event  `json:"events"`
 }
 
 // Watcher discovers daemon logs and keeps a redacted live tail (Kotlin DaemonLogWatcher subset).
@@ -195,12 +196,7 @@ func (w *Watcher) TailFor(pid int64) (Tail, bool) {
 	if r := w.tails[path]; r != nil {
 		lines = r.slice()
 	}
-	return Tail{
-		PID:           log.PID,
-		GradleVersion: log.GradleVersion,
-		Path:          log.Path,
-		Lines:         lines,
-	}, true
+	return makeTail(log, lines), true
 }
 
 // AllTails returns tails for every known log.
@@ -213,14 +209,19 @@ func (w *Watcher) AllTails() []Tail {
 		if r := w.tails[path]; r != nil {
 			lines = r.slice()
 		}
-		out = append(out, Tail{
-			PID:           log.PID,
-			GradleVersion: log.GradleVersion,
-			Path:          log.Path,
-			Lines:         lines,
-		})
+		out = append(out, makeTail(log, lines))
 	}
 	return out
+}
+
+func makeTail(log DaemonLog, lines []string) Tail {
+	return Tail{
+		PID:           log.PID,
+		GradleVersion: log.GradleVersion,
+		Path:          log.Path,
+		Lines:         lines,
+		Events:        ParseLines(lines),
+	}
 }
 
 func (w *Watcher) readNewLines(path string) ([]string, error) {

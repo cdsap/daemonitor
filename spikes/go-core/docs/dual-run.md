@@ -71,9 +71,9 @@ values are bit-identical.
    the CLI/desktop keep writing the app schema. History UI is not served from Go.
 3. **Go log poll scope** — continuous tail is limited to active `GRADLE_DAEMON` PIDs so large
    `~/.gradle/daemon` trees stay cheap; inactive PIDs seed on `TailFor` / first CLI read.
-4. **Build correlation stays on JVM** — Go does not emit build events; Kotlin diffs the
-   redacted ring tail. Porting `DaemonLogParser` is optional follow-on, not required for
-   process dual-run.
+4. **Build aggregation stays on JVM** — Go now parses U3 events on `/v1/daemon-logs/{pid}/tail`
+   (`events`), but window→`Build` correlation (`BuildAggregator`) is still Kotlin. Dual-run CLI
+   may still re-parse lines until it consumes Go events directly.
 5. **Sample timing** — 2s poll defaults on both sides; RSS/CPU can disagree by one interval
    without indicating a classifier bug.
 6. **Windows smoke** — shell/JDK Unix-socket smoke is Linux/macOS; Windows relies on Go IPC
@@ -96,9 +96,9 @@ Until then, keep `--core-socket` off by default.
 
 ## Suggested next engineering slices
 
-1. **Optional:** port `DaemonLogParser` (+ maybe aggregator) into Go if build correlation
-   should leave the JVM entirely
+1. **Optional:** have `GoCoreDaemonLogSource` prefer Go `events` (skip JVM `DaemonLogParser`)
+   and/or port `BuildAggregator` if builds should leave the JVM entirely
 2. **Shared SQLite / packaging** — only after process + log dual-run stay honest and the
    product commits to a core binary distribution story
-3. Keep stacking PRs: merge `#210` → `#211` → `#212` → `#213` before landing follow-ons on
-   `main`
+3. Keep stacking PRs: merge `#210` → `#211` → `#212` → `#213` → `#214` before landing
+   follow-ons on `main`

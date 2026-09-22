@@ -66,7 +66,7 @@ GET /v1/health
 GET /v1/processes
 GET /v1/processes/history?since_ms=<epoch_ms>&limit=<n>
 GET /v1/daemon-logs
-GET /v1/daemon-logs/{pid}/tail
+GET /v1/daemon-logs/{pid}/tail   # lines + parsed U3 events
 ```
 
 ## Status
@@ -75,7 +75,7 @@ GET /v1/daemon-logs/{pid}/tail
 - SQLite retention path in place (`modernc.org/sqlite`, no CGO)
 - JVM client proves desktop/CLI language can speak the same socket without FFI
 - Kotlin CLI `--core-socket PATH` dual-runs: live process table from Go core
-- **Parity slice:** classifier + JVM args + delta CPU + redactor + daemon log tails (see `docs/parity.md`)
+- **Parity slice:** classifier + JVM args + delta CPU + redactor + daemon log tails + U3 event parse (see `docs/parity.md`)
 - **Dual-run notes:** side-by-side checklist and cutover criteria in `docs/dual-run.md`
 
 ## Dual-run with Kotlin CLI
@@ -89,12 +89,12 @@ GET /v1/daemon-logs/{pid}/tail
 ```
 
 `--core-socket` is experimental: the CLI keeps its own SQLite store, but the live process
-table and daemon log tails come from `daemonitor-cored` via Unix-socket HTTP. Build-event
-parsing still runs in the JVM against the redacted Go tails.
+table and daemon log tails come from `daemonitor-cored` via Unix-socket HTTP. Go tails now
+include parsed build **events**; build **aggregation** still runs in the JVM.
 
 Full comparison procedure and cutover gates: [`docs/dual-run.md`](docs/dual-run.md).
 
 ## Next
 
-1. Port `DaemonLogParser` build events into Go if correlation should leave the JVM
+1. Optionally consume Go `events` from Kotlin dual-run (skip re-parse) and/or port `BuildAggregator`
 2. Shared SQLite schema / packaging beyond the spike
