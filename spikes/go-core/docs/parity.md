@@ -1,6 +1,6 @@
 # Go core ↔ Kotlin collector parity
 
-Status as of the `feat/go-core-parity` slice.
+Status as of the `feat/go-core-redactor-parity` slice.
 
 ## Classifier
 
@@ -10,22 +10,23 @@ Kotlin daemon, test worker, JAVA_GRADLE_RELATED, cache-path false positive, unre
 
 Covered by `spikes/go-core/internal/poll/poll_test.go`.
 
-## JVM args / automation
+## JVM args / automation / redaction
 
 | Concern | Kotlin | Go |
 |---------|--------|-----|
 | `-Xmx` / `-Xms` / `-XX:+Use*GC` | `JvmArgParser` | `poll.ParseJVMArgs` |
 | `--non-interactive` / `--console=plain` | `InvocationFlags` | `poll.IsNonInteractive` |
+| Command / token / log redaction | `Redactor` (KTD-7) | `poll.RedactCommandLine` / `RedactToken` / `RedactLogLine` |
 | First CPU sample | `null` until prior exists | `cpu_percent: null` until prior exists |
 | CPU formula | delta cpu / wall / logical CPUs | same (gopsutil Times) |
 | Wrapper `projectPath` | cwd when type is wrapper | same |
-| Command redaction | full `Redactor` | home → `~` + truncate (partial) |
+
+Redactor fixtures live in `spikes/go-core/internal/poll/redactor_test.go` (mirrors `RedactorTest.kt`).
 
 ## Still divergent
 
 - Live JVM heap Attach / JMX (Kotlin only)
-- Full command-line redaction rules
-- Daemon log tail (still JVM-side in dual-run)
+- Daemon log tail (still JVM-side in dual-run; `RedactLogLine` is ready when logs move)
 - Shared SQLite schema with the desktop app (Go has its own spike DB)
 
 ## Dual-run check

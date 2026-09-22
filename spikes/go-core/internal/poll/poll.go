@@ -2,10 +2,8 @@ package poll
 
 import (
 	"context"
-	"os"
 	"regexp"
 	"runtime"
-	"strings"
 	"sync"
 	"time"
 
@@ -133,7 +131,7 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 			ParentPID:        parentPID,
 			Type:             kind,
 			Name:             name,
-			CommandLine:      redact(cmdline),
+			CommandLine:      RedactCommandLine(cmdline),
 			WorkingDirectory: cwd,
 			ProjectPath:      project,
 			RSSMemoryMB:      rssMB,
@@ -175,18 +173,6 @@ func Classify(commandLine string) string {
 	default:
 		return ""
 	}
-}
-
-// redact trims very long classpaths; full Kotlin Redactor parity is a later step.
-func redact(cmdline string) string {
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		cmdline = strings.ReplaceAll(cmdline, home, "~")
-	}
-	const max = 512
-	if len(cmdline) <= max {
-		return cmdline
-	}
-	return cmdline[:max] + "…"
 }
 
 func Platform() string { return runtime.GOOS + "/" + runtime.GOARCH }
