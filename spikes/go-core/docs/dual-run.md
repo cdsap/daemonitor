@@ -1,6 +1,6 @@
 # Dual-run migration notes (JVM collector ↔ Go core)
 
-Status as of the `feat/go-core-kotlin-log-tails` slice.
+Status as of post-merge Go spike on `main` (aggregator + log tails + Kotlin dual-run clients).
 
 These notes capture what dual-run proves today, how to compare sessions, and what must
 be true before the shipping CLI/desktop can drop the in-process collector for a given
@@ -12,7 +12,7 @@ surface.
 |---------|---------------|----------------------|
 | Live process table | `ProcessCollector` (OSHI) | `GoCoreProcessSource` → `GET /v1/processes` |
 | Daemon log discover / tail | `DaemonLogWatcher` | `GoCoreDaemonLogSource` → `/v1/daemon-logs` |
-| Build-event parse / correlation | JVM (`DaemonLogParser` + `BuildAggregator`) | **still JVM** (diffs Go redacted tails) |
+| Build-event parse / correlation | JVM (`DaemonLogParser` + `BuildAggregator`) | **still JVM** (diffs Go redacted tails); Go also aggregates into spike DB |
 | Sample / build SQLite | App `WatcherDatabase` | same app DB (Go spike DB is separate) |
 | Live heap Attach / JMX | JVM only | always `null` from Go |
 
@@ -41,6 +41,7 @@ Optional Go-only cross-check (no CLI UI):
 ./bin/daemonitor-corectl -socket "${TMPDIR:-/tmp}/daemonitor-core.sock" processes
 ./bin/daemonitor-corectl -socket "${TMPDIR:-/tmp}/daemonitor-core.sock" logs
 ./bin/daemonitor-corectl -socket "${TMPDIR:-/tmp}/daemonitor-core.sock" log-tail <pid>
+./bin/daemonitor-corectl -socket "${TMPDIR:-/tmp}/daemonitor-core.sock" builds
 ```
 
 See also `docs/parity.md` for field-level mapping.
@@ -50,32 +51,37 @@ See also `docs/parity.md` for field-level mapping.
 Mark each row after a live dual-run. “Honest” means differences are understood, not that
 values are bit-identical.
 
-| Check | How to judge | Expected today |
-|-------|--------------|----------------|
-| PID set for Gradle-related types | Same daemons / wrappers / Kotlin daemons appear | Match (classifier parity) |
-| `type` label | Same `ProcessType` name per PID | Match |
-| RSS MB | Same order of magnitude; may differ by sample timing | Near-match (±1 sample window) |
-| Heap limit (`-Xmx`) | Same parsed MB when args present | Match |
-| CPU % | First sample `null`/absent on both; later samples trend together | Near-match (delta CPU) |
-| `automated` / non-interactive | Same for wrapper invocations | Match |
-| Command line redaction | Secrets masked identically (KTD-7) | Match |
-| Daemon log **count** | Discover lists same `daemon-<pid>.out.log` set | Match (paths under `~/.gradle/daemon`) |
-| Daemon log **tail** content | Redacted lines agree for active daemon PIDs | Near-match (Go continuous-tails only active `GRADLE_DAEMON`; lazy seed on demand) |
-| Build rows in app DB | Dual-run still inserts via JVM parser | Should appear; timestamps may differ vs control if tail windows differ |
-| Live heap | Go path always empty | **Divergent by design** |
+| Check | How to judge | Expected today | 2026-09-22 macOS |
+|-------|--------------|----------------|------------------|
+| PID set for Gradle-related types | Same daemons / wrappers / Kotlin daemons appear | Match (classifier parity) | **Honest** — 10/10 common PIDs; transient wrappers may appear on one side only |
+| `type` label | Same `ProcessType` name per PID | Match | **Pass** — 10/10 |
+| RSS MB | Same order of magnitude; may differ by sample timing | Near-match (±1 sample window) | **Pass** — max \|Δ\| = 5 MB, median 0 |
+| Heap limit (`-Xmx`) | Same parsed MB when args present | Match | **Pass** — including `12288` / `null` when absent |
+| CPU % | First sample `null`/absent on both; later samples trend together | Near-match (delta CPU) | **Honest** — Go had warmed values; JVM first-sample `null` still seen |
+| `automated` / non-interactive | Same for wrapper invocations | Match | **Pass** on sampled rows (`false`) |
+| Command line redaction | Secrets masked identically (KTD-7) | Match | **Pass** on fixtures; live tail had no unmasked `-Ptoken=` |
+| Daemon log **count** | Discover lists same `daemon-<pid>.out.log` set | Match (paths under `~/.gradle/daemon`) | **Honest gap** — Go listed 713 logs under `~/.gradle`; 3/6 live daemons unmatched (alternate Gradle user homes under `/private/tmp/...`) |
+| Daemon log **tail** content | Redacted lines agree for active daemon PIDs | Near-match | **Pass** for matched PID — 100 lines + U3 events (`busy_mark`, `build_start`, …) |
+| Build rows | Go spike `/v1/builds` and/or JVM app DB | Should appear | **Pass (Go)** — builds aggregated (`SUCCESS` / `COMPLETED_NO_OUTCOME` / `FAILED`, source `IDE`) |
+| Live heap | Go path always empty | **Divergent by design** | **Confirmed** — no live heap on Go snapshots |
+
+### 2026-09-22 session notes (macOS)
+
+- Compared `ProcessCollector` (one-shot test dump) vs `daemonitor-corectl processes` with live Gradle 8.x/9.x daemons.
+- Go `/v1/builds` populated after local compile activity against daemon `30246`.
+- **Blocker for Terminal B (`--core-socket` CLI):** `GoCoreDaemonLogSource.discover()` returns the full `~/.gradle/daemon` tree (700+ logs). `PollMonitoring` then calls `readNewLines` per log (HTTP tail each). Observed `StackOverflowError` / unusable poll on this machine. Go core itself only continuously tails **active** `GRADLE_DAEMON` PIDs — Kotlin dual-run should do the same before CLI dual-run is demo-ready. Tracked in [#221](https://github.com/cdsap/daemonitor/issues/221).
+- Keep `--core-socket` off by default until that client-side filter lands.
 
 ## Known honest gaps (do not block dual-run demos)
 
 1. **No live heap from Go** — Attach/JMX stays Kotlin-only until a future design.
-2. **Two SQLite worlds** — `daemonitor-cored` keeps a spike DB for `/v1/processes/history`;
-   the CLI/desktop keep writing the app schema. History UI is not served from Go.
+2. **Two SQLite worlds** — `daemonitor-cored` keeps a spike DB for `/v1/processes/history` and
+   `/v1/builds`; the CLI/desktop keep writing the app schema.
 3. **Go log poll scope** — continuous tail is limited to active `GRADLE_DAEMON` PIDs so large
    `~/.gradle/daemon` trees stay cheap; inactive PIDs seed on `TailFor` / first CLI read.
-4. **Dual SQLite for builds** — Go aggregates into the spike DB (`/v1/builds`); the app CLI still
-   writes its own build rows when dual-running. Prefer Go builds for cutover only after schemas
-   align or the client switches to `/v1/builds`.
-5. **Sample timing** — 2s poll defaults on both sides; RSS/CPU can disagree by one interval
-   without indicating a classifier bug.
+4. **Alternate Gradle user homes** — processes whose logs live outside `~/.gradle/daemon` are
+   classified but have no matching Go log discovery entries.
+5. **Sample timing** — RSS/CPU can disagree by one interval without indicating a classifier bug.
 6. **Windows smoke** — shell/JDK Unix-socket smoke is Linux/macOS; Windows relies on Go IPC
    integration tests (see spike README).
 
@@ -83,11 +89,11 @@ values are bit-identical.
 
 Promote a surface out of “experimental dual-run” only when all apply:
 
-- [ ] Comparison checklist rows for that surface stay honest across macOS + Linux on at
-      least one real multi-project Gradle session
+- [x] Process table checklist honest on at least one live macOS session (2026-09-22)
+- [ ] Same process/log honesty repeated on Linux
+- [ ] `--core-socket` CLI poll stays healthy on large `~/.gradle/daemon` trees (active-PID filter)
 - [ ] Redaction fixtures still pass on both sides (`RedactorTest` / `redactor_test.go`)
 - [ ] Failure mode is clear when the socket is missing or `daemonitor-cored` dies
-      (CLI already requires the socket file for Go sources)
 - [ ] No reliance on Go spike SQLite for shipping retention/UI (or schema is deliberately
       shared and migrated)
 - [ ] Product accepts missing live heap **or** heap has a non-JVM story
@@ -96,7 +102,8 @@ Until then, keep `--core-socket` off by default.
 
 ## Suggested next engineering slices
 
-1. **Optional:** have Kotlin dual-run consume `/v1/builds` (skip JVM `BuildAggregator`)
-2. **Shared SQLite / packaging** — only after process + log + build dual-run stay honest and the
-   product commits to a core binary distribution story
-3. Keep stacking PRs through `#215` before landing follow-ons on `main`
+1. **Fix Kotlin dual-run log fan-out** — only `readNewLines` / HTTP-tail active `GRADLE_DAEMON`
+   PIDs (mirror Go `Poll(active)`), so `--core-socket` stops SOE/hanging on large daemon trees
+   ([#221](https://github.com/cdsap/daemonitor/issues/221))
+2. Have Kotlin dual-run optionally consume `/v1/builds` (skip JVM re-aggregation)
+3. Shared SQLite / packaging once process + log + build dual-run stay honest on macOS **and** Linux
