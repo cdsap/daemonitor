@@ -1,6 +1,6 @@
 # Go core ↔ Kotlin collector parity
 
-Status as of the `feat/go-core-daemon-logs` slice.
+Status as of the `feat/go-core-kotlin-log-tails` slice.
 
 ## Classifier
 
@@ -43,10 +43,13 @@ Go lists every discovered log, but only continuously tails **active** `GRADLE_DA
 
 ## Dual-run check
 
+Procedure, comparison checklist, and cutover criteria: [`dual-run.md`](dual-run.md).
+
 ```bash
 cd spikes/go-core && go build -o bin/daemonitor-cored ./cmd/daemonitor-cored
 ./bin/daemonitor-cored &
 ./gradlew :cli:run --args="--plain --core-socket $TMPDIR/daemonitor-core.sock"
 ```
 
-Compare TYPE / PID / RSS / HEAP LIMIT / CPU against a normal JVM CLI session on the same machine.
+Compare TYPE / PID / RSS / HEAP LIMIT / CPU / daemon log count against a normal JVM CLI
+session on the same machine.

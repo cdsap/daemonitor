@@ -42,9 +42,9 @@ Live heap Attach, packaging, replacing shipping JVM app, build-event parsing in 
 
 ## Follow-on
 
-1. Dual-run migration notes after side-by-side RSS/CPU/logs look honest
-2. Optional: port `DaemonLogParser` build-event correlation into Go
-3. Packaging / shared SQLite beyond the spike
+1. Optional: port `DaemonLogParser` build-event correlation into Go
+2. Packaging / shared SQLite beyond the spike
 
-Kotlin CLI `--core-socket` now dual-runs both processes and daemon-log tails from Go core
-(`GoCoreProcessSource` + `GoCoreDaemonLogSource`).
+Kotlin CLI `--core-socket` dual-runs processes and daemon-log tails from Go core
+(`GoCoreProcessSource` + `GoCoreDaemonLogSource`). Side-by-side checklist and cutover
+gates: `spikes/go-core/docs/dual-run.md`.

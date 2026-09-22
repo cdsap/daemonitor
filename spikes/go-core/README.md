@@ -76,6 +76,7 @@ GET /v1/daemon-logs/{pid}/tail
 - JVM client proves desktop/CLI language can speak the same socket without FFI
 - Kotlin CLI `--core-socket PATH` dual-runs: live process table from Go core
 - **Parity slice:** classifier + JVM args + delta CPU + redactor + daemon log tails (see `docs/parity.md`)
+- **Dual-run notes:** side-by-side checklist and cutover criteria in `docs/dual-run.md`
 
 ## Dual-run with Kotlin CLI
 
@@ -83,7 +84,7 @@ GET /v1/daemon-logs/{pid}/tail
 # terminal 1 — Go core
 ./bin/daemonitor-cored
 
-# terminal 2 — Kotlin CLI reads processes from the core
+# terminal 2 — Kotlin CLI reads processes + daemon logs from the core
 ./gradlew :cli:run --args="--plain --core-socket $TMPDIR/daemonitor-core.sock"
 ```
 
@@ -91,8 +92,9 @@ GET /v1/daemon-logs/{pid}/tail
 table and daemon log tails come from `daemonitor-cored` via Unix-socket HTTP. Build-event
 parsing still runs in the JVM against the redacted Go tails.
 
+Full comparison procedure and cutover gates: [`docs/dual-run.md`](docs/dual-run.md).
+
 ## Next
 
-1. Dual-run migration notes once live RSS/CPU/log tails look honest side-by-side
-2. Port `DaemonLogParser` build events into Go if correlation should leave the JVM
-3. Shared SQLite schema / packaging beyond the spike
+1. Port `DaemonLogParser` build events into Go if correlation should leave the JVM
+2. Shared SQLite schema / packaging beyond the spike
