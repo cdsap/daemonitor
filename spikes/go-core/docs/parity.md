@@ -38,7 +38,8 @@ Go lists every discovered log, but only continuously tails **active** `GRADLE_DA
 - Live JVM heap Attach / JMX (Kotlin only)
 - Daemon log *event parsing* / build correlation (Go tails + redacts only for now)
 - Shared SQLite schema with the desktop app (Go has its own spike DB)
-- Kotlin CLI still uses JVM `DaemonLogWatcher` unless a future `--core-socket` log mode is added
+- Kotlin CLI still uses JVM `DaemonLogWatcher` unless `--core-socket` is set (then
+  `GoCoreDaemonLogSource` consumes Go tails; build events still parse on the JVM)
 
 ## Dual-run check
 

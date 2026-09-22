@@ -42,6 +42,9 @@ Live heap Attach, packaging, replacing shipping JVM app, build-event parsing in 
 
 ## Follow-on
 
-1. Kotlin CLI dual-run for daemon log tails from Go core
-2. Dual-run migration notes after side-by-side RSS/CPU/logs look honest
-3. Optional: port `DaemonLogParser` build-event correlation into Go
+1. Dual-run migration notes after side-by-side RSS/CPU/logs look honest
+2. Optional: port `DaemonLogParser` build-event correlation into Go
+3. Packaging / shared SQLite beyond the spike
+
+Kotlin CLI `--core-socket` now dual-runs both processes and daemon-log tails from Go core
+(`GoCoreProcessSource` + `GoCoreDaemonLogSource`).
