@@ -11,13 +11,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cdsap/daemonitor/spikes/go-core/internal/builds"
 	"github.com/cdsap/daemonitor/spikes/go-core/internal/logs"
 	"github.com/cdsap/daemonitor/spikes/go-core/internal/model"
 	"github.com/cdsap/daemonitor/spikes/go-core/internal/poll"
 	"github.com/cdsap/daemonitor/spikes/go-core/internal/store"
 )
 
-const Version = "0.0.6-spike"
+const Version = "0.0.7-spike"
 
 // Server exposes a tiny HTTP API over a Unix domain socket.
 type Server struct {
@@ -26,11 +27,13 @@ type Server struct {
 	Collector  *poll.Collector
 	Logs       *logs.Watcher
 	Store      *store.Store
+	Agg        *builds.Aggregator
 	Retention  time.Duration
 
-	mu       sync.RWMutex
-	last     model.Snapshot
-	interval time.Duration
+	mu         sync.RWMutex
+	last       model.Snapshot
+	prevActive map[int64]struct{}
+	interval   time.Duration
 }
 
 func NewServer(socketPath, dbPath string, interval, retention time.Duration, gradleUserHome string) (*Server, error) {
@@ -38,7 +41,7 @@ func NewServer(socketPath, dbPath string, interval, retention time.Duration, gra
 	if err != nil {
 		return nil, err
 	}
-	return &Server{
+	s := &Server{
 		SocketPath: socketPath,
 		DBPath:     dbPath,
 		Collector:  poll.NewCollector(),
@@ -47,7 +50,16 @@ func NewServer(socketPath, dbPath string, interval, retention time.Duration, gra
 		Retention:  retention,
 		interval:   interval,
 		last:       model.Snapshot{Processes: []model.Process{}},
-	}, nil
+		prevActive: map[int64]struct{}{},
+	}
+	s.Agg = builds.NewAggregator(
+		func(pid, startMs, endMs int64) []builds.Sample {
+			return st.SamplesAsBuildSamples(pid, startMs, endMs)
+		},
+		nil,
+		builds.DefaultLogSnippetLimit,
+	)
+	return s, nil
 }
 
 func (s *Server) Run(ctx context.Context) error {
@@ -70,6 +82,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/v1/processes/history", s.handleHistory)
 	mux.HandleFunc("/v1/daemon-logs", s.handleDaemonLogs)
 	mux.HandleFunc("/v1/daemon-logs/", s.handleDaemonLogTail)
+	mux.HandleFunc("/v1/builds", s.handleBuilds)
 
 	srv := &http.Server{Handler: mux}
 	go func() {
@@ -121,9 +134,29 @@ func (s *Server) refresh(ctx context.Context) {
 			active[int64(p.PID)] = struct{}{}
 		}
 	}
-	// Discover all logs for listing; only tail active Gradle daemons (large ~/.gradle/daemon trees).
-	_ = s.Logs.Poll(active)
+
+	newLines, _ := s.Logs.Poll(active)
+	for pid, lines := range newLines {
+		for _, line := range lines {
+			var evPtr *logs.Event
+			if ev, ok := logs.ParseLine(line); ok {
+				evPtr = &ev
+			}
+			for _, b := range s.Agg.OnLogLine(pid, line, evPtr) {
+				_ = s.Store.InsertBuild(b)
+			}
+		}
+	}
+
 	s.mu.Lock()
+	for pid := range s.prevActive {
+		if _, ok := active[pid]; !ok {
+			if b := s.Agg.OnDaemonGone(pid); b != nil {
+				_ = s.Store.InsertBuild(*b)
+			}
+		}
+	}
+	s.prevActive = active
 	s.last = snap
 	s.mu.Unlock()
 }
@@ -200,6 +233,24 @@ func (s *Server) handleDaemonLogTail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, tail)
+}
+
+func (s *Server) handleBuilds(w http.ResponseWriter, r *http.Request) {
+	limit := 100
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		if v, err := strconv.Atoi(raw); err == nil {
+			limit = v
+		}
+	}
+	rows, err := s.Store.ListBuilds(limit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]any{
+		"count":  len(rows),
+		"builds": rows,
+	})
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

@@ -129,8 +129,36 @@ func main() {
 		for _, line := range tail.Lines {
 			fmt.Println(line)
 		}
+	case "builds":
+		var payload struct {
+			Count  int `json:"count"`
+			Builds []struct {
+				BuildID        string  `json:"build_id"`
+				DaemonPID      int64   `json:"daemon_pid"`
+				FinalStatus    string  `json:"final_status"`
+				InferredSource string  `json:"inferred_source"`
+				ProjectPath    string  `json:"project_path"`
+				DurationSeconds *float64 `json:"duration_seconds"`
+			} `json:"builds"`
+		}
+		if err := getJSON(client, "http://daemonitor/v1/builds", &payload); err != nil {
+			fail(err)
+		}
+		if os.Getenv("JSON") == "1" {
+			printJSON(payload)
+			return
+		}
+		fmt.Printf("builds=%d\n", payload.Count)
+		for _, b := range payload.Builds {
+			dur := "-"
+			if b.DurationSeconds != nil {
+				dur = fmt.Sprintf("%.1fs", *b.DurationSeconds)
+			}
+			fmt.Printf("  id=%-36s pid=%-7d status=%-20s source=%-8s dur=%s  %s\n",
+				truncate(b.BuildID, 36), b.DaemonPID, b.FinalStatus, b.InferredSource, dur, truncate(b.ProjectPath, 40))
+		}
 	default:
-		fmt.Fprintf(os.Stderr, "usage: daemonitor-corectl [-socket path] <health|processes|history|logs|log-tail>\n")
+		fmt.Fprintf(os.Stderr, "usage: daemonitor-corectl [-socket path] <health|processes|history|logs|log-tail|builds>\n")
 		os.Exit(2)
 	}
 }

@@ -42,9 +42,8 @@ Live heap Attach, packaging, replacing shipping JVM app, build-event parsing in 
 
 ## Follow-on
 
-1. Optionally consume Go tail `events` from Kotlin dual-run / port `BuildAggregator`
+1. Optionally have Kotlin dual-run consume `/v1/builds`
 2. Packaging / shared SQLite beyond the spike
 
-Kotlin CLI `--core-socket` dual-runs processes and daemon-log tails from Go core
-(`GoCoreProcessSource` + `GoCoreDaemonLogSource`). Go now parses U3 build events on tails
-(`logs.ParseLine`). Side-by-side checklist: `spikes/go-core/docs/dual-run.md`.
+Go core now parses U3 events and aggregates confirmed builds (`builds.Aggregator`, `GET /v1/builds`).
+Side-by-side checklist: `spikes/go-core/docs/dual-run.md`.
