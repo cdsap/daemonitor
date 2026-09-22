@@ -1,5 +1,6 @@
 package io.github.cdsap.daemonitor
 
+import io.github.cdsap.daemonitor.application.BuildSource
 import io.github.cdsap.daemonitor.application.PollMonitoring
 import io.github.cdsap.daemonitor.application.ProcessSource
 import io.github.cdsap.daemonitor.application.DaemonLogSource
@@ -22,6 +23,7 @@ class WatcherRuntime(
     builds: BuildWriter,
     samples: ProcessSampleWriter,
     aggregator: BuildAggregator,
+    buildSource: BuildSource? = null,
     retentionDays: () -> Long = { RetentionPolicy.DEFAULT.defaultDays },
     clock: () -> Long = System::currentTimeMillis,
 ) {
@@ -31,6 +33,7 @@ class WatcherRuntime(
         builds = builds,
         samples = samples,
         aggregator = aggregator,
+        buildSource = buildSource,
         retentionDays = retentionDays,
         clock = clock,
     )

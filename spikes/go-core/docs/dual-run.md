@@ -12,7 +12,7 @@ surface.
 |---------|---------------|----------------------|
 | Live process table | `ProcessCollector` (OSHI) | `GoCoreProcessSource` → `GET /v1/processes` |
 | Daemon log discover / tail | `DaemonLogWatcher` | `GoCoreDaemonLogSource` → `/v1/daemon-logs` |
-| Build-event parse / correlation | JVM (`DaemonLogParser` + `BuildAggregator`) | **still JVM** (diffs Go redacted tails); Go also aggregates into spike DB |
+| Build-event parse / correlation | JVM (`DaemonLogParser` + `BuildAggregator`) | Go aggregates into spike DB; `--core-socket` imports via `GET /v1/builds` (JVM re-agg skipped) |
 | Sample / build SQLite | App `WatcherDatabase` | same app DB (Go spike DB is separate) |
 | Live heap Attach / JMX | JVM only | always `null` from Go |
 
@@ -76,7 +76,8 @@ values are bit-identical.
 
 1. **No live heap from Go** — Attach/JMX stays Kotlin-only until a future design.
 2. **Two SQLite worlds** — `daemonitor-cored` keeps a spike DB for `/v1/processes/history` and
-   `/v1/builds`; the CLI/desktop keep writing the app schema.
+   `/v1/builds`; `--core-socket` copies Go builds into the app `WatcherDatabase` each poll (not a
+   shared schema yet).
 3. **Go log poll scope** — continuous tail is limited to active `GRADLE_DAEMON` PIDs so large
    `~/.gradle/daemon` trees stay cheap; inactive PIDs seed on `TailFor` / first CLI read.
 4. **Alternate Gradle user homes** — processes whose logs live outside `~/.gradle/daemon` are
@@ -102,8 +103,8 @@ Until then, keep `--core-socket` off by default.
 
 ## Suggested next engineering slices
 
-1. Have Kotlin dual-run optionally consume `/v1/builds` (skip JVM re-aggregation)
-2. Shared SQLite / packaging once process + log + build dual-run stay honest on macOS **and** Linux
+1. Shared SQLite / packaging once process + log + build dual-run stay honest on macOS **and** Linux
+2. Repeat dual-run honesty checklist on Linux
 
-`PollMonitoring` now only `readNewLines` for live or previously known `GRADLE_DAEMON` PIDs
-(#221), so `--core-socket` no longer HTTP-tails every historical log under `~/.gradle/daemon`.
+`--core-socket` imports confirmed builds from Go `GET /v1/builds` (skips JVM log re-aggregation)
+and only `readNewLines` for live or previously known `GRADLE_DAEMON` PIDs (#221).

@@ -92,11 +92,12 @@ GET /v1/builds?limit=<n>
 `--core-socket` is experimental: the CLI keeps its own SQLite store, but the live process
 table and daemon log tails come from `daemonitor-cored` via Unix-socket HTTP. Go now
 parses U3 events and aggregates confirmed builds into the spike DB (`GET /v1/builds`).
-Kotlin dual-run still maintains its own build rows unless a future client consumes Go builds.
+Kotlin `--core-socket` imports confirmed builds from `GET /v1/builds` into the app DB (JVM log
+re-aggregation skipped). Schemas remain separate until a shared SQLite cutover.
 
 Full comparison procedure and cutover gates: [`docs/dual-run.md`](docs/dual-run.md).
 
 ## Next
 
-1. Optionally have Kotlin dual-run consume `/v1/builds` (or Go `events`) instead of re-aggregating
-2. Shared SQLite schema / packaging beyond the spike
+1. Shared SQLite schema / packaging beyond the spike
+2. Repeat dual-run honesty checklist on Linux

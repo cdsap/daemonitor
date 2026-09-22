@@ -4,6 +4,7 @@ package io.github.cdsap.daemonitor
 
 import io.github.cdsap.daemonitor.config.MonitoringConfig
 import io.github.cdsap.daemonitor.config.RetentionPolicy
+import io.github.cdsap.daemonitor.coreipc.GoCoreBuildSource
 import io.github.cdsap.daemonitor.coreipc.GoCoreDaemonLogSource
 import io.github.cdsap.daemonitor.coreipc.GoCoreProcessSource
 import kotlinx.coroutines.CancellationException
@@ -39,14 +40,18 @@ internal object CliLauncher {
 
         val processSource = options.coreSocket?.let { GoCoreProcessSource(it) }
         val logSource = options.coreSocket?.let { GoCoreDaemonLogSource(it) }
+        val buildSource = options.coreSocket?.let { GoCoreBuildSource(it) }
         if (processSource != null) {
-            error.println("Experimental: reading processes and daemon logs from Go core at ${options.coreSocket}")
+            error.println(
+                "Experimental: reading processes, daemon logs, and builds from Go core at ${options.coreSocket}",
+            )
         }
 
         return CoreContainer(
             databasePath = options.databasePath ?: io.github.cdsap.daemonitor.platform.AppDirectories.system.databasePath,
             processSource = processSource,
             logSource = logSource,
+            buildSource = buildSource,
         ).use { container ->
             runMonitor(container, options, output, error, input)
         }
@@ -225,7 +230,7 @@ internal object CliLauncher {
           --retention DAYS
                            Retain history for this many days (1-90).
           --core-socket PATH
-                           Experimental: read processes and daemon logs from daemonitor-cored.
+                           Experimental: read processes, daemon logs, and builds from daemonitor-cored.
 
         Press q to quit.
     """.trimIndent()

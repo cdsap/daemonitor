@@ -5,10 +5,12 @@ import io.github.cdsap.daemonitor.domain.BuildAggregator
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.BuildStart
 import io.github.cdsap.daemonitor.domain.model.BusyMark
+import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.IdleMark
 import io.github.cdsap.daemonitor.domain.model.Outcome
 import io.github.cdsap.daemonitor.domain.model.ProcessType
+import io.github.cdsap.daemonitor.domain.model.Source
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -185,6 +187,60 @@ class PollMonitoringTest {
         assertEquals(listOf(log), logSource.readCalls)
         assertTrue(second.buildsChanged)
         assertEquals(listOf("build-1"), builds.saved.map { it.buildId })
+    }
+
+    @Test
+    fun `pollOnce imports remote builds and skips log re-aggregation`() {
+        val log = DaemonLog(pid = 42, gradleVersion = "8.14.3", path = Path.of("/tmp/daemon-42.out.log"))
+        val logSource = FakeDaemonLogSource(
+            logs = listOf(log),
+            linesByPid = mapOf(
+                42L to listOf(
+                    DaemonLogLine("busy", BusyMark(1_000)),
+                    DaemonLogLine("start", BuildStart(1_001, "ignored", "/project")),
+                    DaemonLogLine("idle", IdleMark(1_003)),
+                ),
+            ),
+        )
+        val remote = Build(
+            buildId = "go-build-1",
+            daemonPid = 42,
+            daemonIdentity = null,
+            commandLine = null,
+            workingDirectory = "/project",
+            projectPath = "/project",
+            startTimeMs = 1_000,
+            endTimeMs = 2_000,
+            durationSeconds = 1.0,
+            peakMemoryMb = 256,
+            avgMemoryMb = 200,
+            peakCpuPercent = 10.0,
+            inferredSource = Source.IDE,
+            finalStatus = FinalStatus.SUCCESS,
+            logSnippet = "BUILD SUCCESSFUL",
+        )
+        val builds = RecordingBuildWriter()
+        val monitoring = PollMonitoring(
+            processSource = FakeProcessSource(listOf(gradleDaemon(pid = 42))),
+            logSource = logSource,
+            builds = builds,
+            samples = RecordingSampleWriter(),
+            aggregator = BuildAggregator(),
+            buildSource = object : BuildSource {
+                override fun recentBuilds(limit: Int) = listOf(remote)
+            },
+            clock = { 5_000 },
+        )
+
+        val first = monitoring.pollOnce()
+        assertTrue(first.buildsChanged)
+        assertTrue(logSource.readCalls.isEmpty())
+        assertEquals(listOf("go-build-1"), builds.saved.map { it.buildId })
+
+        builds.saved.clear()
+        val second = monitoring.pollOnce()
+        assertFalse(second.buildsChanged)
+        assertEquals(listOf("go-build-1"), builds.saved.map { it.buildId })
     }
 
     private fun gradleDaemon(pid: Long) = GradleProcess(
