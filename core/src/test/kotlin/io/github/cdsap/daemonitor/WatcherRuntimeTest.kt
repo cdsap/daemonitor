@@ -42,16 +42,19 @@ class WatcherRuntimeTest {
             .toInstant().toEpochMilli()
 
         WatcherDatabase.open(tmp.resolve("watcher.db")).use { database ->
+            val logWatcher = DaemonLogWatcher(gradleUserHome = tmp.resolve("gradle"))
             val runtime = WatcherRuntime(
                 processSource = collectorWithoutHeapAttach(),
-                logSource = DaemonLogWatcher(gradleUserHome = tmp.resolve("gradle")),
+                logSource = logWatcher,
                 aggregator = BuildAggregator(sampleProvider = database::samples),
                 builds = database,
                 samples = database,
                 clock = { clockMs },
             )
+            val daemonPid = 75597L
 
-            runtime.pollOnce() // Establish the incremental-read offset.
+            // Tails are only read for live/known GRADLE_DAEMON PIDs (#221).
+            runtime.processForBuilds(logWatcher.discover(), activeDaemonPids = setOf(daemonPid))
             Files.writeString(
                 log,
                 buildString {
@@ -65,7 +68,7 @@ class WatcherRuntimeTest {
                 StandardOpenOption.APPEND,
             )
 
-            assertTrue(runtime.pollOnce().buildsChanged)
+            assertTrue(runtime.processForBuilds(logWatcher.discover(), activeDaemonPids = setOf(daemonPid)))
 
             val build = database.recent().single()
             val snippet = assertNotNull(build.logSnippet)
@@ -104,7 +107,11 @@ class WatcherRuntimeTest {
                 clock = { clockMs },
             )
 
-            val changed = runtime.processForBuilds(logWatcher.discover(), activeDaemonPids = emptySet())
+            val logs = logWatcher.discover()
+            val daemonPid = 75597L
+            // Read while tracked, then finalize via onDaemonGone once the PID leaves the live set.
+            assertFalse(runtime.processForBuilds(logs, activeDaemonPids = setOf(daemonPid)))
+            val changed = runtime.processForBuilds(logs, activeDaemonPids = emptySet())
 
             assertTrue(changed)
             val build = database.recent().single()
