@@ -2,8 +2,11 @@ package io.github.cdsap.daemonitor.coreipc
 
 import io.github.cdsap.daemonitor.application.DaemonLog
 import io.github.cdsap.daemonitor.application.ProcessSource
+import io.github.cdsap.daemonitor.domain.model.Build
+import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
+import io.github.cdsap.daemonitor.domain.model.Source
 import java.net.StandardProtocolFamily
 import java.net.UnixDomainSocketAddress
 import java.nio.ByteBuffer
@@ -42,6 +45,44 @@ internal object GoCoreSnapshotParser {
 
     fun parseDaemonLogTail(json: String): List<String> =
         extractStringArray(json, "lines").orEmpty()
+
+    fun parseBuilds(json: String): List<Build> {
+        val arrayBody = extractArray(json, "builds") ?: return emptyList()
+        return splitObjects(arrayBody).mapNotNull { parseBuild(it) }
+    }
+
+    private fun parseBuild(obj: String): Build? {
+        val buildId = stringField(obj, "build_id") ?: return null
+        val daemonPid = numberField(obj, "daemon_pid")?.toLong() ?: return null
+        val startTimeMs = numberField(obj, "start_time_ms")?.toLong() ?: return null
+        val inferredSource = stringField(obj, "inferred_source")
+            ?.let { runCatching { Source.valueOf(it) }.getOrNull() }
+            ?: Source.UNKNOWN
+        val finalStatus = stringField(obj, "final_status")
+            ?.let { runCatching { FinalStatus.valueOf(it) }.getOrNull() }
+            ?: return null
+        return Build(
+            buildId = buildId,
+            daemonPid = daemonPid,
+            daemonIdentity = stringField(obj, "daemon_identity").nullIfEmpty(),
+            commandLine = stringField(obj, "command_line"),
+            workingDirectory = stringField(obj, "working_directory").nullIfEmpty(),
+            projectPath = stringField(obj, "project_path").nullIfEmpty(),
+            startTimeMs = startTimeMs,
+            endTimeMs = numberField(obj, "end_time_ms")?.toLong(),
+            durationSeconds = numberField(obj, "duration_seconds"),
+            peakMemoryMb = numberField(obj, "peak_memory_mb")?.toLong(),
+            avgMemoryMb = numberField(obj, "avg_memory_mb")?.toLong(),
+            peakCpuPercent = numberField(obj, "peak_cpu_percent"),
+            inferredSource = inferredSource,
+            finalStatus = finalStatus,
+            logSnippet = stringField(obj, "log_snippet").nullIfEmpty(),
+            agent = stringField(obj, "agent").nullIfEmpty(),
+            agentProvider = stringField(obj, "agent_provider").nullIfEmpty(),
+        )
+    }
+
+    private fun String?.nullIfEmpty(): String? = this?.takeIf { it.isNotEmpty() }
 
     private fun parseDaemonLog(obj: String): DaemonLog? {
         val pid = numberField(obj, "pid")?.toLong() ?: return null

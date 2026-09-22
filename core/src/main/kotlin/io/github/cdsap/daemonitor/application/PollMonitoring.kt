@@ -9,6 +9,9 @@ import io.github.cdsap.daemonitor.domain.model.ProcessType
 /**
  * Application polling use case: collect processes and daemon logs through ports, persist samples
  * and builds through repositories, and correlate builds with [BuildAggregator].
+ *
+ * When [buildSource] is set (Go core dual-run), confirmed builds are imported from that source and
+ * JVM log re-aggregation is skipped.
  */
 class PollMonitoring(
     private val processSource: ProcessSource,
@@ -16,10 +19,12 @@ class PollMonitoring(
     private val builds: BuildWriter,
     private val samples: ProcessSampleWriter,
     private val aggregator: BuildAggregator,
+    private val buildSource: BuildSource? = null,
     private val retentionDays: () -> Long = { RetentionPolicy.DEFAULT.defaultDays },
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
     private var knownDaemonPids = emptySet<Long>()
+    private var lastRemoteBuildFingerprint = emptyMap<String, String>()
 
     data class PollResult(
         val processes: List<GradleProcess>,
@@ -33,10 +38,12 @@ class PollMonitoring(
         processes.forEach { samples.save(it, now) }
 
         val logs = logSource.discover()
+        val buildsChanged = buildSource?.let { syncRemoteBuilds(it) }
+            ?: processForBuilds(logs, activeDaemonPids = processes.activeDaemonPids())
         return PollResult(
             processes = processes,
             daemonLogs = logs,
-            buildsChanged = processForBuilds(logs, activeDaemonPids = processes.activeDaemonPids()),
+            buildsChanged = buildsChanged,
         )
     }
 
@@ -75,6 +82,21 @@ class PollMonitoring(
         }
         knownDaemonPids = activeDaemonPids
         return inserted
+    }
+
+    /**
+     * Import confirmed builds from an external core. Skips [processForBuilds] so dual-run does not
+     * HTTP-tail daemon logs solely to re-aggregate on the JVM.
+     */
+    internal fun syncRemoteBuilds(source: BuildSource): Boolean {
+        val fingerprint = linkedMapOf<String, String>()
+        for (build in source.recentBuilds()) {
+            if (!saveIfWithinRetention(build)) continue
+            fingerprint[build.buildId] = build.finalStatus.name
+        }
+        val changed = fingerprint != lastRemoteBuildFingerprint
+        lastRemoteBuildFingerprint = fingerprint
+        return changed
     }
 
     /**

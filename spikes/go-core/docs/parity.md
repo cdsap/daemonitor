@@ -39,8 +39,7 @@ Go lists every discovered log, but only continuously tails **active** `GRADLE_DA
 ## Still divergent
 
 - Live JVM heap Attach / JMX (Kotlin only)
-- Shared SQLite schema with the desktop app (Go spike `builds` table is separate from app `WatcherDatabase`)
-- Kotlin CLI `--core-socket` still re-parses/aggregates builds in-process unless a future client consumes `/v1/builds`
+- Shared SQLite schema with the desktop app (Go spike `builds` table is separate from app `WatcherDatabase`; `--core-socket` copies Go builds into the app DB each poll)
 
 ## Dual-run check
 
