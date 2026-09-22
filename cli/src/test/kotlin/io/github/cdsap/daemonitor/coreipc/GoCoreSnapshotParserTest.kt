@@ -3,31 +3,50 @@ package io.github.cdsap.daemonitor.coreipc
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class GoCoreSnapshotParserTest {
     @Test
-    fun `parses process snapshot from go core json`() {
+    fun `parses rich process snapshot from go core json`() {
         val json = """
             {
               "sampled_at_ms": 1000,
               "processes": [
                 {
                   "pid": 42,
+                  "parent_pid": 1,
                   "type": "GRADLE_DAEMON",
                   "name": "java",
                   "command_line": "org.gradle.launcher.daemon.bootstrap.GradleDaemon",
-                  "rss_memory_mb": 512.4,
+                  "working_directory": "/tmp/daemon",
+                  "project_path": null,
+                  "rss_memory_mb": 512,
                   "cpu_percent": 12.5,
+                  "max_heap_mb": 2048,
+                  "min_heap_mb": 512,
+                  "gc": "G1",
+                  "start_time_ms": 99,
+                  "status": "R",
+                  "automated": false,
                   "sampled_at_ms": 1000
                 },
                 {
                   "pid": 7,
-                  "type": "KOTLIN_DAEMON",
+                  "parent_pid": 0,
+                  "type": "GRADLE_WRAPPER",
                   "name": "java",
-                  "command_line": "KotlinCompileDaemon",
+                  "command_line": "gradle-wrapper.jar",
+                  "working_directory": "/Users/dev/proj",
+                  "project_path": "/Users/dev/proj",
                   "rss_memory_mb": 200,
-                  "cpu_percent": 1.0,
+                  "cpu_percent": null,
+                  "max_heap_mb": 64,
+                  "min_heap_mb": null,
+                  "gc": null,
+                  "start_time_ms": 50,
+                  "status": "R",
+                  "automated": true,
                   "sampled_at_ms": 1000
                 }
               ]
@@ -36,11 +55,25 @@ class GoCoreSnapshotParserTest {
 
         val processes = GoCoreSnapshotParser.parseProcesses(json)
         assertEquals(2, processes.size)
-        assertEquals(42L, processes[0].pid)
-        assertEquals(ProcessType.GRADLE_DAEMON, processes[0].type)
-        assertEquals(512L, processes[0].rssMemoryMb)
-        assertEquals(12.5, processes[0].cpuPercent)
-        assertEquals(ProcessType.KOTLIN_DAEMON, processes[1].type)
+
+        val daemon = processes[0]
+        assertEquals(42L, daemon.pid)
+        assertEquals(1L, daemon.parentPid)
+        assertEquals(ProcessType.GRADLE_DAEMON, daemon.type)
+        assertEquals(512L, daemon.rssMemoryMb)
+        assertEquals(12.5, daemon.cpuPercent)
+        assertEquals(2048L, daemon.maxHeapMb)
+        assertEquals(512L, daemon.minHeapMb)
+        assertEquals("G1", daemon.gc)
+        assertEquals("/tmp/daemon", daemon.workingDirectory)
+        assertNull(daemon.projectPath)
+
+        val wrapper = processes[1]
+        assertEquals(ProcessType.GRADLE_WRAPPER, wrapper.type)
+        assertNull(wrapper.cpuPercent)
+        assertEquals(64L, wrapper.maxHeapMb)
+        assertEquals("/Users/dev/proj", wrapper.projectPath)
+        assertTrue(wrapper.automated)
     }
 
     @Test

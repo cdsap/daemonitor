@@ -57,8 +57,16 @@ func main() {
 		}
 		fmt.Printf("sampled_at_ms=%d processes=%d\n", snap.SampledAtMs, len(snap.Processes))
 		for _, p := range snap.Processes {
-			fmt.Printf("  pid=%-7d type=%-20s rss=%.0fMB cpu=%.1f%%  %s\n",
-				p.PID, p.Type, p.RSSMemoryMB, p.CPUPercent, truncate(p.Name, 40))
+			cpu := "-"
+			if p.CPUPercent != nil {
+				cpu = fmt.Sprintf("%.1f%%", *p.CPUPercent)
+			}
+			xmx := "-"
+			if p.MaxHeapMB != nil {
+				xmx = fmt.Sprintf("%dMB", *p.MaxHeapMB)
+			}
+			fmt.Printf("  pid=%-7d type=%-20s rss=%dMB cpu=%s xmx=%s  %s\n",
+				p.PID, p.Type, p.RSSMemoryMB, cpu, xmx, truncate(p.Name, 40))
 		}
 	case "history":
 		sinceMs := time.Now().Add(-time.Duration(*sinceMin) * time.Minute).UnixMilli()
@@ -74,7 +82,7 @@ func main() {
 		}
 		fmt.Printf("since_ms=%d count=%d\n", hist.SinceMs, hist.Count)
 		for _, p := range hist.Processes {
-			fmt.Printf("  ts=%d pid=%-7d type=%-20s rss=%.0fMB\n",
+			fmt.Printf("  ts=%d pid=%-7d type=%-20s rss=%dMB\n",
 				p.SampledAtMs, p.PID, p.Type, p.RSSMemoryMB)
 		}
 	default:

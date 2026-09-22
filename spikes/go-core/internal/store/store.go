@@ -41,11 +41,20 @@ CREATE TABLE IF NOT EXISTS process_samples (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   timestamp_ms INTEGER NOT NULL,
   pid INTEGER NOT NULL,
+  parent_pid INTEGER NOT NULL DEFAULT 0,
   process_type TEXT NOT NULL,
   name TEXT NOT NULL,
   command_line TEXT NOT NULL,
-  rss_memory_mb REAL NOT NULL,
-  cpu_percent REAL NOT NULL
+  working_directory TEXT,
+  project_path TEXT,
+  rss_memory_mb INTEGER NOT NULL,
+  cpu_percent REAL,
+  max_heap_mb INTEGER,
+  min_heap_mb INTEGER,
+  gc TEXT,
+  start_time_ms INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'RUNNING',
+  automated INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS process_samples_ts ON process_samples(timestamp_ms);
 CREATE INDEX IF NOT EXISTS process_samples_pid_ts ON process_samples(pid, timestamp_ms);
@@ -62,16 +71,24 @@ func (s *Store) InsertSnapshot(snap model.Snapshot) error {
 
 	stmt, err := tx.Prepare(`
 INSERT INTO process_samples(
-  timestamp_ms, pid, process_type, name, command_line, rss_memory_mb, cpu_percent
-) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+  timestamp_ms, pid, parent_pid, process_type, name, command_line,
+  working_directory, project_path, rss_memory_mb, cpu_percent,
+  max_heap_mb, min_heap_mb, gc, start_time_ms, status, automated
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
 
 	for _, p := range snap.Processes {
+		automated := 0
+		if p.Automated {
+			automated = 1
+		}
 		if _, err := stmt.Exec(
-			snap.SampledAtMs, p.PID, p.Type, p.Name, p.CommandLine, p.RSSMemoryMB, p.CPUPercent,
+			snap.SampledAtMs, p.PID, p.ParentPID, p.Type, p.Name, p.CommandLine,
+			p.WorkingDirectory, p.ProjectPath, p.RSSMemoryMB, p.CPUPercent,
+			p.MaxHeapMB, p.MinHeapMB, p.GC, p.StartTimeMs, p.Status, automated,
 		); err != nil {
 			return err
 		}
@@ -93,7 +110,9 @@ func (s *Store) History(sinceMs int64, limit int) ([]model.Process, error) {
 		limit = 500
 	}
 	rows, err := s.db.Query(`
-SELECT timestamp_ms, pid, process_type, name, command_line, rss_memory_mb, cpu_percent
+SELECT timestamp_ms, pid, parent_pid, process_type, name, command_line,
+       working_directory, project_path, rss_memory_mb, cpu_percent,
+       max_heap_mb, min_heap_mb, gc, start_time_ms, status, automated
 FROM process_samples
 WHERE timestamp_ms >= ?
 ORDER BY timestamp_ms ASC
@@ -106,11 +125,15 @@ LIMIT ?`, sinceMs, limit)
 	out := make([]model.Process, 0, 64)
 	for rows.Next() {
 		var p model.Process
+		var automated int
 		if err := rows.Scan(
-			&p.SampledAtMs, &p.PID, &p.Type, &p.Name, &p.CommandLine, &p.RSSMemoryMB, &p.CPUPercent,
+			&p.SampledAtMs, &p.PID, &p.ParentPID, &p.Type, &p.Name, &p.CommandLine,
+			&p.WorkingDirectory, &p.ProjectPath, &p.RSSMemoryMB, &p.CPUPercent,
+			&p.MaxHeapMB, &p.MinHeapMB, &p.GC, &p.StartTimeMs, &p.Status, &automated,
 		); err != nil {
 			return nil, err
 		}
+		p.Automated = automated != 0
 		out = append(out, p)
 	}
 	return out, rows.Err()

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/cdsap/daemonitor/spikes/go-core/internal/model"
+	"github.com/cdsap/daemonitor/spikes/go-core/internal/poll"
 	"github.com/cdsap/daemonitor/spikes/go-core/internal/store"
 )
 
@@ -18,11 +19,14 @@ func TestInsertHistoryAndPurge(t *testing.T) {
 	defer s.Close()
 
 	now := time.Now().UnixMilli()
+	cpu := 1.5
+	maxHeap := int64(1024)
 	snap := model.Snapshot{
 		SampledAtMs: now,
 		Processes: []model.Process{{
 			PID: 42, Type: "GRADLE_DAEMON", Name: "java",
-			CommandLine: "GradleDaemon", RSSMemoryMB: 100, CPUPercent: 1.5, SampledAtMs: now,
+			CommandLine: "GradleDaemon", RSSMemoryMB: 100, CPUPercent: &cpu,
+			MaxHeapMB: &maxHeap, SampledAtMs: now, Status: "R",
 		}},
 	}
 	if err := s.InsertSnapshot(snap); err != nil {
@@ -37,13 +41,15 @@ func TestInsertHistoryAndPurge(t *testing.T) {
 	if err != nil || len(hist) != 1 {
 		t.Fatalf("history=%d err=%v", len(hist), err)
 	}
+	if hist[0].MaxHeapMB == nil || *hist[0].MaxHeapMB != 1024 {
+		t.Fatalf("max heap=%v", hist[0].MaxHeapMB)
+	}
 
-	// Insert an "old" row and purge.
 	old := model.Snapshot{
 		SampledAtMs: now - int64((48 * time.Hour).Milliseconds()),
 		Processes: []model.Process{{
 			PID: 7, Type: "KOTLIN_DAEMON", Name: "java",
-			CommandLine: "Kotlin", RSSMemoryMB: 50, CPUPercent: 0, SampledAtMs: now,
+			CommandLine: "Kotlin", RSSMemoryMB: 50, SampledAtMs: now, Status: "R",
 		}},
 	}
 	if err := s.InsertSnapshot(old); err != nil {
@@ -56,5 +62,11 @@ func TestInsertHistoryAndPurge(t *testing.T) {
 	n, _ = s.Count()
 	if n != 1 {
 		t.Fatalf("after purge count=%d", n)
+	}
+}
+
+func TestClassifyUsedByStoreRoundTrip(t *testing.T) {
+	if poll.Classify("java org.gradle.launcher.daemon.bootstrap.GradleDaemon") != "GRADLE_DAEMON" {
+		t.Fatal("classifier regression")
 	}
 }

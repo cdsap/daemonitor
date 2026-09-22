@@ -41,6 +41,6 @@ Daemon log tail, live heap Attach, packaging, replacing shipping JVM app.
 
 ## Follow-on
 
-1. Parity checklist vs Kotlin collector (classification + RSS)
-2. Dual-run migration plan only after parity looks honest
+1. Full Kotlin `Redactor` parity for command lines
+2. Dual-run migration notes after side-by-side RSS/CPU looks honest
 3. Optional: move daemon log tail into the Go core

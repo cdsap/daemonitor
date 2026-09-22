@@ -15,7 +15,7 @@ import (
 	"github.com/cdsap/daemonitor/spikes/go-core/internal/store"
 )
 
-const Version = "0.0.2-spike"
+const Version = "0.0.3-spike"
 
 // Server exposes a tiny HTTP API over a Unix domain socket.
 type Server struct {
@@ -60,7 +60,6 @@ func (s *Server) Run(ctx context.Context) error {
 
 	_ = os.Chmod(s.SocketPath, 0o600)
 
-	poll.WarmCPU(ctx)
 	s.refresh(ctx)
 
 	go s.loop(ctx)
