@@ -3,11 +3,11 @@ package store
 import (
 	"database/sql"
 
-	"github.com/cdsap/daemonitor/spikes/go-core/internal/build"
+	"github.com/cdsap/daemonitor/spikes/go-core/internal/builds"
 )
 
 // InsertBuild upserts a confirmed build record.
-func (s *Store) InsertBuild(b build.Build) error {
+func (s *Store) InsertBuild(b builds.Build) error {
 	_, err := s.db.Exec(`
 INSERT INTO builds(
   build_id, daemon_pid, daemon_identity, working_directory, project_path,
@@ -34,7 +34,7 @@ ON CONFLICT(build_id) DO UPDATE SET
 }
 
 // ListBuilds returns recent builds newest-first.
-func (s *Store) ListBuilds(limit int) ([]build.Build, error) {
+func (s *Store) ListBuilds(limit int) ([]builds.Build, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
@@ -50,9 +50,9 @@ LIMIT ?`, limit)
 	}
 	defer rows.Close()
 
-	out := make([]build.Build, 0)
+	out := make([]builds.Build, 0)
 	for rows.Next() {
-		var b build.Build
+		var b builds.Build
 		var identity, workDir, project, snippet, agent, provider sql.NullString
 		var endMs sql.NullInt64
 		var dur, peakCPU sql.NullFloat64
@@ -95,15 +95,15 @@ LIMIT ?`, limit)
 	return out, rows.Err()
 }
 
-// SamplesAsBuildSamples maps DB rows into build.Sample for the aggregator.
-func (s *Store) SamplesAsBuildSamples(pid, startMs, endMs int64) []build.Sample {
+// SamplesAsBuildSamples maps DB rows into builds.Sample for the aggregator.
+func (s *Store) SamplesAsBuildSamples(pid, startMs, endMs int64) []builds.Sample {
 	rows, err := s.SamplesInWindow(pid, startMs, endMs)
 	if err != nil {
 		return nil
 	}
-	out := make([]build.Sample, 0, len(rows))
+	out := make([]builds.Sample, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, build.Sample{RSSMemoryMB: r.RSS, CPUPercent: r.CPU})
+		out = append(out, builds.Sample{RSSMemoryMB: r.RSS, CPUPercent: r.CPU})
 	}
 	return out
 }

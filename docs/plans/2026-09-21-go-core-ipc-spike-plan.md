@@ -45,5 +45,5 @@ Live heap Attach, packaging, replacing shipping JVM app, build-event parsing in 
 1. Optionally have Kotlin dual-run consume `/v1/builds`
 2. Packaging / shared SQLite beyond the spike
 
-Go core now parses U3 events and aggregates confirmed builds (`build.Aggregator`, `GET /v1/builds`).
+Go core now parses U3 events and aggregates confirmed builds (`builds.Aggregator`, `GET /v1/builds`).
 Side-by-side checklist: `spikes/go-core/docs/dual-run.md`.

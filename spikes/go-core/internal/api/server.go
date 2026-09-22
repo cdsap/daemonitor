@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cdsap/daemonitor/spikes/go-core/internal/build"
+	"github.com/cdsap/daemonitor/spikes/go-core/internal/builds"
 	"github.com/cdsap/daemonitor/spikes/go-core/internal/logs"
 	"github.com/cdsap/daemonitor/spikes/go-core/internal/model"
 	"github.com/cdsap/daemonitor/spikes/go-core/internal/poll"
@@ -27,7 +27,7 @@ type Server struct {
 	Collector  *poll.Collector
 	Logs       *logs.Watcher
 	Store      *store.Store
-	Agg        *build.Aggregator
+	Agg        *builds.Aggregator
 	Retention  time.Duration
 
 	mu         sync.RWMutex
@@ -52,12 +52,12 @@ func NewServer(socketPath, dbPath string, interval, retention time.Duration, gra
 		last:       model.Snapshot{Processes: []model.Process{}},
 		prevActive: map[int64]struct{}{},
 	}
-	s.Agg = build.NewAggregator(
-		func(pid, startMs, endMs int64) []build.Sample {
+	s.Agg = builds.NewAggregator(
+		func(pid, startMs, endMs int64) []builds.Sample {
 			return st.SamplesAsBuildSamples(pid, startMs, endMs)
 		},
 		nil,
-		build.DefaultLogSnippetLimit,
+		builds.DefaultLogSnippetLimit,
 	)
 	return s, nil
 }
