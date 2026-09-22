@@ -1,6 +1,7 @@
 package io.github.cdsap.daemonitor.coreipc
 
 import io.github.cdsap.daemonitor.application.ProcessSource
+import io.github.cdsap.daemonitor.collect.DaemonLog
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import java.net.StandardProtocolFamily
@@ -32,6 +33,21 @@ internal object GoCoreSnapshotParser {
     fun parseProcesses(json: String): List<GradleProcess> {
         val arrayBody = extractArray(json, "processes") ?: return emptyList()
         return splitObjects(arrayBody).mapNotNull { parseProcess(it) }
+    }
+
+    fun parseDaemonLogs(json: String): List<DaemonLog> {
+        val arrayBody = extractArray(json, "logs") ?: return emptyList()
+        return splitObjects(arrayBody).mapNotNull { parseDaemonLog(it) }
+    }
+
+    fun parseDaemonLogTail(json: String): List<String> =
+        extractStringArray(json, "lines").orEmpty()
+
+    private fun parseDaemonLog(obj: String): DaemonLog? {
+        val pid = numberField(obj, "pid")?.toLong() ?: return null
+        val gradleVersion = stringField(obj, "gradle_version") ?: return null
+        val path = stringField(obj, "path") ?: return null
+        return DaemonLog(pid = pid, gradleVersion = gradleVersion, path = Path.of(path))
     }
 
     private fun parseProcess(obj: String): GradleProcess? {
@@ -86,6 +102,20 @@ internal object GoCoreSnapshotParser {
             }
         }
         return null
+    }
+
+    private fun extractStringArray(json: String, name: String): List<String>? {
+        val arrayBody = extractArray(json, name) ?: return null
+        val out = mutableListOf<String>()
+        val regex = Regex("\"((?:\\\\.|[^\"\\\\])*)\"")
+        for (match in regex.findAll(arrayBody)) {
+            out += match.groupValues[1]
+                .replace("\\\"", "\"")
+                .replace("\\\\", "\\")
+                .replace("\\n", "\n")
+                .replace("\\t", "\t")
+        }
+        return out
     }
 
     private fun splitObjects(arrayBody: String): List<String> {

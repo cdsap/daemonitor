@@ -87,11 +87,12 @@ GET /v1/daemon-logs/{pid}/tail
 ./gradlew :cli:run --args="--plain --core-socket $TMPDIR/daemonitor-core.sock"
 ```
 
-`--core-socket` is experimental: the CLI keeps its own SQLite/log tail, but the live process
-table comes from `daemonitor-cored` via Unix-socket HTTP.
+`--core-socket` is experimental: the CLI keeps its own SQLite store, but the live process
+table and daemon log tails come from `daemonitor-cored` via Unix-socket HTTP. Build-event
+parsing still runs in the JVM against the redacted Go tails.
 
 ## Next
 
-1. Wire Kotlin CLI dual-run to optionally consume `/v1/daemon-logs/{pid}/tail`
-2. Dual-run migration notes once live RSS/CPU/log tails look honest side-by-side
-3. Port `DaemonLogParser` build events into Go if correlation should leave the JVM
+1. Dual-run migration notes once live RSS/CPU/log tails look honest side-by-side
+2. Port `DaemonLogParser` build events into Go if correlation should leave the JVM
+3. Shared SQLite schema / packaging beyond the spike

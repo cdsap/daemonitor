@@ -1,5 +1,6 @@
 package io.github.cdsap.daemonitor
 
+import io.github.cdsap.daemonitor.application.DaemonLogSource
 import io.github.cdsap.daemonitor.application.ProcessSource
 import io.github.cdsap.daemonitor.collect.DaemonLogWatcher
 import io.github.cdsap.daemonitor.collect.ProcessCollector
@@ -17,6 +18,7 @@ class CoreContainer(
     private val clock: () -> Long = System::currentTimeMillis,
     ambientEnvNames: Set<String> = System.getenv().keys.toSet(),
     processSource: ProcessSource? = null,
+    logSource: DaemonLogSource? = null,
 ) : AutoCloseable {
     val processCollector = ProcessCollector()
     val daemonLogWatcher = DaemonLogWatcher()
@@ -31,7 +33,7 @@ class CoreContainer(
     )
     val runtime = WatcherRuntime(
         processSource = processSource ?: processCollector,
-        logSource = daemonLogWatcher,
+        logSource = logSource ?: daemonLogWatcher,
         aggregator = buildAggregator,
         builds = database,
         samples = database,
