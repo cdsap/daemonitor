@@ -7,21 +7,24 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/cdsap/daemonitor/spikes/go-core/internal/logs"
 	"github.com/cdsap/daemonitor/spikes/go-core/internal/model"
 	"github.com/cdsap/daemonitor/spikes/go-core/internal/poll"
 	"github.com/cdsap/daemonitor/spikes/go-core/internal/store"
 )
 
-const Version = "0.0.4-spike"
+const Version = "0.0.5-spike"
 
 // Server exposes a tiny HTTP API over a Unix domain socket.
 type Server struct {
 	SocketPath string
 	DBPath     string
 	Collector  *poll.Collector
+	Logs       *logs.Watcher
 	Store      *store.Store
 	Retention  time.Duration
 
@@ -30,7 +33,7 @@ type Server struct {
 	interval time.Duration
 }
 
-func NewServer(socketPath, dbPath string, interval, retention time.Duration) (*Server, error) {
+func NewServer(socketPath, dbPath string, interval, retention time.Duration, gradleUserHome string) (*Server, error) {
 	st, err := store.Open(dbPath)
 	if err != nil {
 		return nil, err
@@ -39,6 +42,7 @@ func NewServer(socketPath, dbPath string, interval, retention time.Duration) (*S
 		SocketPath: socketPath,
 		DBPath:     dbPath,
 		Collector:  poll.NewCollector(),
+		Logs:       logs.NewWatcher(gradleUserHome),
 		Store:      st,
 		Retention:  retention,
 		interval:   interval,
@@ -60,14 +64,12 @@ func (s *Server) Run(ctx context.Context) error {
 
 	_ = os.Chmod(s.SocketPath, 0o600)
 
-	s.refresh(ctx)
-
-	go s.loop(ctx)
-
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/health", s.handleHealth)
 	mux.HandleFunc("/v1/processes", s.handleProcesses)
 	mux.HandleFunc("/v1/processes/history", s.handleHistory)
+	mux.HandleFunc("/v1/daemon-logs", s.handleDaemonLogs)
+	mux.HandleFunc("/v1/daemon-logs/", s.handleDaemonLogTail)
 
 	srv := &http.Server{Handler: mux}
 	go func() {
@@ -75,6 +77,12 @@ func (s *Server) Run(ctx context.Context) error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)
+	}()
+
+	// Serve immediately so health stays responsive while the first poll/log scan runs.
+	go func() {
+		s.refresh(ctx)
+		s.loop(ctx)
 	}()
 
 	err = srv.Serve(ln)
@@ -107,6 +115,14 @@ func (s *Server) refresh(ctx context.Context) {
 		return
 	}
 	_ = s.Store.InsertSnapshot(snap)
+	active := make(map[int64]struct{})
+	for _, p := range snap.Processes {
+		if p.Type == "GRADLE_DAEMON" {
+			active[int64(p.PID)] = struct{}{}
+		}
+	}
+	// Discover all logs for listing; only tail active Gradle daemons (large ~/.gradle/daemon trees).
+	_ = s.Logs.Poll(active)
 	s.mu.Lock()
 	s.last = snap
 	s.mu.Unlock()
@@ -153,6 +169,37 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		Count:     len(rows),
 		Processes: rows,
 	})
+}
+
+func (s *Server) handleDaemonLogs(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/v1/daemon-logs" {
+		http.NotFound(w, r)
+		return
+	}
+	writeJSON(w, map[string]any{
+		"logs": s.Logs.List(),
+	})
+}
+
+func (s *Server) handleDaemonLogTail(w http.ResponseWriter, r *http.Request) {
+	// /v1/daemon-logs/{pid}/tail
+	path := strings.TrimPrefix(r.URL.Path, "/v1/daemon-logs/")
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) != 2 || parts[1] != "tail" {
+		http.NotFound(w, r)
+		return
+	}
+	pid, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		http.Error(w, "invalid pid", http.StatusBadRequest)
+		return
+	}
+	tail, ok := s.Logs.TailFor(pid)
+	if !ok {
+		http.Error(w, "daemon log not found", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, tail)
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

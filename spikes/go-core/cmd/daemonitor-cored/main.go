@@ -20,12 +20,13 @@ func main() {
 	dbPath := flag.String("db", defaultDB, "SQLite database path")
 	interval := flag.Duration("interval", 2*time.Second, "process poll interval")
 	retention := flag.Duration("retention", 24*time.Hour, "sample retention window")
+	gradleHome := flag.String("gradle-user-home", "", "Gradle user home (default: ~/.gradle)")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	srv, err := api.NewServer(*socket, *dbPath, *interval, *retention)
+	srv, err := api.NewServer(*socket, *dbPath, *interval, *retention, *gradleHome)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "daemonitor-cored: %v\n", err)
 		os.Exit(1)

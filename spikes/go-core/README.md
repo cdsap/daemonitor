@@ -65,6 +65,8 @@ breaks the shell/JDK smoke there).
 GET /v1/health
 GET /v1/processes
 GET /v1/processes/history?since_ms=<epoch_ms>&limit=<n>
+GET /v1/daemon-logs
+GET /v1/daemon-logs/{pid}/tail
 ```
 
 ## Status
@@ -73,7 +75,7 @@ GET /v1/processes/history?since_ms=<epoch_ms>&limit=<n>
 - SQLite retention path in place (`modernc.org/sqlite`, no CGO)
 - JVM client proves desktop/CLI language can speak the same socket without FFI
 - Kotlin CLI `--core-socket PATH` dual-runs: live process table from Go core
-- **Parity slice:** classifier + JVM args + delta CPU + richer IPC fields (see `docs/parity.md`)
+- **Parity slice:** classifier + JVM args + delta CPU + redactor + daemon log tails (see `docs/parity.md`)
 
 ## Dual-run with Kotlin CLI
 
@@ -90,5 +92,6 @@ table comes from `daemonitor-cored` via Unix-socket HTTP.
 
 ## Next
 
-1. Dual-run migration notes once live RSS/CPU looks honest side-by-side
-2. Log tail in Go core (reuse `RedactLogLine`) only if dual-run earns it
+1. Wire Kotlin CLI dual-run to optionally consume `/v1/daemon-logs/{pid}/tail`
+2. Dual-run migration notes once live RSS/CPU/log tails look honest side-by-side
+3. Port `DaemonLogParser` build events into Go if correlation should leave the JVM

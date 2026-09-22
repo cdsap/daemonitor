@@ -39,9 +39,11 @@ fi
 ./bin/daemonitor-corectl -socket "$SOCK" processes >/dev/null
 sleep 0.5
 ./bin/daemonitor-corectl -socket "$SOCK" history >/dev/null
+./bin/daemonitor-corectl -socket "$SOCK" logs >/dev/null
 
 # JVM Unix-socket client (proves IPC from the desktop/CLI language family)
 javac clients/jvm/UnixHttpClient.java
 java -cp clients/jvm UnixHttpClient "$SOCK" /v1/health | grep -q '"status": "ok"'
+java -cp clients/jvm UnixHttpClient "$SOCK" /v1/daemon-logs | grep -q '"logs"'
 
 echo "smoke ok (socket=$SOCK db=$DB)"

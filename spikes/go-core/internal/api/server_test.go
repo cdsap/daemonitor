@@ -25,7 +25,7 @@ func TestServerHealthAndProcessesOverUnixSocket(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	srv, err := api.NewServer(socket, db, 200*time.Millisecond, time.Hour)
+	srv, err := api.NewServer(socket, db, 200*time.Millisecond, time.Hour, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
