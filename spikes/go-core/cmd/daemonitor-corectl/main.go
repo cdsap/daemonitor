@@ -115,6 +115,7 @@ func main() {
 			GradleVersion string   `json:"gradle_version"`
 			Path          string   `json:"path"`
 			Lines         []string `json:"lines"`
+			Events        []any    `json:"events"`
 		}
 		if err := getJSON(client, "http://daemonitor/v1/daemon-logs/"+pid+"/tail", &tail); err != nil {
 			fail(err)
@@ -123,7 +124,8 @@ func main() {
 			printJSON(tail)
 			return
 		}
-		fmt.Printf("pid=%d gradle=%s lines=%d\n", tail.PID, tail.GradleVersion, len(tail.Lines))
+		fmt.Printf("pid=%d gradle=%s lines=%d events=%d\n",
+			tail.PID, tail.GradleVersion, len(tail.Lines), len(tail.Events))
 		for _, line := range tail.Lines {
 			fmt.Println(line)
 		}

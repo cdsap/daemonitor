@@ -56,6 +56,18 @@ func TestDiscoverAndTailWithRedaction(t *testing.T) {
 	if !strings.Contains(joined, "BUILD SUCCESSFUL") {
 		t.Fatalf("missing build line: %s", joined)
 	}
+	if len(tail.Events) == 0 {
+		t.Fatal("expected parsed build events from tail lines")
+	}
+	var sawOutcome bool
+	for _, ev := range tail.Events {
+		if ev.Kind == logs.KindOutcome && ev.Success != nil && *ev.Success {
+			sawOutcome = true
+		}
+	}
+	if !sawOutcome {
+		t.Fatalf("events=%+v", tail.Events)
+	}
 }
 
 func TestIncrementalAppend(t *testing.T) {
