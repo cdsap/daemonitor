@@ -41,6 +41,5 @@ Daemon log tail, live heap Attach, packaging, replacing shipping JVM app.
 
 ## Follow-on
 
-1. Full Kotlin `Redactor` parity for command lines
-2. Dual-run migration notes after side-by-side RSS/CPU looks honest
-3. Optional: move daemon log tail into the Go core
+1. Dual-run migration notes after side-by-side RSS/CPU looks honest
+2. Optional: move daemon log tail into the Go core (reuse `RedactLogLine`)

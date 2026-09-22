@@ -16,11 +16,12 @@ Today CLI + desktop share a Kotlin/JVM core (JDK required, heavier RSS). The pro
 
 | In | Out |
 |----|-----|
-| Poll Gradle-related processes (`gopsutil`) | Full Kotlin redaction / heap Attach |
-| Classifier subset of `GradleProcessClassifier` | Daemon log tailing |
-| SQLite sample insert + retention purge | Packaging / Homebrew |
-| `/v1/health`, `/v1/processes`, `/v1/processes/history` | Production auth |
-| Go client + zero-dep JVM Unix HTTP client | Replacing the shipping JVM app |
+| Poll Gradle-related processes (`gopsutil`) | Live heap Attach |
+| Classifier + JVM args + Redactor parity | Packaging / Homebrew |
+| SQLite sample insert + retention purge | Production auth |
+| `/v1/health`, `/v1/processes`, `/v1/processes/history` | Replacing the shipping JVM app |
+| Go client + zero-dep JVM Unix HTTP client | |
+| Kotlin CLI `--core-socket` dual-run | |
 
 ## Run
 
@@ -89,6 +90,5 @@ table comes from `daemonitor-cored` via Unix-socket HTTP.
 
 ## Next
 
-1. Full command-line redaction parity with Kotlin `Redactor`
-2. Dual-run migration notes once live RSS/CPU looks honest side-by-side
-3. Log tail in Go core only if dual-run earns it
+1. Dual-run migration notes once live RSS/CPU looks honest side-by-side
+2. Log tail in Go core (reuse `RedactLogLine`) only if dual-run earns it
