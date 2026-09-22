@@ -23,23 +23,25 @@ toward CLI/desktop without embedding the JVM collector.
 | Piece | Role |
 |-------|------|
 | `cmd/daemonitor-cored` | Poll loop + SQLite + socket server |
-| `cmd/daemonitor-corectl` | Thin client (`health`, `processes`, `history`) |
-| `internal/poll` | gopsutil + classifier subset |
+| `cmd/daemonitor-corectl` | Thin client (`health`, `processes`, `history`, `logs`, `log-tail`) |
+| `internal/poll` | gopsutil + classifier + Redactor subset |
+| `internal/logs` | Daemon log discover + redacted tails |
 | `internal/store` | SQLite samples + retention purge |
-| `internal/api` | `/v1/health`, `/v1/processes`, `/v1/processes/history` |
+| `internal/api` | `/v1/health`, `/v1/processes`, `/v1/processes/history`, `/v1/daemon-logs` |
 | `clients/jvm` | Zero-dep Unix HTTP GET (desktop language family) |
 | `scripts/smoke.sh` | Build + Go client + JVM client round-trip |
 
 ## Non-goals (still)
 
-Daemon log tail, live heap Attach, packaging, replacing shipping JVM app.
+Live heap Attach, packaging, replacing shipping JVM app, build-event parsing in Go.
 
 ## Current evidence
 
 - Live macOS poll returned `GRADLE_DAEMON` / `KOTLIN_DAEMON` / `GRADLE_WRAPPER`
-- Smoke covers health, processes, history, and JVM socket client
+- Smoke covers health, processes, history, daemon-logs, and JVM socket client
 
 ## Follow-on
 
-1. Dual-run migration notes after side-by-side RSS/CPU looks honest
-2. Optional: move daemon log tail into the Go core (reuse `RedactLogLine`)
+1. Kotlin CLI dual-run for daemon log tails from Go core
+2. Dual-run migration notes after side-by-side RSS/CPU/logs look honest
+3. Optional: port `DaemonLogParser` build-event correlation into Go

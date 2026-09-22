@@ -85,8 +85,50 @@ func main() {
 			fmt.Printf("  ts=%d pid=%-7d type=%-20s rss=%dMB\n",
 				p.SampledAtMs, p.PID, p.Type, p.RSSMemoryMB)
 		}
+	case "logs":
+		var payload struct {
+			Logs []struct {
+				PID           int64  `json:"pid"`
+				GradleVersion string `json:"gradle_version"`
+				Path          string `json:"path"`
+			} `json:"logs"`
+		}
+		if err := getJSON(client, "http://daemonitor/v1/daemon-logs", &payload); err != nil {
+			fail(err)
+		}
+		if os.Getenv("JSON") == "1" {
+			printJSON(payload)
+			return
+		}
+		fmt.Printf("daemon_logs=%d\n", len(payload.Logs))
+		for _, log := range payload.Logs {
+			fmt.Printf("  pid=%-7d gradle=%-8s %s\n", log.PID, log.GradleVersion, log.Path)
+		}
+	case "log-tail":
+		if len(args) < 2 {
+			fmt.Fprintf(os.Stderr, "usage: daemonitor-corectl log-tail <pid>\n")
+			os.Exit(2)
+		}
+		pid := args[1]
+		var tail struct {
+			PID           int64    `json:"pid"`
+			GradleVersion string   `json:"gradle_version"`
+			Path          string   `json:"path"`
+			Lines         []string `json:"lines"`
+		}
+		if err := getJSON(client, "http://daemonitor/v1/daemon-logs/"+pid+"/tail", &tail); err != nil {
+			fail(err)
+		}
+		if os.Getenv("JSON") == "1" {
+			printJSON(tail)
+			return
+		}
+		fmt.Printf("pid=%d gradle=%s lines=%d\n", tail.PID, tail.GradleVersion, len(tail.Lines))
+		for _, line := range tail.Lines {
+			fmt.Println(line)
+		}
 	default:
-		fmt.Fprintf(os.Stderr, "usage: daemonitor-corectl [-socket path] <health|processes|history>\n")
+		fmt.Fprintf(os.Stderr, "usage: daemonitor-corectl [-socket path] <health|processes|history|logs|log-tail>\n")
 		os.Exit(2)
 	}
 }
