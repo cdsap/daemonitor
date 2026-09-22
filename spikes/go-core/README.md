@@ -66,12 +66,13 @@ GET /v1/processes
 GET /v1/processes/history?since_ms=<epoch_ms>&limit=<n>
 ```
 
-## Status (2026-09-21)
+## Status
 
 - Poll + classify works on macOS against live Gradle/Kotlin daemons
 - SQLite retention path in place (`modernc.org/sqlite`, no CGO)
 - JVM client proves desktop/CLI language can speak the same socket without FFI
 - Kotlin CLI `--core-socket PATH` dual-runs: live process table from Go core
+- **Parity slice:** classifier + JVM args + delta CPU + richer IPC fields (see `docs/parity.md`)
 
 ## Dual-run with Kotlin CLI
 
@@ -88,6 +89,6 @@ table comes from `daemonitor-cored` via Unix-socket HTTP.
 
 ## Next
 
-1. Parity checklist vs Kotlin `ProcessCollector` (classification + RSS)
-2. Dual-run migration notes only after parity looks honest
+1. Full command-line redaction parity with Kotlin `Redactor`
+2. Dual-run migration notes once live RSS/CPU looks honest side-by-side
 3. Log tail in Go core only if dual-run earns it

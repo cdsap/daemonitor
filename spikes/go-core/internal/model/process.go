@@ -1,15 +1,24 @@
 package model
 
-// Process is a minimal IPC snapshot of a Gradle-related process.
-// Field names mirror the Kotlin domain enough for a future client to map cleanly.
+// Process is an IPC snapshot of a Gradle-related process.
+// Field names mirror the Kotlin GradleProcess domain for dual-run clients.
 type Process struct {
-	PID         int32   `json:"pid"`
-	Type        string  `json:"type"`
-	Name        string  `json:"name"`
-	CommandLine string  `json:"command_line"`
-	RSSMemoryMB float64 `json:"rss_memory_mb"`
-	CPUPercent  float64 `json:"cpu_percent"`
-	SampledAtMs int64   `json:"sampled_at_ms"`
+	PID              int32    `json:"pid"`
+	ParentPID        int32    `json:"parent_pid"`
+	Type             string   `json:"type"`
+	Name             string   `json:"name"`
+	CommandLine      string   `json:"command_line"`
+	WorkingDirectory *string  `json:"working_directory"`
+	ProjectPath      *string  `json:"project_path"`
+	RSSMemoryMB      int64    `json:"rss_memory_mb"`
+	CPUPercent       *float64 `json:"cpu_percent"`
+	MaxHeapMB        *int64   `json:"max_heap_mb"`
+	MinHeapMB        *int64   `json:"min_heap_mb"`
+	GC               *string  `json:"gc"`
+	StartTimeMs      int64    `json:"start_time_ms"`
+	Status           string   `json:"status"`
+	Automated        bool     `json:"automated"`
+	SampledAtMs      int64    `json:"sampled_at_ms"`
 }
 
 // Snapshot is the `/v1/processes` response body.

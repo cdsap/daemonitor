@@ -41,21 +41,30 @@ internal object GoCoreSnapshotParser {
         val commandLine = stringField(obj, "command_line").orEmpty()
         val rss = numberField(obj, "rss_memory_mb")?.toLong() ?: 0L
         val cpu = numberField(obj, "cpu_percent")
+        val parentPid = numberField(obj, "parent_pid")?.toLong() ?: 0L
+        val maxHeap = numberField(obj, "max_heap_mb")?.toLong()
+        val minHeap = numberField(obj, "min_heap_mb")?.toLong()
+        val gc = stringField(obj, "gc")
+        val startTimeMs = numberField(obj, "start_time_ms")?.toLong() ?: 0L
+        val status = stringField(obj, "status") ?: "RUNNING"
+        val automated = booleanField(obj, "automated") ?: false
+        val workingDirectory = stringField(obj, "working_directory")
+        val projectPath = stringField(obj, "project_path")
         return GradleProcess(
             pid = pid,
-            parentPid = 0L,
+            parentPid = parentPid,
             type = type,
             commandLine = commandLine,
-            workingDirectory = null,
-            projectPath = null,
+            workingDirectory = workingDirectory,
+            projectPath = projectPath,
             cpuPercent = cpu,
             rssMemoryMb = rss,
-            maxHeapMb = null,
-            minHeapMb = null,
-            gc = null,
-            startTimeMs = 0L,
-            status = "RUNNING",
-            automated = false,
+            maxHeapMb = maxHeap,
+            minHeapMb = minHeap,
+            gc = gc,
+            startTimeMs = startTimeMs,
+            status = status,
+            automated = automated,
             liveHeap = null,
         )
     }
@@ -102,6 +111,8 @@ internal object GoCoreSnapshotParser {
     }
 
     private fun stringField(obj: String, name: String): String? {
+        val nullRegex = Regex(""""$name"\s*:\s*null""")
+        if (nullRegex.containsMatchIn(obj)) return null
         val regex = Regex(""""$name"\s*:\s*"((?:\\.|[^"\\])*)"""")
         val match = regex.find(obj) ?: return null
         return match.groupValues[1]
@@ -112,8 +123,15 @@ internal object GoCoreSnapshotParser {
     }
 
     private fun numberField(obj: String, name: String): Double? {
+        val nullRegex = Regex(""""$name"\s*:\s*null""")
+        if (nullRegex.containsMatchIn(obj)) return null
         val regex = Regex(""""$name"\s*:\s*(-?\d+(?:\.\d+)?)""")
         return regex.find(obj)?.groupValues?.get(1)?.toDoubleOrNull()
+    }
+
+    private fun booleanField(obj: String, name: String): Boolean? {
+        val regex = Regex(""""$name"\s*:\s*(true|false)""")
+        return regex.find(obj)?.groupValues?.get(1)?.toBooleanStrictOrNull()
     }
 }
 
