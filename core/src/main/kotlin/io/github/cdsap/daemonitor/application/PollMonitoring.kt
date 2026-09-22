@@ -1,6 +1,5 @@
 package io.github.cdsap.daemonitor.application
 
-import io.github.cdsap.daemonitor.collect.DaemonLog
 import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.domain.BuildAggregator
 import io.github.cdsap.daemonitor.domain.model.Build

@@ -1,10 +1,12 @@
 package io.github.cdsap.daemonitor.collect
 
+import io.github.cdsap.daemonitor.application.DaemonLog
+import io.github.cdsap.daemonitor.application.DaemonLogLine
 import io.github.cdsap.daemonitor.application.DaemonLogSource
 import io.github.cdsap.daemonitor.config.MonitoringConfig
-import io.github.cdsap.daemonitor.platform.AppDirectories
 import io.github.cdsap.daemonitor.domain.Redactor
 import io.github.cdsap.daemonitor.domain.model.BuildEvent
+import io.github.cdsap.daemonitor.platform.AppDirectories
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.channels.SeekableByteChannel
@@ -14,12 +16,6 @@ import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.name
-
-/** A discovered daemon log file with its PID and originating Gradle version. */
-data class DaemonLog(val pid: Long, val gradleVersion: String, val path: Path)
-
-/** One complete, redacted daemon-log line and the build event parsed from that same line. */
-data class DaemonLogLine(val text: String, val event: BuildEvent?)
 
 /**
  * Locates daemon logs, reads new content incrementally (offset-based, cheaper than re-tailing),
