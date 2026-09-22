@@ -46,11 +46,19 @@ class PollMonitoring(
     internal fun processForBuilds(logs: List<DaemonLog>, activeDaemonPids: Set<Long>): Boolean {
         var inserted = false
 
+        // Only read tails for daemons we are tracking (live now, or known from a prior poll).
+        // Discover may return hundreds of historical daemon-*.out.log paths under ~/.gradle;
+        // reading all of them every cycle is too expensive for local IO and catastrophic for
+        // GoCoreDaemonLogSource (HTTP tail per path — issue #221).
+        val pidsToRead = activeDaemonPids + knownDaemonPids
+
         for (log in logs) {
-            val lines = logSource.readNewLines(log)
-            if (lines.isNotEmpty()) {
-                lines.flatMap { aggregator.onLogLine(log.pid, it.text, it.event) }.forEach { build ->
-                    if (saveIfWithinRetention(build)) inserted = true
+            if (log.pid in pidsToRead) {
+                val lines = logSource.readNewLines(log)
+                if (lines.isNotEmpty()) {
+                    lines.flatMap { aggregator.onLogLine(log.pid, it.text, it.event) }.forEach { build ->
+                        if (saveIfWithinRetention(build)) inserted = true
+                    }
                 }
             }
             if (log.pid !in activeDaemonPids) {

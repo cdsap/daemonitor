@@ -69,8 +69,8 @@ values are bit-identical.
 
 - Compared `ProcessCollector` (one-shot test dump) vs `daemonitor-corectl processes` with live Gradle 8.x/9.x daemons.
 - Go `/v1/builds` populated after local compile activity against daemon `30246`.
-- **Blocker for Terminal B (`--core-socket` CLI):** `GoCoreDaemonLogSource.discover()` returns the full `~/.gradle/daemon` tree (700+ logs). `PollMonitoring` then calls `readNewLines` per log (HTTP tail each). Observed `StackOverflowError` / unusable poll on this machine. Go core itself only continuously tails **active** `GRADLE_DAEMON` PIDs — Kotlin dual-run should do the same before CLI dual-run is demo-ready. Tracked in [#221](https://github.com/cdsap/daemonitor/issues/221).
-- Keep `--core-socket` off by default until that client-side filter lands.
+- **Was blocking Terminal B (`--core-socket` CLI):** `GoCoreDaemonLogSource.discover()` returns the full `~/.gradle/daemon` tree (700+ logs); older `PollMonitoring` HTTP-tailed every path and SOE'd. Fixed in [#221](https://github.com/cdsap/daemonitor/issues/221) — Kotlin now only `readNewLines` for live ∪ previously known `GRADLE_DAEMON` PIDs (mirrors Go `Poll(active)`).
+- Keep `--core-socket` off by default until Linux honesty + build cutover items below are green.
 
 ## Known honest gaps (do not block dual-run demos)
 
@@ -91,7 +91,7 @@ Promote a surface out of “experimental dual-run” only when all apply:
 
 - [x] Process table checklist honest on at least one live macOS session (2026-09-22)
 - [ ] Same process/log honesty repeated on Linux
-- [ ] `--core-socket` CLI poll stays healthy on large `~/.gradle/daemon` trees (active-PID filter)
+- [x] `--core-socket` CLI poll stays healthy on large `~/.gradle/daemon` trees (active-PID filter, #221)
 - [ ] Redaction fixtures still pass on both sides (`RedactorTest` / `redactor_test.go`)
 - [ ] Failure mode is clear when the socket is missing or `daemonitor-cored` dies
 - [ ] No reliance on Go spike SQLite for shipping retention/UI (or schema is deliberately
@@ -102,8 +102,8 @@ Until then, keep `--core-socket` off by default.
 
 ## Suggested next engineering slices
 
-1. **Fix Kotlin dual-run log fan-out** — only `readNewLines` / HTTP-tail active `GRADLE_DAEMON`
-   PIDs (mirror Go `Poll(active)`), so `--core-socket` stops SOE/hanging on large daemon trees
-   ([#221](https://github.com/cdsap/daemonitor/issues/221))
-2. Have Kotlin dual-run optionally consume `/v1/builds` (skip JVM re-aggregation)
-3. Shared SQLite / packaging once process + log + build dual-run stay honest on macOS **and** Linux
+1. Have Kotlin dual-run optionally consume `/v1/builds` (skip JVM re-aggregation)
+2. Shared SQLite / packaging once process + log + build dual-run stay honest on macOS **and** Linux
+
+`PollMonitoring` now only `readNewLines` for live or previously known `GRADLE_DAEMON` PIDs
+(#221), so `--core-socket` no longer HTTP-tails every historical log under `~/.gradle/daemon`.
