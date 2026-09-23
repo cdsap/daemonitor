@@ -287,3 +287,120 @@ INSERT INTO process_samples(
 		t.Fatalf("row=%+v", hist[0])
 	}
 }
+
+func TestOpenEnablesWAL(t *testing.T) {
+	dir := t.TempDir()
+	s, err := store.Open(filepath.Join(dir, "nested", "wal.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	mode, err := s.JournalMode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode != "wal" {
+		t.Fatalf("journal_mode=%q", mode)
+	}
+}
+
+func TestOpensAppCreatedDBAndAddsGoColumns(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "watcher.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Minimal app Watcher.sq shape (no Go-only additive columns).
+	if _, err := db.Exec(`
+CREATE TABLE process_samples (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  timestamp INTEGER NOT NULL,
+  pid INTEGER NOT NULL,
+  parent_pid INTEGER NOT NULL,
+  process_type TEXT NOT NULL,
+  command_line TEXT NOT NULL,
+  working_directory TEXT,
+  project_path TEXT,
+  cpu_percent REAL,
+  rss_memory_mb INTEGER NOT NULL,
+  max_heap_mb INTEGER,
+  heap_used_mb INTEGER,
+  heap_committed_mb INTEGER,
+  heap_max_mb INTEGER,
+  heap_sampled_at_ms INTEGER,
+  heap_available INTEGER,
+  status TEXT NOT NULL
+);
+CREATE TABLE builds (
+  build_id TEXT PRIMARY KEY,
+  daemon_pid INTEGER NOT NULL,
+  daemon_identity TEXT,
+  command_line TEXT,
+  working_directory TEXT,
+  project_path TEXT,
+  start_time INTEGER NOT NULL,
+  end_time INTEGER,
+  duration_seconds REAL,
+  peak_memory_mb INTEGER,
+  avg_memory_mb INTEGER,
+  peak_cpu_percent REAL,
+  inferred_source TEXT NOT NULL DEFAULT 'UNKNOWN',
+  final_status TEXT NOT NULL,
+  log_snippet TEXT,
+  agent TEXT,
+  agent_provider TEXT
+);
+`); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	cols, err := s.ProcessSamplesColumns()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, col := range []string{"name", "min_heap_mb", "gc", "start_time_ms", "automated"} {
+		found := false
+		for _, c := range cols {
+			if c == col {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("missing additive column %q in %v", col, cols)
+		}
+	}
+
+	now := time.Now().UnixMilli()
+	if err := s.InsertSnapshot(model.Snapshot{
+		SampledAtMs: now,
+		Processes: []model.Process{{
+			PID: 99, Type: "GRADLE_DAEMON", Name: "java",
+			CommandLine: "GradleDaemon", RSSMemoryMB: 10, SampledAtMs: now, Status: "R",
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	n, err := s.Count()
+	if err != nil || n != 1 {
+		t.Fatalf("count=%d err=%v", n, err)
+	}
+}
+
+func TestDefaultWatcherDBPathEndsWithWatcherDB(t *testing.T) {
+	p := store.DefaultWatcherDBPath()
+	if filepath.Base(p) != "watcher.db" {
+		t.Fatalf("path=%q", p)
+	}
+	if filepath.Base(filepath.Dir(p)) != "Daemonitor" {
+		t.Fatalf("parent=%q", filepath.Dir(p))
+	}
+}

@@ -39,7 +39,9 @@ go build -o bin/daemonitor-corectl ./cmd/daemonitor-corectl
 
 Flags: `-socket`, `-db`, `-interval`, `-retention` (cored); `-since-min`, `-limit` (history).
 
-Defaults live under `$TMPDIR` (`daemonitor-core.sock` / `daemonitor-core.sqlite`).
+Defaults: socket under `$TMPDIR`; DB under `$TMPDIR` (`daemonitor-core.sqlite`) unless you pass
+`-db` (use `store.DefaultWatcherDBPath()` / app `watcher.db` for same-file open — see
+`docs/sqlite-packaging.md`).
 
 ### JVM client (IPC from Java/Kotlin world)
 
@@ -78,7 +80,7 @@ GET /v1/builds?limit=<n>
 - Kotlin CLI `--core-socket PATH` dual-runs: live process table from Go core
 - **Parity slice:** classifier + JVM args + delta CPU + redactor + daemon log tails + U3 events + build aggregation (see `docs/parity.md`)
 - **Dual-run notes:** side-by-side checklist and cutover criteria in `docs/dual-run.md`
-- **Shared SQLite roadmap:** `docs/sqlite-packaging.md` (builds + process_samples DDL aligned)
+- **Shared SQLite roadmap:** `docs/sqlite-packaging.md` (DDL aligned; same-file WAL ready)
 
 ## Dual-run with Kotlin CLI
 
@@ -90,15 +92,15 @@ GET /v1/builds?limit=<n>
 ./gradlew :cli:run --args="--plain --core-socket $TMPDIR/daemonitor-core.sock"
 ```
 
-`--core-socket` is experimental: the CLI keeps its own SQLite store, but the live process
-table and daemon log tails come from `daemonitor-cored` via Unix-socket HTTP. Go now
-parses U3 events and aggregates confirmed builds into the spike DB (`GET /v1/builds`).
-Kotlin `--core-socket` imports confirmed builds from `GET /v1/builds` into the app DB (JVM log
-re-aggregation skipped). Schemas remain separate until a shared SQLite cutover.
+`--core-socket` is experimental: the CLI keeps its own SQLite store by default, but the live
+process table and daemon log tails come from `daemonitor-cored` via Unix-socket HTTP. Go now
+parses U3 events and aggregates confirmed builds (`GET /v1/builds`). Kotlin `--core-socket`
+imports those builds into the app DB (JVM log re-aggregation skipped). Point both at the same
+`watcher.db` (`-db` / `--db`) to share one WAL file — see `docs/sqlite-packaging.md`.
 
 Full comparison procedure and cutover gates: [`docs/dual-run.md`](docs/dual-run.md).
 
 ## Next
 
-1. Shared SQLite — next slice: same-file open + WAL (see `docs/sqlite-packaging.md`)
+1. Shared SQLite — next slice: ship packaging (default paths under app data dirs; see `docs/sqlite-packaging.md`)
 2. Confirm redaction fixtures on both sides; decide live-heap policy for Go cutover

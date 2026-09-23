@@ -3,6 +3,8 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/cdsap/daemonitor/spikes/go-core/internal/model"
@@ -14,18 +16,52 @@ type Store struct {
 	db *sql.DB
 }
 
+// busyTimeoutMs lets a second process (CLI/desktop) wait briefly when the core holds a write lock.
+const busyTimeoutMs = 5000
+
 func Open(path string) (*Store, error) {
-	db, err := sql.Open("sqlite", path)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, fmt.Errorf("create db dir: %w", err)
+	}
+	// _pragma query params apply before first use; WAL allows the app to read while core writes.
+	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(%d)&_pragma=journal_mode(WAL)", path, busyTimeoutMs)
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}
+	// Single writer connection inside this process; other processes open their own handles under WAL.
 	db.SetMaxOpenConns(1)
 	s := &Store{db: db}
+	if err := s.configureSharedAccess(); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	if err := s.migrate(); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
 	return s, nil
+}
+
+func (s *Store) configureSharedAccess() error {
+	if _, err := s.db.Exec(fmt.Sprintf(`PRAGMA busy_timeout = %d`, busyTimeoutMs)); err != nil {
+		return err
+	}
+	var mode string
+	if err := s.db.QueryRow(`PRAGMA journal_mode = WAL`).Scan(&mode); err != nil {
+		return err
+	}
+	if mode != "wal" && mode != "WAL" {
+		return fmt.Errorf("journal_mode=%q want wal", mode)
+	}
+	return nil
+}
+
+// JournalMode returns the current SQLite journal_mode (for tests / diagnostics).
+func (s *Store) JournalMode() (string, error) {
+	var mode string
+	err := s.db.QueryRow(`PRAGMA journal_mode`).Scan(&mode)
+	return mode, err
 }
 
 func (s *Store) Close() error {
@@ -217,6 +253,24 @@ func (s *Store) ensureBuildsAlignedWithApp() error {
 	}
 	if !contains(cols, "command_line") {
 		if _, err := s.db.Exec(`ALTER TABLE builds ADD COLUMN command_line TEXT`); err != nil {
+			return err
+		}
+	}
+	cols, err = s.tableColumns("builds")
+	if err != nil {
+		return err
+	}
+	for _, a := range []struct {
+		col string
+		ddl string
+	}{
+		{"agent", `ALTER TABLE builds ADD COLUMN agent TEXT`},
+		{"agent_provider", `ALTER TABLE builds ADD COLUMN agent_provider TEXT`},
+	} {
+		if contains(cols, a.col) {
+			continue
+		}
+		if _, err := s.db.Exec(a.ddl); err != nil {
 			return err
 		}
 	}

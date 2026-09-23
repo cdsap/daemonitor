@@ -277,6 +277,14 @@ class WatcherDatabaseTest {
     }
 
     @Test
+    fun `open enables wal journal mode`(@TempDirArg tmp: Path) {
+        val path = tmp.resolve("watcher.db")
+        WatcherDatabase.open(path).use { db ->
+            assertEquals("wal", db.journalMode().lowercase())
+        }
+    }
+
+    @Test
     fun `closed database releases its driver`(@TempDirArg tmp: Path) {
         val path = tmp.resolve("watcher.db")
         val db = WatcherDatabase.open(path)

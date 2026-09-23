@@ -119,6 +119,13 @@ class WatcherDatabase private constructor(
 
     internal fun autoVacuumMode(): Long = pragmaLong("auto_vacuum")
 
+    internal fun journalMode(): String =
+        driver.getConnection().createStatement().use { statement ->
+            statement.executeQuery("PRAGMA journal_mode").use { resultSet ->
+                if (resultSet.next()) resultSet.getString(1) else ""
+            }
+        }
+
     /** One-shot snapshot of all retained builds, newest first. */
     fun recentBuilds(): List<Build> =
         db.watcherQueries.recentBuilds().executeAsList().map { it.toDomain() }
@@ -200,14 +207,15 @@ class WatcherDatabase private constructor(
      */
     private fun compactAfterPurge() {
         runCatching {
-            val freelist = pragmaLong("freelist_count")
-            if (freelist <= 0L) return@runCatching
-
-            val autoVacuum = pragmaLong("auto_vacuum")
             driver.getConnection().createStatement().use { statement ->
-                // Flush WAL so VACUUM can take an exclusive lock on Windows (and TempDir can
-                // delete the file after the driver is closed).
+                // Flush WAL first so deleted pages appear on the freelist (WAL otherwise
+                // keeps them invisible to freelist_count / incremental_vacuum).
                 runCatching { statement.execute("PRAGMA wal_checkpoint(TRUNCATE)") }
+
+                val freelist = pragmaLong("freelist_count")
+                if (freelist <= 0L) return@runCatching
+
+                val autoVacuum = pragmaLong("auto_vacuum")
                 if (autoVacuum == AUTO_VACUUM_NONE) {
                     // Setting the mode without VACUUM must not happen alone: the pragma would
                     // report INCREMENTAL while the file still used NONE, and incremental_vacuum
@@ -218,6 +226,7 @@ class WatcherDatabase private constructor(
                 } else {
                     statement.execute("PRAGMA incremental_vacuum($MAX_INCREMENTAL_VACUUM_PAGES)")
                 }
+                runCatching { statement.execute("PRAGMA wal_checkpoint(TRUNCATE)") }
             }
         }
     }
@@ -246,7 +255,21 @@ class WatcherDatabase private constructor(
             } else {
                 migrateInPlace(driver)
             }
+            // WAL + busy_timeout so daemonitor-cored and the app can share one watcher.db.
+            configureSharedAccess(driver)
             return WatcherDatabase(WatcherDb(driver), driver, ioDispatcher)
+        }
+
+        /**
+         * Shared-file mode with Go `daemonitor-cored`: WAL lets readers proceed while the other
+         * process writes; busy_timeout covers short lock waits. Single-writer rule is documented
+         * in spikes/go-core/docs/sqlite-packaging.md (core owns samples/builds inserts).
+         */
+        private fun configureSharedAccess(driver: JdbcSqliteDriver) {
+            driver.getConnection().createStatement().use { statement ->
+                statement.execute("PRAGMA busy_timeout = $BUSY_TIMEOUT_MS")
+                statement.executeQuery("PRAGMA journal_mode = WAL").use { /* consume result */ }
+            }
         }
 
         /**
@@ -269,6 +292,7 @@ class WatcherDatabase private constructor(
         private const val MAX_QUERY_LIMIT = 200L
         private const val AUTO_VACUUM_NONE = 0L
         private const val MAX_INCREMENTAL_VACUUM_PAGES = 100_000
+        private const val BUSY_TIMEOUT_MS = 5_000
 
         private fun Long.coerceQueryLimit(): Long = coerceIn(1, MAX_QUERY_LIMIT)
 
