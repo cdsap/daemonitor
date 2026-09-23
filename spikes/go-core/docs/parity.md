@@ -39,8 +39,8 @@ Go lists every discovered log, but only continuously tails **active** `GRADLE_DA
 ## Still divergent
 
 - Live JVM heap Attach / JMX (Kotlin only)
-- Shared SQLite: `builds` columns now match the app; `process_samples` and same-file open
-  remain — see [`sqlite-packaging.md`](sqlite-packaging.md). `--core-socket` still copies Go
+- Shared SQLite: `builds` + `process_samples` shared columns match the app; same-file open
+  remains — see [`sqlite-packaging.md`](sqlite-packaging.md). `--core-socket` still copies Go
   builds into the app DB each poll until same-file cutover.
 
 ## Dual-run check

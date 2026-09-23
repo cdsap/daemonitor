@@ -185,3 +185,105 @@ VALUES ('legacy-1', 3, '/old', '/old', 100, 200, 0.1, 'IDE', 'SUCCESS', 'ok');
 		t.Fatalf("times start=%d end=%v", rows[0].StartTimeMs, rows[0].EndTimeMs)
 	}
 }
+
+func TestProcessSamplesIncludesAppWatcherColumns(t *testing.T) {
+	dir := t.TempDir()
+	s, err := store.Open(filepath.Join(dir, "samples.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	cols, err := s.ProcessSamplesColumns()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, banned := range []string{"timestamp_ms"} {
+		for _, c := range cols {
+			if c == banned {
+				t.Fatalf("legacy column %q present: %v", banned, cols)
+			}
+		}
+	}
+	required := []string{
+		"timestamp", "pid", "parent_pid", "process_type", "command_line",
+		"working_directory", "project_path", "cpu_percent", "rss_memory_mb", "max_heap_mb",
+		"heap_used_mb", "heap_committed_mb", "heap_max_mb", "heap_sampled_at_ms", "heap_available",
+		"status",
+	}
+	have := map[string]bool{}
+	for _, c := range cols {
+		have[c] = true
+	}
+	for _, col := range required {
+		if !have[col] {
+			t.Fatalf("missing app column %q in %v", col, cols)
+		}
+	}
+	// Go-only additive columns retained for History IPC.
+	for _, col := range []string{"name", "min_heap_mb", "gc", "start_time_ms", "automated"} {
+		if !have[col] {
+			t.Fatalf("missing Go additive column %q in %v", col, cols)
+		}
+	}
+}
+
+func TestMigratesLegacyProcessSamplesTimestamp(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "legacy-samples.sqlite")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+CREATE TABLE process_samples (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  timestamp_ms INTEGER NOT NULL,
+  pid INTEGER NOT NULL,
+  parent_pid INTEGER NOT NULL DEFAULT 0,
+  process_type TEXT NOT NULL,
+  name TEXT NOT NULL,
+  command_line TEXT NOT NULL,
+  working_directory TEXT,
+  project_path TEXT,
+  rss_memory_mb INTEGER NOT NULL,
+  cpu_percent REAL,
+  max_heap_mb INTEGER,
+  min_heap_mb INTEGER,
+  gc TEXT,
+  start_time_ms INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'RUNNING',
+  automated INTEGER NOT NULL DEFAULT 0
+);
+INSERT INTO process_samples(
+  timestamp_ms, pid, parent_pid, process_type, name, command_line,
+  rss_memory_mb, start_time_ms, status, automated
+) VALUES (500, 11, 1, 'GRADLE_DAEMON', 'java', 'GradleDaemon', 64, 1, 'R', 0);
+`); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	cols, err := s.ProcessSamplesColumns()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range cols {
+		if c == "timestamp_ms" {
+			t.Fatalf("timestamp_ms still present: %v", cols)
+		}
+	}
+	hist, err := s.History(0, 10)
+	if err != nil || len(hist) != 1 {
+		t.Fatalf("hist=%d err=%v", len(hist), err)
+	}
+	if hist[0].SampledAtMs != 500 || hist[0].PID != 11 {
+		t.Fatalf("row=%+v", hist[0])
+	}
+}
