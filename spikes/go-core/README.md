@@ -100,4 +100,4 @@ Full comparison procedure and cutover gates: [`docs/dual-run.md`](docs/dual-run.
 ## Next
 
 1. Shared SQLite schema / packaging beyond the spike
-2. Explicit `--core-socket` failure UX when the socket is missing or `daemonitor-cored` dies
+2. Confirm redaction fixtures on both sides; decide live-heap policy for Go cutover

@@ -5,14 +5,13 @@ import io.github.cdsap.daemonitor.application.DaemonLogLine
 import io.github.cdsap.daemonitor.application.DaemonLogSource
 import io.github.cdsap.daemonitor.collect.DaemonLogParser
 import java.nio.file.Path
-import kotlin.io.path.exists
 
 /**
  * Experimental [DaemonLogSource] that reads `/v1/daemon-logs` from `daemonitor-cored`
  * over a Unix-domain socket (Go core IPC spike).
  *
- * Build-event correlation stays on the JVM: each poll diffs the Go redacted tail window
- * and feeds new lines through [DaemonLogParser].
+ * Build-event correlation stays on the JVM when not using [GoCoreBuildSource]: each poll diffs
+ * the Go redacted tail window and feeds new lines through [DaemonLogParser].
  *
  * [PollMonitoring] only invokes [readNewLines] for live / previously known Gradle daemon
  * PIDs, so large `~/.gradle/daemon` discovers do not HTTP-tail every historical log (#221).
@@ -24,9 +23,7 @@ class GoCoreDaemonLogSource(
     private val lastTails = mutableMapOf<Long, List<String>>()
 
     override fun discover(): List<DaemonLog> {
-        require(socketPath.exists()) {
-            "Go core socket not found: $socketPath (is daemonitor-cored running?)"
-        }
+        requireGoCoreSocket(socketPath)
         val body = fetch(socketPath, "/v1/daemon-logs")
         return GoCoreSnapshotParser.parseDaemonLogs(body)
     }

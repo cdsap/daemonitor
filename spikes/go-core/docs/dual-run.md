@@ -108,7 +108,8 @@ Promote a surface out of “experimental dual-run” only when all apply:
 - [x] Same process/log honesty repeated on Linux (2026-09-22 Docker aarch64)
 - [x] `--core-socket` CLI poll stays healthy on large `~/.gradle/daemon` trees (active-PID filter, #221)
 - [ ] Redaction fixtures still pass on both sides (`RedactorTest` / `redactor_test.go`)
-- [ ] Failure mode is clear when the socket is missing or `daemonitor-cored` dies
+- [x] Failure mode is clear when the socket is missing or `daemonitor-cored` dies
+      (`GoCoreUnavailableException` — missing path vs unreachable/stale sock; CLI prints the message and keeps the last good frame)
 - [ ] No reliance on Go spike SQLite for shipping retention/UI (or schema is deliberately
       shared and migrated)
 - [ ] Product accepts missing live heap **or** heap has a non-JVM story
@@ -117,8 +118,9 @@ Until then, keep `--core-socket` off by default.
 
 ## Suggested next engineering slices
 
-1. Shared SQLite / packaging beyond the spike (process + log + build dual-run honest on macOS **and** Linux)
-2. Explicit missing-socket / cored-death failure UX for `--core-socket`
+1. Shared SQLite / packaging beyond the spike (align Go DDL with app `WatcherDatabase`, then same-file open / packaging)
+2. Confirm redaction fixtures on both sides and record the cutover check
+3. Product decision on missing live heap for Go cutover
 
 `--core-socket` imports confirmed builds from Go `GET /v1/builds` (skips JVM log re-aggregation)
 and only `readNewLines` for live or previously known `GRADLE_DAEMON` PIDs (#221).

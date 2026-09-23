@@ -7,12 +7,12 @@ import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.domain.model.Source
+import java.nio.file.Path
 import java.net.StandardProtocolFamily
 import java.net.UnixDomainSocketAddress
 import java.nio.ByteBuffer
 import java.nio.channels.SocketChannel
 import java.nio.charset.StandardCharsets
-import java.nio.file.Path
 import kotlin.io.path.exists
 
 /**
@@ -24,9 +24,7 @@ class GoCoreProcessSource(
     private val fetch: (Path, String) -> String = ::unixHttpGet,
 ) : ProcessSource {
     override fun currentProcesses(): List<GradleProcess> {
-        require(socketPath.exists()) {
-            "Go core socket not found: $socketPath (is daemonitor-cored running?)"
-        }
+        requireGoCoreSocket(socketPath)
         val body = fetch(socketPath, "/v1/processes")
         return GoCoreSnapshotParser.parseProcesses(body)
     }
@@ -284,28 +282,48 @@ internal object GoCoreSnapshotParser {
     }
 }
 
+internal fun requireGoCoreSocket(socketPath: Path) {
+    if (!socketPath.exists()) {
+        throw GoCoreUnavailableException(
+            "Go core socket not found: $socketPath (is daemonitor-cored running?)",
+        )
+    }
+}
+
 internal fun unixHttpGet(socketPath: Path, path: String): String {
-    val address = UnixDomainSocketAddress.of(socketPath)
-    SocketChannel.open(StandardProtocolFamily.UNIX).use { channel ->
-        channel.connect(address)
-        val request = "GET $path HTTP/1.0\r\nHost: localhost\r\nAccept: application/json\r\n\r\n"
-        channel.write(ByteBuffer.wrap(request.toByteArray(StandardCharsets.US_ASCII)))
-        val buffer = ByteBuffer.allocate(64 * 1024)
-        val raw = StringBuilder()
-        while (channel.read(buffer) > 0) {
-            buffer.flip()
-            val bytes = ByteArray(buffer.remaining())
-            buffer.get(bytes)
-            raw.append(String(bytes, StandardCharsets.UTF_8))
-            buffer.clear()
+    requireGoCoreSocket(socketPath)
+    return try {
+        val address = UnixDomainSocketAddress.of(socketPath)
+        SocketChannel.open(StandardProtocolFamily.UNIX).use { channel ->
+            channel.connect(address)
+            val request = "GET $path HTTP/1.0\r\nHost: localhost\r\nAccept: application/json\r\n\r\n"
+            channel.write(ByteBuffer.wrap(request.toByteArray(StandardCharsets.US_ASCII)))
+            val buffer = ByteBuffer.allocate(64 * 1024)
+            val raw = StringBuilder()
+            while (channel.read(buffer) > 0) {
+                buffer.flip()
+                val bytes = ByteArray(buffer.remaining())
+                buffer.get(bytes)
+                raw.append(String(bytes, StandardCharsets.UTF_8))
+                buffer.clear()
+            }
+            val text = raw.toString()
+            val split = text.indexOf("\r\n\r\n")
+            require(split >= 0) { "Go core returned a malformed HTTP response" }
+            val statusLine = text.lineSequence().firstOrNull().orEmpty()
+            require(statusLine.contains(" 200 ") || statusLine.endsWith(" 200")) {
+                "Go core request failed: $statusLine"
+            }
+            text.substring(split + 4)
         }
-        val text = raw.toString()
-        val split = text.indexOf("\r\n\r\n")
-        require(split >= 0) { "Go core returned a malformed HTTP response" }
-        val statusLine = text.lineSequence().firstOrNull().orEmpty()
-        require(statusLine.contains(" 200 ") || statusLine.endsWith(" 200")) {
-            "Go core request failed: $statusLine"
-        }
-        return text.substring(split + 4)
+    } catch (e: GoCoreUnavailableException) {
+        throw e
+    } catch (e: IllegalArgumentException) {
+        throw e
+    } catch (e: Exception) {
+        throw GoCoreUnavailableException(
+            "Go core unreachable at $socketPath (is daemonitor-cored running, or is the socket stale?): ${e.message}",
+            e,
+        )
     }
 }
