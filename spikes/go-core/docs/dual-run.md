@@ -113,7 +113,8 @@ Promote a surface out of “experimental dual-run” only when all apply:
 - [x] Process table checklist honest on at least one live macOS session (2026-09-22)
 - [x] Same process/log honesty repeated on Linux (2026-09-22 Docker aarch64)
 - [x] `--core-socket` CLI poll stays healthy on large `~/.gradle/daemon` trees (active-PID filter, #221)
-- [ ] Redaction fixtures still pass on both sides (`RedactorTest` / `redactor_test.go`)
+- [x] Redaction fixtures still pass on both sides (`RedactorTest` / `redactor_test.go`) —
+      reconfirmed 2026-09-23 (identical fixture set; both suites green)
 - [x] Failure mode is clear when the socket is missing or `daemonitor-cored` dies
       (`GoCoreUnavailableException` — missing path vs unreachable/stale sock; CLI prints the message and keeps the last good frame)
 - [x] No reliance on Go spike SQLite for shipping retention/UI (or schema is deliberately
@@ -124,12 +125,17 @@ Until then, keep `--core-socket` off by default.
 
 ## Suggested next engineering slices
 
-1. Shared SQLite / packaging — see [`sqlite-packaging.md`](sqlite-packaging.md)
-   (CLI + desktop/headless + release/Homebrew host-arch cored done; next: cross-compile)
-2. Confirm redaction fixtures on both sides and record the cutover check
-3. Product decision on missing live heap for Go cutover
+1. Product decision on missing live heap for Go cutover (last open cutover gate)
+2. Optional: multi-arch `daemonitor-cored` cross-compile matrix
+3. Optional: wire `DualRunHonestyTest` / `dual-run-linux.sh` into CI (Linux-only)
 
-`--core-socket` imports confirmed builds from Go `GET /v1/builds` (skips JVM log re-aggregation)
-and only `readNewLines` for live or previously known `GRADLE_DAEMON` PIDs (#221).
+### 2026-09-23 redaction reconfirm
 
-Linux honesty rerun: `./spikes/go-core/scripts/dual-run-linux.sh` (or `--docker` from macOS).
+```bash
+./gradlew :core:test --tests 'io.github.cdsap.daemonitor.domain.RedactorTest'
+cd spikes/go-core && go test ./internal/poll/ -run Redact -count=1
+```
+
+Go `redactor_test.go` mirrors the seven Kotlin cases (command-line `-P`/`-D`, long-option,
+URL credentials, safe tokens, tab-separated argv, key-substring non-over-redact, log line).
+Both passed; no fixture gaps.
