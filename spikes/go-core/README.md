@@ -4,9 +4,9 @@ Native Daemonitor core that owns process polling + sample persistence and expose
 Unix-domain-socket HTTP API. The Kotlin CLI, desktop app, and `--headless` mode can
 attach with `--core-socket`.
 
-Still under `spikes/go-core` while release/Homebrew and desktop cored bundling catch up —
-CLI `installDist` / `distZip` already embed a host-arch `daemonitor-cored` when Go is
-available.
+Still under `spikes/go-core` while the cross-compile matrix catches up — CLI
+`installDist` / `distZip`, Compose distributables, and release Homebrew zips already
+embed a host-arch `daemonitor-cored` when Go is available.
 
 ## Why
 
@@ -20,7 +20,7 @@ Today CLI + desktop share a Kotlin/JVM core (JDK required, heavier RSS). The pro
 | In | Out |
 |----|-----|
 | Poll Gradle-related processes (`gopsutil`) | Live heap Attach |
-| Classifier + JVM args + Redactor parity | Homebrew / desktop bundle (next) |
+| Classifier + JVM args + Redactor parity | Cross-compile matrix for multi-arch zips |
 | SQLite sample insert + retention purge | Production auth |
 | `/v1/health`, `/v1/processes`, `/v1/processes/history` | Replacing the shipping JVM app |
 | Go client + zero-dep JVM Unix HTTP client | |
@@ -118,6 +118,6 @@ Full comparison procedure and cutover gates: [`docs/dual-run.md`](docs/dual-run.
 
 ## Next
 
-1. Release/Homebrew + desktop bundling of `daemonitor-cored`
+1. Cross-compile matrix for multi-arch `daemonitor-cored` release assets
 2. Confirm redaction fixtures on both sides; decide live-heap policy for Go cutover
 3. Optional: wire `DualRunHonestyTest` / `dual-run-linux.sh` into CI (Linux-only)

@@ -48,7 +48,8 @@ brew install daemonitor-cli
 daemonitor-cli
 ```
 
-Needs JDK 21 (`openjdk@21` is installed as a Homebrew dependency). You can also download
+Needs JDK 21 (`openjdk@21` is installed as a Homebrew dependency). Release zips (and Homebrew)
+also ship `daemonitor-cored` for experimental `--core-socket` dual-run. You can also download
 `daemonitor-cli-*.zip` from [Releases](https://github.com/cdsap/daemonitor/releases/latest).
 
 Full flag reference: [CLI options on the website](https://cdsap.github.io/daemonitor/cli.html).

@@ -27,54 +27,17 @@ tasks.test {
     useJUnitPlatform()
 }
 
-val goAvailable: Provider<Boolean> = providers.exec {
-    commandLine("go", "version")
-    isIgnoreExitValue = true
-}.result.map { it.exitValue == 0 }
+@Suppress("UNCHECKED_CAST")
+val stageDaemonitorCoredForCli =
+    rootProject.tasks.named("stageDaemonitorCoredForCli")
+val coredCliDistDir =
+    rootProject.layout.buildDirectory.dir("cored-cli-dist")
 
-val coredBinaryName =
-    if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
-        "daemonitor-cored.exe"
-    } else {
-        "daemonitor-cored"
-    }
-
-val coredOutput = layout.buildDirectory.file("cored/$coredBinaryName")
-val coredDistBin = layout.buildDirectory.dir("cored-dist/bin")
-
-val buildDaemonitorCored = tasks.register<Exec>("buildDaemonitorCored") {
-    group = "distribution"
-    description = "Build daemonitor-cored (Go) for the host OS when the go toolchain is available."
-    onlyIf { goAvailable.getOrElse(false) }
-    workingDir = rootProject.file("spikes/go-core")
-    outputs.file(coredOutput)
-    inputs.files(
-        fileTree(rootProject.file("spikes/go-core")) {
-            include("**/*.go", "go.mod", "go.sum")
-            exclude("bin/**", "**/.smoke-tmp/**")
-        },
-    )
-    commandLine(
-        "go", "build",
-        "-o", coredOutput.get().asFile.absolutePath,
-        "./cmd/daemonitor-cored",
-    )
-}
-
-/** Stage cored into a layout the application distribution CopySpec can consume. */
-val stageDaemonitorCored = tasks.register<Sync>("stageDaemonitorCored") {
-    dependsOn(buildDaemonitorCored)
-    onlyIf { coredOutput.get().asFile.exists() }
-    from(coredOutput)
-    into(coredDistBin)
-    rename { coredBinaryName }
-}
-
-// Include staged cored in installDist / distZip / distTar (not only installDist doLast).
+// Include staged cored in installDist / distZip / distTar.
 distributions {
     main {
         contents {
-            from(layout.buildDirectory.dir("cored-dist")) {
+            from(coredCliDistDir) {
                 // bin/daemonitor-cored — empty when Go was unavailable / stage skipped
             }
         }
@@ -83,6 +46,6 @@ distributions {
 
 listOf("installDist", "distZip", "distTar").forEach { taskName ->
     tasks.named(taskName) {
-        dependsOn(stageDaemonitorCored)
+        dependsOn(stageDaemonitorCoredForCli)
     }
 }

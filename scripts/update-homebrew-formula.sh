@@ -58,6 +58,30 @@ text, sha_n = re.subn(
 )
 if url_n != 1 or sha_n != 1:
     raise SystemExit(f"Failed to rewrite formula (url={url_n}, sha256={sha_n})")
+
+# Replace install + test in one pass so re-runs stay idempotent and brew links cored.
+methods = '''  def install
+    libexec.install Dir["*"]
+    (bin/"daemonitor-cli").write_env_script libexec/"bin/daemonitor-cli",
+                                            Language::Java.overridable_java_home_env("21")
+    bin.install_symlink libexec/"bin/daemonitor-cored"
+  end
+
+  test do
+    assert_match "Usage", shell_output("#{bin}/daemonitor-cli --help")
+    assert_predicate bin/"daemonitor-cored", :exist?
+  end
+'''
+text, methods_n = re.subn(
+    r"  def install\n.*?  test do\n.*?  end\n",
+    methods,
+    text,
+    count=1,
+    flags=re.S,
+)
+if methods_n != 1:
+    raise SystemExit(f"Failed to rewrite install/test (n={methods_n})")
+
 pathlib.Path(dst).write_text(text)
 PY
 
@@ -67,3 +91,4 @@ trap - EXIT
 echo "Updated $formula"
 echo "  url: $url"
 echo "  sha256: $sha256"
+echo "  install: links daemonitor-cored onto PATH"
