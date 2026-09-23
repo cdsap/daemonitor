@@ -40,6 +40,7 @@ val coredBinaryName =
     }
 
 val coredOutput = layout.buildDirectory.file("cored/$coredBinaryName")
+val coredDistBin = layout.buildDirectory.dir("cored-dist/bin")
 
 val buildDaemonitorCored = tasks.register<Exec>("buildDaemonitorCored") {
     group = "distribution"
@@ -60,23 +61,28 @@ val buildDaemonitorCored = tasks.register<Exec>("buildDaemonitorCored") {
     )
 }
 
-// Place cored beside the CLI launcher when Go built it (host-arch only).
-tasks.named<Sync>("installDist") {
+/** Stage cored into a layout the application distribution CopySpec can consume. */
+val stageDaemonitorCored = tasks.register<Sync>("stageDaemonitorCored") {
     dependsOn(buildDaemonitorCored)
-    doLast {
-        val built = coredOutput.get().asFile
-        if (!built.exists()) {
-            logger.lifecycle("daemonitor-cored not built (go missing?); CLI install omits it")
-            return@doLast
-        }
-        copy {
-            from(built)
-            into(destinationDir.resolve("bin"))
-            rename { coredBinaryName }
+    onlyIf { coredOutput.get().asFile.exists() }
+    from(coredOutput)
+    into(coredDistBin)
+    rename { coredBinaryName }
+}
+
+// Include staged cored in installDist / distZip / distTar (not only installDist doLast).
+distributions {
+    main {
+        contents {
+            from(layout.buildDirectory.dir("cored-dist")) {
+                // bin/daemonitor-cored — empty when Go was unavailable / stage skipped
+            }
         }
     }
 }
 
-tasks.named("distZip") {
-    dependsOn("installDist")
+listOf("installDist", "distZip", "distTar").forEach { taskName ->
+    tasks.named(taskName) {
+        dependsOn(stageDaemonitorCored)
+    }
 }

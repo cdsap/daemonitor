@@ -63,12 +63,14 @@ java -cp clients/jvm UnixHttpClient "$SOCK" /v1/processes
 
 ```bash
 ./scripts/smoke.sh
+./scripts/packaging-shared-db-smoke.sh   # bundled CLI + shared DB write-skip (from repo root)
 ```
 
 GitHub Actions runs `go test` (including Unix-socket IPC integration) and builds binaries on
 **ubuntu-latest**, **windows-latest**, and **macos-latest**. Full shell smoke (Go + JVM clients)
 runs on Linux and macOS; Windows relies on the Go IPC integration test (Git Bash path mapping
-breaks the shell/JDK smoke there).
+breaks the shell/JDK smoke there). The **Package standalone CLI** job also runs the packaging
+shared-DB E2E and asserts `daemonitor-cored` is inside the CLI zip.
 
 ## API sketch
 
@@ -112,3 +114,4 @@ Full comparison procedure and cutover gates: [`docs/dual-run.md`](docs/dual-run.
 
 1. Release/Homebrew + desktop bundling of `daemonitor-cored`
 2. Confirm redaction fixtures on both sides; decide live-heap policy for Go cutover
+3. Optional: wire `DualRunHonestyTest` / `dual-run-linux.sh` into CI (Linux-only)

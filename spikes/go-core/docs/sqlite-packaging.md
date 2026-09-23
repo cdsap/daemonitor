@@ -58,5 +58,8 @@ cd spikes/go-core
 go test ./internal/store/ -count=1
 ./gradlew :core:test --tests 'io.github.cdsap.daemonitor.application.PollMonitoringTest'
 ./gradlew :cli:installDist
-ls build/install/daemonitor-cli/bin/daemonitor-cored
+ls cli/build/install/daemonitor-cli/bin/daemonitor-cored
+
+# Packaging + shared-DB E2E (also runs on CI "Package standalone CLI")
+./spikes/go-core/scripts/packaging-shared-db-smoke.sh
 ```
