@@ -6,6 +6,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 GO_CORE="$(cd "$SCRIPT_DIR/.." && pwd)"
 OUT="${1:-$GO_CORE/bin/cross}"
+# Resolve relative paths against the caller's cwd before we cd into the module.
+if [[ "$OUT" != /* ]]; then
+  OUT="$(pwd)/$OUT"
+fi
 mkdir -p "$OUT"
 
 # goos/goarch/filename
