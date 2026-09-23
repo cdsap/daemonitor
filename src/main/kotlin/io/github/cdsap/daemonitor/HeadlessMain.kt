@@ -27,10 +27,11 @@ internal object HeadlessLauncher {
             output.println(DesktopLaunchOptions.USAGE)
             return 0
         }
-        options.goCoreWiring().banner?.let(error::println)
+        val resolved = options.resolveCore(error)
+        resolved.wiring.banner?.let(error::println)
 
         HeadlessMacMode.configure()
-        return options.openContainer().use { container ->
+        return options.openContainer(resolved).use { container ->
             runHeadless(container, output, error, input)
         }
     }

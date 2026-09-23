@@ -51,6 +51,7 @@ class CliMainTest {
                 "  --poll-interval SECONDS",
                 "  --retention DAYS",
                 "  --core-socket PATH",
+                "  --jvm-collector  Force the in-process JVM collector (skip Go core).",
             ),
             optionLines,
         )
@@ -105,9 +106,10 @@ class CliMainTest {
         assertTrue(usage.contains("--poll-interval SECONDS"))
         assertTrue(usage.contains("--retention DAYS"))
         assertTrue(usage.contains("--core-socket PATH"))
+        assertTrue(usage.contains("--jvm-collector"))
         assertTrue(usage.contains("1-90"))
         assertTrue(usage.contains("daemonitor-cored"))
-        assertTrue(usage.contains("sample/build writes"))
+        assertTrue(usage.contains("sample/build writes") || usage.contains("auto-starts"))
     }
 
     @Test

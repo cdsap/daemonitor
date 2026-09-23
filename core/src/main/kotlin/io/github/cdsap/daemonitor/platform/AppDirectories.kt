@@ -16,6 +16,9 @@ data class AppDirectories(
     /** Staging directory for downloaded / extracted update artifacts. */
     val updatesDirectory: Path get() = appSupportDir.resolve("updates")
 
+    /** Unix-domain socket for `daemonitor-cored` (matches Go `DefaultSocketPath`). */
+    val coreSocketPath: Path get() = appSupportDir.resolve("daemonitor-core.sock")
+
     companion object {
         /** Process-wide directories discovered from the current environment. */
         val system: AppDirectories by lazy { discover() }

@@ -21,6 +21,22 @@ class DesktopLaunchOptionsTest {
     }
 
     @Test
+    fun `parses jvm collector opt-out`() {
+        val options = DesktopLaunchOptions.parse(arrayOf("--jvm-collector"))
+        assertNotNull(options)
+        assertTrue(options.jvmCollector)
+        assertTrue(options.goCorePreference() is io.github.cdsap.daemonitor.coreipc.GoCorePreference.JvmCollector)
+    }
+
+    @Test
+    fun `help mentions jvm collector and default go core`() {
+        val options = DesktopLaunchOptions.parse(arrayOf("--help"))
+        assertNotNull(options)
+        assertTrue(DesktopLaunchOptions.USAGE.contains("--jvm-collector"))
+        assertTrue(DesktopLaunchOptions.USAGE.contains("daemonitor-cored"))
+    }
+
+    @Test
     fun `help does not require other flags`() {
         val options = DesktopLaunchOptions.parse(arrayOf("--help"))
         assertNotNull(options)
