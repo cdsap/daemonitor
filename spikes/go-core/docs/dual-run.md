@@ -125,8 +125,7 @@ Until then, keep `--core-socket` off by default.
 ## Suggested next engineering slices
 
 1. Shared SQLite / packaging — see [`sqlite-packaging.md`](sqlite-packaging.md)
-   (CLI host bundling + app-dir defaults + desktop/headless `--core-socket` done;
-   next: release/Homebrew + desktop cored bundle)
+   (CLI + desktop/headless + release/Homebrew host-arch cored done; next: cross-compile)
 2. Confirm redaction fixtures on both sides and record the cutover check
 3. Product decision on missing live heap for Go cutover
 

@@ -76,6 +76,87 @@ tasks.register<JavaExec>("runHeadless") {
     classpath = sourceSets.main.get().runtimeClasspath
 }
 
+// --- daemonitor-cored (Go) host build; consumed by CLI dist + Compose app resources ---
+
+val goAvailable: Provider<Boolean> = providers.exec {
+    commandLine("go", "version")
+    isIgnoreExitValue = true
+}.result.map { it.exitValue == 0 }
+
+val coredBinaryName =
+    if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
+        "daemonitor-cored.exe"
+    } else {
+        "daemonitor-cored"
+    }
+
+val coredOutput = layout.buildDirectory.file("cored/$coredBinaryName")
+
+val buildDaemonitorCored = tasks.register<Exec>("buildDaemonitorCored") {
+    group = "distribution"
+    description = "Build daemonitor-cored (Go) for the host OS when the go toolchain is available."
+    onlyIf { goAvailable.getOrElse(false) }
+    workingDir = file("spikes/go-core")
+    outputs.file(coredOutput)
+    inputs.files(
+        fileTree(file("spikes/go-core")) {
+            include("**/*.go", "go.mod", "go.sum")
+            exclude("bin/**", "**/.smoke-tmp/**")
+        },
+    )
+    commandLine(
+        "go", "build",
+        "-o", coredOutput.get().asFile.absolutePath,
+        "./cmd/daemonitor-cored",
+    )
+}
+
+/** Stage for CLI application plugin (installDist / distZip) — `bin/daemonitor-cored`. */
+val coredCliDistDir = layout.buildDirectory.dir("cored-cli-dist")
+val stageDaemonitorCoredForCli = tasks.register<Sync>("stageDaemonitorCoredForCli") {
+    group = "distribution"
+    dependsOn(buildDaemonitorCored)
+    onlyIf { coredOutput.get().asFile.exists() }
+    from(coredOutput)
+    into(coredCliDistDir.map { it.dir("bin") })
+    rename { coredBinaryName }
+    doLast {
+        val staged = coredCliDistDir.get().asFile.resolve("bin/$coredBinaryName")
+        if (staged.isFile && !coredBinaryName.endsWith(".exe")) {
+            staged.setExecutable(true, false)
+        }
+    }
+}
+
+/**
+ * Stage for Compose Desktop appResources (`common/` → all packages).
+ * Runtime path: `compose.application.resources.dir` / daemonitor-cored
+ * (typically `<app>/app/resources/daemonitor-cored`).
+ */
+val coredAppResourcesRoot = layout.buildDirectory.dir("cored-app-resources")
+val stageDaemonitorCoredAppResources = tasks.register<Sync>("stageDaemonitorCoredAppResources") {
+    group = "distribution"
+    dependsOn(buildDaemonitorCored)
+    onlyIf { coredOutput.get().asFile.exists() }
+    from(coredOutput)
+    into(coredAppResourcesRoot.map { it.dir("common") })
+    rename { coredBinaryName }
+    doLast {
+        val staged = coredAppResourcesRoot.get().asFile.resolve("common/$coredBinaryName")
+        if (staged.isFile && !coredBinaryName.endsWith(".exe")) {
+            staged.setExecutable(true, false)
+        }
+    }
+}
+
+fun markPackagedCoredExecutable() {
+    val appRoot = layout.buildDirectory.dir("compose/binaries/main/app").get().asFile
+    if (!appRoot.isDirectory) return
+    appRoot.walkTopDown()
+        .filter { it.isFile && (it.name == "daemonitor-cored" || it.name == "daemonitor-cored.exe") }
+        .forEach { it.setExecutable(true) }
+}
+
 compose.desktop {
     application {
         mainClass = "io.github.cdsap.daemonitor.Daemonitor"
@@ -98,6 +179,7 @@ compose.desktop {
                 "java.management",
                 "jdk.management.agent",
             )
+            appResourcesRootDir.set(coredAppResourcesRoot)
 
             // Per-platform installer/app icons (jpackage requires the native format per OS).
             macOS {
@@ -114,4 +196,17 @@ compose.desktop {
             linux { iconFile.set(project.file("icons/daemonitor.png")) }
         }
     }
+}
+
+listOf("prepareAppResources", "createDistributable", "packageDeb", "packageMsi", "packageDmg", "packagePkg").forEach { taskName ->
+    tasks.matching { it.name == taskName }.configureEach {
+        dependsOn(stageDaemonitorCoredAppResources)
+    }
+}
+
+tasks.matching { it.name == "createDistributable" }.configureEach {
+    doLast { markPackagedCoredExecutable() }
+}
+tasks.matching { it.name.startsWith("package") }.configureEach {
+    doLast { markPackagedCoredExecutable() }
 }

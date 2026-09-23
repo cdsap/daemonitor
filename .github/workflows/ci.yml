@@ -104,6 +104,12 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: spikes/go-core/go.mod
+          cache-dependency-path: spikes/go-core/go.sum
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
@@ -125,6 +131,25 @@ jobs:
           output=$("${{ matrix.launcher }}" --headless --help)
           printf '%s\n' "$output"
           [[ "$output" == *"Usage: daemonitor --headless"* ]]
+
+      - name: Verify bundled daemonitor-cored in app resources
+        run: |
+          set -euo pipefail
+          cored=$(find build/compose/binaries/main/app -type f \( -name 'daemonitor-cored' -o -name 'daemonitor-cored.exe' \) | head -1)
+          if [[ -z "$cored" ]]; then
+            echo "Packaged app missing daemonitor-cored under app/" >&2
+            find build/compose/binaries/main/app -type f | head -80 >&2 || true
+            exit 1
+          fi
+          case "$cored" in
+            */resources/daemonitor-cored|*/resources/daemonitor-cored.exe) ;;
+            *)
+              echo "Bundled cored not under resources/: $cored" >&2
+              exit 1
+              ;;
+          esac
+          echo "Bundled cored: $cored"
+          echo "- Desktop bundle includes daemonitor-cored" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Read package version
         id: package-version
