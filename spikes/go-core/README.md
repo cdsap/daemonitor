@@ -102,4 +102,3 @@ Full comparison procedure and cutover gates: [`docs/dual-run.md`](docs/dual-run.
 
 1. Shared SQLite — next slice: same-file open + WAL (see `docs/sqlite-packaging.md`)
 2. Confirm redaction fixtures on both sides; decide live-heap policy for Go cutover
-3. Explicit `--core-socket` failure UX (if not yet on `main`)

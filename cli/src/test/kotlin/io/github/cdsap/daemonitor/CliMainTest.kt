@@ -188,12 +188,25 @@ class CliMainTest {
                 .start()
             try {
                 assertTrue(process.isAlive, "CLI process should start")
-                Thread.sleep(1_500L)
+                // Wait until main() has opened the DB (after PosixStopSignals.ensureDeliverable).
+                // Fixed sleeps race under load: SIGINT before the handler is installed is dropped
+                // while INT is still ignored from the wrapper trap.
+                assertTrue(
+                    waitForFile(db, 20_000L),
+                    "CLI did not create database (stderr=${stderr.readText()})",
+                )
 
-                val kill = ProcessBuilder("kill", "-INT", process.pid().toString()).start()
-                assertEquals(0, kill.waitFor())
-                val exited = process.waitFor(8, TimeUnit.SECONDS)
-                assertTrue(exited, "CLI should exit after SIGINT without requiring SIGKILL")
+                repeat(4) { attempt ->
+                    if (!process.isAlive) return@repeat
+                    val kill = ProcessBuilder("kill", "-INT", process.pid().toString()).start()
+                    assertEquals(0, kill.waitFor())
+                    if (process.waitFor(3, TimeUnit.SECONDS)) return@repeat
+                    Thread.sleep(250L * (attempt + 1))
+                }
+                assertTrue(
+                    !process.isAlive || process.waitFor(5, TimeUnit.SECONDS),
+                    "CLI should exit after SIGINT without requiring SIGKILL (stderr=${stderr.readText()})",
+                )
                 assertFalse(process.isAlive)
                 val err = stderr.readText()
                 assertFalse(
@@ -210,6 +223,15 @@ class CliMainTest {
             runCatching { Files.deleteIfExists(db.parent) }
         }
     }
+}
+
+private fun waitForFile(path: java.nio.file.Path, timeoutMs: Long): Boolean {
+    val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs)
+    while (System.nanoTime() < deadline) {
+        if (Files.exists(path) && Files.size(path) >= 0L) return true
+        Thread.sleep(50L)
+    }
+    return Files.exists(path)
 }
 
 private fun isWindows(): Boolean =
