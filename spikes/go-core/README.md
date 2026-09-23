@@ -118,6 +118,7 @@ Full comparison procedure and cutover gates: [`docs/dual-run.md`](docs/dual-run.
 
 ## Next
 
-1. Product decision on missing live heap for Go cutover (last open cutover gate)
+1. Optional: promote `--core-socket` / default-to-cored (cutover gates green)
 2. Cross-compile matrix for multi-arch `daemonitor-cored` release assets
 3. Optional: wire `DualRunHonestyTest` / `dual-run-linux.sh` into CI (Linux-only)
+4. Optional: non-JVM live-heap design if product wants heap on the Go path later

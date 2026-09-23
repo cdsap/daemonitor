@@ -119,15 +119,31 @@ Promote a surface out of “experimental dual-run” only when all apply:
       (`GoCoreUnavailableException` — missing path vs unreachable/stale sock; CLI prints the message and keeps the last good frame)
 - [x] No reliance on Go spike SQLite for shipping retention/UI (or schema is deliberately
       shared and migrated) — app-dir defaults + shared-DB write skip (#230/#packaging)
-- [ ] Product accepts missing live heap **or** heap has a non-JVM story
+- [x] Product accepts missing live heap **or** heap has a non-JVM story —
+      **Accepted 2026-09-23:** Go `/v1/processes` keeps `liveHeap = null`; UI/CLI show `n/a` /
+      unavailable (same as Attach failure). `--core-socket` banner states the gap. A future
+      non-JVM heap story is out of cutover scope.
 
-Until then, keep `--core-socket` off by default.
+Until then, keep `--core-socket` off by default until a deliberate product flip to prefer Go core
+(cutover criteria above are otherwise green for process/log/build dual-run).
 
 ## Suggested next engineering slices
 
-1. Product decision on missing live heap for Go cutover (last open cutover gate)
+1. Optional: promote `--core-socket` / default-to-cored product flip (now that cutover gates are green)
 2. Optional: multi-arch `daemonitor-cored` cross-compile matrix
 3. Optional: wire `DualRunHonestyTest` / `dual-run-linux.sh` into CI (Linux-only)
+4. Optional (post-cutover): non-JVM live-heap design if product wants heap on the Go path
+
+### 2026-09-23 live-heap cutover decision
+
+**Decision:** Accept missing live heap on the Go core path for dual-run cutover.
+
+**Why:** Attach/JMX is JVM-local and does not belong in `daemonitor-cored`. Shipping Go dual-run
+without heap is already honest in the UI (`n/a` / unavailable) and matches the dual-run checklist
+row “Divergent by design”. Building a native heap probe would be a separate product/epic.
+
+**User-visible:** Go wiring banner includes `live heap Attach/JMX unavailable on Go path`.
+RSS and configured `-Xmx` remain.
 
 ### 2026-09-23 redaction reconfirm
 

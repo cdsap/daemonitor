@@ -18,6 +18,9 @@ import kotlin.io.path.exists
 /**
  * Experimental [ProcessSource] that reads `/v1/processes` from `daemonitor-cored`
  * over a Unix-domain socket (Go core IPC spike).
+ *
+ * Live JVM heap is intentionally always `null` here — Attach/JMX stays on the in-process
+ * Kotlin collector. Product cutover accepts that gap (see `spikes/go-core/docs/dual-run.md`).
  */
 class GoCoreProcessSource(
     private val socketPath: Path,
