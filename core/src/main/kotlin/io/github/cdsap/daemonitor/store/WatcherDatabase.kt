@@ -50,7 +50,17 @@ class WatcherDatabase private constructor(
     ProcessSampleRepository,
     RetentionRepository {
 
-    override fun close() = driver.close()
+    override fun close() {
+        runCatching {
+            driver.getConnection().createStatement().use { statement ->
+                // Drop WAL/shm before releasing the handle so Windows can delete the DB
+                // directory (JUnit @TempDir, uninstall, relocating app data).
+                runCatching { statement.execute("PRAGMA wal_checkpoint(TRUNCATE)") }
+                runCatching { statement.executeQuery("PRAGMA journal_mode=DELETE").use { } }
+            }
+        }
+        driver.close()
+    }
 
     override fun save(sample: GradleProcess, timestampMs: Long) = insertSample(sample, timestampMs)
 

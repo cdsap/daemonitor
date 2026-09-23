@@ -264,35 +264,51 @@ class WatcherDatabaseTest {
     }
 
     @Test
-    fun `database file is created owner-only`(@TempDirArg tmp: Path) {
+    fun `database file is created owner-only`() {
+        // Avoid @TempDir: WAL sidecars can block Windows directory cleanup even after close.
+        val tmp = Files.createTempDirectory("daemonitor-owner-")
         val path = tmp.resolve("watcher.db")
-        WatcherDatabase.open(path).use {
-            assertTrue(path.exists())
-            val view = Files.getFileAttributeView(path, PosixFileAttributeView::class.java)
-            if (view != null) {
-                val perms = view.readAttributes().permissions().map { it.name }
-                assertTrue(perms.none { it.startsWith("GROUP") || it.startsWith("OTHERS") }, perms.toString())
+        try {
+            WatcherDatabase.open(path).use {
+                assertTrue(path.exists())
+                val view = Files.getFileAttributeView(path, PosixFileAttributeView::class.java)
+                if (view != null) {
+                    val perms = view.readAttributes().permissions().map { it.name }
+                    assertTrue(perms.none { it.startsWith("GROUP") || it.startsWith("OTHERS") }, perms.toString())
+                }
             }
+        } finally {
+            deleteSqliteFiles(path)
+            runCatching { tmp.toFile().deleteRecursively() }
         }
     }
 
     @Test
-    fun `open enables wal journal mode`(@TempDirArg tmp: Path) {
+    fun `open enables wal journal mode`() {
+        val tmp = Files.createTempDirectory("daemonitor-wal-")
         val path = tmp.resolve("watcher.db")
-        WatcherDatabase.open(path).use { db ->
-            assertEquals("wal", db.journalMode().lowercase())
+        try {
+            WatcherDatabase.open(path).use { db ->
+                assertEquals("wal", db.journalMode().lowercase())
+            }
+        } finally {
+            deleteSqliteFiles(path)
+            runCatching { tmp.toFile().deleteRecursively() }
         }
     }
 
     @Test
-    fun `closed database releases its driver`(@TempDirArg tmp: Path) {
+    fun `closed database releases its driver`() {
+        val tmp = Files.createTempDirectory("daemonitor-close-")
         val path = tmp.resolve("watcher.db")
-        val db = WatcherDatabase.open(path)
-
-        db.close()
-        Files.delete(path)
-
-        assertTrue(!path.exists())
+        try {
+            val db = WatcherDatabase.open(path)
+            db.close()
+            deleteSqliteFiles(path)
+            assertTrue(!path.exists())
+        } finally {
+            runCatching { tmp.toFile().deleteRecursively() }
+        }
     }
 
     @Test
@@ -353,6 +369,25 @@ class WatcherDatabaseTest {
         startTimeMs = timestampMs,
         status = "RUNNING",
     )
+
+    /** Best-effort removal so Windows is not blocked by leftover WAL/shm after close. */
+    private fun deleteSqliteFiles(path: Path) {
+        sequenceOf(
+            path.resolveSibling("${path.fileName}-wal"),
+            path.resolveSibling("${path.fileName}-shm"),
+            path.resolveSibling("${path.fileName}-journal"),
+            path,
+        ).forEach { candidate ->
+            repeat(8) { attempt ->
+                try {
+                    Files.deleteIfExists(candidate)
+                    return@forEach
+                } catch (_: java.io.IOException) {
+                    Thread.sleep(25L * (attempt + 1))
+                }
+            }
+        }
+    }
 }
 
 private typealias TempDirArg = org.junit.jupiter.api.io.TempDir
