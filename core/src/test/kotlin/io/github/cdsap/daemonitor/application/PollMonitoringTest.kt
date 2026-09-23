@@ -243,6 +243,28 @@ class PollMonitoringTest {
         assertEquals(listOf("go-build-1"), builds.saved.map { it.buildId })
     }
 
+    @Test
+    fun `shared core db skips sample persistence and remote build import`() {
+        val samples = RecordingSampleWriter()
+        val builds = RecordingBuildWriter()
+        val monitoring = PollMonitoring(
+            processSource = FakeProcessSource(listOf(gradleDaemon(pid = 7))),
+            logSource = FakeDaemonLogSource(emptyList()),
+            builds = builds,
+            samples = samples,
+            aggregator = BuildAggregator(),
+            buildSource = null,
+            persistSamples = false,
+            clock = { 5_000 },
+        )
+
+        val result = monitoring.pollOnce()
+        assertEquals(1, result.processes.size)
+        assertTrue(samples.saved.isEmpty())
+        assertTrue(builds.saved.isEmpty())
+        assertFalse(result.buildsChanged)
+    }
+
     private fun gradleDaemon(pid: Long) = GradleProcess(
         pid = pid,
         parentPid = 1,

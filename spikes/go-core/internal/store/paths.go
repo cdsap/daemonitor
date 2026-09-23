@@ -8,14 +8,22 @@ import (
 
 // DefaultWatcherDBPath returns the app WatcherDatabase path for this OS, matching Kotlin
 // AppDirectories.discover().databasePath (…/Daemonitor/watcher.db).
-//
-// Use with daemonitor-cored -db so the core and CLI/desktop open the same file under WAL.
 func DefaultWatcherDBPath() string {
+	return filepath.Join(DefaultAppSupportDir(), "watcher.db")
+}
+
+// DefaultSocketPath is the Unix-domain socket beside the app DB under the data directory.
+func DefaultSocketPath() string {
+	return filepath.Join(DefaultAppSupportDir(), "daemonitor-core.sock")
+}
+
+// DefaultAppSupportDir matches Kotlin AppDirectories.appSupportDir.
+func DefaultAppSupportDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
 		home = os.TempDir()
 	}
-	return filepath.Join(appSupportDir(home), "watcher.db")
+	return appSupportDir(home)
 }
 
 func appSupportDir(home string) string {

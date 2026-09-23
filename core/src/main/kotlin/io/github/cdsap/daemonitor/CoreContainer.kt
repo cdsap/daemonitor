@@ -21,6 +21,8 @@ class CoreContainer(
     processSource: ProcessSource? = null,
     logSource: DaemonLogSource? = null,
     buildSource: BuildSource? = null,
+    /** When true, daemonitor-cored owns sample/build inserts in [databasePath] (same-file open). */
+    persistSamples: Boolean = true,
 ) : AutoCloseable {
     val processCollector = ProcessCollector()
     val daemonLogWatcher = DaemonLogWatcher()
@@ -40,6 +42,7 @@ class CoreContainer(
         builds = database,
         samples = database,
         buildSource = buildSource,
+        persistSamples = persistSamples,
         retentionDays = { settingsStore.load().retentionDays },
         clock = clock,
     )

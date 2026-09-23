@@ -18,7 +18,7 @@ import (
 	"github.com/cdsap/daemonitor/spikes/go-core/internal/store"
 )
 
-const Version = "0.0.7-spike"
+const Version = "0.1.0"
 
 // Server exposes a tiny HTTP API over a Unix domain socket.
 type Server struct {

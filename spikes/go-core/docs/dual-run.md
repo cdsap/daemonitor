@@ -13,7 +13,7 @@ surface.
 | Live process table | `ProcessCollector` (OSHI) | `GoCoreProcessSource` → `GET /v1/processes` |
 | Daemon log discover / tail | `DaemonLogWatcher` | `GoCoreDaemonLogSource` → `/v1/daemon-logs` |
 | Build-event parse / correlation | JVM (`DaemonLogParser` + `BuildAggregator`) | Go aggregates into spike DB; `--core-socket` imports via `GET /v1/builds` (JVM re-agg skipped) |
-| Sample / build SQLite | App `WatcherDatabase` | same app DB when `-db`/`--db` agree (else Go spike DB is separate) |
+| Sample / build SQLite | App `WatcherDatabase` | shared `watcher.db` by default (cored + CLI app-dir paths); HTTP build copy only when DBs differ |
 | Live heap Attach / JMX | JVM only | always `null` from Go |
 
 `--core-socket` is experimental. The CLI stderr banner says so when the flag is set.
@@ -89,10 +89,10 @@ values are bit-identical.
 ## Known honest gaps (do not block dual-run demos)
 
 1. **No live heap from Go** — Attach/JMX stays Kotlin-only until a future design.
-2. **Two SQLite worlds (default)** — `daemonitor-cored` defaults to a spike DB under `$TMPDIR`;
-   `--core-socket` still copies Go builds into the app DB. Opt into one file with matching
-   `-db` / `--db` (WAL + busy_timeout; see [`sqlite-packaging.md`](sqlite-packaging.md)).
-   Avoid dual sample writers on the shared file.
+2. **Shared SQLite by default** — `daemonitor-cored` and the CLI default to the same app-dir
+   `watcher.db` + socket. Matching `db_path` skips JVM sample writes and HTTP build import.
+   Pass distinct `-db`/`--db` for an isolated core DB (HTTP copy remains). See
+   [`sqlite-packaging.md`](sqlite-packaging.md).
 3. **Go log poll scope** — continuous tail is limited to active `GRADLE_DAEMON` PIDs so large
    `~/.gradle/daemon` trees stay cheap; inactive PIDs seed on `TailFor` / first CLI read.
 4. **Alternate Gradle user homes** — processes whose logs live outside `~/.gradle/daemon` are
@@ -111,8 +111,8 @@ Promote a surface out of “experimental dual-run” only when all apply:
 - [ ] Redaction fixtures still pass on both sides (`RedactorTest` / `redactor_test.go`)
 - [x] Failure mode is clear when the socket is missing or `daemonitor-cored` dies
       (`GoCoreUnavailableException` — missing path vs unreachable/stale sock; CLI prints the message and keeps the last good frame)
-- [ ] No reliance on Go spike SQLite for shipping retention/UI (or schema is deliberately
-      shared and migrated)
+- [x] No reliance on Go spike SQLite for shipping retention/UI (or schema is deliberately
+      shared and migrated) — app-dir defaults + shared-DB write skip (#230/#packaging)
 - [ ] Product accepts missing live heap **or** heap has a non-JVM story
 
 Until then, keep `--core-socket` off by default.
@@ -120,7 +120,7 @@ Until then, keep `--core-socket` off by default.
 ## Suggested next engineering slices
 
 1. Shared SQLite / packaging — see [`sqlite-packaging.md`](sqlite-packaging.md)
-   (DDL + same-file WAL ready; next: ship packaging defaults)
+   (CLI host bundling + app-dir defaults done; next: release/Homebrew + desktop)
 2. Confirm redaction fixtures on both sides and record the cutover check
 3. Product decision on missing live heap for Go cutover
 
