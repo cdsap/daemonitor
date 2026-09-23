@@ -50,17 +50,7 @@ class WatcherDatabase private constructor(
     ProcessSampleRepository,
     RetentionRepository {
 
-    override fun close() {
-        runCatching {
-            driver.getConnection().createStatement().use { statement ->
-                // Drop WAL/shm before releasing the handle so Windows can delete the DB
-                // directory (JUnit @TempDir, uninstall, relocating app data).
-                runCatching { statement.execute("PRAGMA wal_checkpoint(TRUNCATE)") }
-                runCatching { statement.executeQuery("PRAGMA journal_mode=DELETE").use { } }
-            }
-        }
-        driver.close()
-    }
+    override fun close() = driver.close()
 
     override fun save(sample: GradleProcess, timestampMs: Long) = insertSample(sample, timestampMs)
 
@@ -129,12 +119,7 @@ class WatcherDatabase private constructor(
 
     internal fun autoVacuumMode(): Long = pragmaLong("auto_vacuum")
 
-    internal fun journalMode(): String =
-        driver.getConnection().createStatement().use { statement ->
-            statement.executeQuery("PRAGMA journal_mode").use { resultSet ->
-                if (resultSet.next()) resultSet.getString(1) else ""
-            }
-        }
+    internal fun busyTimeoutMs(): Long = pragmaLong("busy_timeout")
 
     /** One-shot snapshot of all retained builds, newest first. */
     fun recentBuilds(): List<Build> =
@@ -217,15 +202,13 @@ class WatcherDatabase private constructor(
      */
     private fun compactAfterPurge() {
         runCatching {
+            val freelist = pragmaLong("freelist_count")
+            if (freelist <= 0L) return@runCatching
+
+            val autoVacuum = pragmaLong("auto_vacuum")
             driver.getConnection().createStatement().use { statement ->
-                // Flush WAL first so deleted pages appear on the freelist (WAL otherwise
-                // keeps them invisible to freelist_count / incremental_vacuum).
+                // Flush WAL (if any) so VACUUM can take an exclusive lock on Windows.
                 runCatching { statement.execute("PRAGMA wal_checkpoint(TRUNCATE)") }
-
-                val freelist = pragmaLong("freelist_count")
-                if (freelist <= 0L) return@runCatching
-
-                val autoVacuum = pragmaLong("auto_vacuum")
                 if (autoVacuum == AUTO_VACUUM_NONE) {
                     // Setting the mode without VACUUM must not happen alone: the pragma would
                     // report INCREMENTAL while the file still used NONE, and incremental_vacuum
@@ -236,7 +219,6 @@ class WatcherDatabase private constructor(
                 } else {
                     statement.execute("PRAGMA incremental_vacuum($MAX_INCREMENTAL_VACUUM_PAGES)")
                 }
-                runCatching { statement.execute("PRAGMA wal_checkpoint(TRUNCATE)") }
             }
         }
     }
@@ -265,20 +247,21 @@ class WatcherDatabase private constructor(
             } else {
                 migrateInPlace(driver)
             }
-            // WAL + busy_timeout so daemonitor-cored and the app can share one watcher.db.
-            configureSharedAccess(driver)
+            // busy_timeout so a shared-file open with daemonitor-cored can wait briefly on locks.
+            // Do not force journal_mode=WAL here: creating -wal/-shm breaks Windows JUnit @TempDir
+            // cleanup, and a DB already switched to WAL by cored stays in WAL on reopen.
+            configureBusyTimeout(driver)
             return WatcherDatabase(WatcherDb(driver), driver, ioDispatcher)
         }
 
         /**
-         * Shared-file mode with Go `daemonitor-cored`: WAL lets readers proceed while the other
-         * process writes; busy_timeout covers short lock waits. Single-writer rule is documented
-         * in spikes/go-core/docs/sqlite-packaging.md (core owns samples/builds inserts).
+         * Shared-file mode with Go `daemonitor-cored`: cored enables WAL on the file; the app
+         * uses busy_timeout for short lock waits. Single-writer rules are in
+         * spikes/go-core/docs/sqlite-packaging.md.
          */
-        private fun configureSharedAccess(driver: JdbcSqliteDriver) {
+        private fun configureBusyTimeout(driver: JdbcSqliteDriver) {
             driver.getConnection().createStatement().use { statement ->
                 statement.execute("PRAGMA busy_timeout = $BUSY_TIMEOUT_MS")
-                statement.executeQuery("PRAGMA journal_mode = WAL").use { /* consume result */ }
             }
         }
 
