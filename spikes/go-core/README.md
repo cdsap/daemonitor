@@ -1,10 +1,12 @@
 # Go core + IPC clients
 
 Native Daemonitor core that owns process polling + sample persistence and exposes a
-Unix-domain-socket HTTP API. The Kotlin CLI can attach with `--core-socket`.
+Unix-domain-socket HTTP API. The Kotlin CLI, desktop app, and `--headless` mode can
+attach with `--core-socket`.
 
-Still under `spikes/go-core` while release/Homebrew and desktop bundling catch up — CLI
-`installDist` / `distZip` already embed a host-arch `daemonitor-cored` when Go is available.
+Still under `spikes/go-core` while release/Homebrew and desktop cored bundling catch up —
+CLI `installDist` / `distZip` already embed a host-arch `daemonitor-cored` when Go is
+available.
 
 ## Why
 
@@ -22,7 +24,7 @@ Today CLI + desktop share a Kotlin/JVM core (JDK required, heavier RSS). The pro
 | SQLite sample insert + retention purge | Production auth |
 | `/v1/health`, `/v1/processes`, `/v1/processes/history` | Replacing the shipping JVM app |
 | Go client + zero-dep JVM Unix HTTP client | |
-| Kotlin CLI `--core-socket` + shared `watcher.db` | |
+| Kotlin CLI / desktop / headless `--core-socket` + shared `watcher.db` | |
 
 ## Run
 
@@ -88,12 +90,12 @@ GET /v1/builds?limit=<n>
 - Poll + classify works on macOS against live Gradle/Kotlin daemons
 - SQLite retention path in place (`modernc.org/sqlite`, no CGO)
 - JVM client proves desktop/CLI language can speak the same socket without FFI
-- Kotlin CLI `--core-socket PATH` dual-runs: live process table from Go core
+- Kotlin CLI / desktop / `--headless` `--core-socket PATH` dual-runs: live process table from Go core
 - **Parity slice:** classifier + JVM args + delta CPU + redactor + daemon log tails + U3 events + build aggregation (see `docs/parity.md`)
 - **Dual-run notes:** side-by-side checklist and cutover criteria in `docs/dual-run.md`
 - **Shared SQLite / packaging:** `docs/sqlite-packaging.md` (DDL + same-file + CLI host bundling)
 
-## Dual-run with Kotlin CLI
+## Dual-run with Kotlin clients
 
 ```bash
 # terminal 1 — Go core (app-dir defaults)
@@ -102,9 +104,13 @@ GET /v1/builds?limit=<n>
 # terminal 2 — Kotlin CLI; shared watcher.db → core owns writes
 SOCK="$HOME/Library/Application Support/Daemonitor/daemonitor-core.sock"
 ./gradlew :cli:run --args="--plain --core-socket $SOCK"
+
+# or desktop / headless
+./gradlew run --args="--core-socket $SOCK"
+./gradlew run --args="--headless --core-socket $SOCK"
 ```
 
-When health `db_path` matches the CLI `--db` (default app `watcher.db`), the CLI skips sample
+When health `db_path` matches `--db` (default app `watcher.db`), the client skips sample
 inserts and HTTP build import. Separate DBs still HTTP-copy builds. Details:
 `docs/sqlite-packaging.md`.
 
