@@ -15,9 +15,11 @@ import (
 
 func main() {
 	defaultSock := filepath.Join(os.TempDir(), "daemonitor-core.sock")
+	// Default stays under $TMPDIR for isolated spike runs. Same-file dual-run: pass
+	// -db matching the app WatcherDatabase path (see store.DefaultWatcherDBPath).
 	defaultDB := filepath.Join(os.TempDir(), "daemonitor-core.sqlite")
 	socket := flag.String("socket", defaultSock, "Unix domain socket path")
-	dbPath := flag.String("db", defaultDB, "SQLite database path")
+	dbPath := flag.String("db", defaultDB, "SQLite database path (use app watcher.db for same-file open)")
 	interval := flag.Duration("interval", 2*time.Second, "process poll interval")
 	retention := flag.Duration("retention", 24*time.Hour, "sample retention window")
 	gradleHome := flag.String("gradle-user-home", "", "Gradle user home (default: ~/.gradle)")

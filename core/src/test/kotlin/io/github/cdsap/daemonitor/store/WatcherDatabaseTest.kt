@@ -277,6 +277,14 @@ class WatcherDatabaseTest {
     }
 
     @Test
+    fun `open sets busy timeout for shared-file locks`(@TempDirArg tmp: Path) {
+        val path = tmp.resolve("watcher.db")
+        WatcherDatabase.open(path).use { db ->
+            assertEquals(5_000L, db.busyTimeoutMs())
+        }
+    }
+
+    @Test
     fun `closed database releases its driver`(@TempDirArg tmp: Path) {
         val path = tmp.resolve("watcher.db")
         val db = WatcherDatabase.open(path)
