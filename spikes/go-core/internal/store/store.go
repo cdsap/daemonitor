@@ -36,6 +36,21 @@ func (s *Store) Close() error {
 }
 
 func (s *Store) migrate() error {
+	if err := s.ensureProcessSamples(); err != nil {
+		return err
+	}
+	if err := s.ensureBuildsAlignedWithApp(); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion))
+	return err
+}
+
+// schemaVersion tracks spike SQLite migrations toward the app WatcherDatabase schema.
+// v2: builds table column names match core Watcher.sq (start_time/end_time/command_line).
+const schemaVersion = 2
+
+func (s *Store) ensureProcessSamples() error {
 	_, err := s.db.Exec(`
 CREATE TABLE IF NOT EXISTS process_samples (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -58,27 +73,159 @@ CREATE TABLE IF NOT EXISTS process_samples (
 );
 CREATE INDEX IF NOT EXISTS process_samples_ts ON process_samples(timestamp_ms);
 CREATE INDEX IF NOT EXISTS process_samples_pid_ts ON process_samples(pid, timestamp_ms);
+`)
+	return err
+}
+
+func (s *Store) ensureBuildsAlignedWithApp() error {
+	exists, err := s.tableExists("builds")
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return s.createBuildsAppAligned()
+	}
+	cols, err := s.tableColumns("builds")
+	if err != nil {
+		return err
+	}
+	if contains(cols, "start_time_ms") {
+		return s.migrateBuildsLegacyToAppAligned()
+	}
+	if !contains(cols, "start_time") {
+		return s.createBuildsAppAligned()
+	}
+	if !contains(cols, "command_line") {
+		if _, err := s.db.Exec(`ALTER TABLE builds ADD COLUMN command_line TEXT`); err != nil {
+			return err
+		}
+	}
+	_, err = s.db.Exec(`CREATE INDEX IF NOT EXISTS builds_project ON builds(project_path)`)
+	return err
+}
+
+func (s *Store) createBuildsAppAligned() error {
+	_, err := s.db.Exec(`
 CREATE TABLE IF NOT EXISTS builds (
   build_id TEXT PRIMARY KEY,
   daemon_pid INTEGER NOT NULL,
   daemon_identity TEXT,
+  command_line TEXT,
   working_directory TEXT,
   project_path TEXT,
-  start_time_ms INTEGER NOT NULL,
-  end_time_ms INTEGER,
+  start_time INTEGER NOT NULL,
+  end_time INTEGER,
   duration_seconds REAL,
   peak_memory_mb INTEGER,
   avg_memory_mb INTEGER,
   peak_cpu_percent REAL,
-  inferred_source TEXT NOT NULL,
+  inferred_source TEXT NOT NULL DEFAULT 'UNKNOWN',
   final_status TEXT NOT NULL,
   log_snippet TEXT,
   agent TEXT,
   agent_provider TEXT
 );
-CREATE INDEX IF NOT EXISTS builds_start ON builds(start_time_ms);
+CREATE INDEX IF NOT EXISTS builds_start ON builds(start_time);
+CREATE INDEX IF NOT EXISTS builds_project ON builds(project_path);
 `)
 	return err
+}
+
+func (s *Store) migrateBuildsLegacyToAppAligned() error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.Exec(`
+CREATE TABLE builds_v2 (
+  build_id TEXT PRIMARY KEY,
+  daemon_pid INTEGER NOT NULL,
+  daemon_identity TEXT,
+  command_line TEXT,
+  working_directory TEXT,
+  project_path TEXT,
+  start_time INTEGER NOT NULL,
+  end_time INTEGER,
+  duration_seconds REAL,
+  peak_memory_mb INTEGER,
+  avg_memory_mb INTEGER,
+  peak_cpu_percent REAL,
+  inferred_source TEXT NOT NULL DEFAULT 'UNKNOWN',
+  final_status TEXT NOT NULL,
+  log_snippet TEXT,
+  agent TEXT,
+  agent_provider TEXT
+)`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`
+INSERT INTO builds_v2(
+  build_id, daemon_pid, daemon_identity, command_line, working_directory, project_path,
+  start_time, end_time, duration_seconds, peak_memory_mb, avg_memory_mb, peak_cpu_percent,
+  inferred_source, final_status, log_snippet, agent, agent_provider
+)
+SELECT
+  build_id, daemon_pid, daemon_identity, NULL, working_directory, project_path,
+  start_time_ms, end_time_ms, duration_seconds, peak_memory_mb, avg_memory_mb, peak_cpu_percent,
+  inferred_source, final_status, log_snippet, agent, agent_provider
+FROM builds`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DROP TABLE builds`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`ALTER TABLE builds_v2 RENAME TO builds`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`CREATE INDEX IF NOT EXISTS builds_start ON builds(start_time)`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`CREATE INDEX IF NOT EXISTS builds_project ON builds(project_path)`); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *Store) tableExists(name string) (bool, error) {
+	var found string
+	err := s.db.QueryRow(
+		`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, name,
+	).Scan(&found)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+func (s *Store) tableColumns(table string) ([]string, error) {
+	rows, err := s.db.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]string, 0)
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return nil, err
+		}
+		out = append(out, name)
+	}
+	return out, rows.Err()
+}
+
+func contains(xs []string, want string) bool {
+	for _, x := range xs {
+		if x == want {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Store) InsertSnapshot(snap model.Snapshot) error {

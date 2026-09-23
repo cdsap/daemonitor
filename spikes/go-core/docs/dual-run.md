@@ -89,9 +89,9 @@ values are bit-identical.
 ## Known honest gaps (do not block dual-run demos)
 
 1. **No live heap from Go** — Attach/JMX stays Kotlin-only until a future design.
-2. **Two SQLite worlds** — `daemonitor-cored` keeps a spike DB for `/v1/processes/history` and
-   `/v1/builds`; `--core-socket` copies Go builds into the app `WatcherDatabase` each poll (not a
-   shared schema yet).
+2. **Two SQLite worlds** — `daemonitor-cored` keeps a spike DB; `--core-socket` still copies Go
+   builds into the app DB. The Go `builds` table columns now match app `Watcher.sq` (see
+   [`sqlite-packaging.md`](sqlite-packaging.md)); `process_samples` + same-file open remain.
 3. **Go log poll scope** — continuous tail is limited to active `GRADLE_DAEMON` PIDs so large
    `~/.gradle/daemon` trees stay cheap; inactive PIDs seed on `TailFor` / first CLI read.
 4. **Alternate Gradle user homes** — processes whose logs live outside `~/.gradle/daemon` are
@@ -117,8 +117,10 @@ Until then, keep `--core-socket` off by default.
 
 ## Suggested next engineering slices
 
-1. Shared SQLite / packaging beyond the spike (process + log + build dual-run honest on macOS **and** Linux)
-2. Explicit missing-socket / cored-death failure UX for `--core-socket`
+1. Shared SQLite / packaging — see [`sqlite-packaging.md`](sqlite-packaging.md)
+   (builds DDL aligned; next: `process_samples` alignment → same-file open → ship packaging)
+2. Confirm redaction fixtures on both sides and record the cutover check
+3. Product decision on missing live heap for Go cutover
 
 `--core-socket` imports confirmed builds from Go `GET /v1/builds` (skips JVM log re-aggregation)
 and only `readNewLines` for live or previously known `GRADLE_DAEMON` PIDs (#221).

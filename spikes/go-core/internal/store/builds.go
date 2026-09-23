@@ -6,16 +6,21 @@ import (
 	"github.com/cdsap/daemonitor/spikes/go-core/internal/builds"
 )
 
-// InsertBuild upserts a confirmed build record.
+// InsertBuild upserts a confirmed build record into the app-aligned builds table.
 func (s *Store) InsertBuild(b builds.Build) error {
+	var commandLine any
+	if b.CommandLine != nil {
+		commandLine = nullStr(*b.CommandLine)
+	}
 	_, err := s.db.Exec(`
 INSERT INTO builds(
-  build_id, daemon_pid, daemon_identity, working_directory, project_path,
-  start_time_ms, end_time_ms, duration_seconds, peak_memory_mb, avg_memory_mb,
+  build_id, daemon_pid, daemon_identity, command_line, working_directory, project_path,
+  start_time, end_time, duration_seconds, peak_memory_mb, avg_memory_mb,
   peak_cpu_percent, inferred_source, final_status, log_snippet, agent, agent_provider
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(build_id) DO UPDATE SET
-  end_time_ms=excluded.end_time_ms,
+  command_line=excluded.command_line,
+  end_time=excluded.end_time,
   duration_seconds=excluded.duration_seconds,
   peak_memory_mb=excluded.peak_memory_mb,
   avg_memory_mb=excluded.avg_memory_mb,
@@ -25,7 +30,8 @@ ON CONFLICT(build_id) DO UPDATE SET
   agent=excluded.agent,
   agent_provider=excluded.agent_provider
 `,
-		b.BuildID, b.DaemonPID, nullStr(b.DaemonIdentity), nullStr(b.WorkingDirectory), nullStr(b.ProjectPath),
+		b.BuildID, b.DaemonPID, nullStr(b.DaemonIdentity), commandLine,
+		nullStr(b.WorkingDirectory), nullStr(b.ProjectPath),
 		b.StartTimeMs, b.EndTimeMs, b.DurationSeconds, b.PeakMemoryMB, b.AvgMemoryMB,
 		b.PeakCPUPercent, string(b.InferredSource), string(b.FinalStatus), nullStr(b.LogSnippet),
 		nullStr(b.Agent), nullStr(b.AgentProvider),
@@ -39,11 +45,11 @@ func (s *Store) ListBuilds(limit int) ([]builds.Build, error) {
 		limit = 100
 	}
 	rows, err := s.db.Query(`
-SELECT build_id, daemon_pid, daemon_identity, working_directory, project_path,
-       start_time_ms, end_time_ms, duration_seconds, peak_memory_mb, avg_memory_mb,
+SELECT build_id, daemon_pid, daemon_identity, command_line, working_directory, project_path,
+       start_time, end_time, duration_seconds, peak_memory_mb, avg_memory_mb,
        peak_cpu_percent, inferred_source, final_status, log_snippet, agent, agent_provider
 FROM builds
-ORDER BY start_time_ms DESC
+ORDER BY start_time DESC
 LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
@@ -53,12 +59,12 @@ LIMIT ?`, limit)
 	out := make([]builds.Build, 0)
 	for rows.Next() {
 		var b builds.Build
-		var identity, workDir, project, snippet, agent, provider sql.NullString
+		var identity, workDir, project, snippet, agent, provider, cmd sql.NullString
 		var endMs sql.NullInt64
 		var dur, peakCPU sql.NullFloat64
 		var peakMem, avgMem sql.NullInt64
 		if err := rows.Scan(
-			&b.BuildID, &b.DaemonPID, &identity, &workDir, &project,
+			&b.BuildID, &b.DaemonPID, &identity, &cmd, &workDir, &project,
 			&b.StartTimeMs, &endMs, &dur, &peakMem, &avgMem,
 			&peakCPU, &b.InferredSource, &b.FinalStatus, &snippet, &agent, &provider,
 		); err != nil {
@@ -70,6 +76,10 @@ LIMIT ?`, limit)
 		b.LogSnippet = snippet.String
 		b.Agent = agent.String
 		b.AgentProvider = provider.String
+		if cmd.Valid {
+			v := cmd.String
+			b.CommandLine = &v
+		}
 		if endMs.Valid {
 			v := endMs.Int64
 			b.EndTimeMs = &v
@@ -106,6 +116,11 @@ func (s *Store) SamplesAsBuildSamples(pid, startMs, endMs int64) []builds.Sample
 		out = append(out, builds.Sample{RSSMemoryMB: r.RSS, CPUPercent: r.CPU})
 	}
 	return out
+}
+
+// BuildsColumns returns the builds table column names (for schema parity tests).
+func (s *Store) BuildsColumns() ([]string, error) {
+	return s.tableColumns("builds")
 }
 
 func nullStr(s string) any {

@@ -78,6 +78,7 @@ GET /v1/builds?limit=<n>
 - Kotlin CLI `--core-socket PATH` dual-runs: live process table from Go core
 - **Parity slice:** classifier + JVM args + delta CPU + redactor + daemon log tails + U3 events + build aggregation (see `docs/parity.md`)
 - **Dual-run notes:** side-by-side checklist and cutover criteria in `docs/dual-run.md`
+- **Shared SQLite roadmap:** `docs/sqlite-packaging.md` (builds DDL aligned with app)
 
 ## Dual-run with Kotlin CLI
 
@@ -99,5 +100,6 @@ Full comparison procedure and cutover gates: [`docs/dual-run.md`](docs/dual-run.
 
 ## Next
 
-1. Shared SQLite schema / packaging beyond the spike
-2. Explicit `--core-socket` failure UX when the socket is missing or `daemonitor-cored` dies
+1. Shared SQLite — next slice: align `process_samples` (see `docs/sqlite-packaging.md`)
+2. Confirm redaction fixtures on both sides; decide live-heap policy for Go cutover
+3. Explicit `--core-socket` failure UX (if not yet on `main`)
