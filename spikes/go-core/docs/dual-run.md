@@ -139,3 +139,8 @@ cd spikes/go-core && go test ./internal/poll/ -run Redact -count=1
 Go `redactor_test.go` mirrors the seven Kotlin cases (command-line `-P`/`-D`, long-option,
 URL credentials, safe tokens, tab-separated argv, key-substring non-over-redact, log line).
 Both passed; no fixture gaps.
+
+`--core-socket` imports confirmed builds from Go `GET /v1/builds` (skips JVM log re-aggregation)
+and only `readNewLines` for live or previously known `GRADLE_DAEMON` PIDs (#221).
+
+Linux honesty rerun: `./spikes/go-core/scripts/dual-run-linux.sh` (or `--docker` from macOS).
