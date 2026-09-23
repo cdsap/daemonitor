@@ -31,9 +31,40 @@ jobs:
             --notes "Daemonitor ${TAG_NAME}"
 
   build-cli-asset:
-    name: Build standalone CLI archive
+    name: Build CLI archive (${{ matrix.platform }}-${{ matrix.arch }})
     needs: create-release
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+            goos: linux
+            goarch: amd64
+            extra_arch: arm64
+            extra_goarch: arm64
+            extra_label: linux-arm64
+          - os: macos-latest
+            platform: macos
+            arch: arm64
+            goos: darwin
+            goarch: arm64
+            extra_arch: x64
+            extra_goarch: amd64
+            extra_label: macos-x64
+          - os: windows-latest
+            platform: windows
+            arch: x64
+            goos: windows
+            goarch: amd64
+            extra_arch: ""
+            extra_goarch: ""
+            extra_label: ""
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
 
@@ -55,7 +86,8 @@ jobs:
       - name: Build and test CLI
         run: ./gradlew :cli:test :cli:distZip --no-daemon --stacktrace
 
-      - name: Stage CLI release archive
+      - name: Stage CLI release archive(s)
+        id: stage
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -64,24 +96,95 @@ jobs:
             echo "Expected one CLI archive, found ${#archives[@]}" >&2
             exit 1
           fi
-          listing=$(unzip -l "${archives[0]}")
-          if ! grep -E 'daemonitor-cored$' <<< "$listing"; then
+          version=$(./gradlew -q printNativePackageVersion --no-daemon)
+          mkdir -p cli-release
+          primary="daemonitor-cli-${version}-${{ matrix.platform }}-${{ matrix.arch }}.zip"
+          cp "${archives[0]}" "cli-release/${primary}"
+          listing=$(unzip -l "cli-release/${primary}")
+          if ! grep -E 'daemonitor-cored(\.exe)?$' <<< "$listing"; then
             echo "Release CLI archive missing daemonitor-cored binary" >&2
             exit 1
           fi
-          version=$(./gradlew -q printNativePackageVersion --no-daemon)
-          mkdir -p cli-release
-          cp "${archives[0]}" "cli-release/daemonitor-cli-${version}.zip"
-          test -s "cli-release/daemonitor-cli-${version}.zip"
-          echo "### Standalone CLI release asset" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Archive: daemonitor-cli-${version}.zip" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Includes: daemonitor-cored (host arch)" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Standalone CLI (${{ matrix.platform }}-${{ matrix.arch }})" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Archive: ${primary}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Includes: host-arch daemonitor-cored" >> "$GITHUB_STEP_SUMMARY"
+
+          extra_label="${{ matrix.extra_label }}"
+          if [[ -n "$extra_label" ]]; then
+            work=$(mktemp -d)
+            unzip -q "cli-release/${primary}" -d "$work"
+            root=$(find "$work" -mindepth 1 -maxdepth 1 -type d | head -1)
+            bin_dir="$root/bin"
+            cored_name=daemonitor-cored
+            if [[ "${{ matrix.platform }}" == "windows" ]]; then
+              cored_name=daemonitor-cored.exe
+            fi
+            CGO_ENABLED=0 GOOS="${{ matrix.goos }}" GOARCH="${{ matrix.extra_goarch }}" \
+              go build -trimpath -ldflags="-s -w" \
+              -o "$bin_dir/$cored_name" \
+              ./spikes/go-core/cmd/daemonitor-cored
+            chmod +x "$bin_dir/$cored_name" 2>/dev/null || true
+            extra="daemonitor-cli-${version}-${extra_label}.zip"
+            (cd "$work" && zip -qry "$GITHUB_WORKSPACE/cli-release/${extra}" "$(basename "$root")")
+            echo "- Extra archive: ${extra} (cored ${{ matrix.goos }}/${{ matrix.extra_goarch }})" >> "$GITHUB_STEP_SUMMARY"
+            rm -rf "$work"
+          fi
 
       - name: Upload CLI release asset
         uses: actions/upload-artifact@v4
         with:
-          name: standalone-cli
+          name: standalone-cli-${{ matrix.platform }}-${{ matrix.arch }}
           path: cli-release/daemonitor-cli-*.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  build-cored-cross:
+    name: Cross-compile daemonitor-cored
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: spikes/go-core/go.mod
+          cache-dependency-path: spikes/go-core/go.sum
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Cross-compile cored matrix
+        run: |
+          set -euo pipefail
+          version=$(./gradlew -q printNativePackageVersion --no-daemon)
+          out="cored-release"
+          mkdir -p "$out"
+          spikes/go-core/scripts/cross-compile-cored.sh "$out/raw"
+          for f in "$out"/raw/*; do
+            base=$(basename "$f")
+            # daemonitor-cored-darwin-arm64 → daemonitor-cored-VERSION-darwin-arm64
+            renamed=$(echo "$base" | sed "s/^daemonitor-cored-/daemonitor-cored-${version}-/")
+            cp "$f" "$out/$renamed"
+          done
+          rm -rf "$out/raw"
+          ls -la "$out"
+          echo "### Cross-compiled daemonitor-cored" >> "$GITHUB_STEP_SUMMARY"
+          for f in "$out"/*; do
+            echo "- $(basename "$f")" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Upload cored cross artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: daemonitor-cored-cross
+          path: cored-release/*
           if-no-files-found: error
           retention-days: 7
 
@@ -258,6 +361,7 @@ jobs:
     needs:
       - build-assets
       - build-cli-asset
+      - build-cored-cross
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -281,11 +385,18 @@ jobs:
           path: release-assets
           merge-multiple: true
 
-      - name: Download standalone CLI asset
+      - name: Download standalone CLI assets
         uses: actions/download-artifact@v4
         with:
-          name: standalone-cli
+          pattern: standalone-cli-*
           path: cli-release
+          merge-multiple: true
+
+      - name: Download cored cross artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: daemonitor-cored-cross
+          path: cored-release
 
       - name: Read package version
         id: package-version
@@ -314,6 +425,7 @@ jobs:
           gh release upload "$TAG_NAME" \
             release-assets/* \
             cli-release/* \
+            cored-release/* \
             release-metadata/latest.json \
             release-metadata/update.json \
             release-metadata/checksums.txt \
@@ -354,27 +466,18 @@ jobs:
         if: steps.tap-key.outputs.available == 'true'
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Download standalone CLI asset
+      - name: Download standalone CLI assets
         if: steps.tap-key.outputs.available == 'true'
         uses: actions/download-artifact@v4
         with:
-          name: standalone-cli
+          pattern: standalone-cli-*
           path: cli-release
+          merge-multiple: true
 
       - name: Read package version
         if: steps.tap-key.outputs.available == 'true'
         id: package-version
         run: echo "value=$(./gradlew -q printNativePackageVersion --no-daemon)" >> "$GITHUB_OUTPUT"
-
-      - name: Compute CLI archive checksum
-        if: steps.tap-key.outputs.available == 'true'
-        id: cli
-        run: |
-          set -euo pipefail
-          version="${{ steps.package-version.outputs.value }}"
-          archive="cli-release/daemonitor-cli-${version}.zip"
-          test -s "$archive"
-          echo "sha256=$(sha256sum "$archive" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
 
       - name: Checkout homebrew-tap
         if: steps.tap-key.outputs.available == 'true'
@@ -387,10 +490,14 @@ jobs:
       - name: Bump daemonitor-cli formula
         if: steps.tap-key.outputs.available == 'true'
         run: |
+          set -euo pipefail
+          version="${{ steps.package-version.outputs.value }}"
           scripts/update-homebrew-formula.sh \
-            "${{ steps.package-version.outputs.value }}" \
-            "${{ steps.cli.outputs.sha256 }}" \
-            homebrew-tap
+            "$version" \
+            homebrew-tap \
+            "cli-release/daemonitor-cli-${version}-macos-arm64.zip" \
+            "cli-release/daemonitor-cli-${version}-macos-x64.zip" \
+            "cli-release/daemonitor-cli-${version}-linux-x64.zip"
 
       - name: Commit and push formula bump
         if: steps.tap-key.outputs.available == 'true'
@@ -409,4 +516,4 @@ jobs:
           git commit -m "daemonitor-cli ${VERSION}"
           git push
           echo "### Homebrew tap" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Updated cdsap/homebrew-tap to daemonitor-cli ${VERSION}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Updated cdsap/homebrew-tap to daemonitor-cli ${VERSION} (multi-arch zips)" >> "$GITHUB_STEP_SUMMARY"

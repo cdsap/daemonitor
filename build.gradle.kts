@@ -106,12 +106,30 @@ val buildDaemonitorCored = tasks.register<Exec>("buildDaemonitorCored") {
     )
     commandLine(
         "go", "build",
+        "-trimpath",
+        "-ldflags=-s -w",
         "-o", coredOutput.get().asFile.absolutePath,
         "./cmd/daemonitor-cored",
     )
+    environment("CGO_ENABLED", "0")
 }
 
-/** Stage for CLI application plugin (installDist / distZip) — `bin/daemonitor-cored`. */
+val crossCompileDaemonitorCored = tasks.register<Exec>("crossCompileDaemonitorCored") {
+    group = "distribution"
+    description = "Cross-compile daemonitor-cored for darwin/linux/windows amd64+arm64 (CGO_ENABLED=0)."
+    onlyIf { goAvailable.getOrElse(false) }
+    workingDir = file("spikes/go-core")
+    val outDir = layout.buildDirectory.dir("cored-cross")
+    outputs.dir(outDir)
+    inputs.files(
+        fileTree(file("spikes/go-core")) {
+            include("**/*.go", "go.mod", "go.sum", "scripts/cross-compile-cored.sh")
+            exclude("bin/**", "**/.smoke-tmp/**")
+        },
+    )
+    commandLine("bash", "scripts/cross-compile-cored.sh", outDir.get().asFile.absolutePath)
+}
+
 val coredCliDistDir = layout.buildDirectory.dir("cored-cli-dist")
 val stageDaemonitorCoredForCli = tasks.register<Sync>("stageDaemonitorCoredForCli") {
     group = "distribution"

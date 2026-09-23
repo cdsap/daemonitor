@@ -211,8 +211,9 @@ Cursor, Codex, Gemini CLI, Aider. Ambient variables from Daemonitor's own proces
 ./gradlew packageDeb   # Linux
 ```
 
-Tag releases publish installers, `daemonitor-cli-*.zip`, `latest.json`, `update.json`, and
-checksums. See [docs/update-metadata.md](docs/update-metadata.md).
+Tag releases publish installers, per-platform `daemonitor-cli-*-<os>-<arch>.zip`, standalone
+`daemonitor-cored-*` binaries, `latest.json`, `update.json`, and checksums. See
+[docs/update-metadata.md](docs/update-metadata.md).
 
 Refresh desktop README screenshots after UI changes:
 

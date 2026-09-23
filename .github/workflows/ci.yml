@@ -220,6 +220,19 @@ jobs:
           go build -o bin/daemonitor-cored ./cmd/daemonitor-cored
           go build -o bin/daemonitor-corectl ./cmd/daemonitor-corectl
 
+      - name: Cross-compile cored matrix
+        if: runner.os == 'Linux'
+        run: ./spikes/go-core/scripts/cross-compile-cored.sh build/cored-cross
+
+      - name: Upload cored cross artifacts
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: daemonitor-cored-cross-${{ github.sha }}
+          path: build/cored-cross/*
+          if-no-files-found: error
+          retention-days: 7
+
       # Full bash smoke (Go client + JDK Unix socket client) on Unix runners.
       - name: Smoke Unix-socket IPC (Go + JVM clients)
         if: runner.os != 'Windows'

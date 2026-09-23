@@ -1,6 +1,7 @@
 # Shared SQLite / packaging roadmap
 
-Status: **slices 1–5 landed** (DDL + same-file + packaging defaults + release/desktop cored).
+Status: **slices 1–6 landed** (DDL + same-file + packaging + release/desktop cored +
+multi-arch cross-compile).
 
 - **v2:** `builds` columns match app `Watcher.sq` (`start_time` / `end_time` / `command_line`).
 - **v3:** `process_samples` uses `timestamp` (not `timestamp_ms`), includes nullable live-heap
@@ -62,7 +63,9 @@ Override with `-db` / `--db` (and matching `-socket` / `--core-socket`) for isol
 3. **Same-file open** — done (Go WAL + busy_timeout; app busy_timeout; path helper + app-DB ALTER).
 4. **Ship packaging** — done for CLI host-arch bundling + app-dir defaults + shared-DB write skip
    + desktop/headless `--core-socket` + desktop appResources + release/Homebrew CLI zip with
-   cored on PATH. Remaining: cross-compile matrix for multi-arch release assets.
+   cored on PATH.
+5. **Multi-arch release** — done: per-OS CLI zips (+ extra arch via CGO-free cross-compile) and
+   standalone `daemonitor-cored-<ver>-*` matrix assets.
 
 ## Verification
 
