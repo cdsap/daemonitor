@@ -104,6 +104,8 @@ GET /v1/builds?limit=<n>
 - **Parity slice:** classifier + JVM args + delta CPU + redactor + daemon log tails + U3 events + build aggregation (see `docs/parity.md`)
 - **Dual-run notes:** side-by-side checklist and cutover criteria in `docs/dual-run.md`
 - **Shared SQLite / packaging:** `docs/sqlite-packaging.md` (DDL + same-file + CLI host bundling)
+- **Multi-arch release:** `scripts/cross-compile-cored.sh` + per-OS CLI zips + Homebrew multi-URL formula
+- **Linux dual-run honesty in CI:** `dual-run-honesty` job runs `scripts/dual-run-linux.sh`
 
 ## Dual-run with Kotlin clients
 
@@ -128,6 +130,5 @@ Full comparison procedure and cutover gates: [`docs/dual-run.md`](docs/dual-run.
 
 ## Next
 
-1. Optional: wire `DualRunHonestyTest` / `dual-run-linux.sh` into CI (Linux-only)
-2. Optional: non-JVM live-heap design if product wants heap on the Go path later
-3. Optional: promote `spikes/go-core` to a first-class module
+1. Optional: non-JVM live-heap design if product wants heap on the Go path later
+2. Optional: promote `spikes/go-core` to a first-class module

@@ -41,10 +41,11 @@ go build -o bin/daemonitor-cored ./cmd/daemonitor-cored
 ./gradlew run --args="--headless --core-socket ${TMPDIR:-/tmp}/daemonitor-core.sock"
 ```
 
-Automated Linux honesty (native Linux, or `--docker` from macOS):
+Automated Linux honesty (native Linux, or `--docker` from macOS). CI runs the
+native path on every PR via the `dual-run-honesty` job:
 
 ```bash
-./spikes/go-core/scripts/dual-run-linux.sh          # Linux host
+./spikes/go-core/scripts/dual-run-linux.sh          # Linux host (also CI)
 ./spikes/go-core/scripts/dual-run-linux.sh --docker # macOS → Linux container
 ```
 
@@ -130,7 +131,9 @@ legacy in-process collector.
 
 ## Suggested next engineering slices
 
-1. Optional: wire `DualRunHonestyTest` / `dual-run-linux.sh` into CI (Linux-only)
+1. ~~Optional: wire `DualRunHonestyTest` / `dual-run-linux.sh` into CI (Linux-only)~~ —
+   done: CI job `dual-run-honesty` on `ubuntu-latest` runs
+   `./spikes/go-core/scripts/dual-run-linux.sh`
 2. Optional: non-JVM live-heap design if product wants heap on the Go path
 3. Optional: promote `spikes/go-core` to a first-class module
 
