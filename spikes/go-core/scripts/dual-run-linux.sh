@@ -100,6 +100,15 @@ set -e
 
 grep -E 'dual-run honesty:|type_match=|rss_delta|BUILD|DualRunHonesty|FAILED|PASSED' "$LOG" || true
 
+if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+  {
+    echo "### Dual-run Linux honesty"
+    echo '```'
+    grep -E 'dual-run honesty:|type_match=|rss_delta|xmx_match=' "$LOG" || true
+    echo '```'
+  } >>"$GITHUB_STEP_SUMMARY"
+fi
+
 if [[ "$status" -eq 0 ]]; then
   echo "dual-run-linux: ok (log=$LOG)"
   exit 0
