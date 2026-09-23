@@ -4,9 +4,9 @@ Native Daemonitor core that owns process polling + sample persistence and expose
 Unix-domain-socket HTTP API. Kotlin CLI / desktop / `--headless` **default** to attaching
 (and auto-starting packaged `daemonitor-cored`); use `--jvm-collector` for the legacy path.
 
-Still under `spikes/go-core` while the cross-compile matrix catches up — CLI
-`installDist` / `distZip`, Compose distributables, and release Homebrew zips already
-embed a host-arch `daemonitor-cored` when Go is available.
+Still under `spikes/go-core` while first-class module promotion catches up — CLI
+`installDist` / `distZip`, Compose distributables, and release assets embed / publish
+`daemonitor-cored` (host-arch in packages; multi-arch matrix on release).
 
 ## Why
 
@@ -20,7 +20,7 @@ Today CLI + desktop share a Kotlin/JVM core (JDK required, heavier RSS). The pro
 | In | Out |
 |----|-----|
 | Poll Gradle-related processes (`gopsutil`) | Live heap Attach |
-| Classifier + JVM args + Redactor parity | Cross-compile matrix for multi-arch zips |
+| Classifier + JVM args + Redactor parity | First-class module promotion (out of spikes) |
 | SQLite sample insert + retention purge | Production auth |
 | `/v1/health`, `/v1/processes`, `/v1/processes/history` | Replacing the shipping JVM app |
 | Go client + zero-dep JVM Unix HTTP client | |
@@ -47,6 +47,16 @@ Or via Gradle (embeds cored next to the CLI):
 build/install/daemonitor-cli/bin/daemonitor-cored
 build/install/daemonitor-cli/bin/daemonitor-cli --plain --core-socket "$HOME/Library/Application Support/Daemonitor/daemonitor-core.sock"
 ```
+
+## Cross-compile
+
+```bash
+./spikes/go-core/scripts/cross-compile-cored.sh   # → spikes/go-core/bin/cross/…
+./gradlew crossCompileDaemonitorCored             # → build/cored-cross/…
+```
+
+Release publishes per-platform CLI zips (`daemonitor-cli-<ver>-<os>-<arch>.zip`) plus standalone
+`daemonitor-cored-<ver>-*` binaries for all darwin/linux/windows amd64+arm64 targets.
 
 Flags: `-socket`, `-db`, `-interval`, `-retention` (cored); `-since-min`, `-limit` (history).
 
@@ -118,6 +128,6 @@ Full comparison procedure and cutover gates: [`docs/dual-run.md`](docs/dual-run.
 
 ## Next
 
-1. Cross-compile matrix for multi-arch `daemonitor-cored` release assets
-2. Optional: wire `DualRunHonestyTest` / `dual-run-linux.sh` into CI (Linux-only)
-3. Optional: non-JVM live-heap design if product wants heap on the Go path later
+1. Optional: wire `DualRunHonestyTest` / `dual-run-linux.sh` into CI (Linux-only)
+2. Optional: non-JVM live-heap design if product wants heap on the Go path later
+3. Optional: promote `spikes/go-core` to a first-class module

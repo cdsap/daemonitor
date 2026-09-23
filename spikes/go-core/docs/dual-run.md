@@ -130,9 +130,9 @@ legacy in-process collector.
 
 ## Suggested next engineering slices
 
-1. Optional: multi-arch `daemonitor-cored` cross-compile matrix
-2. Optional: wire `DualRunHonestyTest` / `dual-run-linux.sh` into CI (Linux-only)
-3. Optional: non-JVM live-heap design if product wants heap on the Go path
+1. Optional: wire `DualRunHonestyTest` / `dual-run-linux.sh` into CI (Linux-only)
+2. Optional: non-JVM live-heap design if product wants heap on the Go path
+3. Optional: promote `spikes/go-core` to a first-class module
 
 ### 2026-09-23 live-heap cutover decision
 
