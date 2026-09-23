@@ -158,17 +158,20 @@ jobs:
       - name: Verify bundled daemonitor-cored in app resources
         run: |
           set -euo pipefail
-          shopt -s nullglob globstar
-          matches=(
-            build/compose/binaries/main/app/**/resources/daemonitor-cored
-            build/compose/binaries/main/app/**/resources/daemonitor-cored.exe
-          )
-          if (( ${#matches[@]} < 1 )); then
-            echo "Packaged app missing daemonitor-cored under app/resources" >&2
+          cored=$(find build/compose/binaries/main/app -type f \( -name 'daemonitor-cored' -o -name 'daemonitor-cored.exe' \) | head -1)
+          if [[ -z "$cored" ]]; then
+            echo "Packaged app missing daemonitor-cored under app/" >&2
             find build/compose/binaries/main/app -type f | head -80 >&2 || true
             exit 1
           fi
-          echo "Bundled cored: ${matches[0]}"
+          case "$cored" in
+            */resources/daemonitor-cored|*/resources/daemonitor-cored.exe) ;;
+            *)
+              echo "Bundled cored not under resources/: $cored" >&2
+              exit 1
+              ;;
+          esac
+          echo "Bundled cored: $cored"
           echo "- Desktop bundle includes daemonitor-cored" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Read package version
