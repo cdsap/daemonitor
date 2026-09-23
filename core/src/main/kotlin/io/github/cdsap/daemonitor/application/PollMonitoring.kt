@@ -10,8 +10,9 @@ import io.github.cdsap.daemonitor.domain.model.ProcessType
  * Application polling use case: collect processes and daemon logs through ports, persist samples
  * and builds through repositories, and correlate builds with [BuildAggregator].
  *
- * When [buildSource] is set (Go core dual-run), confirmed builds are imported from that source and
- * JVM log re-aggregation is skipped.
+ * When [buildSource] is set (Go core dual-run with a separate DB), confirmed builds are imported
+ * from that source and JVM log re-aggregation is skipped. When [persistSamples] is false (same-file
+ * open with daemonitor-cored), the core owns sample inserts — this layer only reads live IPC.
  */
 class PollMonitoring(
     private val processSource: ProcessSource,
@@ -20,6 +21,7 @@ class PollMonitoring(
     private val samples: ProcessSampleWriter,
     private val aggregator: BuildAggregator,
     private val buildSource: BuildSource? = null,
+    private val persistSamples: Boolean = true,
     private val retentionDays: () -> Long = { RetentionPolicy.DEFAULT.defaultDays },
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
@@ -35,11 +37,18 @@ class PollMonitoring(
     fun pollOnce(): PollResult {
         val now = clock()
         val processes = processSource.currentProcesses()
-        processes.forEach { samples.save(it, now) }
+        if (persistSamples) {
+            processes.forEach { samples.save(it, now) }
+        }
 
         val logs = logSource.discover()
         val buildsChanged = buildSource?.let { syncRemoteBuilds(it) }
-            ?: processForBuilds(logs, activeDaemonPids = processes.activeDaemonPids())
+            ?: if (persistSamples) {
+                processForBuilds(logs, activeDaemonPids = processes.activeDaemonPids())
+            } else {
+                // Core owns builds in the shared DB; still discover logs for the UI tail panel.
+                false
+            }
         return PollResult(
             processes = processes,
             daemonLogs = logs,

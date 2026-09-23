@@ -404,3 +404,13 @@ func TestDefaultWatcherDBPathEndsWithWatcherDB(t *testing.T) {
 		t.Fatalf("parent=%q", filepath.Dir(p))
 	}
 }
+
+func TestDefaultSocketPathBesideAppSupport(t *testing.T) {
+	sock := store.DefaultSocketPath()
+	if filepath.Base(sock) != "daemonitor-core.sock" {
+		t.Fatalf("sock=%q", sock)
+	}
+	if filepath.Dir(sock) != store.DefaultAppSupportDir() {
+		t.Fatalf("dir=%q want %q", filepath.Dir(sock), store.DefaultAppSupportDir())
+	}
+}

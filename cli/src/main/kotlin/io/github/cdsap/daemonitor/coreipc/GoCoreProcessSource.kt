@@ -49,6 +49,10 @@ internal object GoCoreSnapshotParser {
         return splitObjects(arrayBody).mapNotNull { parseBuild(it) }
     }
 
+    /** Absolute DB path from `/v1/health` (`db_path`), or null when absent. */
+    fun parseHealthDbPath(json: String): String? =
+        stringField(json, "db_path")?.takeIf { it.isNotBlank() }
+
     private fun parseBuild(obj: String): Build? {
         val buildId = stringField(obj, "build_id") ?: return null
         val daemonPid = numberField(obj, "daemon_pid")?.toLong() ?: return null

@@ -8,6 +8,7 @@ import io.github.cdsap.daemonitor.coreipc.GoCoreBuildSource
 import io.github.cdsap.daemonitor.coreipc.GoCoreDaemonLogSource
 import io.github.cdsap.daemonitor.coreipc.GoCoreProcessSource
 import io.github.cdsap.daemonitor.coreipc.GoCoreUnavailableException
+import io.github.cdsap.daemonitor.coreipc.coreOwnsDatabase
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -39,20 +40,39 @@ internal object CliLauncher {
             return 0
         }
 
-        val processSource = options.coreSocket?.let { GoCoreProcessSource(it) }
-        val logSource = options.coreSocket?.let { GoCoreDaemonLogSource(it) }
-        val buildSource = options.coreSocket?.let { GoCoreBuildSource(it) }
+        val databasePath =
+            options.databasePath ?: io.github.cdsap.daemonitor.platform.AppDirectories.system.databasePath
+        val defaultDatabase = io.github.cdsap.daemonitor.platform.AppDirectories.system.databasePath
+        val coreSocket = options.coreSocket
+        val processSource = coreSocket?.let { GoCoreProcessSource(it) }
+        val logSource = coreSocket?.let { GoCoreDaemonLogSource(it) }
+        val coreOwnsPersistence = coreSocket != null &&
+            coreOwnsDatabase(coreSocket, databasePath, defaultDatabase)
+        // Separate DBs: import builds over HTTP. Same-file: core already wrote them.
+        val buildSource = if (coreOwnsPersistence) {
+            null
+        } else {
+            coreSocket?.let { GoCoreBuildSource(it) }
+        }
         if (processSource != null) {
-            error.println(
-                "Experimental: reading processes, daemon logs, and builds from Go core at ${options.coreSocket}",
-            )
+            if (coreOwnsPersistence) {
+                error.println(
+                    "Reading live processes/logs from Go core at $coreSocket " +
+                        "(shared DB $databasePath — core owns sample/build writes)",
+                )
+            } else {
+                error.println(
+                    "Experimental: reading processes, daemon logs, and builds from Go core at $coreSocket",
+                )
+            }
         }
 
         return CoreContainer(
-            databasePath = options.databasePath ?: io.github.cdsap.daemonitor.platform.AppDirectories.system.databasePath,
+            databasePath = databasePath,
             processSource = processSource,
             logSource = logSource,
             buildSource = buildSource,
+            persistSamples = !coreOwnsPersistence,
         ).use { container ->
             runMonitor(container, options, output, error, input)
         }
@@ -238,7 +258,9 @@ internal object CliLauncher {
           --retention DAYS
                            Retain history for this many days (1-90).
           --core-socket PATH
-                           Experimental: read processes, daemon logs, and builds from daemonitor-cored.
+                           Read live processes and daemon logs from daemonitor-cored.
+                           When the core's db_path matches --db (default: app watcher.db),
+                           the core owns sample/build writes (no HTTP build copy).
 
         Press q to quit.
     """.trimIndent()

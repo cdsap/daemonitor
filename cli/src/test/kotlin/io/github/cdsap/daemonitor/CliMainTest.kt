@@ -106,7 +106,8 @@ class CliMainTest {
         assertTrue(usage.contains("--retention DAYS"))
         assertTrue(usage.contains("--core-socket PATH"))
         assertTrue(usage.contains("1-90"))
-        assertTrue(usage.contains("processes, daemon logs, and builds"))
+        assertTrue(usage.contains("daemonitor-cored"))
+        assertTrue(usage.contains("sample/build writes"))
     }
 
     @Test
