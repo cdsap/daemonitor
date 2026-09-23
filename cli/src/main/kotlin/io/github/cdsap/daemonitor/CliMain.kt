@@ -7,6 +7,7 @@ import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.coreipc.GoCoreBuildSource
 import io.github.cdsap.daemonitor.coreipc.GoCoreDaemonLogSource
 import io.github.cdsap.daemonitor.coreipc.GoCoreProcessSource
+import io.github.cdsap.daemonitor.coreipc.GoCoreUnavailableException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -106,8 +107,15 @@ internal object CliLauncher {
                                 running.set(false)
                                 Thread.currentThread().interrupt()
                             } else {
-                                pollError = failure.message ?: failure::class.simpleName ?: "unknown error"
-                                error.println("Daemonitor poll failed: $pollError")
+                                val coreDown = failure as? GoCoreUnavailableException
+                                    ?: failure.cause as? GoCoreUnavailableException
+                                if (coreDown != null) {
+                                    pollError = coreDown.message
+                                    error.println(coreDown.message)
+                                } else {
+                                    pollError = failure.message ?: failure::class.simpleName ?: "unknown error"
+                                    error.println("Daemonitor poll failed: $pollError")
+                                }
                             }
                         }
                     if (!running.get()) break
