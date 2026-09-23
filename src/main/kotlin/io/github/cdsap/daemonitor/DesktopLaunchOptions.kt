@@ -33,7 +33,7 @@ data class DesktopLaunchOptions(
     companion object {
         val USAGE = """
             Usage: daemonitor [options]
-                   daemonitor --headless [options]
+            Usage: daemonitor --headless [options]
 
             Options:
               -h, --help       Show this help.
