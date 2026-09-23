@@ -8,16 +8,17 @@ surface.
 
 ## What dual-run means
 
-| Surface | Default (JVM) | `--core-socket PATH` |
-|---------|---------------|----------------------|
-| Live process table | `ProcessCollector` (OSHI) | `GoCoreProcessSource` → `GET /v1/processes` |
-| Daemon log discover / tail | `DaemonLogWatcher` | `GoCoreDaemonLogSource` → `/v1/daemon-logs` |
-| Build-event parse / correlation | JVM (`DaemonLogParser` + `BuildAggregator`) | Go aggregates into spike DB; `--core-socket` imports via `GET /v1/builds` (JVM re-agg skipped) |
-| Sample / build SQLite | App `WatcherDatabase` | shared `watcher.db` by default (cored + app-dir paths); HTTP build copy only when DBs differ |
-| Live heap Attach / JMX | JVM only | always `null` from Go |
+| Surface | Default (Go core) | `--jvm-collector` |
+|---------|-------------------|-------------------|
+| Live process table | `GoCoreProcessSource` → `GET /v1/processes` (auto-starts `daemonitor-cored`) | `ProcessCollector` (OSHI) |
+| Daemon log discover / tail | `GoCoreDaemonLogSource` → `/v1/daemon-logs` | `DaemonLogWatcher` |
+| Build-event parse / correlation | Go aggregates; HTTP import only when DBs differ | JVM (`DaemonLogParser` + `BuildAggregator`) |
+| Sample / build SQLite | shared `watcher.db` by default; cored owns writes when `db_path` matches | App `WatcherDatabase` writes |
+| Live heap Attach / JMX | always unavailable on Go path (accepted) | JVM Attach/JMX when probe works |
 
-`--core-socket` is experimental. CLI, desktop, and `--headless` share the same wiring
-(`wireGoCore`); stderr/log prints a banner when the flag is set.
+Default attaches to the app-dir socket (starts bundled/`PATH` `daemonitor-cored` when needed).
+`--core-socket PATH` forces a specific socket; `--jvm-collector` keeps the in-process collector.
+Stderr prints a banner when Go core is active.
 
 ## Side-by-side procedure
 
@@ -82,7 +83,7 @@ values are bit-identical.
 - Compared `ProcessCollector` (one-shot test dump) vs `daemonitor-corectl processes` with live Gradle 8.x/9.x daemons.
 - Go `/v1/builds` populated after local compile activity against daemon `30246`.
 - **Was blocking Terminal B (`--core-socket` CLI):** `GoCoreDaemonLogSource.discover()` returns the full `~/.gradle/daemon` tree (700+ logs); older `PollMonitoring` HTTP-tailed every path and SOE'd. Fixed in [#221](https://github.com/cdsap/daemonitor/issues/221) — Kotlin now only `readNewLines` for live ∪ previously known `GRADLE_DAEMON` PIDs (mirrors Go `Poll(active)`).
-- Keep `--core-socket` off by default until remaining cutover items below are green.
+- Keep `--jvm-collector` available when comparing against the in-process path.
 
 ### 2026-09-22 session notes (Linux)
 
@@ -124,15 +125,14 @@ Promote a surface out of “experimental dual-run” only when all apply:
       unavailable (same as Attach failure). `--core-socket` banner states the gap. A future
       non-JVM heap story is out of cutover scope.
 
-Until then, keep `--core-socket` off by default until a deliberate product flip to prefer Go core
-(cutover criteria above are otherwise green for process/log/build dual-run).
+Until a deliberate rollback, **Go core is the default client path**; use `--jvm-collector` for the
+legacy in-process collector.
 
 ## Suggested next engineering slices
 
-1. Optional: promote `--core-socket` / default-to-cored product flip (now that cutover gates are green)
-2. Optional: multi-arch `daemonitor-cored` cross-compile matrix
-3. Optional: wire `DualRunHonestyTest` / `dual-run-linux.sh` into CI (Linux-only)
-4. Optional (post-cutover): non-JVM live-heap design if product wants heap on the Go path
+1. Optional: multi-arch `daemonitor-cored` cross-compile matrix
+2. Optional: wire `DualRunHonestyTest` / `dual-run-linux.sh` into CI (Linux-only)
+3. Optional: non-JVM live-heap design if product wants heap on the Go path
 
 ### 2026-09-23 live-heap cutover decision
 

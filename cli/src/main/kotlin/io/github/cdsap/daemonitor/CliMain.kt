@@ -4,8 +4,9 @@ package io.github.cdsap.daemonitor
 
 import io.github.cdsap.daemonitor.config.MonitoringConfig
 import io.github.cdsap.daemonitor.config.RetentionPolicy
+import io.github.cdsap.daemonitor.coreipc.GoCorePreference
 import io.github.cdsap.daemonitor.coreipc.GoCoreUnavailableException
-import io.github.cdsap.daemonitor.coreipc.wireGoCore
+import io.github.cdsap.daemonitor.coreipc.resolveGoCore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -39,15 +40,20 @@ internal object CliLauncher {
 
         val databasePath =
             options.databasePath ?: io.github.cdsap.daemonitor.platform.AppDirectories.system.databasePath
-        val wiring = wireGoCore(options.coreSocket, databasePath)
-        wiring.banner?.let(error::println)
+        val preference = when {
+            options.jvmCollector -> GoCorePreference.JvmCollector
+            options.coreSocket != null -> GoCorePreference.ExplicitSocket(options.coreSocket)
+            else -> GoCorePreference.PreferGo
+        }
+        val resolved = resolveGoCore(preference, databasePath, error = error)
+        resolved.wiring.banner?.let(error::println)
 
         return CoreContainer(
             databasePath = databasePath,
-            processSource = wiring.processSource,
-            logSource = wiring.logSource,
-            buildSource = wiring.buildSource,
-            persistSamples = wiring.persistSamples,
+            processSource = resolved.wiring.processSource,
+            logSource = resolved.wiring.logSource,
+            buildSource = resolved.wiring.buildSource,
+            persistSamples = resolved.wiring.persistSamples,
         ).use { container ->
             runMonitor(container, options, output, error, input)
         }
@@ -166,6 +172,7 @@ internal object CliLauncher {
                         ?.normalize()
                         ?: return null,
                 )
+                "--jvm-collector" -> options.copy(jvmCollector = true)
                 else -> return unknownOption(arg, error, output)
             }
             index++
@@ -213,6 +220,7 @@ internal object CliLauncher {
         val pollInterval: Duration? = null,
         val retentionDays: Long? = null,
         val coreSocket: Path? = null,
+        val jvmCollector: Boolean = false,
     )
 
     private const val SHUTDOWN_TIMEOUT_SECONDS = 5L
@@ -233,9 +241,13 @@ internal object CliLauncher {
           --retention DAYS
                            Retain history for this many days (1-90).
           --core-socket PATH
-                           Read live processes and daemon logs from daemonitor-cored.
-                           When the core's db_path matches --db (default: app watcher.db),
-                           the core owns sample/build writes (no HTTP build copy).
+                           Use this daemonitor-cored socket (default: app-dir socket;
+                           starts bundled cored when needed).
+          --jvm-collector  Force the in-process JVM collector (skip Go core).
+
+        By default, attaches to daemonitor-cored (auto-starts when packaged/on PATH).
+        When the core's db_path matches --db (default: app watcher.db), the core owns
+        sample/build writes. Live heap Attach/JMX is unavailable on the Go path.
 
         Press q to quit.
     """.trimIndent()

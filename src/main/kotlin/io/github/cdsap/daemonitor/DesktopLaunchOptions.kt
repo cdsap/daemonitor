@@ -1,7 +1,8 @@
 package io.github.cdsap.daemonitor
 
-import io.github.cdsap.daemonitor.coreipc.GoCoreWiring
-import io.github.cdsap.daemonitor.coreipc.wireGoCore
+import io.github.cdsap.daemonitor.coreipc.GoCorePreference
+import io.github.cdsap.daemonitor.coreipc.GoCoreResolveResult
+import io.github.cdsap.daemonitor.coreipc.resolveGoCore as resolveGoCoreSession
 import io.github.cdsap.daemonitor.platform.AppDirectories
 import java.io.PrintStream
 import java.nio.file.Path
@@ -11,18 +12,24 @@ data class DesktopLaunchOptions(
     val help: Boolean = false,
     val databasePath: Path? = null,
     val coreSocket: Path? = null,
+    val jvmCollector: Boolean = false,
 ) {
     fun resolveDatabasePath(): Path =
         databasePath ?: AppDirectories.system.databasePath
 
-    fun goCoreWiring(): GoCoreWiring =
-        wireGoCore(coreSocket, resolveDatabasePath())
+    fun goCorePreference(): GoCorePreference = when {
+        jvmCollector -> GoCorePreference.JvmCollector
+        coreSocket != null -> GoCorePreference.ExplicitSocket(coreSocket)
+        else -> GoCorePreference.PreferGo
+    }
 
-    fun openContainer(): AppContainer {
-        val databasePath = resolveDatabasePath()
-        val wiring = goCoreWiring()
+    fun resolveCore(error: PrintStream = System.err): GoCoreResolveResult =
+        resolveGoCoreSession(goCorePreference(), resolveDatabasePath(), error = error)
+
+    fun openContainer(resolved: GoCoreResolveResult): AppContainer {
+        val wiring = resolved.wiring
         return AppContainer(
-            databasePath = databasePath,
+            databasePath = resolveDatabasePath(),
             processSource = wiring.processSource,
             logSource = wiring.logSource,
             buildSource = wiring.buildSource,
@@ -39,11 +46,12 @@ data class DesktopLaunchOptions(
               -h, --help       Show this help.
               --db PATH        Store data in this SQLite database.
               --core-socket PATH
-                               Read live processes and daemon logs from daemonitor-cored.
-                               When the core's db_path matches --db (default: app watcher.db),
-                               the core owns sample/build writes.
+                               Use this daemonitor-cored socket (default: app-dir socket;
+                               starts bundled cored when needed).
+              --jvm-collector  Force the in-process JVM collector (skip Go core).
 
-            Default (no flags) uses the in-process JVM collector.
+            By default, attaches to daemonitor-cored (auto-starts when packaged/on PATH).
+            Live heap Attach/JMX is unavailable on the Go path.
         """.trimIndent()
 
         fun parse(args: Array<String>, error: PrintStream = System.err): DesktopLaunchOptions? {
@@ -61,6 +69,7 @@ data class DesktopLaunchOptions(
                         val value = nextValue(args, ++index, arg, error) ?: return null
                         options.copy(coreSocket = Path.of(value).toAbsolutePath().normalize())
                     }
+                    "--jvm-collector" -> options.copy(jvmCollector = true)
                     else -> {
                         error.println("Unknown option: $arg")
                         error.println("Use --help for usage.")

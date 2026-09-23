@@ -21,6 +21,10 @@ class AppDirectoriesTest {
         )
         assertEquals(Path("/Users/ada/.gradle"), dirs.gradleUserHome)
         assertEquals(Path("/Users/ada/Library/Application Support/Daemonitor/updates"), dirs.updatesDirectory)
+        assertEquals(
+            Path("/Users/ada/Library/Application Support/Daemonitor/daemonitor-core.sock"),
+            dirs.coreSocketPath,
+        )
     }
 
     @Test

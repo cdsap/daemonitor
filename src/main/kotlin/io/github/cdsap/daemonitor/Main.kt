@@ -20,6 +20,7 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import io.github.cdsap.daemonitor.coreipc.GoCoreResolveResult
 import io.github.cdsap.daemonitor.ui.common.AppScaffold
 import io.github.cdsap.daemonitor.ui.common.StartupLoadingScreen
 import io.github.cdsap.daemonitor.ui.common.WatcherTheme
@@ -49,12 +50,16 @@ fun main(args: Array<String>) {
         println(DesktopLaunchOptions.USAGE)
         return
     }
-    options.goCoreWiring().banner?.let(System.err::println)
+    val resolved = options.resolveCore()
+    resolved.wiring.banner?.let(System.err::println)
     DesktopDockIcon.configure()
-    launchDesktop(options)
+    launchDesktop(options, resolved)
 }
 
-private fun launchDesktop(options: DesktopLaunchOptions) = application {
+private fun launchDesktop(
+    options: DesktopLaunchOptions,
+    resolved: GoCoreResolveResult,
+) = application {
     var service by remember { mutableStateOf<WatcherService?>(null) }
     val windowState = rememberWindowState(
         size = DpSize(1180.dp, 760.dp),
@@ -69,7 +74,7 @@ private fun launchDesktop(options: DesktopLaunchOptions) = application {
     ) {
         LaunchedEffect(Unit) {
             service = withContext(Dispatchers.IO) {
-                options.openContainer().createDesktopService()
+                options.openContainer(resolved).createDesktopService()
             }
         }
         DaemonitorContent(
