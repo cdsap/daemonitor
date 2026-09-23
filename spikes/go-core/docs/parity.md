@@ -21,7 +21,9 @@ Covered by `spikes/go-core/internal/poll/poll_test.go`.
 | CPU formula | delta cpu / wall / logical CPUs | same (gopsutil Times) |
 | Wrapper `projectPath` | cwd when type is wrapper | same |
 
-Redactor fixtures live in `spikes/go-core/internal/poll/redactor_test.go` (mirrors `RedactorTest.kt`).
+Redactor fixtures live in `spikes/go-core/internal/poll/redactor_test.go` (mirrors
+`RedactorTest.kt`). Reconfirmed green on both sides 2026-09-23 — see `docs/dual-run.md`
+cutover checklist.
 
 ## Daemon logs
 

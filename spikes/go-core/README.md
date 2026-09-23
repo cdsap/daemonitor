@@ -118,6 +118,6 @@ Full comparison procedure and cutover gates: [`docs/dual-run.md`](docs/dual-run.
 
 ## Next
 
-1. Cross-compile matrix for multi-arch `daemonitor-cored` release assets
-2. Confirm redaction fixtures on both sides; decide live-heap policy for Go cutover
+1. Product decision on missing live heap for Go cutover (last open cutover gate)
+2. Cross-compile matrix for multi-arch `daemonitor-cored` release assets
 3. Optional: wire `DualRunHonestyTest` / `dual-run-linux.sh` into CI (Linux-only)
