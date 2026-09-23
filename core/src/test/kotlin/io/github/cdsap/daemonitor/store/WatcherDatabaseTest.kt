@@ -1,6 +1,7 @@
 package io.github.cdsap.daemonitor.store
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import io.github.cdsap.daemonitor.domain.BuildSample
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
@@ -68,7 +69,7 @@ class WatcherDatabaseTest {
         db.save(p, timestampMs = 1_000)
         val samples = db.samples(pid = 5, fromMs = 0, toMs = 2_000)
         assertEquals(1, samples.size)
-        assertEquals(300L, samples[0].first)
+        assertEquals(300L, samples[0].rssMemoryMb)
         val persisted = db.processSamplesForPid(5).single()
         assertEquals(false, persisted.heapAvailable)
         assertEquals(null, persisted.heapUsedMb)
@@ -319,7 +320,10 @@ class WatcherDatabaseTest {
             assertEquals(listOf("/repo"), builds.distinctProjects())
             assertEquals(1, builds.search("port", limit = 10).size)
             assertEquals(1, builds.findByDaemon(1, limit = 10).size)
-            assertEquals(listOf(400L to 1.0), samples.samples(11, fromMs = 0, toMs = 10_000))
+            assertEquals(
+                listOf(BuildSample(rssMemoryMb = 400, cpuPercent = 1.0)),
+                samples.samples(11, fromMs = 0, toMs = 10_000),
+            )
             assertEquals(1, samples.findByPid(11, limit = 10).size)
             assertEquals(1, samples.recentSamples(limit = 10).size)
 

@@ -6,6 +6,8 @@ import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import io.github.cdsap.daemonitor.application.BuildWriter
 import io.github.cdsap.daemonitor.application.ProcessSampleWriter
 import io.github.cdsap.daemonitor.config.RetentionPolicy
+import io.github.cdsap.daemonitor.domain.BuildSample
+import io.github.cdsap.daemonitor.domain.BuildSampleProvider
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
@@ -48,7 +50,8 @@ class WatcherDatabase private constructor(
     ProcessSampleWriter,
     BuildRepository,
     ProcessSampleRepository,
-    RetentionRepository {
+    RetentionRepository,
+    BuildSampleProvider {
 
     override fun close() = driver.close()
 
@@ -102,12 +105,12 @@ class WatcherDatabase private constructor(
     }
 
     /** RSS + CPU samples for a PID within [startMs, endMs] -- used by the aggregator (U5). */
-    fun samplesInWindow(pid: Long, startMs: Long, endMs: Long): List<Pair<Long, Double?>> =
+    override fun samplesInWindow(pid: Long, startMs: Long, endMs: Long): List<BuildSample> =
         db.watcherQueries.samplesInWindow(pid, startMs, endMs)
             .executeAsList()
-            .map { it.rss_memory_mb to it.cpu_percent }
+            .map { BuildSample(rssMemoryMb = it.rss_memory_mb, cpuPercent = it.cpu_percent) }
 
-    override fun samples(pid: Long, fromMs: Long, toMs: Long): List<Pair<Long, Double?>> =
+    override fun samples(pid: Long, fromMs: Long, toMs: Long): List<BuildSample> =
         samplesInWindow(pid, fromMs, toMs)
 
     fun processSampleCount(type: ProcessType): Long =
