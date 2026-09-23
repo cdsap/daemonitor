@@ -12,7 +12,7 @@ Status: **slices 1–4 landed** (DDL + same-file + packaging defaults).
 - **Packaging defaults:** `daemonitor-cored` defaults socket + DB under the app data dir
   (`daemonitor-core.sock` / `watcher.db`). `:cli:installDist` / `distZip` include a host-arch
   `daemonitor-cored` when the Go toolchain is available. With `--core-socket`, if health
-  `db_path` matches `--db`, the CLI skips sample inserts and HTTP build import.
+  `db_path` matches `--db`, CLI/desktop/headless skip sample inserts and HTTP build import.
 
 ## Schema gaps (current)
 
@@ -48,8 +48,9 @@ Override with `-db` / `--db` (and matching `-socket` / `--core-socket`) for isol
 1. **Builds DDL alignment** — done (`PRAGMA user_version = 2` path).
 2. **`process_samples` alignment** — done (`user_version = 3`).
 3. **Same-file open** — done (Go WAL + busy_timeout; app busy_timeout; path helper + app-DB ALTER).
-4. **Ship packaging** — done for CLI host-arch bundling + app-dir defaults + shared-DB write skip.
-   Remaining: release/Homebrew assets, desktop bundling, cross-compile matrix.
+4. **Ship packaging** — done for CLI host-arch bundling + app-dir defaults + shared-DB write skip
+   + desktop/headless `--core-socket`. Remaining: release/Homebrew assets, desktop cored
+   bundling, cross-compile matrix.
 
 ## Verification
 

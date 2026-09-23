@@ -3,6 +3,7 @@
 package io.github.cdsap.daemonitor
 
 import io.github.cdsap.daemonitor.config.MonitoringConfig
+import io.github.cdsap.daemonitor.coreipc.GoCoreUnavailableException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -21,17 +22,15 @@ internal object HeadlessLauncher {
         error: PrintStream = System.err,
         input: InputStream = System.`in`,
     ): Int {
-        if (args.any { it == "--help" || it == "-h" }) {
-            output.println("Usage: daemonitor --headless")
+        val options = DesktopLaunchOptions.parse(args, error) ?: return 2
+        if (options.help) {
+            output.println(DesktopLaunchOptions.USAGE)
             return 0
         }
-        if (args.isNotEmpty()) {
-            error.println("Unknown headless option: ${args.first()}")
-            return 2
-        }
+        options.goCoreWiring().banner?.let(error::println)
 
         HeadlessMacMode.configure()
-        return AppContainer().use { container ->
+        return options.openContainer().use { container ->
             runHeadless(container, output, error, input)
         }
     }
@@ -91,8 +90,15 @@ internal object HeadlessLauncher {
                                 running.set(false)
                                 Thread.currentThread().interrupt()
                             } else {
-                                pollError = failure.message ?: failure::class.simpleName ?: "unknown error"
-                                error.println("Daemonitor poll failed: $pollError")
+                                val coreDown = failure as? GoCoreUnavailableException
+                                    ?: failure.cause as? GoCoreUnavailableException
+                                if (coreDown != null) {
+                                    pollError = coreDown.message
+                                    error.println(coreDown.message)
+                                } else {
+                                    pollError = failure.message ?: failure::class.simpleName ?: "unknown error"
+                                    error.println("Daemonitor poll failed: $pollError")
+                                }
                             }
                         }
                     if (!running.get()) break

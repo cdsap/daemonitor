@@ -44,11 +44,17 @@ fun main(args: Array<String>) {
         DaemonitorMcpStdio.run()
         return
     }
+    val options = DesktopLaunchOptions.parse(args) ?: kotlin.system.exitProcess(2)
+    if (options.help) {
+        println(DesktopLaunchOptions.USAGE)
+        return
+    }
+    options.goCoreWiring().banner?.let(System.err::println)
     DesktopDockIcon.configure()
-    launchDesktop()
+    launchDesktop(options)
 }
 
-private fun launchDesktop() = application {
+private fun launchDesktop(options: DesktopLaunchOptions) = application {
     var service by remember { mutableStateOf<WatcherService?>(null) }
     val windowState = rememberWindowState(
         size = DpSize(1180.dp, 760.dp),
@@ -62,7 +68,9 @@ private fun launchDesktop() = application {
         icon = painterResource("icon/daemonitor.png"),
     ) {
         LaunchedEffect(Unit) {
-            service = withContext(Dispatchers.IO) { AppContainer().createDesktopService() }
+            service = withContext(Dispatchers.IO) {
+                options.openContainer().createDesktopService()
+            }
         }
         DaemonitorContent(
             service = service,

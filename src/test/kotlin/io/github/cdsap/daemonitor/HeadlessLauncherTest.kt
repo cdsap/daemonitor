@@ -24,6 +24,14 @@ class HeadlessLauncherTest {
         val exitCode = HeadlessLauncher.run(arrayOf("--unknown"), error = PrintStream(error))
 
         assertEquals(2, exitCode)
-        assertTrue(error.toString().contains("Unknown headless option: --unknown"))
+        assertTrue(error.toString().contains("Unknown option: --unknown"))
+    }
+
+    @Test
+    fun `help mentions core socket`() {
+        val output = ByteArrayOutputStream()
+        val exitCode = HeadlessLauncher.run(arrayOf("--help"), output = PrintStream(output))
+        assertEquals(0, exitCode)
+        assertTrue(output.toString().contains("--core-socket PATH"))
     }
 }

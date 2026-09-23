@@ -13,10 +13,11 @@ surface.
 | Live process table | `ProcessCollector` (OSHI) | `GoCoreProcessSource` → `GET /v1/processes` |
 | Daemon log discover / tail | `DaemonLogWatcher` | `GoCoreDaemonLogSource` → `/v1/daemon-logs` |
 | Build-event parse / correlation | JVM (`DaemonLogParser` + `BuildAggregator`) | Go aggregates into spike DB; `--core-socket` imports via `GET /v1/builds` (JVM re-agg skipped) |
-| Sample / build SQLite | App `WatcherDatabase` | shared `watcher.db` by default (cored + CLI app-dir paths); HTTP build copy only when DBs differ |
+| Sample / build SQLite | App `WatcherDatabase` | shared `watcher.db` by default (cored + app-dir paths); HTTP build copy only when DBs differ |
 | Live heap Attach / JMX | JVM only | always `null` from Go |
 
-`--core-socket` is experimental. The CLI stderr banner says so when the flag is set.
+`--core-socket` is experimental. CLI, desktop, and `--headless` share the same wiring
+(`wireGoCore`); stderr/log prints a banner when the flag is set.
 
 ## Side-by-side procedure
 
@@ -33,6 +34,10 @@ go build -o bin/daemonitor-cored ./cmd/daemonitor-cored
 
 # Terminal C — Kotlin CLI fully in-process (control)
 ./gradlew :cli:run --args="--plain"
+
+# Optional — desktop / headless against the same socket
+./gradlew run --args="--core-socket ${TMPDIR:-/tmp}/daemonitor-core.sock"
+./gradlew run --args="--headless --core-socket ${TMPDIR:-/tmp}/daemonitor-core.sock"
 ```
 
 Automated Linux honesty (native Linux, or `--docker` from macOS):
@@ -120,7 +125,8 @@ Until then, keep `--core-socket` off by default.
 ## Suggested next engineering slices
 
 1. Shared SQLite / packaging — see [`sqlite-packaging.md`](sqlite-packaging.md)
-   (CLI host bundling + app-dir defaults done; next: release/Homebrew + desktop)
+   (CLI host bundling + app-dir defaults + desktop/headless `--core-socket` done;
+   next: release/Homebrew + desktop cored bundle)
 2. Confirm redaction fixtures on both sides and record the cutover check
 3. Product decision on missing live heap for Go cutover
 

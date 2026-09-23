@@ -4,11 +4,8 @@ package io.github.cdsap.daemonitor
 
 import io.github.cdsap.daemonitor.config.MonitoringConfig
 import io.github.cdsap.daemonitor.config.RetentionPolicy
-import io.github.cdsap.daemonitor.coreipc.GoCoreBuildSource
-import io.github.cdsap.daemonitor.coreipc.GoCoreDaemonLogSource
-import io.github.cdsap.daemonitor.coreipc.GoCoreProcessSource
 import io.github.cdsap.daemonitor.coreipc.GoCoreUnavailableException
-import io.github.cdsap.daemonitor.coreipc.coreOwnsDatabase
+import io.github.cdsap.daemonitor.coreipc.wireGoCore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -42,37 +39,15 @@ internal object CliLauncher {
 
         val databasePath =
             options.databasePath ?: io.github.cdsap.daemonitor.platform.AppDirectories.system.databasePath
-        val defaultDatabase = io.github.cdsap.daemonitor.platform.AppDirectories.system.databasePath
-        val coreSocket = options.coreSocket
-        val processSource = coreSocket?.let { GoCoreProcessSource(it) }
-        val logSource = coreSocket?.let { GoCoreDaemonLogSource(it) }
-        val coreOwnsPersistence = coreSocket != null &&
-            coreOwnsDatabase(coreSocket, databasePath, defaultDatabase)
-        // Separate DBs: import builds over HTTP. Same-file: core already wrote them.
-        val buildSource = if (coreOwnsPersistence) {
-            null
-        } else {
-            coreSocket?.let { GoCoreBuildSource(it) }
-        }
-        if (processSource != null) {
-            if (coreOwnsPersistence) {
-                error.println(
-                    "Reading live processes/logs from Go core at $coreSocket " +
-                        "(shared DB $databasePath — core owns sample/build writes)",
-                )
-            } else {
-                error.println(
-                    "Experimental: reading processes, daemon logs, and builds from Go core at $coreSocket",
-                )
-            }
-        }
+        val wiring = wireGoCore(options.coreSocket, databasePath)
+        wiring.banner?.let(error::println)
 
         return CoreContainer(
             databasePath = databasePath,
-            processSource = processSource,
-            logSource = logSource,
-            buildSource = buildSource,
-            persistSamples = !coreOwnsPersistence,
+            processSource = wiring.processSource,
+            logSource = wiring.logSource,
+            buildSource = wiring.buildSource,
+            persistSamples = wiring.persistSamples,
         ).use { container ->
             runMonitor(container, options, output, error, input)
         }

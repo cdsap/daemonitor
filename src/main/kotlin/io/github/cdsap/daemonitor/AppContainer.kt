@@ -1,5 +1,7 @@
 package io.github.cdsap.daemonitor
 
+import io.github.cdsap.daemonitor.application.BuildSource
+import io.github.cdsap.daemonitor.application.DaemonLogSource
 import io.github.cdsap.daemonitor.application.DefaultDaemonitorQueryService
 import io.github.cdsap.daemonitor.application.ProcessSource
 import io.github.cdsap.daemonitor.application.update.UpdateService
@@ -31,12 +33,20 @@ class AppContainer(
     private val clock: () -> Long = System::currentTimeMillis,
     ambientEnvNames: Set<String> = System.getenv().keys.toSet(),
     distribution: DistributionChannel = BuildInfo.current.distribution,
+    processSource: ProcessSource? = null,
+    logSource: DaemonLogSource? = null,
+    buildSource: BuildSource? = null,
+    persistSamples: Boolean = true,
 ) : AutoCloseable {
     private val core = CoreContainer(
         databasePath = databasePath,
         settingsPath = settingsPath,
         clock = clock,
         ambientEnvNames = ambientEnvNames,
+        processSource = processSource,
+        logSource = logSource,
+        buildSource = buildSource,
+        persistSamples = persistSamples,
     )
 
     val processCollector: ProcessCollector = core.processCollector
@@ -45,6 +55,8 @@ class AppContainer(
     val settingsStore: SettingsStore = core.settingsStore
     val buildAggregator: BuildAggregator = core.buildAggregator
     val runtime: WatcherRuntime = core.runtime
+    /** Live process source actually used by [runtime] (Go core or JVM collector). */
+    val liveProcessSource: ProcessSource = processSource ?: processCollector
 
     val distributionChannel: DistributionChannel = distribution
     val updateService: UpdateService = updateServiceForDistribution(distribution)
@@ -68,7 +80,7 @@ class AppContainer(
     )
 
     fun createMcpServer(
-        currentProcessesProvider: () -> List<GradleProcess> = processCollector::poll,
+        currentProcessesProvider: () -> List<GradleProcess> = { liveProcessSource.currentProcesses() },
     ): DaemonitorMcpServer {
         val builds: BuildRepository = database
         val samples: ProcessSampleRepository = database
