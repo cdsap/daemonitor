@@ -7,8 +7,9 @@ Status: **slices 1–3 landed** on the Go spike store (+ app busy_timeout).
   placeholders (`heap_*`, always NULL/`0` from Go), and keeps Go-only additive columns
   (`name`, `min_heap_mb`, `gc`, `start_time_ms`, `automated`).
 - **Same-file:** Go opens with `journal_mode=WAL` + `busy_timeout=5000`; the app sets
-  `busy_timeout` and inherits WAL when the file is already WAL (cored should open first).
-  Go `ALTER TABLE`s app-created DBs to add Go-only columns before insert. Path helper:
+  `busy_timeout` via JDBC connection properties (no raw `getConnection` during open) and
+  inherits WAL when the file is already WAL (cored should open first). Go `ALTER TABLE`s
+  app-created DBs to add Go-only columns before insert. Path helper:
   `store.DefaultWatcherDBPath()` matches Kotlin `AppDirectories.databasePath`.
 
 JSON over IPC is unchanged (`start_time_ms` / `sampled_at_ms` on the wire). Dual-run can

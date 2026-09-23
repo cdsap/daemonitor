@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.map
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
+import java.util.Properties
 import kotlin.io.path.absolutePathString
 import kotlin.io.path.exists
 
@@ -202,33 +203,54 @@ class WatcherDatabase private constructor(
      */
     private fun compactAfterPurge() {
         runCatching {
-            val freelist = pragmaLong("freelist_count")
-            if (freelist <= 0L) return@runCatching
-
-            val autoVacuum = pragmaLong("auto_vacuum")
-            driver.getConnection().createStatement().use { statement ->
+            withConnection { connection ->
                 // Flush WAL (if any) so VACUUM can take an exclusive lock on Windows.
-                runCatching { statement.execute("PRAGMA wal_checkpoint(TRUNCATE)") }
-                if (autoVacuum == AUTO_VACUUM_NONE) {
-                    // Setting the mode without VACUUM must not happen alone: the pragma would
-                    // report INCREMENTAL while the file still used NONE, and incremental_vacuum
-                    // would no-op. Use JDBC statements — SqlDriver.execute does not reliably
-                    // apply auto_vacuum changes on an existing schema.
-                    statement.execute("PRAGMA auto_vacuum = INCREMENTAL")
-                    statement.execute("VACUUM")
-                } else {
-                    statement.execute("PRAGMA incremental_vacuum($MAX_INCREMENTAL_VACUUM_PAGES)")
+                connection.createStatement().use { statement ->
+                    runCatching { statement.execute("PRAGMA wal_checkpoint(TRUNCATE)") }
+                }
+
+                val freelist = connection.pragmaLong("freelist_count")
+                if (freelist <= 0L) return@withConnection
+
+                val autoVacuum = connection.pragmaLong("auto_vacuum")
+                connection.createStatement().use { statement ->
+                    if (autoVacuum == AUTO_VACUUM_NONE) {
+                        // Setting the mode without VACUUM must not happen alone: the pragma would
+                        // report INCREMENTAL while the file still used NONE, and incremental_vacuum
+                        // would no-op. Use JDBC statements — SqlDriver.execute does not reliably
+                        // apply auto_vacuum changes on an existing schema.
+                        statement.execute("PRAGMA auto_vacuum = INCREMENTAL")
+                        statement.execute("VACUUM")
+                    } else {
+                        statement.execute("PRAGMA incremental_vacuum($MAX_INCREMENTAL_VACUUM_PAGES)")
+                    }
                 }
             }
         }
     }
 
-    private fun pragmaLong(name: String): Long =
-        driver.getConnection().createStatement().use { statement ->
+    /**
+     * File-backed [JdbcSqliteDriver] uses a ThreadLocal connection manager where [JdbcSqliteDriver.close]
+     * is a no-op; raw [JdbcSqliteDriver.getConnection] must be paired with [JdbcSqliteDriver.closeConnection]
+     * or Windows keeps the DB file locked (JUnit @TempDir / delete failures).
+     */
+    private inline fun <T> withConnection(block: (java.sql.Connection) -> T): T {
+        val connection = driver.getConnection()
+        try {
+            return block(connection)
+        } finally {
+            driver.closeConnection(connection)
+        }
+    }
+
+    private fun java.sql.Connection.pragmaLong(name: String): Long =
+        createStatement().use { statement ->
             statement.executeQuery("PRAGMA $name").use { resultSet ->
                 if (resultSet.next()) resultSet.getLong(1) else 0L
             }
         }
+
+    private fun pragmaLong(name: String): Long = withConnection { it.pragmaLong(name) }
 
     companion object {
         /** Open (creating if necessary) the database at [path], applying privacy hardening. */
@@ -239,7 +261,15 @@ class WatcherDatabase private constructor(
             val isNew = !path.exists()
             Files.createDirectories(path.parent)
 
-            val driver = JdbcSqliteDriver("jdbc:sqlite:${path.absolutePathString()}")
+            // Pass busy_timeout via JDBC properties (not getConnection()+PRAGMA): borrowing a
+            // raw connection during open can leave the SQLite file locked on Windows after close,
+            // which breaks JUnit @TempDir cleanup and Files.delete in tests.
+            val driver = JdbcSqliteDriver(
+                url = "jdbc:sqlite:${path.absolutePathString()}",
+                properties = Properties().apply {
+                    setProperty("busy_timeout", BUSY_TIMEOUT_MS.toString())
+                },
+            )
             if (isNew) {
                 driver.execute(null, "PRAGMA auto_vacuum = INCREMENTAL", 0)
                 WatcherDb.Schema.create(driver)
@@ -247,22 +277,7 @@ class WatcherDatabase private constructor(
             } else {
                 migrateInPlace(driver)
             }
-            // busy_timeout so a shared-file open with daemonitor-cored can wait briefly on locks.
-            // Do not force journal_mode=WAL here: creating -wal/-shm breaks Windows JUnit @TempDir
-            // cleanup, and a DB already switched to WAL by cored stays in WAL on reopen.
-            configureBusyTimeout(driver)
             return WatcherDatabase(WatcherDb(driver), driver, ioDispatcher)
-        }
-
-        /**
-         * Shared-file mode with Go `daemonitor-cored`: cored enables WAL on the file; the app
-         * uses busy_timeout for short lock waits. Single-writer rules are in
-         * spikes/go-core/docs/sqlite-packaging.md.
-         */
-        private fun configureBusyTimeout(driver: JdbcSqliteDriver) {
-            driver.getConnection().createStatement().use { statement ->
-                statement.execute("PRAGMA busy_timeout = $BUSY_TIMEOUT_MS")
-            }
         }
 
         /**
