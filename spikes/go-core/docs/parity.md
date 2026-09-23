@@ -38,10 +38,11 @@ cutover checklist.
 
 Go lists every discovered log, but only continuously tails **active** `GRADLE_DAEMON` PIDs from the process snapshot (large `~/.gradle/daemon` trees). `TailFor` lazily seeds inactive PIDs on demand. Tail responses include `events` parsed from the retained redacted lines. Confirmed builds are stored in the spike SQLite DB and listed via `/v1/builds`.
 
-## Still divergent
+## Still divergent (accepted for cutover)
 
-- Live JVM heap Attach / JMX (Kotlin only)
-- Shared SQLite: DDL aligned; same-file open with app-dir defaults; CLI skips sample/build
+- **Live JVM heap Attach / JMX** — Kotlin collector only. Go path always omits live heap;
+  product accepted this for dual-run cutover (2026-09-23). See [`dual-run.md`](dual-run.md).
+- Shared SQLite: DDL aligned; same-file open with app-dir defaults; clients skip sample/build
   writes when health `db_path` matches `--db`. See [`sqlite-packaging.md`](sqlite-packaging.md).
   Separate DBs still HTTP-copy builds.
 

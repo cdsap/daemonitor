@@ -31,6 +31,7 @@ class GoCoreWiringTest {
         assertNull(wiring.buildSource)
         assertFalse(wiring.persistSamples)
         assertTrue(wiring.banner!!.contains("shared DB"))
+        assertTrue(wiring.banner!!.contains("live heap"))
     }
 
     @Test
@@ -45,5 +46,6 @@ class GoCoreWiringTest {
         assertNotNull(wiring.buildSource)
         assertTrue(wiring.persistSamples)
         assertFalse(wiring.banner!!.contains("shared DB"))
+        assertTrue(wiring.banner!!.contains("live heap"))
     }
 }
