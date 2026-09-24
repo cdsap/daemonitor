@@ -134,7 +134,8 @@ legacy in-process collector.
 1. ~~Optional: wire `DualRunHonestyTest` / `dual-run-linux.sh` into CI (Linux-only)~~ —
    done: CI job `dual-run-honesty` on `ubuntu-latest` runs
    `./cored/scripts/dual-run-linux.sh`
-2. Optional: non-JVM live-heap design if product wants heap on the Go path
+2. ~~Optional: non-JVM live-heap design if product wants heap on the Go path~~ —
+   spike in progress: `cored/internal/heap` + `docs/heap-jstat-spike.md` (#245)
 3. ~~Optional: promote `spikes/go-core` to a first-class module~~ —
    done: moved to `cored/` (`github.com/cdsap/daemonitor/cored`)
 
