@@ -266,7 +266,7 @@ class WatcherServiceTest {
             processSource = ProcessCollector(),
             logSource = DaemonLogWatcher(),
             aggregator = BuildAggregator(
-                sampleProvider = database::samplesInWindow,
+                sampleProvider = database,
                 ambientEnvNames = System.getenv().keys.toSet(),
                 logSnippetLimit = with(MonitoringConfig.DEFAULT.logSnippetLimit) {
                     BuildAggregator.LogSnippetLimit(lines = lines, chars = chars)

@@ -103,13 +103,21 @@ object HeadlessTerminalRenderer {
             ?: process.workingDirectory?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
             ?: "—"
 
+    /**
+     * Compact uptime aligned with the desktop live table: tick seconds under 1h so a 2s
+     * poll interval visibly advances the UPTIME column instead of freezing on whole minutes.
+     */
     private fun uptime(startTimeMs: Long, nowMs: Long): String {
-        val seconds = ((nowMs - startTimeMs).coerceAtLeast(0L)) / 1_000L
+        val total = ((nowMs - startTimeMs) / 1_000L).coerceAtLeast(0L)
+        val days = total / 86_400
+        val hours = (total % 86_400) / 3_600
+        val minutes = (total % 3_600) / 60
+        val seconds = total % 60
         return when {
-            seconds < 60 -> "${seconds}s"
-            seconds < 3_600 -> "${seconds / 60}m"
-            seconds < 86_400 -> "${seconds / 3_600}h ${(seconds / 60) % 60}m"
-            else -> "${seconds / 86_400}d ${(seconds / 3_600) % 24}h"
+            days > 0 -> "${days}d ${hours}h"
+            hours > 0 -> "${hours}h %02dm".format(minutes)
+            minutes > 0 -> "${minutes}m %02ds".format(seconds)
+            else -> "${seconds}s"
         }
     }
 

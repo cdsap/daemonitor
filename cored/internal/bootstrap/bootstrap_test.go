@@ -1,27 +1,72 @@
-package bootstrap_test
+package bootstrap
 
 import (
-	"errors"
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/cdsap/daemonitor/cored/internal/bootstrap"
+	"github.com/cdsap/daemonitor/cored/internal/api"
 )
 
-func TestConnectionErrorMessage(t *testing.T) {
-	err := &bootstrap.Error{
-		Socket: "/tmp/x.sock",
-		Err:    errors.New("connection refused"),
-		Hint:   "Start daemonitor-cored or check --socket.",
+func TestConnectAutostartDisabled(t *testing.T) {
+	sock := filepath.Join(os.TempDir(), fmt.Sprintf("dmn-missing-%d.sock", os.Getpid()))
+	_, err := Connect(context.Background(), Options{
+		Socket:    sock,
+		Autostart: false,
+	})
+	if err == nil {
+		t.Fatal("expected error")
 	}
 	msg := err.Error()
-	if !strings.Contains(msg, "/tmp/x.sock") {
-		t.Fatalf("missing socket: %s", msg)
+	if !strings.Contains(msg, sock) || !strings.Contains(msg, "Recovery") {
+		t.Fatalf("error should include socket and recovery: %s", msg)
 	}
-	if !strings.Contains(msg, "connection refused") {
-		t.Fatalf("missing cause: %s", msg)
+}
+
+func TestFindCoredBinaryEmpty(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	_, _ = FindCoredBinary()
+}
+
+func TestConnectToRunningServer(t *testing.T) {
+	sock := filepath.Join(os.TempDir(), fmt.Sprintf("dmn-boot-%d.sock", os.Getpid()))
+	db := filepath.Join(t.TempDir(), "watcher.db")
+	_ = os.Remove(sock)
+	defer os.Remove(sock)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srv, err := api.NewServer(sock, db, 200*time.Millisecond, time.Hour, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(msg, "Start daemonitor-cored") {
-		t.Fatalf("missing hint: %s", msg)
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Run(ctx) }()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		res, err := Connect(context.Background(), Options{Socket: sock, Autostart: false, Wait: time.Second})
+		if err == nil {
+			h, herr := res.Client.Health(context.Background())
+			if herr != nil {
+				t.Fatal(herr)
+			}
+			if h.Status != "ok" {
+				t.Fatalf("health=%+v", h)
+			}
+			cancel()
+			return
+		}
+		select {
+		case runErr := <-errCh:
+			t.Fatalf("server exited early: %v", runErr)
+		case <-time.After(50 * time.Millisecond):
+		}
 	}
+	t.Fatal("server never became healthy")
 }

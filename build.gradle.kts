@@ -78,10 +78,22 @@ tasks.register<JavaExec>("runHeadless") {
 
 // --- daemonitor-cored (Go) host build; consumed by CLI dist + Compose app resources ---
 
-val goAvailable: Provider<Boolean> = providers.exec {
-    commandLine("go", "version")
-    isIgnoreExitValue = true
-}.result.map { it.exitValue == 0 }
+/**
+ * True when `go` is on PATH and `go version` exits 0.
+ * [providers.exec] throws when the binary is missing; that must not fail `onlyIf`.
+ */
+fun isGoOnPath(): Boolean =
+    try {
+        val process = ProcessBuilder("go", "version")
+            .redirectErrorStream(true)
+            .start()
+        process.inputStream.use { it.readBytes() }
+        process.waitFor() == 0
+    } catch (_: Exception) {
+        false
+    }
+
+val goAvailable: Provider<Boolean> = providers.provider { isGoOnPath() }
 
 val coredBinaryName =
     if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
@@ -95,7 +107,16 @@ val coredOutput = layout.buildDirectory.file("cored/$coredBinaryName")
 val buildDaemonitorCored = tasks.register<Exec>("buildDaemonitorCored") {
     group = "distribution"
     description = "Build daemonitor-cored (Go) for the host OS when the go toolchain is available."
-    onlyIf { goAvailable.getOrElse(false) }
+    onlyIf {
+        val ok = goAvailable.getOrElse(false)
+        if (!ok) {
+            logger.lifecycle(
+                "Skipping buildDaemonitorCored: `go` not found on PATH " +
+                    "(install Go 1.25+ or ensure Gradle can see it; then ./gradlew --stop).",
+            )
+        }
+        ok
+    }
     workingDir = file("cored")
     outputs.file(coredOutput)
     inputs.files(
@@ -112,6 +133,57 @@ val buildDaemonitorCored = tasks.register<Exec>("buildDaemonitorCored") {
         "./cmd/daemonitor-cored",
     )
     environment("CGO_ENABLED", "0")
+}
+
+val goCliBinaryName =
+    if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
+        "daemonitor-cli.exe"
+    } else {
+        "daemonitor-cli"
+    }
+val goCliOutput = layout.buildDirectory.file("cored/$goCliBinaryName")
+
+val buildDaemonitorGoCli = tasks.register<Exec>("buildDaemonitorGoCli") {
+    group = "distribution"
+    description = "Build native Go daemonitor-cli (Bubble Tea TUI) for the host OS."
+    onlyIf { goAvailable.getOrElse(false) }
+    workingDir = file("cored")
+    outputs.file(goCliOutput)
+    inputs.files(
+        fileTree(file("cored")) {
+            include("**/*.go", "go.mod", "go.sum")
+            exclude("bin/**", "**/.smoke-tmp/**")
+        },
+    )
+    commandLine(
+        "go", "build",
+        "-trimpath",
+        "-ldflags=-s -w",
+        "-o", goCliOutput.get().asFile.absolutePath,
+        "./cmd/daemonitor-cli",
+    )
+    environment("CGO_ENABLED", "0")
+}
+
+val nativeCliDistDir = layout.buildDirectory.dir("native-cli-dist")
+val stageNativeDaemonitorCli = tasks.register<Sync>("stageNativeDaemonitorCli") {
+    group = "distribution"
+    description = "Stage native Go daemonitor-cli + daemonitor-cored for archive packaging."
+    dependsOn(buildDaemonitorCored, buildDaemonitorGoCli)
+    onlyIf {
+        coredOutput.get().asFile.exists() && goCliOutput.get().asFile.exists()
+    }
+    into(nativeCliDistDir.map { it.dir("bin") })
+    from(coredOutput) { rename { coredBinaryName } }
+    from(goCliOutput) { rename { goCliBinaryName } }
+    doLast {
+        listOf(coredBinaryName, goCliBinaryName).forEach { name ->
+            val staged = nativeCliDistDir.get().asFile.resolve("bin/$name")
+            if (staged.isFile && !name.endsWith(".exe")) {
+                staged.setExecutable(true, false)
+            }
+        }
+    }
 }
 
 val crossCompileDaemonitorCored = tasks.register<Exec>("crossCompileDaemonitorCored") {

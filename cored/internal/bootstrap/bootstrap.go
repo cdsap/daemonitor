@@ -1,155 +1,146 @@
-// Package bootstrap discovers and optionally starts daemonitor-cored.
 package bootstrap
 
 import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/cdsap/daemonitor/cored/internal/client"
 	"github.com/cdsap/daemonitor/cored/internal/store"
 )
 
-const healthWait = 5 * time.Second
+const defaultWaitHealthy = 5 * time.Second
 
-// Options control core discovery / autostart.
+// Options control core discovery and optional autostart.
 type Options struct {
-	Socket    string
-	Autostart bool
-	DBPath    string
+	Socket     string
+	DBPath     string
+	Autostart  bool
+	Wait       time.Duration
+	FindBinary func() (string, error)
+	StartCore  func(binary, socket, db string) error
+	Stderr     *os.File
 }
 
-// Error is a connection failure with socket path and recovery hint.
-type Error struct {
-	Socket string
-	Err    error
-	Hint   string
+// Result is a connected client plus whether this process started the core.
+type Result struct {
+	Client  *client.Client
+	Socket  string
+	Started bool
 }
 
-func (e *Error) Error() string {
-	msg := fmt.Sprintf("cannot connect to daemonitor-cored at %s: %v", e.Socket, e.Err)
-	if e.Hint != "" {
-		msg = msg + "\n" + e.Hint
-	}
-	return msg
-}
-
-func (e *Error) Unwrap() error { return e.Err }
-
-// EnsureCore verifies the core is healthy, optionally starting a sibling binary.
-func EnsureCore(opts Options) error {
+// Connect resolves the socket, optionally starts daemonitor-cored, and waits for health.
+func Connect(ctx context.Context, opts Options) (Result, error) {
 	socket := opts.Socket
 	if socket == "" {
 		socket = store.DefaultSocketPath()
-	}
-	c := client.New(socket)
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if _, err := c.Health(ctx); err == nil {
-		return nil
-	} else if !opts.Autostart {
-		return &Error{
-			Socket: socket,
-			Err:    err,
-			Hint:   "Start daemonitor-cored, check --socket, or omit --no-autostart so the CLI can launch a sibling binary.",
-		}
-	}
-
-	binary, findErr := FindCoredBinary()
-	if findErr != nil {
-		return &Error{
-			Socket: socket,
-			Err:    findErr,
-			Hint:   "Install or place daemonitor-cored next to daemonitor-cli, or start it manually.",
-		}
 	}
 	dbPath := opts.DBPath
 	if dbPath == "" {
 		dbPath = store.DefaultWatcherDBPath()
 	}
-	if err := startCored(binary, socket, dbPath); err != nil {
-		return &Error{
-			Socket: socket,
-			Err:    err,
-			Hint:   "Failed to start daemonitor-cored; start it manually and retry.",
-		}
+	wait := opts.Wait
+	if wait <= 0 {
+		wait = defaultWaitHealthy
 	}
-	if err := waitHealthy(socket, healthWait); err != nil {
-		return &Error{
-			Socket: socket,
-			Err:    err,
-			Hint:   "daemonitor-cored started but did not become healthy; check the socket path and core logs.",
-		}
+	stderr := opts.Stderr
+	if stderr == nil {
+		stderr = os.Stderr
 	}
-	return nil
-}
+	find := opts.FindBinary
+	if find == nil {
+		find = FindCoredBinary
+	}
+	start := opts.StartCore
+	if start == nil {
+		start = StartCored
+	}
 
-// FindCoredBinary locates a sibling or PATH-installed daemonitor-cored.
-func FindCoredBinary() (string, error) {
-	name := "daemonitor-cored"
-	if runtime.GOOS == "windows" {
-		name = "daemonitor-cored.exe"
-	}
-	if exe, err := os.Executable(); err == nil {
-		dir := filepath.Dir(exe)
-		for _, cand := range []string{
-			filepath.Join(dir, name),
-			filepath.Join(dir, "..", "libexec", name),
-			filepath.Join(dir, "..", "resources", name),
-		} {
-			if isExecutable(cand) {
-				return filepath.Clean(cand), nil
-			}
-		}
-	}
-	if p, err := exec.LookPath(name); err == nil {
-		return p, nil
-	}
-	return "", fmt.Errorf("daemonitor-cored binary not found")
-}
-
-func startCored(binary, socket, dbPath string) error {
-	if err := os.MkdirAll(filepath.Dir(socket), 0o755); err != nil {
-		return err
-	}
-	cmd := exec.Command(binary, "-socket", socket, "-db", dbPath)
-	cmd.Stdout = nil
-	cmd.Stderr = nil
-	cmd.Stdin = nil
-	return cmd.Start()
-}
-
-func waitHealthy(socket string, timeout time.Duration) error {
 	c := client.New(socket)
-	deadline := time.Now().Add(timeout)
-	var last error
+	if _, err := c.Health(ctx); err == nil {
+		return Result{Client: c, Socket: socket}, nil
+	}
+
+	if !opts.Autostart {
+		return Result{}, connectionError(socket, "core is not running (autostart disabled)")
+	}
+
+	binary, err := find()
+	if err != nil || binary == "" {
+		return Result{}, connectionError(socket, "daemonitor-cored binary not found beside CLI or on PATH")
+	}
+
+	if err := os.MkdirAll(filepath.Dir(socket), 0o755); err != nil {
+		return Result{}, connectionError(socket, fmt.Sprintf("cannot create socket directory: %v", err))
+	}
+
+	fmt.Fprintf(stderr, "Starting daemonitor-cored (%s)…\n", binary)
+	if err := start(binary, socket, dbPath); err != nil {
+		return Result{}, connectionError(socket, fmt.Sprintf("failed to start daemonitor-cored: %v", err))
+	}
+
+	deadline := time.Now().Add(wait)
 	for time.Now().Before(deadline) {
-		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-		_, err := c.Health(ctx)
-		cancel()
-		if err == nil {
-			return nil
+		if _, err := c.Health(ctx); err == nil {
+			return Result{Client: c, Socket: socket, Started: true}, nil
 		}
-		last = err
-		time.Sleep(50 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			return Result{}, connectionError(socket, ctx.Err().Error())
+		case <-time.After(50 * time.Millisecond):
+		}
 	}
-	if last == nil {
-		last = fmt.Errorf("health check timed out")
-	}
-	return last
+	return Result{}, connectionError(socket, "started daemonitor-cored but health check timed out")
 }
 
-func isExecutable(path string) bool {
-	info, err := os.Stat(path)
-	if err != nil || info.IsDir() {
-		return false
+func connectionError(socket, detail string) error {
+	return fmt.Errorf(
+		"cannot connect to daemonitor-cored at %s: %s\n"+
+			"Recovery: start daemonitor-cored manually, or reinstall so daemonitor-cored sits next to daemonitor-cli",
+		socket, detail,
+	)
+}
+
+// FindCoredBinary locates a packaged or PATH-installed daemonitor-cored.
+// Search order: sibling of this executable, then PATH.
+func FindCoredBinary() (string, error) {
+	name := coredBinaryName()
+	var candidates []string
+
+	if exe, err := os.Executable(); err == nil {
+		exe, _ = filepath.EvalSymlinks(exe)
+		dir := filepath.Dir(exe)
+		candidates = append(candidates, filepath.Join(dir, name))
+		// …/libexec/bin/cli → sibling cored in same bin dir (already covered)
+		// also try parent/bin when nested (e.g. Homebrew libexec)
+		candidates = append(candidates, filepath.Join(filepath.Dir(dir), "bin", name))
 	}
+
+	if pathEnv := os.Getenv("PATH"); pathEnv != "" {
+		sep := string(os.PathListSeparator)
+		for _, dir := range strings.Split(pathEnv, sep) {
+			if dir == "" {
+				continue
+			}
+			candidates = append(candidates, filepath.Join(dir, name))
+		}
+	}
+
+	for _, path := range candidates {
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			return path, nil
+		}
+	}
+	return "", fmt.Errorf("%s not found", name)
+}
+
+func coredBinaryName() string {
 	if runtime.GOOS == "windows" {
-		return true
+		return "daemonitor-cored.exe"
 	}
-	return info.Mode()&0o111 != 0
+	return "daemonitor-cored"
 }
