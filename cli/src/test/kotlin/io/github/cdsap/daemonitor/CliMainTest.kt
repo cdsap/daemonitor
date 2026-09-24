@@ -44,7 +44,7 @@ class CliMainTest {
             listOf(
                 "  -h, --help       Show this help.",
                 "  -v, --version    Show the Daemonitor version.",
-                "  --plain          Disable colors and terminal screen clearing.",
+                "  --plain          Disable ANSI colors (interactive TTY still clears).",
                 "  --no-color       Alias for --plain.",
                 "  --collect-only   Collect and persist without rendering terminal output.",
                 "  --db PATH        Store data in this SQLite database.",
