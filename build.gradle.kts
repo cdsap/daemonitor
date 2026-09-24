@@ -135,6 +135,57 @@ val buildDaemonitorCored = tasks.register<Exec>("buildDaemonitorCored") {
     environment("CGO_ENABLED", "0")
 }
 
+val goCliBinaryName =
+    if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
+        "daemonitor-cli.exe"
+    } else {
+        "daemonitor-cli"
+    }
+val goCliOutput = layout.buildDirectory.file("cored/$goCliBinaryName")
+
+val buildDaemonitorGoCli = tasks.register<Exec>("buildDaemonitorGoCli") {
+    group = "distribution"
+    description = "Build native Go daemonitor-cli (Bubble Tea TUI) for the host OS."
+    onlyIf { goAvailable.getOrElse(false) }
+    workingDir = file("cored")
+    outputs.file(goCliOutput)
+    inputs.files(
+        fileTree(file("cored")) {
+            include("**/*.go", "go.mod", "go.sum")
+            exclude("bin/**", "**/.smoke-tmp/**")
+        },
+    )
+    commandLine(
+        "go", "build",
+        "-trimpath",
+        "-ldflags=-s -w",
+        "-o", goCliOutput.get().asFile.absolutePath,
+        "./cmd/daemonitor-cli",
+    )
+    environment("CGO_ENABLED", "0")
+}
+
+val nativeCliDistDir = layout.buildDirectory.dir("native-cli-dist")
+val stageNativeDaemonitorCli = tasks.register<Sync>("stageNativeDaemonitorCli") {
+    group = "distribution"
+    description = "Stage native Go daemonitor-cli + daemonitor-cored for archive packaging."
+    dependsOn(buildDaemonitorCored, buildDaemonitorGoCli)
+    onlyIf {
+        coredOutput.get().asFile.exists() && goCliOutput.get().asFile.exists()
+    }
+    into(nativeCliDistDir.map { it.dir("bin") })
+    from(coredOutput) { rename { coredBinaryName } }
+    from(goCliOutput) { rename { goCliBinaryName } }
+    doLast {
+        listOf(coredBinaryName, goCliBinaryName).forEach { name ->
+            val staged = nativeCliDistDir.get().asFile.resolve("bin/$name")
+            if (staged.isFile && !name.endsWith(".exe")) {
+                staged.setExecutable(true, false)
+            }
+        }
+    }
+}
+
 val crossCompileDaemonitorCored = tasks.register<Exec>("crossCompileDaemonitorCored") {
     group = "distribution"
     description = "Cross-compile daemonitor-cored for darwin/linux/windows amd64+arm64 (CGO_ENABLED=0)."
