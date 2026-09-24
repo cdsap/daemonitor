@@ -114,6 +114,52 @@ class HeadlessTerminalUiTest {
     }
 
     @Test
+    fun `uptime under one hour includes seconds so polls visibly advance`() {
+        fun frame(elapsedMs: Long): String = HeadlessTerminalRenderer.render(
+            result = WatcherRuntime.PollResult(
+                processes = listOf(
+                    process(pid = 10, rssMb = 256, heapLimitMb = 512, project = "app", startTimeMs = 0L),
+                ),
+                daemonLogs = emptyList(),
+                buildsChanged = false,
+            ),
+            updatedAtMs = elapsedMs,
+        )
+
+        assertTrue(frame(45_000L).contains("45s"), frame(45_000L))
+        assertTrue(frame(360_000L).contains("6m 00s"), frame(360_000L))
+        assertTrue(frame(365_000L).contains("6m 05s"), frame(365_000L))
+        assertTrue(frame(419_000L).contains("6m 59s"), frame(419_000L))
+        assertTrue(frame(3_600_000L).contains("1h 00m"), frame(3_600_000L))
+        assertTrue(frame(15_180_000L).contains("4h 13m"), frame(15_180_000L))
+        assertTrue(frame(187_200_000L).contains("2d 4h"), frame(187_200_000L))
+    }
+
+    @Test
+    fun `renderer includes second-resolution uptime in process rows`() {
+        val output = HeadlessTerminalRenderer.render(
+            result = WatcherRuntime.PollResult(
+                processes = listOf(
+                    process(
+                        pid = 10,
+                        rssMb = 256,
+                        heapLimitMb = 512,
+                        project = "app",
+                        startTimeMs = 0L,
+                    ),
+                ),
+                daemonLogs = emptyList(),
+                buildsChanged = false,
+            ),
+            // 6 minutes + 5 seconds — whole-minute formatting would freeze as "6m".
+            updatedAtMs = 365_000L,
+        )
+
+        assertTrue(output.contains("6m 05s"), output)
+        assertFalse(output.contains("   6m  "), output)
+    }
+
+    @Test
     fun `renderer adds ansi colors only when enabled`() {
         val result = WatcherRuntime.PollResult(
             processes = listOf(process(pid = 10, rssMb = 256, heapLimitMb = 512, project = "small")),
@@ -147,6 +193,7 @@ class HeadlessTerminalUiTest {
         heapLimitMb: Long? = null,
         project: String,
         cpu: Double? = 12.0,
+        startTimeMs: Long = 0L,
     ) = GradleProcess(
         pid = pid,
         parentPid = 1,
@@ -159,7 +206,7 @@ class HeadlessTerminalUiTest {
         maxHeapMb = heapLimitMb,
         minHeapMb = null,
         gc = null,
-        startTimeMs = 0L,
+        startTimeMs = startTimeMs,
         status = "RUNNING",
     )
 }
