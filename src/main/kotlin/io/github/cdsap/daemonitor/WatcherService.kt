@@ -1,10 +1,13 @@
 package io.github.cdsap.daemonitor
 
+import io.github.cdsap.daemonitor.application.DaemonLog
+import io.github.cdsap.daemonitor.application.DaemonLogTailResult
 import io.github.cdsap.daemonitor.application.update.UpdateService
 import io.github.cdsap.daemonitor.persistence.SettingsRepository
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
 import io.github.cdsap.daemonitor.ui.history.HistoryViewModel
+import io.github.cdsap.daemonitor.ui.live.DetailState
 import io.github.cdsap.daemonitor.ui.live.LiveViewModel
 import io.github.cdsap.daemonitor.ui.settings.McpUiState
 import io.github.cdsap.daemonitor.ui.settings.SettingsUiState
@@ -33,6 +36,9 @@ class WatcherService(
     val historyViewModel = HistoryViewModel()
 
     private val initialSettings = settingsService.load()
+
+    @Volatile
+    private var latestDaemonLogs = emptyList<DaemonLog>()
 
     val settingsViewModel = SettingsViewModel(
         initial = SettingsUiState(
@@ -124,6 +130,7 @@ class WatcherService(
 
     suspend fun pollOnce() {
         val result = monitoringService.poll()
+        latestDaemonLogs = result.daemonLogs
         val selectedTail = selectedDaemonTail(result)
         withContext(uiDispatcher) {
             liveViewModel.onPoll(result.processes, selectedTail)
@@ -134,6 +141,7 @@ class WatcherService(
     internal suspend fun pollSafely() {
         monitoringService.pollSafely(
             onResult = { result ->
+                latestDaemonLogs = result.daemonLogs
                 val selectedTail = selectedDaemonTail(result)
                 withContext(uiDispatcher) {
                     liveViewModel.onPoll(result.processes, selectedTail)
@@ -149,11 +157,20 @@ class WatcherService(
         )
     }
 
-    private fun selectedDaemonTail(result: WatcherRuntime.PollResult): List<String> {
+    fun select(pid: Long) {
+        liveViewModel.select(pid)
+        if (liveViewModel.state.value.detail !is DetailState.Selected) return
+        monitoringService.launchIo {
+            val tail = runtime.tailFor(latestDaemonLogs, pid)
+            withContext(uiDispatcher) { liveViewModel.onTail(pid, tail) }
+        }
+    }
+
+    private fun selectedDaemonTail(result: WatcherRuntime.PollResult): DaemonLogTailResult? {
         val detail = liveViewModel.state.value.detail
         val pid = when (detail) {
-            is io.github.cdsap.daemonitor.ui.live.DetailState.Selected -> detail.process.pid
-            else -> return emptyList()
+            is DetailState.Selected -> detail.process.pid
+            else -> return null
         }
         return runtime.tailFor(result.daemonLogs, pid)
     }

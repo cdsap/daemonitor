@@ -1,5 +1,6 @@
 package io.github.cdsap.daemonitor.ui.live
 
+import io.github.cdsap.daemonitor.application.DaemonLogTailResult
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,7 +19,7 @@ class LiveViewModel(
     val state: StateFlow<LiveUiState> = _state.asStateFlow()
 
     /** Apply a fresh poll result. Handles the selected→ended transition when a PID disappears. */
-    fun onPoll(processes: List<GradleProcess>, tailForSelected: List<String> = emptyList()) {
+    fun onPoll(processes: List<GradleProcess>, tailForSelected: DaemonLogTailResult? = null) {
         val current = _state.value
         val detail = nextDetail(current.detail, processes)
         val sample = RssTimelineSample(
@@ -32,11 +33,26 @@ class LiveViewModel(
                 process.liveHeap?.takeIf { it.available }?.usedMb?.let { used -> process.pid to used }
             }.toMap(),
         )
+        val nextTailState = when {
+            // Keep a completed tail for an ended process; drop in-flight Loading so the panel
+            // cannot stick on "Loading…" after the async select fetch is ignored for Ended.
+            detail is DetailState.Ended -> when (current.tailState) {
+                LogTailState.Loading -> LogTailState.NoLog
+                else -> current.tailState
+            }
+            detail is DetailState.NoSelection -> LogTailState.NoSelection
+            tailForSelected != null -> tailForSelected.toUiState()
+            else -> current.tailState
+        }
         _state.value = current.copy(
             processes = processes,
             summary = summarize(processes),
             detail = detail,
-            tail = if (detail is DetailState.Ended) current.tail else tailForSelected,
+            tail = when (nextTailState) {
+                is LogTailState.Available -> nextTailState.lines
+                else -> emptyList()
+            },
+            tailState = nextTailState,
             isLoading = false,
             isEmpty = processes.isEmpty(),
             pollError = null,
@@ -51,11 +67,35 @@ class LiveViewModel(
 
     fun select(pid: Long) {
         val process = _state.value.processes.firstOrNull { it.pid == pid } ?: return
-        _state.value = _state.value.copy(detail = DetailState.Selected(process))
+        _state.value = _state.value.copy(
+            detail = DetailState.Selected(process),
+            tail = emptyList(),
+            tailState = LogTailState.Loading,
+        )
+    }
+
+    fun onTail(pid: Long, result: DaemonLogTailResult) {
+        val detail = _state.value.detail
+        if (detail !is DetailState.Selected || detail.process.pid != pid) return
+        val tailState = result.toUiState()
+        _state.value = _state.value.copy(
+            tail = (tailState as? LogTailState.Available)?.lines.orEmpty(),
+            tailState = tailState,
+        )
     }
 
     fun clearSelection() {
-        _state.value = _state.value.copy(detail = DetailState.NoSelection)
+        _state.value = _state.value.copy(
+            detail = DetailState.NoSelection,
+            tail = emptyList(),
+            tailState = LogTailState.NoSelection,
+        )
+    }
+
+    private fun DaemonLogTailResult.toUiState(): LogTailState = when (this) {
+        DaemonLogTailResult.NoLog -> LogTailState.NoLog
+        is DaemonLogTailResult.Lines -> if (lines.isEmpty()) LogTailState.NoLog else LogTailState.Available(lines)
+        is DaemonLogTailResult.Error -> LogTailState.Error(errorType)
     }
 
     private fun nextDetail(current: DetailState, processes: List<GradleProcess>): DetailState =

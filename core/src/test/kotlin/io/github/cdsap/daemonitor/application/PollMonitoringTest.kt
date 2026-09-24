@@ -107,8 +107,31 @@ class PollMonitoringTest {
             aggregator = BuildAggregator(),
         )
 
-        assertEquals(listOf("line-a", "line-b"), monitoring.tailFor(listOf(log), pid = 7))
-        assertEquals(emptyList(), monitoring.tailFor(listOf(log), pid = 99))
+        assertEquals(DaemonLogTailResult.Lines(listOf("line-a", "line-b")), monitoring.tailFor(listOf(log), pid = 7))
+        assertEquals(DaemonLogTailResult.NoLog, monitoring.tailFor(listOf(log), pid = 99))
+    }
+
+    @Test
+    fun `tailFor surfaces log-source failures distinctly from missing logs`() {
+        val log = DaemonLog(pid = 7, gradleVersion = "9.0", path = Path.of("/tmp/daemon-7.out.log"))
+        val logSource = FakeDaemonLogSource(
+            logs = listOf(log),
+            tails = mapOf(log to listOf("unused")),
+            tailFailure = IllegalStateException("socket unavailable"),
+        )
+        val monitoring = PollMonitoring(
+            processSource = FakeProcessSource(emptyList()),
+            logSource = logSource,
+            builds = RecordingBuildWriter(),
+            samples = RecordingSampleWriter(),
+            aggregator = BuildAggregator(),
+        )
+
+        assertEquals(
+            DaemonLogTailResult.Error("IllegalStateException"),
+            monitoring.tailFor(listOf(log), pid = 7),
+        )
+        assertEquals(DaemonLogTailResult.NoLog, monitoring.tailFor(listOf(log), pid = 99))
     }
 
     @Test
@@ -297,6 +320,7 @@ class PollMonitoringTest {
         private val logs: List<DaemonLog>,
         var linesByPid: Map<Long, List<DaemonLogLine>> = emptyMap(),
         private val tails: Map<DaemonLog, List<String>> = emptyMap(),
+        private val tailFailure: Throwable? = null,
     ) : DaemonLogSource {
         var discoverCalls = 0
             private set
@@ -312,7 +336,10 @@ class PollMonitoringTest {
             return linesByPid[log.pid].orEmpty()
         }
 
-        override fun tailFor(log: DaemonLog): List<String> = tails[log].orEmpty()
+        override fun tailFor(log: DaemonLog): List<String> {
+            tailFailure?.let { throw it }
+            return tails[log].orEmpty()
+        }
     }
 
     private class RecordingBuildWriter : BuildWriter {
