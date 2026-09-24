@@ -4,9 +4,11 @@ Native Daemonitor core that owns process polling + sample persistence and expose
 Unix-domain-socket HTTP API. Kotlin CLI / desktop / `--headless` **default** to attaching
 (and auto-starting packaged `daemonitor-cored`); use `--jvm-collector` for the legacy path.
 
-First-class Go module at `cored/` (`github.com/cdsap/daemonitor/cored`). CLI
-`installDist` / `distZip`, Compose distributables, and release assets embed / publish
-`daemonitor-cored` (host-arch in packages; multi-arch matrix on release).
+First-class Go module at `cored/` (`github.com/cdsap/daemonitor/cored`). Ships:
+
+1. `daemonitor-cored` — long-running collector + SQLite + socket API
+2. `daemonitor-cli` — native Bubble Tea TUI + one-shot/JSON commands (thin client)
+3. `daemonitor-corectl` — small diagnostic client (commands mirrored in `daemonitor-cli`)
 
 ## Why
 
@@ -32,11 +34,12 @@ Today CLI + desktop share a Kotlin/JVM core (JDK required, heavier RSS). The pro
 cd cored
 go mod tidy
 go build -o bin/daemonitor-cored ./cmd/daemonitor-cored
+go build -o bin/daemonitor-cli ./cmd/daemonitor-cli
 go build -o bin/daemonitor-corectl ./cmd/daemonitor-corectl
 
 ./bin/daemonitor-cored                 # terminal 1 — defaults to app data dir
-./bin/daemonitor-corectl processes     # terminal 2
-./bin/daemonitor-corectl history
+./bin/daemonitor-cli ps --json         # terminal 2 — one-shot
+./bin/daemonitor-cli top               # interactive TUI (TTY)
 ./bin/daemonitor-corectl health
 ```
 

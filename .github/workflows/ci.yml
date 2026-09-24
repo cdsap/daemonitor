@@ -33,9 +33,36 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Build CLI distribution
-        run: ./gradlew :cli:test :cli:distZip --no-daemon --stacktrace
+        run: ./gradlew :cli:test :cli:distZip buildDaemonitorGoCli stageNativeDaemonitorCli --no-daemon --stacktrace
 
-      - name: Verify CLI archive excludes desktop runtime
+      - name: Package native Go CLI zip
+        run: |
+          set -euo pipefail
+          version=$(./gradlew -q printNativePackageVersion --no-daemon)
+          ./cored/scripts/package-native-cli.sh "$version" linux x64 build/native-cli
+          archive=(build/native-cli/daemonitor-cli-*.zip)
+          if (( ${#archive[@]} != 1 )); then
+            echo "Expected one native CLI archive, found ${#archive[@]}" >&2
+            exit 1
+          fi
+          listing=$(unzip -l "${archive[0]}")
+          if ! grep -E 'bin/daemonitor-cli$' <<< "$listing"; then
+            echo "Native CLI archive missing daemonitor-cli" >&2
+            exit 1
+          fi
+          if ! grep -E 'bin/daemonitor-cored$' <<< "$listing"; then
+            echo "Native CLI archive missing daemonitor-cored" >&2
+            exit 1
+          fi
+          if grep -Eiq 'openjdk|java\.exe|\.jar$' <<< "$listing"; then
+            echo "Native CLI archive must not require a JDK" >&2
+            exit 1
+          fi
+          echo "### Native Go CLI" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Archive: ${archive[0]}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- JDK required: no" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify Kotlin CLI archive excludes desktop runtime
         run: |
           archive=(cli/build/distributions/*.zip)
           if (( ${#archive[@]} != 1 )); then
@@ -53,18 +80,20 @@ jobs:
             echo "Standalone CLI archive missing daemonitor-cored binary" >&2
             exit 1
           fi
-          echo "### Standalone CLI" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Kotlin CLI (fallback)" >> "$GITHUB_STEP_SUMMARY"
           echo "- Archive: ${archive[0]}" >> "$GITHUB_STEP_SUMMARY"
           echo "- Includes: daemonitor-cored (host arch)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Packaging shared-DB E2E smoke
         run: ./cored/scripts/packaging-shared-db-smoke.sh
 
-      - name: Upload CLI archive
+      - name: Upload CLI archives
         uses: actions/upload-artifact@v4
         with:
           name: daemonitor-cli-${{ github.sha }}
-          path: cli/build/distributions/*.zip
+          path: |
+            build/native-cli/daemonitor-cli-*.zip
+            cli/build/distributions/*.zip
           if-no-files-found: error
           retention-days: 14
 
@@ -252,10 +281,40 @@ jobs:
         run: |
           go build -o bin/daemonitor-cored ./cmd/daemonitor-cored
           go build -o bin/daemonitor-corectl ./cmd/daemonitor-corectl
+          go build -o bin/daemonitor-cli ./cmd/daemonitor-cli
+
+      - name: Native CLI PTY smoke
+        if: runner.os != 'Windows'
+        working-directory: cored
+        run: ./scripts/pty-smoke.sh ./bin/daemonitor-cli
+
+      - name: Native CLI redirected ps --json
+        working-directory: cored
+        run: |
+          set -euo pipefail
+          SOCK=$(mktemp -u "${TMPDIR:-/tmp}/daemonitor-json-XXXXXX.sock")
+          DB=$(mktemp "${TMPDIR:-/tmp}/daemonitor-json-XXXXXX.db")
+          ./bin/daemonitor-cored -socket "$SOCK" -db "$DB" -interval 200ms >/dev/null 2>&1 &
+          CORED_PID=$!
+          trap 'kill $CORED_PID 2>/dev/null || true; rm -f "$SOCK" "$DB"' EXIT
+          for _ in $(seq 1 50); do
+            [[ -S "$SOCK" ]] && break
+            sleep 0.05
+          done
+          out=$(./bin/daemonitor-cli ps --json --socket "$SOCK" --no-autostart)
+          python3 -c 'import json,sys; json.loads(sys.argv[1])' "$out"
+          if printf '%s' "$out" | grep -q $'\x1b'; then
+            echo "ANSI found in redirected JSON output" >&2
+            exit 1
+          fi
 
       - name: Cross-compile cored matrix
         if: runner.os == 'Linux'
         run: ./cored/scripts/cross-compile-cored.sh build/cored-cross
+
+      - name: Cross-compile native CLI matrix
+        if: runner.os == 'Linux'
+        run: ./cored/scripts/cross-compile-cli.sh build/cli-cross
 
       - name: Upload cored cross artifacts
         if: runner.os == 'Linux'

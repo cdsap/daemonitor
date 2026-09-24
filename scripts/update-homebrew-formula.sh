@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Updates Formula/daemonitor-cli.rb for a multi-arch release.
+# Updates Formula/daemonitor-cli.rb for a multi-arch native Go release (no JDK).
 # Usage:
 #   update-homebrew-formula.sh <version> <tap-dir> \
 #     <macos-arm64.zip> <macos-x64.zip> <linux-x64.zip>
@@ -64,13 +64,10 @@ mac_arm_url, mac_arm_sha = sys.argv[3], sys.argv[4]
 mac_x64_url, mac_x64_sha = sys.argv[5], sys.argv[6]
 linux_url, linux_sha = sys.argv[7], sys.argv[8]
 
-# Rewrite the whole formula so multi-arch URL blocks stay idempotent across bumps.
 text = f'''class DaemonitorCli < Formula
   desc "Terminal monitor for local Gradle daemons"
   homepage "https://github.com/cdsap/daemonitor"
   license "MIT"
-
-  depends_on "openjdk@21"
 
   on_macos do
     on_arm do
@@ -91,10 +88,8 @@ text = f'''class DaemonitorCli < Formula
   end
 
   def install
-    libexec.install Dir["*"]
-    (bin/"daemonitor-cli").write_env_script libexec/"bin/daemonitor-cli",
-                                            Language::Java.overridable_java_home_env("21")
-    bin.install_symlink libexec/"bin/daemonitor-cored"
+    bin.install "bin/daemonitor-cli"
+    bin.install "bin/daemonitor-cored"
   end
 
   test do
@@ -103,7 +98,6 @@ text = f'''class DaemonitorCli < Formula
   end
 end
 '''
-# Fix double-brace from f-string escaping for #{bin}
 text = text.replace("#{{bin}}", "#{bin}")
 pathlib.Path(dst).write_text(text)
 PY
