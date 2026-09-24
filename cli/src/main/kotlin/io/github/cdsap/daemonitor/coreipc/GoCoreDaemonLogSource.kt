@@ -29,7 +29,7 @@ class GoCoreDaemonLogSource(
     }
 
     override fun readNewLines(log: DaemonLog): List<DaemonLogLine> {
-        val current = fetchTailLines(log.pid)
+        val current = runCatching { fetchTailLines(log.pid) }.getOrElse { return emptyList() }
         val previous = lastTails[log.pid].orEmpty()
         lastTails[log.pid] = current
         return GoCoreLogDelta.newLinesSince(previous, current).map { line ->
@@ -39,11 +39,10 @@ class GoCoreDaemonLogSource(
 
     override fun tailFor(log: DaemonLog): List<String> = fetchTailLines(log.pid)
 
-    private fun fetchTailLines(pid: Long): List<String> =
-        runCatching {
-            val body = fetch(socketPath, "/v1/daemon-logs/$pid/tail")
-            GoCoreSnapshotParser.parseDaemonLogTail(body)
-        }.getOrElse { emptyList() }
+    private fun fetchTailLines(pid: Long): List<String> {
+        val body = fetch(socketPath, "/v1/daemon-logs/$pid/tail")
+        return GoCoreSnapshotParser.parseDaemonLogTail(body)
+    }
 }
 
 internal object GoCoreLogDelta {

@@ -56,8 +56,13 @@ class PollMonitoring(
         )
     }
 
-    fun tailFor(logs: List<DaemonLog>, pid: Long): List<String> =
-        logs.firstOrNull { it.pid == pid }?.let { logSource.tailFor(it) }.orEmpty()
+    fun tailFor(logs: List<DaemonLog>, pid: Long): DaemonLogTailResult {
+        val log = logs.firstOrNull { it.pid == pid } ?: return DaemonLogTailResult.NoLog
+        return runCatching { DaemonLogTailResult.Lines(logSource.tailFor(log)) }
+            .getOrElse { error ->
+                DaemonLogTailResult.Error(error::class.simpleName ?: "UnknownError")
+            }
+    }
 
     internal fun processForBuilds(logs: List<DaemonLog>, activeDaemonPids: Set<Long>): Boolean {
         var inserted = false

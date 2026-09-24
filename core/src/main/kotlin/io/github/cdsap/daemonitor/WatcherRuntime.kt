@@ -6,6 +6,7 @@ import io.github.cdsap.daemonitor.application.ProcessSource
 import io.github.cdsap.daemonitor.application.DaemonLogSource
 import io.github.cdsap.daemonitor.application.BuildWriter
 import io.github.cdsap.daemonitor.application.DaemonLog
+import io.github.cdsap.daemonitor.application.DaemonLogTailResult
 import io.github.cdsap.daemonitor.application.ProcessSampleWriter
 import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.domain.BuildAggregator
@@ -48,7 +49,7 @@ class WatcherRuntime(
 
     fun pollOnce(): PollResult = monitoring.pollOnce().toRuntimeResult()
 
-    fun tailFor(logs: List<DaemonLog>, pid: Long): List<String> =
+    fun tailFor(logs: List<DaemonLog>, pid: Long): DaemonLogTailResult =
         monitoring.tailFor(logs, pid)
 
     internal fun processForBuilds(logs: List<DaemonLog>, activeDaemonPids: Set<Long>): Boolean =

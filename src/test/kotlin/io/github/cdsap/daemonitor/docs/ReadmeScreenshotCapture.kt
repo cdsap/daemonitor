@@ -29,6 +29,7 @@ import io.github.cdsap.daemonitor.ui.history.HistoryUiState
 import io.github.cdsap.daemonitor.ui.live.DetailState
 import io.github.cdsap.daemonitor.ui.live.LiveMonitorScreen
 import io.github.cdsap.daemonitor.ui.live.LiveSummary
+import io.github.cdsap.daemonitor.ui.live.LogTailState
 import io.github.cdsap.daemonitor.ui.live.LiveUiState
 import io.github.cdsap.daemonitor.ui.live.ProcessVisualScreen
 import io.github.cdsap.daemonitor.ui.live.RssTimelineSample
@@ -152,16 +153,18 @@ internal object SampleUi {
                 process.liveHeap?.takeIf { it.available }?.usedMb?.let { used -> process.pid to used }
             }.toMap(),
         )
+        val tail = listOf(
+            "> Task :checkout:compileKotlin",
+            "> Task :checkout:test",
+            "CheckoutRepositoryTest > creates order successfully PASSED",
+            "BUILD SUCCESSFUL in 1m 14s",
+        )
         return LiveUiState(
             processes = processes,
             summary = LiveSummary(4, processes.sumOf { it.rssMemoryMb }, daemon.pid, 2),
             detail = DetailState.Selected(daemon),
-            tail = listOf(
-                "> Task :checkout:compileKotlin",
-                "> Task :checkout:test",
-                "CheckoutRepositoryTest > creates order successfully PASSED",
-                "BUILD SUCCESSFUL in 1m 14s",
-            ),
+            tail = tail,
+            tailState = LogTailState.Available(tail),
             isLoading = false,
             isEmpty = false,
             rssTimeline = listOf(
