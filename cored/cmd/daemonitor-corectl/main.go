@@ -65,8 +65,16 @@ func main() {
 			if p.MaxHeapMB != nil {
 				xmx = fmt.Sprintf("%dMB", *p.MaxHeapMB)
 			}
-			fmt.Printf("  pid=%-7d type=%-20s rss=%dMB cpu=%s xmx=%s  %s\n",
-				p.PID, p.Type, p.RSSMemoryMB, cpu, xmx, truncate(p.Name, 40))
+			used := "n/a"
+			if p.HeapAvailable && p.HeapUsedMB != nil {
+				used = fmt.Sprintf("%dMB", *p.HeapUsedMB)
+			}
+			cmt := "n/a"
+			if p.HeapAvailable && p.HeapCommittedMB != nil {
+				cmt = fmt.Sprintf("%dMB", *p.HeapCommittedMB)
+			}
+			fmt.Printf("  pid=%-7d type=%-20s rss=%dMB cpu=%s xmx=%s used=%s cmt=%s  %s\n",
+				p.PID, p.Type, p.RSSMemoryMB, cpu, xmx, used, cmt, truncate(p.Name, 40))
 		}
 	case "history":
 		sinceMs := time.Now().Add(-time.Duration(*sinceMin) * time.Minute).UnixMilli()
@@ -133,11 +141,11 @@ func main() {
 		var payload struct {
 			Count  int `json:"count"`
 			Builds []struct {
-				BuildID        string  `json:"build_id"`
-				DaemonPID      int64   `json:"daemon_pid"`
-				FinalStatus    string  `json:"final_status"`
-				InferredSource string  `json:"inferred_source"`
-				ProjectPath    string  `json:"project_path"`
+				BuildID         string   `json:"build_id"`
+				DaemonPID       int64    `json:"daemon_pid"`
+				FinalStatus     string   `json:"final_status"`
+				InferredSource  string   `json:"inferred_source"`
+				ProjectPath     string   `json:"project_path"`
 				DurationSeconds *float64 `json:"duration_seconds"`
 			} `json:"builds"`
 		}

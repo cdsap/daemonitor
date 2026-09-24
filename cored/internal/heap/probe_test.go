@@ -69,3 +69,42 @@ func TestProberCacheTTL(t *testing.T) {
 		t.Fatalf("expected 2 probe calls after identity change, got %d", calls)
 	}
 }
+
+func TestProberUnavailableWhenToolsMissing(t *testing.T) {
+	p := heap.NewProber()
+	p.LookPath = func(string) (string, error) {
+		return "", errors.New("not found")
+	}
+	_, err := p.SampleFor(context.Background(), 1, 1)
+	if err == nil {
+		t.Fatal("expected unavailable")
+	}
+	if !errors.Is(err, heap.ErrUnavailable) {
+		t.Fatalf("want ErrUnavailable, got %v", err)
+	}
+}
+
+func TestProberUnavailableOnEmptyParse(t *testing.T) {
+	p := heap.NewProber()
+	p.LookPath = func(name string) (string, error) {
+		return "/fake/" + name, nil
+	}
+	p.Runner = func(ctx context.Context, name string, args ...string) (string, error) {
+		return "not a heap dump\n", nil
+	}
+	_, err := p.SampleFor(context.Background(), 9, 1)
+	if err == nil {
+		t.Fatal("expected unavailable")
+	}
+	if !errors.Is(err, heap.ErrUnavailable) {
+		t.Fatalf("want ErrUnavailable, got %v", err)
+	}
+}
+
+func TestParseJstatZeroUsedAndCommitted(t *testing.T) {
+	out := "S0C S1C S0U S1U EC EU OC OU\n0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0\n"
+	_, err := heap.ParseJstatGC(out)
+	if err == nil {
+		t.Fatal("expected error for zero used+committed")
+	}
+}

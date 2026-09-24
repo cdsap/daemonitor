@@ -48,8 +48,25 @@ func NewProber() *Prober {
 	return &Prober{
 		Timeout:  DefaultTimeout,
 		CacheTTL: DefaultCacheTTL,
+		LookPath: LookPathWithJavaHome,
 		cache:    make(map[cacheKey]cacheEntry),
 	}
+}
+
+// LookPathWithJavaHome prefers JAVA_HOME/bin tools, then PATH.
+func LookPathWithJavaHome(name string) (string, error) {
+	jcmd, jstat := FindJavaHomeTools()
+	switch name {
+	case "jcmd":
+		if jcmd != "" {
+			return jcmd, nil
+		}
+	case "jstat":
+		if jstat != "" {
+			return jstat, nil
+		}
+	}
+	return exec.LookPath(name)
 }
 
 // SampleFor returns a cached or fresh live-heap sample for pid.

@@ -251,7 +251,8 @@ internal object CliLauncher {
 
         By default, attaches to daemonitor-cored (auto-starts when packaged/on PATH).
         When the core's db_path matches --db (default: app watcher.db), the core owns
-        sample/build writes. Live heap Attach/JMX is unavailable on the Go path.
+        sample/build writes. Live heap for Gradle/Kotlin daemons uses cored's jcmd/jstat
+        probe (JDK tools on PATH or JAVA_HOME).
 
         Press q to quit.
     """.trimIndent()
