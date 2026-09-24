@@ -252,6 +252,7 @@ jobs:
         run: |
           go build -o bin/daemonitor-cored ./cmd/daemonitor-cored
           go build -o bin/daemonitor-corectl ./cmd/daemonitor-corectl
+          go build -o bin/daemonitor-cli ./cmd/daemonitor-cli
 
       - name: Cross-compile cored matrix
         if: runner.os == 'Linux'
