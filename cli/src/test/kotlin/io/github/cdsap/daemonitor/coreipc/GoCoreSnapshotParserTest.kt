@@ -5,6 +5,8 @@ import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.domain.model.Source
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -31,7 +33,12 @@ class GoCoreSnapshotParserTest {
                   "start_time_ms": 99,
                   "status": "R",
                   "automated": false,
-                  "sampled_at_ms": 1000
+                  "sampled_at_ms": 1000,
+                  "heap_used_mb": 800,
+                  "heap_committed_mb": 1024,
+                  "heap_max_mb": null,
+                  "heap_sampled_at_ms": 1000,
+                  "heap_available": true
                 },
                 {
                   "pid": 7,
@@ -49,7 +56,12 @@ class GoCoreSnapshotParserTest {
                   "start_time_ms": 50,
                   "status": "R",
                   "automated": true,
-                  "sampled_at_ms": 1000
+                  "sampled_at_ms": 1000,
+                  "heap_used_mb": null,
+                  "heap_committed_mb": null,
+                  "heap_max_mb": null,
+                  "heap_sampled_at_ms": 1000,
+                  "heap_available": false
                 }
               ]
             }
@@ -69,6 +81,12 @@ class GoCoreSnapshotParserTest {
         assertEquals("G1", daemon.gc)
         assertEquals("/tmp/daemon", daemon.workingDirectory)
         assertNull(daemon.projectPath)
+        val live = assertNotNull(daemon.liveHeap)
+        assertTrue(live.available)
+        assertEquals(800L, live.usedMb)
+        assertEquals(1024L, live.committedMb)
+        assertNull(live.maxMb)
+        assertEquals(1000L, live.sampledAtMs)
 
         val wrapper = processes[1]
         assertEquals(ProcessType.GRADLE_WRAPPER, wrapper.type)
@@ -76,6 +94,33 @@ class GoCoreSnapshotParserTest {
         assertEquals(64L, wrapper.maxHeapMb)
         assertEquals("/Users/dev/proj", wrapper.projectPath)
         assertTrue(wrapper.automated)
+        val wrapperHeap = assertNotNull(wrapper.liveHeap)
+        assertFalse(wrapperHeap.available)
+        assertNull(wrapperHeap.usedMb)
+        assertNull(wrapperHeap.committedMb)
+    }
+
+    @Test
+    fun `maps heap_available false to unavailable without inventing zeros`() {
+        val json = """
+            {"processes":[{"pid":1,"parent_pid":0,"type":"GRADLE_DAEMON","command_line":"GradleDaemon",
+            "rss_memory_mb":100,"cpu_percent":1.0,"start_time_ms":1,"status":"R","automated":false,
+            "heap_available":false,"heap_sampled_at_ms":55,"heap_used_mb":null,"heap_committed_mb":null}]}
+        """.trimIndent()
+        val heap = assertNotNull(GoCoreSnapshotParser.parseProcesses(json).single().liveHeap)
+        assertFalse(heap.available)
+        assertNull(heap.usedMb)
+        assertNull(heap.committedMb)
+        assertEquals(55L, heap.sampledAtMs)
+    }
+
+    @Test
+    fun `omits live heap when go core omits heap fields`() {
+        val json = """
+            {"processes":[{"pid":1,"parent_pid":0,"type":"GRADLE_DAEMON","command_line":"GradleDaemon",
+            "rss_memory_mb":100,"cpu_percent":1.0,"start_time_ms":1,"status":"R","automated":false}]}
+        """.trimIndent()
+        assertNull(GoCoreSnapshotParser.parseProcesses(json).single().liveHeap)
     }
 
     @Test

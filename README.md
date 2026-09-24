@@ -48,12 +48,24 @@ brew install daemonitor-cli
 daemonitor-cli
 ```
 
-Needs JDK 21 (`openjdk@21` is installed as a Homebrew dependency). The CLI prefers
-`daemonitor-cored` by default (auto-starts when packaged/on PATH); use `--jvm-collector` for the
-legacy in-process collector. You can also download `daemonitor-cli-*.zip` from
-[Releases](https://github.com/cdsap/daemonitor/releases/latest).
+The released CLI is a **native Go binary** (Bubble Tea TUI). It does **not** require a JDK.
+`daemonitor-cli` auto-starts packaged `daemonitor-cored` when needed and talks to it over the local
+socket API. You can also download `daemonitor-cli-*.zip` from
+[Releases](https://github.com/cdsap/daemonitor/releases/latest) (contains `daemonitor-cli` +
+`daemonitor-cored`).
+
+Useful commands:
+
+```bash
+daemonitor-cli              # interactive monitor (TTY)
+daemonitor-cli top          # force TUI
+daemonitor-cli ps           # one plain snapshot
+daemonitor-cli ps --json    # machine-readable snapshot
+daemonitor-cli health
+```
 
 Full flag reference: [CLI options on the website](https://cdsap.github.io/daemonitor/cli.html).
+Specification: [`docs/specs/daemonitor-native-cli-tui-spec.md`](docs/specs/daemonitor-native-cli-tui-spec.md).
 
 ---
 
@@ -76,15 +88,18 @@ stays `n/a` for wrappers and test workers (daemons only). More detail:
 
 ![Daemonitor CLI showing a live terminal table of Gradle-related processes with RSS, heap, CPU, and uptime](docs/images/cli-monitor.png)
 
-Same core monitor in your terminal — useful on build machines and over SSH:
+Native full-screen TUI (`top`-style): selection, sort, pause, resize, and process details — useful on
+build machines and over SSH:
 
 ```bash
 daemonitor-cli
 ssh -t build-machine daemonitor-cli
 ```
 
-Press `q` to quit. Desktop and CLI share the same local database and retention settings. Packaged
-desktop apps also accept `--headless` for a similar terminal mode.
+Keys: `↑/↓` or `j/k` select · `s`/`S` sort · `space` pause · `r` refresh · `enter` details · `q` quit.
+Live heap shows `n/a` until the Go core exposes it; RSS / Xmx / CPU remain available.
+
+Desktop apps also accept `--headless` for a similar terminal mode (JVM path).
 
 ### Visual
 

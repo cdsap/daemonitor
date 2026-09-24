@@ -12,9 +12,10 @@ import (
 	"github.com/cdsap/daemonitor/cored/internal/client"
 )
 
-func TestClientProcessesOverUnixSocket(t *testing.T) {
-	socket := filepath.Join(os.TempDir(), fmt.Sprintf("dmn-cli-client-%d.sock", os.Getpid()))
-	db := filepath.Join(t.TempDir(), "core.sqlite")
+func TestClientProcessesAgainstLiveServer(t *testing.T) {
+	// Keep the socket path short: macOS sun_path is ~104 bytes.
+	socket := filepath.Join(os.TempDir(), fmt.Sprintf("dmn-cli-%d.sock", os.Getpid()))
+	db := filepath.Join(t.TempDir(), "watcher.db")
 	_ = os.Remove(socket)
 	defer os.Remove(socket)
 
@@ -30,26 +31,29 @@ func TestClientProcessesOverUnixSocket(t *testing.T) {
 
 	c := client.New(socket)
 	deadline := time.Now().Add(5 * time.Second)
-	for {
-		_, err := c.Health(context.Background())
+	var last error
+	for time.Now().Before(deadline) {
+		snap, err := c.Processes(context.Background())
 		if err == nil {
-			break
+			if snap.Processes == nil {
+				t.Fatal("expected non-nil processes slice")
+			}
+			h, err := c.Health(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if h.Status != "ok" {
+				t.Fatalf("health=%+v", h)
+			}
+			cancel()
+			return
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("server never became ready: %v", err)
-		}
+		last = err
 		select {
 		case runErr := <-errCh:
 			t.Fatalf("server exited early: %v", runErr)
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
-
-	snap, err := c.Processes(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if snap.Processes == nil {
-		t.Fatal("expected non-nil processes slice")
-	}
+	t.Fatalf("never connected: %v", last)
 }

@@ -415,7 +415,7 @@ INSERT INTO process_samples(
   working_directory, project_path, rss_memory_mb, cpu_percent,
   max_heap_mb, heap_used_mb, heap_committed_mb, heap_max_mb, heap_sampled_at_ms, heap_available,
   status, name, min_heap_mb, gc, start_time_ms, automated
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, 0, ?, ?, ?, ?, ?, ?)`)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -426,10 +426,15 @@ INSERT INTO process_samples(
 		if p.Automated {
 			automated = 1
 		}
+		heapAvail := 0
+		if p.HeapAvailable {
+			heapAvail = 1
+		}
 		if _, err := stmt.Exec(
 			snap.SampledAtMs, p.PID, p.ParentPID, p.Type, p.CommandLine,
 			p.WorkingDirectory, p.ProjectPath, p.RSSMemoryMB, p.CPUPercent,
-			p.MaxHeapMB, p.Status, nullStr(p.Name), p.MinHeapMB, p.GC, p.StartTimeMs, automated,
+			p.MaxHeapMB, p.HeapUsedMB, p.HeapCommittedMB, p.HeapMaxMB, p.HeapSampledAtMs, heapAvail,
+			p.Status, nullStr(p.Name), p.MinHeapMB, p.GC, p.StartTimeMs, automated,
 		); err != nil {
 			return err
 		}

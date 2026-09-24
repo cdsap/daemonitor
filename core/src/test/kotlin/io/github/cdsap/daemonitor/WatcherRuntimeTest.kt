@@ -46,7 +46,7 @@ class WatcherRuntimeTest {
             val runtime = WatcherRuntime(
                 processSource = collectorWithoutHeapAttach(),
                 logSource = logWatcher,
-                aggregator = BuildAggregator(sampleProvider = database::samples),
+                aggregator = BuildAggregator(sampleProvider = database),
                 builds = database,
                 samples = database,
                 clock = { clockMs },
@@ -101,7 +101,7 @@ class WatcherRuntimeTest {
             val runtime = WatcherRuntime(
                 processSource = collectorWithoutHeapAttach(),
                 logSource = logWatcher,
-                aggregator = BuildAggregator(sampleProvider = database::samples),
+                aggregator = BuildAggregator(sampleProvider = database),
                 builds = database,
                 samples = database,
                 clock = { clockMs },
@@ -167,7 +167,7 @@ class WatcherRuntimeTest {
             val runtime = WatcherRuntime(
                 processSource = collectorWithoutHeapAttach(),
                 logSource = DaemonLogWatcher(gradleUserHome = tmp.resolve("gradle")),
-                aggregator = BuildAggregator(sampleProvider = database::samples),
+                aggregator = BuildAggregator(sampleProvider = database),
                 builds = database,
                 samples = database,
                 retentionDays = { 7 },

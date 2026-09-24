@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -16,6 +17,9 @@ func TestPTYSmokeStartAndQuit(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping PTY smoke in short mode")
 	}
+	if runtime.GOOS == "windows" {
+		t.Skip("PTY smoke is unsupported on Windows")
+	}
 
 	bin := filepath.Join(t.TempDir(), "daemonitor-cli")
 	build := exec.Command("go", "build", "-o", bin, "./cmd/daemonitor-cli")
@@ -24,8 +28,36 @@ func TestPTYSmokeStartAndQuit(t *testing.T) {
 		t.Fatalf("build: %v\n%s", err, out)
 	}
 
-	sock := filepath.Join(t.TempDir(), "missing.sock")
-	cmd := exec.Command(bin, "top", "-socket", sock, "-poll-interval", "200ms", "-no-autostart")
+	coreBin := filepath.Join(t.TempDir(), "daemonitor-cored")
+	coreBuild := exec.Command("go", "build", "-o", coreBin, "./cmd/daemonitor-cored")
+	coreBuild.Dir = filepath.Join("..", "..") // cored/
+	if out, err := coreBuild.CombinedOutput(); err != nil {
+		t.Fatalf("core build: %v\n%s", err, out)
+	}
+
+	tempDir := t.TempDir()
+	sock := filepath.Join(tempDir, "daemonitor.sock")
+	db := filepath.Join(tempDir, "daemonitor.sqlite")
+	core := exec.Command(coreBin, "-socket", sock, "-db", db, "-interval", "200ms")
+	if err := core.Start(); err != nil {
+		t.Fatalf("core start: %v", err)
+	}
+	defer func() {
+		_ = core.Process.Kill()
+		_ = core.Wait()
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(sock); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("core socket was not created")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	cmd := exec.Command(bin, "top", "-socket", sock, "-poll-interval", "200ms")
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 
 	ptmx, err := pty.Start(cmd)

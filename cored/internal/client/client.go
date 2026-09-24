@@ -1,4 +1,4 @@
-// Package client talks to daemonitor-cored over its local Unix-socket HTTP API.
+// Package client is a thin Unix-socket HTTP client for daemonitor-cored.
 package client
 
 import (
@@ -11,61 +11,49 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/cdsap/daemonitor/cored/internal/logs"
 	"github.com/cdsap/daemonitor/cored/internal/model"
 )
 
 const defaultTimeout = 3 * time.Second
 
-// Client is a thin HTTP client dialed over a Unix domain socket.
+// Client talks to daemonitor-cored over a Unix domain socket.
 type Client struct {
-	socket string
-	http   *http.Client
+	Socket string
+	HTTP   *http.Client
 }
 
-// New returns a client bound to socketPath.
-func New(socketPath string) *Client {
-	return NewWithTimeout(socketPath, defaultTimeout)
-}
-
-// NewWithTimeout returns a client with a custom request timeout.
-func NewWithTimeout(socketPath string, timeout time.Duration) *Client {
-	if timeout <= 0 {
-		timeout = defaultTimeout
-	}
+// New returns a client for the given socket path.
+func New(socket string) *Client {
 	return &Client{
-		socket: socketPath,
-		http: &http.Client{
+		Socket: socket,
+		HTTP: &http.Client{
 			Transport: &http.Transport{
 				DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 					var d net.Dialer
-					return d.DialContext(ctx, "unix", socketPath)
+					return d.DialContext(ctx, "unix", socket)
 				},
 			},
-			Timeout: timeout,
+			Timeout: defaultTimeout,
 		},
 	}
 }
 
-// Socket returns the configured socket path.
-func (c *Client) Socket() string {
-	return c.socket
-}
-
-// Health calls GET /v1/health.
+// Health fetches /v1/health.
 func (c *Client) Health(ctx context.Context) (model.Health, error) {
 	var h model.Health
 	err := c.getJSON(ctx, "/v1/health", &h)
 	return h, err
 }
 
-// Processes calls GET /v1/processes.
+// Processes fetches /v1/processes.
 func (c *Client) Processes(ctx context.Context) (model.Snapshot, error) {
 	var snap model.Snapshot
 	err := c.getJSON(ctx, "/v1/processes", &snap)
 	return snap, err
 }
 
-// History calls GET /v1/processes/history.
+// History fetches recent process history.
 func (c *Client) History(ctx context.Context, sinceMs int64, limit int) (model.History, error) {
 	path := "/v1/processes/history?since_ms=" + strconv.FormatInt(sinceMs, 10) +
 		"&limit=" + strconv.Itoa(limit)
@@ -74,9 +62,49 @@ func (c *Client) History(ctx context.Context, sinceMs int64, limit int) (model.H
 	return hist, err
 }
 
-// GetJSON performs GET path and decodes a JSON body into dest.
-func (c *Client) GetJSON(ctx context.Context, path string, dest any) error {
-	return c.getJSON(ctx, path, dest)
+// DaemonLogs lists discovered Gradle daemon logs.
+func (c *Client) DaemonLogs(ctx context.Context) ([]logs.DaemonLog, error) {
+	var payload struct {
+		Logs []logs.DaemonLog `json:"logs"`
+	}
+	if err := c.getJSON(ctx, "/v1/daemon-logs", &payload); err != nil {
+		return nil, err
+	}
+	return payload.Logs, nil
+}
+
+// DaemonLogTail fetches the retained redacted tail for one daemon PID.
+func (c *Client) DaemonLogTail(ctx context.Context, pid int64) (logs.Tail, error) {
+	var tail logs.Tail
+	err := c.getJSON(ctx, "/v1/daemon-logs/"+strconv.FormatInt(pid, 10)+"/tail", &tail)
+	return tail, err
+}
+
+// BuildsPayload is the /v1/builds response.
+type BuildsPayload struct {
+	Count  int           `json:"count"`
+	Builds []BuildRecord `json:"builds"`
+}
+
+// BuildRecord is one build row from the core API.
+type BuildRecord struct {
+	BuildID         string   `json:"build_id"`
+	DaemonPID       int64    `json:"daemon_pid"`
+	FinalStatus     string   `json:"final_status"`
+	InferredSource  string   `json:"inferred_source"`
+	ProjectPath     string   `json:"project_path"`
+	DurationSeconds *float64 `json:"duration_seconds"`
+}
+
+// Builds fetches recent builds.
+func (c *Client) Builds(ctx context.Context, limit int) (BuildsPayload, error) {
+	path := "/v1/builds"
+	if limit > 0 {
+		path += "?limit=" + strconv.Itoa(limit)
+	}
+	var payload BuildsPayload
+	err := c.getJSON(ctx, path, &payload)
+	return payload, err
 }
 
 func (c *Client) getJSON(ctx context.Context, path string, dest any) error {
@@ -84,7 +112,7 @@ func (c *Client) getJSON(ctx context.Context, path string, dest any) error {
 	if err != nil {
 		return err
 	}
-	resp, err := c.http.Do(req)
+	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return err
 	}

@@ -2,11 +2,13 @@ package poll
 
 import (
 	"context"
+	"os"
 	"regexp"
 	"runtime"
 	"sync"
 	"time"
 
+	"github.com/cdsap/daemonitor/cored/internal/heap"
 	"github.com/cdsap/daemonitor/cored/internal/model"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/process"
@@ -22,7 +24,7 @@ var (
 )
 
 type priorCPU struct {
-	cpuTimeMs  float64
+	cpuTimeMs   float64
 	wallClockMs int64
 }
 
@@ -31,6 +33,7 @@ type Collector struct {
 	mu     sync.Mutex
 	priors map[int32]priorCPU
 	cpus   int
+	Heap   *heap.Prober
 }
 
 func NewCollector() *Collector {
@@ -41,6 +44,7 @@ func NewCollector() *Collector {
 	return &Collector{
 		priors: make(map[int32]priorCPU),
 		cpus:   n,
+		Heap:   heap.NewProber(),
 	}
 }
 
@@ -126,6 +130,9 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 		}
 
 		jvm := ParseJVMArgs(cmdline)
+		usedMB, committedMB, maxMB, heapSampledAt, heapAvail := liveHeapFields(
+			ctx, c.Heap, p, pid, kind, startMs, now,
+		)
 		out = append(out, model.Process{
 			PID:              pid,
 			ParentPID:        parentPID,
@@ -139,6 +146,11 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 			MaxHeapMB:        jvm.MaxHeapMB,
 			MinHeapMB:        jvm.MinHeapMB,
 			GC:               jvm.GC,
+			HeapUsedMB:       usedMB,
+			HeapCommittedMB:  committedMB,
+			HeapMaxMB:        maxMB,
+			HeapSampledAtMs:  heapSampledAt,
+			HeapAvailable:    heapAvail,
 			StartTimeMs:      startMs,
 			Status:           status,
 			Automated:        IsNonInteractive(cmdline),
@@ -154,7 +166,60 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 	}
 	c.mu.Unlock()
 
+	if c.Heap != nil {
+		c.Heap.EvictMissing(seen)
+	}
+
 	return model.Snapshot{SampledAtMs: now, Processes: out}, nil
+}
+
+// ShouldProbeLiveHeap mirrors Kotlin: only Gradle/Kotlin daemons are probed.
+func ShouldProbeLiveHeap(kind string) bool {
+	return kind == "GRADLE_DAEMON" || kind == "KOTLIN_DAEMON"
+}
+
+func liveHeapFields(
+	ctx context.Context,
+	prober *heap.Prober,
+	proc *process.Process,
+	pid int32,
+	kind string,
+	startMs, now int64,
+) (used, committed, max, sampledAt *int64, available bool) {
+	sampled := now
+	if !ShouldProbeLiveHeap(kind) {
+		return nil, nil, nil, &sampled, false
+	}
+	// Self-attach via jcmd can deadlock HotSpot; skip our own PID.
+	if int(pid) == os.Getpid() {
+		return nil, nil, nil, &sampled, false
+	}
+	if !sameUID(ctx, proc) {
+		return nil, nil, nil, &sampled, false
+	}
+	if prober == nil {
+		return nil, nil, nil, &sampled, false
+	}
+	sample, err := prober.SampleFor(ctx, pid, startMs)
+	if err != nil {
+		return nil, nil, nil, &sampled, false
+	}
+	u := sample.UsedMB
+	c := sample.CommittedMB
+	return &u, &c, nil, &sampled, true
+}
+
+func sameUID(ctx context.Context, proc *process.Process) bool {
+	self := os.Getuid()
+	if self < 0 {
+		// Windows / unsupported: let the tool probe fail rather than skip everyone.
+		return true
+	}
+	uids, err := proc.UidsWithContext(ctx)
+	if err != nil || len(uids) == 0 {
+		return true
+	}
+	return int(uids[0]) == self
 }
 
 // Classify mirrors Kotlin GradleProcessClassifier.
