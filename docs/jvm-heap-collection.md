@@ -21,7 +21,7 @@ Live heap is **intentionally not probed** for:
 - Test workers
 - Other non-daemon Gradle-related JVMs (`JAVA_GRADLE_RELATED`)
 - Processes served by **`daemonitor-cored` / `--core-socket`** (Go path has no Attach/JMX;
-  cutover accepts this — see `spikes/go-core/docs/dual-run.md`)
+  cutover accepts this — see `cored/docs/dual-run.md`)
 
 Those rows keep RSS and configured `-Xmx` (when present) but show heap used/committed as `n/a` /
 `unavailable`. That is expected, not a broken metric.
