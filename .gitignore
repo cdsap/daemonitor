@@ -6,9 +6,9 @@ build/
 .DS_Store
 .claude/
 local.properties
-spikes/go-core/bin/
-spikes/go-core/clients/jvm/*.class
-spikes/go-core/.smoke-tmp/
+cored/bin/
+cored/clients/jvm/*.class
+cored/.smoke-tmp/
 *.sqlite
 *.sqlite-journal
 *.sqlite-wal

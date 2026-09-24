@@ -20,7 +20,7 @@ import kotlin.io.path.exists
  * over a Unix-domain socket (Go core IPC spike).
  *
  * Live JVM heap is intentionally always `null` here — Attach/JMX stays on the in-process
- * Kotlin collector. Product cutover accepts that gap (see `spikes/go-core/docs/dual-run.md`).
+ * Kotlin collector. Product cutover accepts that gap (see `cored/docs/dual-run.md`).
  */
 class GoCoreProcessSource(
     private val socketPath: Path,

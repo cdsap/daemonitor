@@ -1,7 +1,7 @@
 ---
 title: Go core IPC spike
 created: 2026-09-21
-status: spike-in-progress
+status: promoted
 ---
 
 # Go core + IPC spike
@@ -18,7 +18,7 @@ toward CLI/desktop without embedding the JVM collector.
 - **Clients:** `daemonitor-corectl` (Go), `clients/jvm/UnixHttpClient` (JDK); later Kotlin CLI / Compose
 - **Transport:** HTTP/1.1 over Unix socket
 
-## Delivered in `spikes/go-core/`
+## Delivered in `cored/`
 
 | Piece | Role |
 |-------|------|
@@ -33,17 +33,18 @@ toward CLI/desktop without embedding the JVM collector.
 
 ## Non-goals (still)
 
-Live heap Attach, packaging, replacing shipping JVM app, build-event parsing in Go.
+Live heap Attach, replacing shipping JVM app entirely.
 
 ## Current evidence
 
 - Live macOS poll returned `GRADLE_DAEMON` / `KOTLIN_DAEMON` / `GRADLE_WRAPPER`
 - Smoke covers health, processes, history, daemon-logs, and JVM socket client
+- Promoted out of `spikes/` to top-level `cored/` (`github.com/cdsap/daemonitor/cored`)
 
 ## Follow-on
 
-1. Optionally have Kotlin dual-run consume `/v1/builds`
-2. Packaging / shared SQLite beyond the spike
+1. Optional: non-JVM live-heap design if product wants heap on the Go path
 
 Go core now parses U3 events and aggregates confirmed builds (`builds.Aggregator`, `GET /v1/builds`).
-Side-by-side checklist: `spikes/go-core/docs/dual-run.md`.
+Side-by-side checklist: `cored/docs/dual-run.md`.
+Packaging / shared SQLite and multi-arch release are shipped.

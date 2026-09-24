@@ -77,8 +77,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: spikes/go-core/go.mod
-          cache-dependency-path: spikes/go-core/go.sum
+          go-version-file: cored/go.mod
+          cache-dependency-path: cored/go.sum
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -122,7 +122,7 @@ jobs:
             CGO_ENABLED=0 GOOS="${{ matrix.goos }}" GOARCH="${{ matrix.extra_goarch }}" \
               go build -trimpath -ldflags="-s -w" \
               -o "$bin_dir/$cored_name" \
-              ./spikes/go-core/cmd/daemonitor-cored
+              ./cored/cmd/daemonitor-cored
             chmod +x "$bin_dir/$cored_name" 2>/dev/null || true
             extra="daemonitor-cli-${version}-${extra_label}.zip"
             (cd "$work" && zip -qry "$GITHUB_WORKSPACE/cli-release/${extra}" "$(basename "$root")")
@@ -148,8 +148,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: spikes/go-core/go.mod
-          cache-dependency-path: spikes/go-core/go.sum
+          go-version-file: cored/go.mod
+          cache-dependency-path: cored/go.sum
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -166,7 +166,7 @@ jobs:
           version=$(./gradlew -q printNativePackageVersion --no-daemon)
           out="cored-release"
           mkdir -p "$out"
-          spikes/go-core/scripts/cross-compile-cored.sh "$out/raw"
+          cored/scripts/cross-compile-cored.sh "$out/raw"
           for f in "$out"/raw/*; do
             base=$(basename "$f")
             # daemonitor-cored-darwin-arm64 → daemonitor-cored-VERSION-darwin-arm64
@@ -235,8 +235,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: spikes/go-core/go.mod
-          cache-dependency-path: spikes/go-core/go.sum
+          go-version-file: cored/go.mod
+          cache-dependency-path: cored/go.sum
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4

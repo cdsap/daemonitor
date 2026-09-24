@@ -96,10 +96,10 @@ val buildDaemonitorCored = tasks.register<Exec>("buildDaemonitorCored") {
     group = "distribution"
     description = "Build daemonitor-cored (Go) for the host OS when the go toolchain is available."
     onlyIf { goAvailable.getOrElse(false) }
-    workingDir = file("spikes/go-core")
+    workingDir = file("cored")
     outputs.file(coredOutput)
     inputs.files(
-        fileTree(file("spikes/go-core")) {
+        fileTree(file("cored")) {
             include("**/*.go", "go.mod", "go.sum")
             exclude("bin/**", "**/.smoke-tmp/**")
         },
@@ -118,11 +118,11 @@ val crossCompileDaemonitorCored = tasks.register<Exec>("crossCompileDaemonitorCo
     group = "distribution"
     description = "Cross-compile daemonitor-cored for darwin/linux/windows amd64+arm64 (CGO_ENABLED=0)."
     onlyIf { goAvailable.getOrElse(false) }
-    workingDir = file("spikes/go-core")
+    workingDir = file("cored")
     val outDir = layout.buildDirectory.dir("cored-cross")
     outputs.dir(outDir)
     inputs.files(
-        fileTree(file("spikes/go-core")) {
+        fileTree(file("cored")) {
             include("**/*.go", "go.mod", "go.sum", "scripts/cross-compile-cored.sh")
             exclude("bin/**", "**/.smoke-tmp/**")
         },
