@@ -5,20 +5,15 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
-	"net"
-	"net/http"
 	"os"
-	"path/filepath"
-	"strconv"
 	"time"
 
-	"github.com/cdsap/daemonitor/cored/internal/model"
+	"github.com/cdsap/daemonitor/cored/internal/client"
+	"github.com/cdsap/daemonitor/cored/internal/store"
 )
 
 func main() {
-	defaultSock := filepath.Join(os.TempDir(), "daemonitor-core.sock")
-	socket := flag.String("socket", defaultSock, "Unix domain socket path")
+	socket := flag.String("socket", store.DefaultSocketPath(), "Unix domain socket path")
 	sinceMin := flag.Int("since-min", 15, "history window in minutes (history command)")
 	limit := flag.Int("limit", 200, "history row limit")
 	flag.Parse()
@@ -29,26 +24,19 @@ func main() {
 		cmd = args[0]
 	}
 
-	client := &http.Client{
-		Transport: &http.Transport{
-			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				var d net.Dialer
-				return d.DialContext(ctx, "unix", *socket)
-			},
-		},
-		Timeout: 3 * time.Second,
-	}
+	c := client.New(*socket)
+	ctx := context.Background()
 
 	switch cmd {
 	case "health":
-		var h model.Health
-		if err := getJSON(client, "http://daemonitor/v1/health", &h); err != nil {
+		h, err := c.Health(ctx)
+		if err != nil {
 			fail(err)
 		}
 		printJSON(h)
 	case "processes", "ps":
-		var snap model.Snapshot
-		if err := getJSON(client, "http://daemonitor/v1/processes", &snap); err != nil {
+		snap, err := c.Processes(ctx)
+		if err != nil {
 			fail(err)
 		}
 		if os.Getenv("JSON") == "1" {
@@ -70,10 +58,8 @@ func main() {
 		}
 	case "history":
 		sinceMs := time.Now().Add(-time.Duration(*sinceMin) * time.Minute).UnixMilli()
-		url := "http://daemonitor/v1/processes/history?since_ms=" + strconv.FormatInt(sinceMs, 10) +
-			"&limit=" + strconv.Itoa(*limit)
-		var hist model.History
-		if err := getJSON(client, url, &hist); err != nil {
+		hist, err := c.History(ctx, sinceMs, *limit)
+		if err != nil {
 			fail(err)
 		}
 		if os.Getenv("JSON") == "1" {
@@ -93,7 +79,7 @@ func main() {
 				Path          string `json:"path"`
 			} `json:"logs"`
 		}
-		if err := getJSON(client, "http://daemonitor/v1/daemon-logs", &payload); err != nil {
+		if err := c.GetJSON(ctx, "/v1/daemon-logs", &payload); err != nil {
 			fail(err)
 		}
 		if os.Getenv("JSON") == "1" {
@@ -117,7 +103,7 @@ func main() {
 			Lines         []string `json:"lines"`
 			Events        []any    `json:"events"`
 		}
-		if err := getJSON(client, "http://daemonitor/v1/daemon-logs/"+pid+"/tail", &tail); err != nil {
+		if err := c.GetJSON(ctx, "/v1/daemon-logs/"+pid+"/tail", &tail); err != nil {
 			fail(err)
 		}
 		if os.Getenv("JSON") == "1" {
@@ -133,15 +119,15 @@ func main() {
 		var payload struct {
 			Count  int `json:"count"`
 			Builds []struct {
-				BuildID        string  `json:"build_id"`
-				DaemonPID      int64   `json:"daemon_pid"`
-				FinalStatus    string  `json:"final_status"`
-				InferredSource string  `json:"inferred_source"`
-				ProjectPath    string  `json:"project_path"`
+				BuildID         string   `json:"build_id"`
+				DaemonPID       int64    `json:"daemon_pid"`
+				FinalStatus     string   `json:"final_status"`
+				InferredSource  string   `json:"inferred_source"`
+				ProjectPath     string   `json:"project_path"`
 				DurationSeconds *float64 `json:"duration_seconds"`
 			} `json:"builds"`
 		}
-		if err := getJSON(client, "http://daemonitor/v1/builds", &payload); err != nil {
+		if err := c.GetJSON(ctx, "/v1/builds", &payload); err != nil {
 			fail(err)
 		}
 		if os.Getenv("JSON") == "1" {
@@ -161,19 +147,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "usage: daemonitor-corectl [-socket path] <health|processes|history|logs|log-tail|builds>\n")
 		os.Exit(2)
 	}
-}
-
-func getJSON(client *http.Client, url string, dest any) error {
-	resp, err := client.Get(url)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, body)
-	}
-	return json.NewDecoder(resp.Body).Decode(dest)
 }
 
 func printJSON(v any) {
