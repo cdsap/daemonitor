@@ -6,6 +6,7 @@ require (
 	charm.land/bubbletea/v2 v2.0.9
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/clipperhouse/displaywidth v0.11.0
+	github.com/creack/pty v1.1.24
 	github.com/mattn/go-isatty v0.0.24
 	github.com/rivo/uniseg v0.4.7
 	github.com/shirou/gopsutil/v4 v4.25.8
