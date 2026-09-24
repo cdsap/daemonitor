@@ -1,7 +1,7 @@
 ---
 title: Go live-heap jstat/jcmd spike
 created: 2026-09-24
-status: spike-in-progress
+status: shipped-into-poll
 issue: 245
 ---
 
@@ -32,7 +32,7 @@ Supersedes the 2026-09-23 cutover that accepted missing live heap on the Go path
 5. Timeout ~750ms; fail → unavailable (never coerce to 0).
 6. Policy (initial): probe `GRADLE_DAEMON` / `KOTLIN_DAEMON` only (wrappers/workers stay `n/a` unless product changes).
 
-## Spike deliverables (this branch)
+## Spike deliverables
 
 | Piece | Role |
 |-------|------|
@@ -40,9 +40,7 @@ Supersedes the 2026-09-23 cutover that accepted missing live heap on the Go path
 | `cored/cmd/daemonitor-heapprobe` | One-shot CLI: `daemonitor-heapprobe <pid>` |
 | `cored/docs/heap-jstat-spike.md` | Evidence, column math, open questions |
 | Unit tests | Fixtures from real JDK 23 G1 `jstat -gc` / `jcmd GC.heap_info` |
-
-**Out of spike (follow-on PR):** wire into `internal/poll` + `/v1/processes` JSON + Kotlin
-`GoCoreProcessSource` liveHeap mapping + drop Go-path banner.
+| Poll + JSON + Kotlin | Wired: `internal/poll` → `/v1/processes` → `GoCoreProcessSource` |
 
 ## Non-goals
 
@@ -52,7 +50,8 @@ Supersedes the 2026-09-23 cutover that accepted missing live heap on the Go path
 
 ## Success criteria
 
-- [ ] Parser tests green on checked-in fixtures
-- [ ] `daemonitor-heapprobe <pid>` returns used/committed MB against a live HotSpot JVM (same UID)
-- [ ] Document JDK-on-PATH / tool discovery + failure modes
-- [ ] Clear recommendation: ship jcmd-first vs jstat-first into cored poll
+- [x] Parser tests green on checked-in fixtures
+- [x] `daemonitor-heapprobe <pid>` returns used/committed MB against a live HotSpot JVM (same UID)
+- [x] Document JDK-on-PATH / tool discovery + failure modes
+- [x] Clear recommendation: ship jcmd-first vs jstat-first into cored poll
+- [x] Wire into poll / `/v1/processes` / Kotlin parser (#245 shipping)

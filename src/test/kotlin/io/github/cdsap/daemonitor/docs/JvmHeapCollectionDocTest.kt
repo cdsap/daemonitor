@@ -28,9 +28,16 @@ class JvmHeapCollectionDocTest {
             "## Overhead",
             "## Failure behavior",
             "jdk.attach",
+            "jcmd",
+            "jstat",
+            "daemonitor-cored",
         ).forEach { required ->
             assertTrue(document.contains(required), "$documentPath should include: $required")
         }
+        assertTrue(
+            !document.contains("Go path has no Attach/JMX"),
+            "doc should not claim Go path lacks live heap after #245",
+        )
     }
 
     @Test

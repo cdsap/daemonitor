@@ -5,6 +5,7 @@ import io.github.cdsap.daemonitor.application.ProcessSource
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
+import io.github.cdsap.daemonitor.domain.model.LiveJvmHeap
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.domain.model.Source
 import java.io.InterruptedIOException
@@ -21,11 +22,11 @@ import java.util.concurrent.TimeUnit
 import kotlin.io.path.exists
 
 /**
- * Experimental [ProcessSource] that reads `/v1/processes` from `daemonitor-cored`
- * over a Unix-domain socket (Go core IPC spike).
+ * [ProcessSource] that reads `/v1/processes` from `daemonitor-cored`
+ * over a Unix-domain socket (Go core IPC).
  *
- * Live JVM heap is intentionally always `null` here — Attach/JMX stays on the in-process
- * Kotlin collector. Product cutover accepts that gap (see `cored/docs/dual-run.md`).
+ * Live JVM heap used/committed comes from cored's jcmd/jstat probe for Gradle/Kotlin
+ * daemons (see `cored/internal/heap`). Wrappers and workers stay unavailable.
  */
 class GoCoreProcessSource(
     private val socketPath: Path,
@@ -132,7 +133,32 @@ internal object GoCoreSnapshotParser {
             startTimeMs = startTimeMs,
             status = status,
             automated = automated,
-            liveHeap = null,
+            liveHeap = parseLiveHeap(obj),
+        )
+    }
+
+    /**
+     * Maps Go `/v1/processes` heap_* fields onto [LiveJvmHeap].
+     * Missing fields (older cored) → null; `heap_available: false` → unavailable (not zero).
+     */
+    internal fun parseLiveHeap(obj: String): LiveJvmHeap? {
+        val available = booleanField(obj, "heap_available")
+        val sampledAt = numberField(obj, "heap_sampled_at_ms")?.toLong()
+        val used = numberField(obj, "heap_used_mb")?.toLong()
+        val committed = numberField(obj, "heap_committed_mb")?.toLong()
+        val max = numberField(obj, "heap_max_mb")?.toLong()
+        if (available == null && used == null && committed == null && sampledAt == null) {
+            return null
+        }
+        if (available != true) {
+            return LiveJvmHeap.unavailable(sampledAt ?: 0L)
+        }
+        return LiveJvmHeap(
+            usedMb = used,
+            committedMb = committed,
+            maxMb = max,
+            sampledAtMs = sampledAt ?: 0L,
+            available = true,
         )
     }
 
