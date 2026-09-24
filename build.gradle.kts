@@ -78,10 +78,22 @@ tasks.register<JavaExec>("runHeadless") {
 
 // --- daemonitor-cored (Go) host build; consumed by CLI dist + Compose app resources ---
 
-val goAvailable: Provider<Boolean> = providers.exec {
-    commandLine("go", "version")
-    isIgnoreExitValue = true
-}.result.map { it.exitValue == 0 }
+/**
+ * True when `go` is on PATH and `go version` exits 0.
+ * [providers.exec] throws when the binary is missing; that must not fail `onlyIf`.
+ */
+fun isGoOnPath(): Boolean =
+    try {
+        val process = ProcessBuilder("go", "version")
+            .redirectErrorStream(true)
+            .start()
+        process.inputStream.use { it.readBytes() }
+        process.waitFor() == 0
+    } catch (_: Exception) {
+        false
+    }
+
+val goAvailable: Provider<Boolean> = providers.provider { isGoOnPath() }
 
 val coredBinaryName =
     if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
@@ -95,7 +107,16 @@ val coredOutput = layout.buildDirectory.file("cored/$coredBinaryName")
 val buildDaemonitorCored = tasks.register<Exec>("buildDaemonitorCored") {
     group = "distribution"
     description = "Build daemonitor-cored (Go) for the host OS when the go toolchain is available."
-    onlyIf { goAvailable.getOrElse(false) }
+    onlyIf {
+        val ok = goAvailable.getOrElse(false)
+        if (!ok) {
+            logger.lifecycle(
+                "Skipping buildDaemonitorCored: `go` not found on PATH " +
+                    "(install Go 1.25+ or ensure Gradle can see it; then ./gradlew --stop).",
+            )
+        }
+        ok
+    }
     workingDir = file("cored")
     outputs.file(coredOutput)
     inputs.files(

@@ -74,7 +74,7 @@ mkdir -p "$CORECTL_DIR"
 (cd "$SCRIPT_DIR/.." && go build -o bin/daemonitor-corectl ./cmd/daemonitor-corectl)
 CORECTL="$CORECTL_DIR/daemonitor-corectl"
 
-health="$("$CORECTL" -socket "$SOCK" health)"
+health="$(JSON=1 "$CORECTL" -socket "$SOCK" health)"
 echo "$health" | grep -q '"status": "ok"'
 if ! echo "$health" | grep -q '"db_path"'; then
   echo "e2e failed: health missing db_path: $health" >&2

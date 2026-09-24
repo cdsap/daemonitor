@@ -158,7 +158,7 @@ fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit, onClearSelec
                 Column(modifier = Modifier.weight(1f).fillMaxSize()) {
                     DetailCard(state.detail, nowMs, modifier = Modifier.weight(1f).fillMaxWidth())
                     Spacer(Modifier.padding(Space.xs))
-                    LogCard(state.tail, modifier = Modifier.weight(1f).fillMaxWidth())
+                    LogCard(state.tailState, modifier = Modifier.weight(1f).fillMaxWidth())
                 }
             }
         }
@@ -294,9 +294,15 @@ private fun ProcessDetails(p: GradleProcess, ended: Boolean, nowMs: Long) {
 }
 
 @Composable
-private fun LogCard(tail: List<String>, modifier: Modifier = Modifier) {
+private fun LogCard(tailState: LogTailState, modifier: Modifier = Modifier) {
     SectionCard("Daemon log", modifier) {
-        LogView(tail, modifier = Modifier.fillMaxSize(), autoScroll = true)
+        when (tailState) {
+            LogTailState.NoSelection -> Text("Select a process to see its daemon log.", modifier = Modifier.padding(Space.md), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            LogTailState.Loading -> Text("Loading daemon log…", modifier = Modifier.padding(Space.md), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            LogTailState.NoLog -> Text("No daemon log was found for this process.", modifier = Modifier.padding(Space.md), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            is LogTailState.Error -> Text("Daemon log unavailable (${tailState.errorType}).", modifier = Modifier.padding(Space.md), color = LocalAccentColors.current.warn)
+            is LogTailState.Available -> LogView(tailState.lines, modifier = Modifier.fillMaxSize(), autoScroll = true)
+        }
     }
 }
 

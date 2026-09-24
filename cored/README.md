@@ -110,6 +110,7 @@ GET /v1/builds?limit=<n>
 - **Multi-arch release:** `scripts/cross-compile-cored.sh` + per-OS CLI zips + Homebrew multi-URL formula
 - **Linux dual-run honesty in CI:** `dual-run-honesty` job runs `scripts/dual-run-linux.sh`
 - **First-class module:** top-level `cored/` (`github.com/cdsap/daemonitor/cored`); left `spikes/`
+- **Live heap (Go path):** `internal/heap` (`jcmd`/`jstat`) wired into poll / `/v1/processes` (#245)
 
 ## Dual-run with Kotlin clients
 
@@ -134,4 +135,4 @@ Full comparison procedure and cutover gates: [`docs/dual-run.md`](docs/dual-run.
 
 ## Next
 
-1. Optional: non-JVM live-heap design if product wants heap on the Go path later
+1. Optional: expand dual-run honesty to assert live-heap near-match when JDK tools are present

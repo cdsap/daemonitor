@@ -296,7 +296,12 @@ jobs:
           DB=$(mktemp "${TMPDIR:-/tmp}/daemonitor-json-XXXXXX.db")
           ./bin/daemonitor-cored -socket "$SOCK" -db "$DB" -interval 200ms >/dev/null 2>&1 &
           CORED_PID=$!
-          trap 'kill $CORED_PID 2>/dev/null || true; rm -f "$SOCK" "$DB"' EXIT
+          cleanup() {
+            kill "$CORED_PID" 2>/dev/null || true
+            wait "$CORED_PID" 2>/dev/null || true
+            rm -f "$SOCK" "$DB" "${DB}-wal" "${DB}-shm"
+          }
+          trap cleanup EXIT
           for _ in $(seq 1 50); do
             [[ -S "$SOCK" ]] && break
             sleep 0.05

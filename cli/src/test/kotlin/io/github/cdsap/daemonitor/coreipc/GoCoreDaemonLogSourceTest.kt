@@ -1,8 +1,10 @@
 package io.github.cdsap.daemonitor.coreipc
 
+import io.github.cdsap.daemonitor.application.DaemonLog
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class GoCoreDaemonLogSourceTest {
@@ -99,5 +101,14 @@ class GoCoreDaemonLogSourceTest {
 
         val second = source.readNewLines(logs[0])
         assertTrue(second.isEmpty())
+    }
+
+    @Test
+    fun `tail fetch failures are exposed to the caller`() {
+        val socket = kotlin.io.path.createTempFile(prefix = "go-core-log-", suffix = ".sock")
+        val source = GoCoreDaemonLogSource(socketPath = socket) { _, _ -> error("socket unavailable") }
+        val log = DaemonLog(pid = 9, gradleVersion = "8.10", path = Path.of("/tmp/daemon-9.out.log"))
+
+        assertFailsWith<IllegalStateException> { source.tailFor(log) }
     }
 }

@@ -29,6 +29,14 @@ data class PollError(
     val errorType: String,
 )
 
+sealed interface LogTailState {
+    data object NoSelection : LogTailState
+    data object Loading : LogTailState
+    data object NoLog : LogTailState
+    data class Available(val lines: List<String>) : LogTailState
+    data class Error(val errorType: String) : LogTailState
+}
+
 /** One poll-time sample for the Visual tab memory timeline. */
 data class RssTimelineSample(
     val atMs: Long,
@@ -46,6 +54,7 @@ data class LiveUiState(
     val summary: LiveSummary = LiveSummary(0, 0, null, 0),
     val detail: DetailState = DetailState.NoSelection,
     val tail: List<String> = emptyList(),
+    val tailState: LogTailState = LogTailState.NoSelection,
     val isLoading: Boolean = true,
     val isEmpty: Boolean = true,
     val pollError: PollError? = null,

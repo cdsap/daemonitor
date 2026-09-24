@@ -1,5 +1,6 @@
 package io.github.cdsap.daemonitor.application
 
+import io.github.cdsap.daemonitor.domain.BuildSample
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
@@ -210,7 +211,7 @@ class DefaultDaemonitorQueryServiceTest {
 
         override fun save(sample: GradleProcess, timestampMs: Long) = error("not used")
 
-        override fun samples(pid: Long, fromMs: Long, toMs: Long): List<Pair<Long, Double?>> =
+        override fun samples(pid: Long, fromMs: Long, toMs: Long): List<BuildSample> =
             error("not used")
 
         override fun recentSamples(limit: Long): List<ProcessSample> {
