@@ -34,6 +34,15 @@ type History struct {
 	Processes []Process `json:"processes"`
 }
 
+// DaemonLogTail is the `/v1/daemon-logs/{pid}/tail` response body.
+// Lines are redacted by the core before they are served.
+type DaemonLogTail struct {
+	PID           int64    `json:"pid"`
+	GradleVersion string   `json:"gradle_version"`
+	Path          string   `json:"path"`
+	Lines         []string `json:"lines"`
+}
+
 // Health is the `/v1/health` response body.
 type Health struct {
 	Status      string `json:"status"`
