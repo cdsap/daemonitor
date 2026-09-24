@@ -18,8 +18,8 @@ data class JvmArgs(
 )
 
 /**
- * Live JVM heap snapshot from a diagnostic probe (Attach/JMX), distinct from OS RSS and the
- * configured `-Xmx` limit on [GradleProcess.maxHeapMb].
+ * Live JVM heap snapshot from a diagnostic probe (Attach/JMX or Go `jcmd`/`jstat`), distinct
+ * from OS RSS and the configured `-Xmx` limit on [GradleProcess.maxHeapMb].
  *
  * Missing values stay `null` — never coerced to zero — when [available] is false.
  */
@@ -82,9 +82,9 @@ data class GradleProcess(
     /** True when the invocation carries an automation marker like `--non-interactive` (Gradle 9.6+). */
     val automated: Boolean = false,
     /**
-     * Live heap from Attach/JMX when available. Distinct from [rssMemoryMb] (OS RSS) and
-     * [maxHeapMb] (configured `-Xmx`). Null means not probed; [LiveJvmHeap.available] false means
-     * probed but unavailable.
+     * Live heap from Attach/JMX or Go `jcmd`/`jstat` when available. Distinct from [rssMemoryMb]
+     * (OS RSS) and [maxHeapMb] (configured `-Xmx`). Null means not reported; [LiveJvmHeap.available]
+     * false means probed/typed but unavailable.
      */
     val liveHeap: LiveJvmHeap? = null,
 )

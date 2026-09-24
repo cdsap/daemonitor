@@ -1,6 +1,7 @@
 # Dual-run migration notes (JVM collector ↔ Go core)
 
-Status as of post-merge Go spike on `main` (aggregator + log tails + Kotlin dual-run clients).
+Status as of Go live-heap shipping (#245) on top of the dual-run cutover (aggregator + log
+tails + Kotlin dual-run clients).
 
 These notes capture what dual-run proves today, how to compare sessions, and what must
 be true before the shipping CLI/desktop can drop the in-process collector for a given
@@ -14,7 +15,7 @@ surface.
 | Daemon log discover / tail | `GoCoreDaemonLogSource` → `/v1/daemon-logs` | `DaemonLogWatcher` |
 | Build-event parse / correlation | Go aggregates; HTTP import only when DBs differ | JVM (`DaemonLogParser` + `BuildAggregator`) |
 | Sample / build SQLite | shared `watcher.db` by default; cored owns writes when `db_path` matches | App `WatcherDatabase` writes |
-| Live heap Attach / JMX | always unavailable on Go path (accepted) | JVM Attach/JMX when probe works |
+| Live heap used / committed | `jcmd` / `jstat` via `cored/internal/heap` (daemons) | JVM Attach/JMX when probe works |
 
 Default attaches to the app-dir socket (starts bundled/`PATH` `daemonitor-cored` when needed).
 `--core-socket PATH` forces a specific socket; `--jvm-collector` keeps the in-process collector.
@@ -34,7 +35,7 @@ go build -o bin/daemonitor-cored ./cmd/daemonitor-cored
 ./gradlew :cli:run --args="--plain --core-socket ${TMPDIR:-/tmp}/daemonitor-core.sock"
 
 # Terminal C — Kotlin CLI fully in-process (control)
-./gradlew :cli:run --args="--plain"
+./gradlew :cli:run --args="--plain --jvm-collector"
 
 # Optional — desktop / headless against the same socket
 ./gradlew run --args="--core-socket ${TMPDIR:-/tmp}/daemonitor-core.sock"
@@ -77,7 +78,7 @@ values are bit-identical.
 | Daemon log **count** | Discover lists same `daemon-<pid>.out.log` set | Match (paths under `~/.gradle/daemon`) | **Honest gap** — Go listed 713 logs under `~/.gradle`; 3/6 live daemons unmatched (alternate Gradle user homes under `/private/tmp/...`) | **Pass** — live daemon log matched under `/root/.gradle/daemon` |
 | Daemon log **tail** content | Redacted lines agree for active daemon PIDs | Near-match | **Pass** for matched PID — 100 lines + U3 events (`busy_mark`, `build_start`, …) | **Pass** — discover + builds path exercised via corectl |
 | Build rows | Go spike `/v1/builds` and/or JVM app DB | Should appear | **Pass (Go)** — builds aggregated (`SUCCESS` / `COMPLETED_NO_OUTCOME` / `FAILED`, source `IDE`) | **Pass (Go)** — `COMPLETED_NO_OUTCOME` after `./gradlew help` |
-| Live heap | Go path always empty | **Divergent by design** | **Confirmed** — no live heap on Go snapshots | **Confirmed** — honesty harness disables Attach |
+| Live heap | Daemons: used/committed when probe works; wrappers/`n/a` | Near-match (mechanisms differ) | **Historical** — empty on Go before #245 | **Historical** — honesty harness disabled Attach |
 
 ### 2026-09-22 session notes (macOS)
 
@@ -95,7 +96,9 @@ values are bit-identical.
 
 ## Known honest gaps (do not block dual-run demos)
 
-1. **No live heap from Go** — Attach/JMX stays Kotlin-only until a future design.
+1. **Live heap mechanisms differ** — Go uses `jcmd`/`jstat`; `--jvm-collector` uses Attach/JMX.
+   Values should be same order of magnitude for daemons when both probes succeed; wrappers and
+   workers stay `n/a` on both. Missing JDK tools on the Go host → Go shows unavailable (not zero).
 2. **Shared SQLite by default** — `daemonitor-cored` and the CLI default to the same app-dir
    `watcher.db` + socket. Matching `db_path` skips JVM sample writes and HTTP build import.
    Pass distinct `-db`/`--db` for an isolated core DB (HTTP copy remains). See
@@ -104,7 +107,7 @@ values are bit-identical.
    `~/.gradle/daemon` trees stay cheap; inactive PIDs seed on `TailFor` / first CLI read.
 4. **Alternate Gradle user homes** — processes whose logs live outside `~/.gradle/daemon` are
    classified but have no matching Go log discovery entries.
-5. **Sample timing** — RSS/CPU can disagree by one interval without indicating a classifier bug.
+5. **Sample timing** — RSS/CPU/heap can disagree by one interval without indicating a classifier bug.
 6. **Windows smoke** — shell/JDK Unix-socket smoke is Linux/macOS; Windows relies on Go IPC
    integration tests (see spike README).
 
@@ -121,10 +124,9 @@ Promote a surface out of “experimental dual-run” only when all apply:
       (`GoCoreUnavailableException` — missing path vs unreachable/stale sock; CLI prints the message and keeps the last good frame)
 - [x] No reliance on Go spike SQLite for shipping retention/UI (or schema is deliberately
       shared and migrated) — app-dir defaults + shared-DB write skip (#230/#packaging)
-- [x] Product accepts missing live heap **or** heap has a non-JVM story —
-      **Accepted 2026-09-23:** Go `/v1/processes` keeps `liveHeap = null`; UI/CLI show `n/a` /
-      unavailable (same as Attach failure). `--core-socket` banner states the gap. A future
-      non-JVM heap story is out of cutover scope.
+- [x] Live heap on Go path — **Shipped #245:** `cored/internal/heap` + `/v1/processes` heap fields;
+      Kotlin `GoCoreProcessSource` maps `LiveJvmHeap`. Wrappers/workers stay `n/a`. The 2026-09-23
+      “accept missing live heap” cutover decision is superseded.
 
 Until a deliberate rollback, **Go core is the default client path**; use `--jvm-collector` for the
 legacy in-process collector.
@@ -134,20 +136,19 @@ legacy in-process collector.
 1. ~~Optional: wire `DualRunHonestyTest` / `dual-run-linux.sh` into CI (Linux-only)~~ —
    done: CI job `dual-run-honesty` on `ubuntu-latest` runs
    `./cored/scripts/dual-run-linux.sh`
-2. Optional: non-JVM live-heap design if product wants heap on the Go path
+2. ~~Optional: non-JVM live-heap design if product wants heap on the Go path~~ —
+   done (#245): `jcmd`/`jstat` probe wired into poll / `/v1/processes`
 3. ~~Optional: promote `spikes/go-core` to a first-class module~~ —
    done: moved to `cored/` (`github.com/cdsap/daemonitor/cored`)
 
-### 2026-09-23 live-heap cutover decision
+### 2026-09-23 live-heap cutover decision (superseded by #245)
 
-**Decision:** Accept missing live heap on the Go core path for dual-run cutover.
+**Decision (historical):** Accept missing live heap on the Go core path for dual-run cutover.
 
-**Why:** Attach/JMX is JVM-local and does not belong in `daemonitor-cored`. Shipping Go dual-run
-without heap is already honest in the UI (`n/a` / unavailable) and matches the dual-run checklist
-row “Divergent by design”. Building a native heap probe would be a separate product/epic.
-
-**User-visible:** Go wiring banner includes `live heap Attach/JMX unavailable on Go path`.
-RSS and configured `-Xmx` remain.
+**Superseded 2026-09-24 (#245):** Go core populates live heap used/committed via HotSpot tools.
+Banner no longer claims live heap is unavailable on the Go path. See
+[`docs/jvm-heap-collection.md`](../../docs/jvm-heap-collection.md) and
+[`heap-jstat-spike.md`](heap-jstat-spike.md).
 
 ### 2026-09-23 redaction reconfirm
 

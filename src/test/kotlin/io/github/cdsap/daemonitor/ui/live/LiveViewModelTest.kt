@@ -1,5 +1,6 @@
 package io.github.cdsap.daemonitor.ui.live
 
+import io.github.cdsap.daemonitor.application.DaemonLogTailResult
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import kotlin.test.Test
@@ -79,6 +80,75 @@ class LiveViewModelTest {
         val detail = vm.state.value.detail
         assertTrue(detail is DetailState.Ended)
         assertEquals(1L, (detail as DetailState.Ended).lastKnown.pid)
+    }
+
+    @Test
+    fun `selection clears the previous tail until the selected tail arrives`() {
+        val vm = LiveViewModel()
+        vm.onPoll(listOf(proc(1), proc(2)), DaemonLogTailResult.Lines(listOf("pid 1")))
+        vm.select(1)
+        vm.onTail(1, DaemonLogTailResult.Lines(listOf("pid 1")))
+
+        vm.select(2)
+
+        assertEquals(emptyList(), vm.state.value.tail)
+        assertEquals(LogTailState.Loading, vm.state.value.tailState)
+    }
+
+    @Test
+    fun `tail failure is visible and stale result cannot overwrite a new selection`() {
+        val vm = LiveViewModel()
+        vm.onPoll(listOf(proc(1), proc(2)))
+        vm.select(1)
+        vm.onTail(1, DaemonLogTailResult.Error("IOException"))
+        assertEquals(LogTailState.Error("IOException"), vm.state.value.tailState)
+
+        vm.select(2)
+        vm.onTail(1, DaemonLogTailResult.Lines(listOf("stale")))
+
+        assertEquals(LogTailState.Loading, vm.state.value.tailState)
+        assertEquals(emptyList(), vm.state.value.tail)
+    }
+
+    @Test
+    fun `clearing selection resets the log panel`() {
+        val vm = LiveViewModel()
+        vm.onPoll(listOf(proc(1)))
+        vm.select(1)
+        vm.onTail(1, DaemonLogTailResult.Lines(listOf("line")))
+
+        vm.clearSelection()
+
+        assertEquals(DetailState.NoSelection, vm.state.value.detail)
+        assertEquals(LogTailState.NoSelection, vm.state.value.tailState)
+        assertEquals(emptyList(), vm.state.value.tail)
+    }
+
+    @Test
+    fun `missing and empty tails become an explicit empty state`() {
+        val vm = LiveViewModel()
+        vm.onPoll(listOf(proc(1)))
+        vm.select(1)
+        vm.onTail(1, DaemonLogTailResult.NoLog)
+        assertEquals(LogTailState.NoLog, vm.state.value.tailState)
+
+        vm.select(1)
+        vm.onTail(1, DaemonLogTailResult.Lines(emptyList()))
+        assertEquals(LogTailState.NoLog, vm.state.value.tailState)
+        assertEquals(emptyList(), vm.state.value.tail)
+    }
+
+    @Test
+    fun `process ending during tail load does not leave the panel stuck loading`() {
+        val vm = LiveViewModel()
+        vm.onPoll(listOf(proc(1), proc(2)))
+        vm.select(1)
+        assertEquals(LogTailState.Loading, vm.state.value.tailState)
+
+        vm.onPoll(listOf(proc(2)))
+
+        assertTrue(vm.state.value.detail is DetailState.Ended)
+        assertEquals(LogTailState.NoLog, vm.state.value.tailState)
     }
 
     @Test

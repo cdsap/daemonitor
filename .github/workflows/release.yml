@@ -84,30 +84,37 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Build and test CLI
-        run: ./gradlew :cli:test :cli:distZip --no-daemon --stacktrace
+        run: ./gradlew :cli:test buildDaemonitorGoCli --no-daemon --stacktrace
 
       - name: Stage CLI release archive(s)
         id: stage
         run: |
           set -euo pipefail
-          shopt -s nullglob
-          archives=(cli/build/distributions/*.zip)
-          if (( ${#archives[@]} != 1 )); then
-            echo "Expected one CLI archive, found ${#archives[@]}" >&2
-            exit 1
-          fi
           version=$(./gradlew -q printNativePackageVersion --no-daemon)
           mkdir -p cli-release
           primary="daemonitor-cli-${version}-${{ matrix.platform }}-${{ matrix.arch }}.zip"
-          cp "${archives[0]}" "cli-release/${primary}"
+          ./cored/scripts/package-native-cli.sh "$version" "${{ matrix.platform }}" "${{ matrix.arch }}" cli-release
+          if [[ ! -f "cli-release/${primary}" ]]; then
+            # package script uses labels as given; ensure expected name exists
+            ls -la cli-release/
+            test -f "cli-release/${primary}"
+          fi
           listing=$(unzip -l "cli-release/${primary}")
-          if ! grep -E 'daemonitor-cored(\.exe)?$' <<< "$listing"; then
+          if ! grep -E 'bin/daemonitor-cli(\.exe)?$' <<< "$listing"; then
+            echo "Release CLI archive missing daemonitor-cli binary" >&2
+            exit 1
+          fi
+          if ! grep -E 'bin/daemonitor-cored(\.exe)?$' <<< "$listing"; then
             echo "Release CLI archive missing daemonitor-cored binary" >&2
+            exit 1
+          fi
+          if grep -Eiq '\.jar$' <<< "$listing"; then
+            echo "Native release archive must not contain JARs" >&2
             exit 1
           fi
           echo "### Standalone CLI (${{ matrix.platform }}-${{ matrix.arch }})" >> "$GITHUB_STEP_SUMMARY"
           echo "- Archive: ${primary}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Includes: host-arch daemonitor-cored" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Includes: native daemonitor-cli + daemonitor-cored (no JDK)" >> "$GITHUB_STEP_SUMMARY"
 
           extra_label="${{ matrix.extra_label }}"
           if [[ -n "$extra_label" ]]; then
@@ -115,18 +122,24 @@ jobs:
             unzip -q "cli-release/${primary}" -d "$work"
             root=$(find "$work" -mindepth 1 -maxdepth 1 -type d | head -1)
             bin_dir="$root/bin"
+            cli_name=daemonitor-cli
             cored_name=daemonitor-cored
             if [[ "${{ matrix.platform }}" == "windows" ]]; then
+              cli_name=daemonitor-cli.exe
               cored_name=daemonitor-cored.exe
             fi
             CGO_ENABLED=0 GOOS="${{ matrix.goos }}" GOARCH="${{ matrix.extra_goarch }}" \
               go build -trimpath -ldflags="-s -w" \
               -o "$bin_dir/$cored_name" \
               ./cored/cmd/daemonitor-cored
-            chmod +x "$bin_dir/$cored_name" 2>/dev/null || true
+            CGO_ENABLED=0 GOOS="${{ matrix.goos }}" GOARCH="${{ matrix.extra_goarch }}" \
+              go build -trimpath -ldflags="-s -w" \
+              -o "$bin_dir/$cli_name" \
+              ./cored/cmd/daemonitor-cli
+            chmod +x "$bin_dir/$cored_name" "$bin_dir/$cli_name" 2>/dev/null || true
             extra="daemonitor-cli-${version}-${extra_label}.zip"
             (cd "$work" && zip -qry "$GITHUB_WORKSPACE/cli-release/${extra}" "$(basename "$root")")
-            echo "- Extra archive: ${extra} (cored ${{ matrix.goos }}/${{ matrix.extra_goarch }})" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Extra archive: ${extra} (cli+cored ${{ matrix.goos }}/${{ matrix.extra_goarch }})" >> "$GITHUB_STEP_SUMMARY"
             rm -rf "$work"
           fi
 

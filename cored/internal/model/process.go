@@ -15,10 +15,17 @@ type Process struct {
 	MaxHeapMB        *int64   `json:"max_heap_mb"`
 	MinHeapMB        *int64   `json:"min_heap_mb"`
 	GC               *string  `json:"gc"`
-	StartTimeMs      int64    `json:"start_time_ms"`
-	Status           string   `json:"status"`
-	Automated        bool     `json:"automated"`
-	SampledAtMs      int64    `json:"sampled_at_ms"`
+	// Live heap from jcmd/jstat (Gradle/Kotlin daemons only). Null used/committed when
+	// unavailable — never coerced to zero. Distinct from MaxHeapMB (-Xmx).
+	HeapUsedMB      *int64 `json:"heap_used_mb"`
+	HeapCommittedMB *int64 `json:"heap_committed_mb"`
+	HeapMaxMB       *int64 `json:"heap_max_mb"`
+	HeapSampledAtMs *int64 `json:"heap_sampled_at_ms"`
+	HeapAvailable   bool   `json:"heap_available"`
+	StartTimeMs     int64  `json:"start_time_ms"`
+	Status          string `json:"status"`
+	Automated       bool   `json:"automated"`
+	SampledAtMs     int64  `json:"sampled_at_ms"`
 }
 
 // Snapshot is the `/v1/processes` response body.

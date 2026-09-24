@@ -83,7 +83,7 @@ done
 
 # Second poll window so Go CPU deltas and daemon classification settle.
 sleep 2
-cored/bin/daemonitor-corectl -socket "$SOCK" health | grep -q '"status": "ok"'
+JSON=1 cored/bin/daemonitor-corectl -socket "$SOCK" health | grep -q '"status": "ok"'
 echo "==> Go snapshot"
 cored/bin/daemonitor-corectl -socket "$SOCK" processes
 cored/bin/daemonitor-corectl -socket "$SOCK" logs | head -20 || true

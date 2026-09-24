@@ -72,10 +72,14 @@ internal object CliLauncher {
         val terminal = if (options.collectOnly) {
             null
         } else {
+            // Clear whenever we are on a real console, even with --plain/--no-color, so the
+            // live table rewrites in place. Keep appending (no clear) for redirected/piped
+            // output where console is null but TERM is still set.
+            val clearScreen = interactive && (colorEnabled || System.console() != null)
             HeadlessTerminalUi(
                 output = output,
                 input = input,
-                clearScreen = interactive && colorEnabled,
+                clearScreen = clearScreen,
                 colorEnabled = colorEnabled,
                 pollInterval = pollInterval,
             )
@@ -232,7 +236,7 @@ internal object CliLauncher {
         Options:
           -h, --help       Show this help.
           -v, --version    Show the Daemonitor version.
-          --plain          Disable colors and terminal screen clearing.
+          --plain          Disable ANSI colors (interactive TTY still clears).
           --no-color       Alias for --plain.
           --collect-only   Collect and persist without rendering terminal output.
           --db PATH        Store data in this SQLite database.
@@ -247,7 +251,8 @@ internal object CliLauncher {
 
         By default, attaches to daemonitor-cored (auto-starts when packaged/on PATH).
         When the core's db_path matches --db (default: app watcher.db), the core owns
-        sample/build writes. Live heap Attach/JMX is unavailable on the Go path.
+        sample/build writes. Live heap for Gradle/Kotlin daemons uses cored's jcmd/jstat
+        probe (JDK tools on PATH or JAVA_HOME).
 
         Press q to quit.
     """.trimIndent()
