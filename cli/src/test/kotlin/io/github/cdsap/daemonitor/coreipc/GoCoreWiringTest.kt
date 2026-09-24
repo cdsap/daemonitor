@@ -30,8 +30,9 @@ class GoCoreWiringTest {
         assertNotNull(wiring.logSource)
         assertNull(wiring.buildSource)
         assertFalse(wiring.persistSamples)
-        assertTrue(wiring.banner!!.contains("shared DB"))
-        assertTrue(wiring.banner!!.contains("live heap"))
+        val sharedBanner = assertNotNull(wiring.banner)
+        assertTrue(sharedBanner.contains("shared DB"))
+        assertFalse(sharedBanner.contains("unavailable on Go path"))
     }
 
     @Test
@@ -45,7 +46,8 @@ class GoCoreWiringTest {
         assertNotNull(wiring.processSource)
         assertNotNull(wiring.buildSource)
         assertTrue(wiring.persistSamples)
-        assertFalse(wiring.banner!!.contains("shared DB"))
-        assertTrue(wiring.banner!!.contains("live heap"))
+        val banner = assertNotNull(wiring.banner)
+        assertFalse(banner.contains("shared DB"))
+        assertFalse(banner.contains("unavailable on Go path"))
     }
 }

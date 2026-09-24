@@ -27,7 +27,6 @@ fun wireGoCore(
 ): GoCoreWiring {
     if (coreSocket == null) return GoCoreWiring()
     val owns = coreOwnsDatabase(coreSocket, databasePath, defaultDatabase)
-    val heapNote = "live heap Attach/JMX unavailable on Go path"
     return GoCoreWiring(
         processSource = GoCoreProcessSource(coreSocket),
         logSource = GoCoreDaemonLogSource(coreSocket),
@@ -35,10 +34,9 @@ fun wireGoCore(
         persistSamples = !owns,
         banner = if (owns) {
             "Reading live processes/logs from Go core at $coreSocket " +
-                "(shared DB $databasePath — core owns sample/build writes; $heapNote)"
+                "(shared DB $databasePath — core owns sample/build writes)"
         } else {
-            "Experimental: reading processes, daemon logs, and builds from Go core at $coreSocket " +
-                "($heapNote)"
+            "Reading processes, daemon logs, and builds from Go core at $coreSocket"
         },
     )
 }

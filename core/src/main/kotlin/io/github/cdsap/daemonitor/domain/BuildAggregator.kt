@@ -11,9 +11,6 @@ import io.github.cdsap.daemonitor.domain.model.IdleMark
 import io.github.cdsap.daemonitor.domain.model.Outcome
 import io.github.cdsap.daemonitor.domain.model.Source
 
-/** Provides RSS + CPU samples for a PID within a time window (backed by the DB in production). */
-typealias SampleProvider = (pid: Long, startMs: Long, endMs: Long) -> List<Pair<Long, Double?>>
-
 /**
  * Correlates daemon-log events with poll samples into confirmed [Build] records (U5 / KTD-1).
  *
@@ -24,7 +21,7 @@ typealias SampleProvider = (pid: Long, startMs: Long, endMs: Long) -> List<Pair<
  * (null peaks, KTD-2). Daemon identity is the context uid, never the project path (HTD).
  */
 class BuildAggregator(
-    private val sampleProvider: SampleProvider = { _, _, _ -> emptyList() },
+    private val sampleProvider: BuildSampleProvider = BuildSampleProvider { _, _, _ -> emptyList() },
     /** Env-var names in the watcher's own process — subtracted from each build's env before agent
      *  fingerprinting so an ambient agent session is not mis-attributed to every build it spawns. */
     private val ambientEnvNames: Set<String> = emptySet(),
@@ -141,13 +138,14 @@ class BuildAggregator(
             daemonPid: Long,
             uid: String?,
             endMs: Long?,
-            sampleProvider: SampleProvider,
+            sampleProvider: BuildSampleProvider,
             ambientEnvNames: Set<String>,
             interrupted: Boolean = false,
         ): Build {
-            val samples = endMs?.let { sampleProvider(daemonPid, busyTimeMs, it) } ?: emptyList()
-            val rss = samples.map { it.first }
-            val cpu = samples.mapNotNull { it.second }
+            val samples = endMs?.let { sampleProvider.samplesInWindow(daemonPid, busyTimeMs, it) }
+                ?: emptyList()
+            val rss = samples.map { it.rssMemoryMb }
+            val cpu = samples.mapNotNull { it.cpuPercent }
 
             val status = when {
                 interrupted -> FinalStatus.INTERRUPTED

@@ -29,7 +29,7 @@ class CoreContainer(
     val database = WatcherDatabase.open(databasePath)
     val settingsStore = SettingsStore(settingsPath)
     val buildAggregator = BuildAggregator(
-        sampleProvider = database::samplesInWindow,
+        sampleProvider = database,
         ambientEnvNames = ambientEnvNames,
         logSnippetLimit = with(MonitoringConfig.DEFAULT.logSnippetLimit) {
             BuildAggregator.LogSnippetLimit(lines = lines, chars = chars)

@@ -51,7 +51,7 @@ data class DesktopLaunchOptions(
               --jvm-collector  Force the in-process JVM collector (skip Go core).
 
             By default, attaches to daemonitor-cored (auto-starts when packaged/on PATH).
-            Live heap Attach/JMX is unavailable on the Go path.
+            Live heap for daemons uses cored's jcmd/jstat probe (JDK tools on PATH / JAVA_HOME).
         """.trimIndent()
 
         fun parse(args: Array<String>, error: PrintStream = System.err): DesktopLaunchOptions? {

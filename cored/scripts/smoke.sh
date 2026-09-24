@@ -35,7 +35,7 @@ if [[ ! -e "$SOCK" ]]; then
   exit 1
 fi
 
-./bin/daemonitor-corectl -socket "$SOCK" health | grep -q '"status": "ok"'
+JSON=1 ./bin/daemonitor-corectl -socket "$SOCK" health | grep -q '"status": "ok"'
 ./bin/daemonitor-corectl -socket "$SOCK" processes >/dev/null
 sleep 0.5
 ./bin/daemonitor-corectl -socket "$SOCK" history >/dev/null

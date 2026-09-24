@@ -25,7 +25,11 @@ class BuildAggregatorTest {
     @Test
     fun `qualified build emits one record with window peaks`() {
         // 3 samples in the window: rss 100,300,200 ; cpu 10,50,30
-        val samples = listOf(100L to 10.0, 300L to 50.0, 200L to 30.0) as List<Pair<Long, Double?>>
+        val samples = listOf(
+            BuildSample(rssMemoryMb = 100, cpuPercent = 10.0),
+            BuildSample(rssMemoryMb = 300, cpuPercent = 50.0),
+            BuildSample(rssMemoryMb = 200, cpuPercent = 30.0),
+        )
         val agg = BuildAggregator(sampleProvider = { _, _, _ -> samples })
 
         val emitted = agg.onEvents(
@@ -84,7 +88,10 @@ class BuildAggregatorTest {
 
     @Test
     fun `daemon disappearing after outcome emits completed build`() {
-        val samples = listOf(100L to 20.0, 140L to 50.0)
+        val samples = listOf(
+            BuildSample(rssMemoryMb = 100, cpuPercent = 20.0),
+            BuildSample(rssMemoryMb = 140, cpuPercent = 50.0),
+        )
         val agg = BuildAggregator(sampleProvider = { _, _, _ -> samples })
         agg.onEvents(pid, listOf(context(0), BusyMark(1_000), start(1_010), Outcome(true, 2.0)))
 
