@@ -32,6 +32,15 @@ func TestFindCoredBinaryEmpty(t *testing.T) {
 	_, _ = FindCoredBinary()
 }
 
+func TestCoredArgsPropagatesGradleUserHome(t *testing.T) {
+	t.Setenv("GRADLE_USER_HOME", filepath.Join(t.TempDir(), "custom-gradle"))
+	args := coredArgs("/tmp/core.sock", "/tmp/watcher.db")
+	want := []string{"-socket", "/tmp/core.sock", "-db", "/tmp/watcher.db", "-gradle-user-home", os.Getenv("GRADLE_USER_HOME")}
+	if strings.Join(args, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("args=%v want %v", args, want)
+	}
+}
+
 func TestConnectToRunningServer(t *testing.T) {
 	sock := filepath.Join(os.TempDir(), fmt.Sprintf("dmn-boot-%d.sock", os.Getpid()))
 	db := filepath.Join(t.TempDir(), "watcher.db")

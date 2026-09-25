@@ -58,6 +58,21 @@ jobs:
             echo "Native CLI archive must not require a JDK" >&2
             exit 1
           fi
+
+          # Regression check for cross-target packaging: the archive labels must
+          # match the executable format, not only the filenames.
+          review_dir=$(mktemp -d)
+          ./cored/scripts/package-native-cli.sh "$version" windows arm64 "$review_dir"
+          review_archive=("$review_dir"/daemonitor-cli-*.zip)
+          unzip -q "${review_archive[0]}" -d "$review_dir/extracted"
+          for executable in daemonitor-cli.exe daemonitor-cored.exe; do
+            binary=$(find "$review_dir/extracted" -path "*/bin/$executable" -print -quit)
+            format=$(file -b "$binary")
+            if ! grep -Eiq '^PE32\+ executable.*(Aarch64|ARM64)' <<< "$format"; then
+              echo "Expected Windows arm64 PE binary for $executable, got: $format" >&2
+              exit 1
+            fi
+          done
           echo "### Native Go CLI" >> "$GITHUB_STEP_SUMMARY"
           echo "- Archive: ${archive[0]}" >> "$GITHUB_STEP_SUMMARY"
           echo "- JDK required: no" >> "$GITHUB_STEP_SUMMARY"

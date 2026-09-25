@@ -138,6 +138,14 @@ func FindCoredBinary() (string, error) {
 	return "", fmt.Errorf("%s not found", name)
 }
 
+func coredArgs(socket, db string) []string {
+	args := []string{"-socket", socket, "-db", db}
+	if gradleHome := os.Getenv("GRADLE_USER_HOME"); gradleHome != "" {
+		args = append(args, "-gradle-user-home", gradleHome)
+	}
+	return args
+}
+
 func coredBinaryName() string {
 	if runtime.GOOS == "windows" {
 		return "daemonitor-cored.exe"

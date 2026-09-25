@@ -613,8 +613,8 @@ func (m Model) renderDetails() string {
 	writeField(&b, "RSS", render.RSSText(p.RSSMemoryMB))
 	writeField(&b, "CPU", render.CPUText(p.CPUPercent))
 	writeField(&b, "Xmx", render.HeapLimitText(p.MaxHeapMB))
-	writeField(&b, "Heap used", "n/a")
-	writeField(&b, "Heap committed", "n/a")
+	writeField(&b, "Heap used", render.HeapText(p.HeapUsedMB))
+	writeField(&b, "Heap committed", render.HeapText(p.HeapCommittedMB))
 	writeField(&b, "Start", formatStart(p.StartTimeMs))
 	writeField(&b, "Uptime", render.Uptime(p.StartTimeMs, now))
 	if m.detailLog != nil {
@@ -793,8 +793,10 @@ func formatRow(p model.Process, cols columnSet, nowMs int64) string {
 			cell = fmt.Sprintf("%d", p.PID)
 		case colRSS:
 			cell = render.RSSText(p.RSSMemoryMB)
-		case colHeapUsed, colHeapCmt:
-			cell = "n/a"
+		case colHeapUsed:
+			cell = render.HeapText(p.HeapUsedMB)
+		case colHeapCmt:
+			cell = render.HeapText(p.HeapCommittedMB)
 		case colXmx:
 			cell = render.HeapLimitText(p.MaxHeapMB)
 		case colCPU:
