@@ -267,9 +267,9 @@ jobs:
 
       - name: Smoke test packaged launcher
         run: |
-          output=$("${{ matrix.launcher }}" --headless --help)
-          printf '%s\n' "$output"
-          [[ "$output" == *"Usage: daemonitor --headless"* ]]
+          ./scripts/smoke-test-native-distribution.sh \
+            "${{ matrix.launcher }}" \
+            "${{ matrix.app_path }}"
 
       - name: Verify bundled daemonitor-cored in app resources
         run: |

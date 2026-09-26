@@ -109,3 +109,6 @@ Default Go-path live heap needs a local JDK with `jcmd` and/or `jstat` (usually 
 - Persistence round-trips nullable live-heap columns and migrates existing databases.
 - UI/CLI/MCP tests assert labels distinguish RSS, heap used, heap committed, and heap limit.
 - Packaging tests assert the Attach/management modules are listed for native distributions.
+- Native packaging smoke coverage (`scripts/smoke-test-native-distribution.sh`) checks the bundled
+  runtime release file for `jdk.attach` and that headless output includes heap columns (values or
+  the explicit unavailable marker).

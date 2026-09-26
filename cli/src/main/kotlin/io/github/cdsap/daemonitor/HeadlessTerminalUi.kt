@@ -66,11 +66,11 @@ object HeadlessTerminalRenderer {
         if (error != null) appendLine(ansi("Last poll failed: $error", colorEnabled, BOLD, RED))
         appendLine()
 
+        appendLine(ansi("TYPE             PID     RSS      HEAP USED  HEAP CMT   HEAP LIMIT  CPU   UPTIME   PROJECT", colorEnabled, BOLD))
+        appendLine("────────────────────────────────────────────────────────────────────────────────────────")
         if (result.processes.isEmpty()) {
             appendLine("No Gradle-related processes are running.")
         } else {
-            appendLine(ansi("TYPE             PID     RSS      HEAP USED  HEAP CMT   HEAP LIMIT  CPU   UPTIME   PROJECT", colorEnabled, BOLD))
-            appendLine("────────────────────────────────────────────────────────────────────────────────────────")
             result.processes
                 .sortedWith(compareByDescending<GradleProcess> { it.rssMemoryMb }.thenBy { it.pid })
                 .forEach { process ->
