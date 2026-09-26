@@ -20,6 +20,25 @@ if [[ "$OUT" != /* ]]; then
 fi
 mkdir -p "$OUT"
 
+case "$OS_LABEL" in
+  macos) goos=darwin ;;
+  linux) goos=linux ;;
+  windows) goos=windows ;;
+  *)
+    echo "Unsupported OS label: $OS_LABEL (expected macos, linux, or windows)" >&2
+    exit 2
+    ;;
+esac
+
+case "$ARCH_LABEL" in
+  x64) goarch=amd64 ;;
+  arm64) goarch=arm64 ;;
+  *)
+    echo "Unsupported architecture label: $ARCH_LABEL (expected x64 or arm64)" >&2
+    exit 2
+    ;;
+esac
+
 cli_name=daemonitor-cli
 cored_name=daemonitor-cored
 if [[ "$OS_LABEL" == "windows" ]]; then
@@ -34,8 +53,10 @@ mkdir -p "$root/bin"
 
 echo "==> Building native CLI ($OS_LABEL/$ARCH_LABEL)"
 cd "$GO_CORE"
-CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$root/bin/$cli_name" ./cmd/daemonitor-cli
-CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$root/bin/$cored_name" ./cmd/daemonitor-cored
+CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
+  go build -trimpath -ldflags="-s -w" -o "$root/bin/$cli_name" ./cmd/daemonitor-cli
+CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
+  go build -trimpath -ldflags="-s -w" -o "$root/bin/$cored_name" ./cmd/daemonitor-cored
 chmod +x "$root/bin/$cli_name" "$root/bin/$cored_name" 2>/dev/null || true
 
 zip_name="daemonitor-cli-${VERSION}-${OS_LABEL}-${ARCH_LABEL}.zip"

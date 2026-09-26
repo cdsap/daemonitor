@@ -131,6 +131,14 @@ func HeapLimitText(v *int64) string {
 	return formatBytesMB(*v)
 }
 
+// HeapText formats a live heap measurement or n/a when the probe was unavailable.
+func HeapText(v *int64) string {
+	if v == nil {
+		return "n/a"
+	}
+	return formatBytesMB(*v)
+}
+
 // formatBytesMB formats a megabyte count compactly.
 func formatBytesMB(mb int64) string {
 	if mb >= 1024 {

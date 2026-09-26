@@ -201,13 +201,25 @@ func TestGoldenEmptyAndDetails(t *testing.T) {
 		t.Fatalf("empty state missing: %s", body)
 	}
 
-	p := model.Process{PID: 9, Type: "GRADLE_DAEMON", Name: "x", RSSMemoryMB: 1}
+	used := int64(1536)
+	committed := int64(2048)
+	p := model.Process{PID: 9, Type: "GRADLE_DAEMON", Name: "x", RSSMemoryMB: 1, HeapUsedMB: &used, HeapCommittedMB: &committed}
 	m.detailsOpen = true
 	m.detailProcess = &p
 	m.detailLoading = false
 	body = m.View().Content
-	if !strings.Contains(body, "PROCESS DETAILS") || !strings.Contains(body, "Heap used") || !strings.Contains(body, "n/a") {
+	if !strings.Contains(body, "PROCESS DETAILS") || !strings.Contains(body, "Heap used") || !strings.Contains(body, "1.5 GB") || !strings.Contains(body, "2 GB") {
 		t.Fatalf("details view unexpected: %s", body)
+	}
+}
+
+func TestFormatRowUsesLiveHeapValues(t *testing.T) {
+	used := int64(512)
+	committed := int64(1024)
+	p := model.Process{PID: 9, HeapUsedMB: &used, HeapCommittedMB: &committed}
+	row := formatRow(p, columnSet{ids: []columnID{colHeapUsed, colHeapCmt}}, fixedNow().UnixMilli())
+	if !strings.Contains(row, "512 MB") || !strings.Contains(row, "1 GB") {
+		t.Fatalf("row=%q missing live heap values", row)
 	}
 }
 

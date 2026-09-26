@@ -54,4 +54,14 @@ func TestEmptyProcessesMessage(t *testing.T) {
 	}
 }
 
+func TestHeapTextFormatsLiveAndUnavailableValues(t *testing.T) {
+	used := int64(1536)
+	if got := HeapText(&used); got != "1.5 GB" {
+		t.Fatalf("live heap=%q want 1.5 GB", got)
+	}
+	if got := HeapText(nil); got != "n/a" {
+		t.Fatalf("unavailable heap=%q want n/a", got)
+	}
+}
+
 func strPtr(s string) *string { return &s }

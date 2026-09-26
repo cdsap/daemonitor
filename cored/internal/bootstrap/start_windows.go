@@ -9,7 +9,7 @@ import (
 
 // StartCored launches daemonitor-cored detached from the TUI stdio.
 func StartCored(binary, socket, db string) error {
-	cmd := exec.Command(binary, "-socket", socket, "-db", db)
+	cmd := exec.Command(binary, coredArgs(socket, db)...)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	cmd.Stdin = nil
