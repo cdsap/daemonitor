@@ -26,21 +26,25 @@ func WriteProcessesPlain(w io.Writer, snap model.Snapshot) {
 		fmt.Fprintln(w, "No Gradle-related processes are currently running.")
 		return
 	}
-	fmt.Fprintf(w, "%-16s %7s %8s %7s %8s %8s  %s\n",
-		"TYPE", "PID", "RSS", "CPU", "XMX", "UPTIME", "PROJECT")
+	fmt.Fprintf(w, "%-16s %7s %8s %7s %8s %8s  %-24s %s\n",
+		"TYPE", "PID", "RSS", "CPU", "XMX", "UPTIME", "PROJECT", "SIGNALS")
 	now := snap.SampledAtMs
 	if now == 0 {
 		now = time.Now().UnixMilli()
 	}
 	for _, p := range snap.Processes {
-		fmt.Fprintf(w, "%-16s %7d %8s %7s %8s %8s  %s\n",
+		signals := strings.Join(ProcessSignals(p), " ")
+		if signals == "" {
+			signals = "-"
+		}
+		fmt.Fprintf(w, "%-16s %7d %8s %7s %8s %8s  %-24s %s\n",
 			TypeDisplay(p.Type),
 			p.PID,
 			fmt.Sprintf("%dMB", p.RSSMemoryMB),
 			CPUText(p.CPUPercent),
 			HeapLimitText(p.MaxHeapMB),
 			Uptime(p.StartTimeMs, now),
-			ProjectName(p),
+			ProjectName(p), signals,
 		)
 	}
 }
@@ -79,8 +83,16 @@ func WriteBuildsPlain(w io.Writer, payload client.BuildsPayload) {
 		if b.DurationSeconds != nil {
 			dur = fmt.Sprintf("%.1fs", *b.DurationSeconds)
 		}
-		fmt.Fprintf(w, "  id=%-36s pid=%-7d status=%-20s source=%-8s dur=%s  %s\n",
-			truncate(b.BuildID, 36), b.DaemonPID, b.FinalStatus, b.InferredSource, dur, truncate(b.ProjectPath, 40))
+		agent := b.Agent
+		if agent == "" {
+			agent = "-"
+		}
+		provider := b.AgentProvider
+		if provider == "" {
+			provider = "-"
+		}
+		fmt.Fprintf(w, "  id=%-36s pid=%-7d status=%-20s source=%-8s agent=%-20s provider=%-10s dur=%s  %s\n",
+			truncate(b.BuildID, 36), b.DaemonPID, b.FinalStatus, b.InferredSource, truncate(agent, 20), truncate(provider, 10), dur, truncate(b.ProjectPath, 40))
 	}
 }
 
@@ -137,6 +149,26 @@ func HeapText(v *int64) string {
 		return "n/a"
 	}
 	return formatBytesMB(*v)
+}
+
+const (
+	// MemoryWarnMB and MemoryCritMB match the desktop live-monitor thresholds.
+	MemoryWarnMB = int64(4_096)
+	MemoryCritMB = int64(8_192)
+)
+
+// ProcessSignals returns compact operator-facing signals for a live process.
+func ProcessSignals(p model.Process) []string {
+	signals := make([]string, 0, 2)
+	if p.RSSMemoryMB >= MemoryCritMB {
+		signals = append(signals, "CRIT MEM")
+	} else if p.RSSMemoryMB >= MemoryWarnMB {
+		signals = append(signals, "HIGH MEM")
+	}
+	if p.Automated {
+		signals = append(signals, "AUTOMATED")
+	}
+	return signals
 }
 
 // formatBytesMB formats a megabyte count compactly.

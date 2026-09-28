@@ -9,6 +9,7 @@ import (
 	"github.com/clipperhouse/displaywidth"
 
 	"github.com/cdsap/daemonitor/cored/internal/model"
+	"github.com/cdsap/daemonitor/cored/internal/render"
 )
 
 func TestSortByRSSDescending(t *testing.T) {
@@ -220,6 +221,14 @@ func TestFormatRowUsesLiveHeapValues(t *testing.T) {
 	row := formatRow(p, columnSet{ids: []columnID{colHeapUsed, colHeapCmt}}, fixedNow().UnixMilli())
 	if !strings.Contains(row, "512 MB") || !strings.Contains(row, "1 GB") {
 		t.Fatalf("row=%q missing live heap values", row)
+	}
+}
+
+func TestFormatRowIncludesProcessSignals(t *testing.T) {
+	p := model.Process{PID: 9, RSSMemoryMB: render.MemoryCritMB, Automated: true}
+	row := formatRow(p, columnSet{ids: []columnID{colType, colPID, colRSS, colProject}}, fixedNow().UnixMilli())
+	if !strings.Contains(row, "CRIT MEM") || !strings.Contains(row, "AUTOMATED") {
+		t.Fatalf("row=%q missing process signals", row)
 	}
 }
 
