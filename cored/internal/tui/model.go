@@ -808,7 +808,11 @@ func formatRow(p model.Process, cols columnSet, nowMs int64) string {
 		}
 		parts = append(parts, padColumn(cell, id))
 	}
-	return strings.Join(parts, " ")
+	row := strings.Join(parts, " ")
+	if signals := render.ProcessSignals(p); len(signals) > 0 {
+		row = strings.Join(signals, " ") + "  " + row
+	}
+	return row
 }
 
 func truncateWidth(s string, width int) string {

@@ -92,6 +92,8 @@ type BuildRecord struct {
 	DaemonPID       int64    `json:"daemon_pid"`
 	FinalStatus     string   `json:"final_status"`
 	InferredSource  string   `json:"inferred_source"`
+	Agent           string   `json:"agent"`
+	AgentProvider   string   `json:"agent_provider"`
 	ProjectPath     string   `json:"project_path"`
 	DurationSeconds *float64 `json:"duration_seconds"`
 }
