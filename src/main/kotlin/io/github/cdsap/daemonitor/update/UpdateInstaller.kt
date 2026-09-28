@@ -124,7 +124,8 @@ class DesktopUpdateApplier(
             pid=$processId
             app_path=${shellEscape(installRoot.toString())}
             staged=${shellEscape(staged.payloadPath.toString())}
-            backup="${"$"}{app_path}.pre-update"
+            backup=${shellEscape(stagedDir.resolve("previous-app-$processId").toString())}
+            trap 'rm -rf "${"$"}backup"' EXIT
             while kill -0 "${"$"}pid" 2>/dev/null; do sleep 0.2; done
             sleep 0.4
             if [[ ! -e "${"$"}app_path" || ! -e "${"$"}staged" ]]; then
@@ -138,9 +139,11 @@ class DesktopUpdateApplier(
               echo "Update apply failed; restored the previous installation" >&2
               exit 1
             fi
+            # Keep rollback state out of the install directory and remove it before relaunch.
+            # A failed relaunch must not leave an app-looking sibling beside the live bundle.
+            rm -rf "${"$"}backup"
             $quarantine
             $relaunch
-            rm -rf "${"$"}backup"
             rm -rf ${shellEscape(stagedDir.toString())}
             rm -f ${shellEscape(staged.artifactPath.toString())}
             rm -f "${"$"}0"
@@ -161,7 +164,7 @@ class DesktopUpdateApplier(
             set PID=$processId
             set APP_PATH=${windowsQuote(installRoot.toString())}
             set STAGED=${windowsQuote(staged.payloadPath.toString())}
-            set BACKUP=%APP_PATH%.pre-update
+            set BACKUP=${windowsQuote(stagedDir.resolve("previous-app-$processId").toString())}
             :wait
             tasklist /FI "PID eq %PID%" 2>NUL | find "%PID%" >NUL
             if not errorlevel 1 (
@@ -178,8 +181,9 @@ class DesktopUpdateApplier(
               move /Y "%BACKUP%" "%APP_PATH%"
               exit /b 1
             )
-            start "" $relaunch
+            rem Keep rollback state out of the install directory and remove it before relaunch.
             rmdir /s /q "%BACKUP%"
+            start "" $relaunch
             rmdir /s /q ${windowsQuote(stagedDir.toString())}
             del /f /q ${windowsQuote(staged.artifactPath.toString())}
             del /f /q "%~f0"

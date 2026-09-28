@@ -165,6 +165,12 @@ class DesktopUpdateInstallerTest {
         val script = Files.readString(tmp.resolve("apply-update.sh"))
         assertTrue(script.contains("pid=4242"))
         assertTrue(script.contains(app.toString()))
+        assertTrue(!script.contains(".pre-update"))
+        assertTrue(script.contains("previous-app-4242"))
+        val backupCleanup = script.indexOf("\nrm -rf \"${'$'}backup\"\n")
+        val relaunch = script.indexOf("'/usr/bin/open'")
+        assertTrue(backupCleanup >= 0 && backupCleanup < relaunch)
+        assertTrue(script.contains("trap 'rm -rf \"${'$'}backup\"' EXIT"))
     }
 
     private fun macInstall(): InstallationInfo = InstallationInfo(
