@@ -10,6 +10,7 @@ class PublicWebsiteTest {
     private val siteRoot = Path.of("site")
     private val indexHtml = Files.readString(siteRoot.resolve("index.html"))
     private val cliHtml = Files.readString(siteRoot.resolve("cli.html"))
+    private val nativeCommandSource = Files.readString(Path.of("cored/internal/command/command.go"))
     private val stylesCss = Files.readString(siteRoot.resolve("styles.css"))
     private val appJs = Files.readString(siteRoot.resolve("app.js"))
     private val pagesWorkflow = Files.readString(Path.of(".github/workflows/pages.yml"))
@@ -68,6 +69,7 @@ class PublicWebsiteTest {
             "id=\"cli\"",
             "CLI",
             "brew install daemonitor-cli",
+            "No JDK required",
             "Build History",
             "MCP / Agent workflows",
             "id=\"privacy\"",
@@ -100,27 +102,69 @@ class PublicWebsiteTest {
             indexHtml.contains("alt=\"Daemonitor CLI"),
             "CLI screenshot should have meaningful alt text",
         )
+        assertFalse(
+            indexHtml.contains("Needs JDK 21"),
+            "Landing page CLI section should not describe the retired Kotlin JDK requirement",
+        )
     }
 
     @Test
-    fun `cli options page documents flags and install`() {
+    fun `cli reference documents the native command and option contract`() {
+        val nativeCommands = listOf(
+            "daemonitor-cli top",
+            "daemonitor-cli ps",
+            "daemonitor-cli history",
+            "daemonitor-cli builds",
+            "daemonitor-cli logs [pid]",
+            "daemonitor-cli health",
+        )
+        val nativeOptions = listOf(
+            "--socket PATH",
+            "--poll-interval DURATION",
+            "--no-color",
+            "--no-autostart",
+            "--json",
+            "--help",
+            "--version",
+        )
+
         listOf(
             "CLI options",
             "daemonitor-cli",
-            "--help",
-            "--version",
-            "--plain",
-            "--no-color",
-            "--collect-only",
-            "--db PATH",
-            "--poll-interval",
-            "--retention",
+            "thin client",
+            "daemonitor-cored",
+            "NO_COLOR",
+            "automatically",
+            "daemonitor-cli ps --json",
             "brew install daemonitor-cli",
+            "no JDK required",
             "assets/cli-monitor.png",
             "Press",
-        ).forEach { required ->
+        ).plus(nativeCommands).plus(nativeOptions).forEach { required ->
             assertTrue(cliHtml.contains(required), "cli.html should include: $required")
         }
+
+        listOf("top", "ps", "history", "builds", "logs", "health").forEach { command ->
+            assertTrue(
+                nativeCommandSource.contains("\"$command\": true"),
+                "command.go should register native command: $command",
+            )
+        }
+        nativeOptions.forEach { option ->
+            assertTrue(
+                nativeCommandSource.contains(option),
+                "command.go should define native option shown on the website: $option",
+            )
+        }
+        assertTrue(
+            nativeCommandSource.contains("NO_COLOR"),
+            "command.go should honor NO_COLOR",
+        )
+
+        listOf("--plain", "--collect-only", "--db", "--core-socket", "--retention").forEach { retired ->
+            assertFalse(cliHtml.contains(retired), "cli.html should not document retired option: $retired")
+        }
+        assertFalse(cliHtml.contains("JDK 21"), "CLI reference should not require JDK 21")
         assertFalse(cliHtml.contains("href=\"/"), "Absolute root hrefs break under /daemonitor/")
         assertFalse(cliHtml.contains("src=\"/"), "Absolute root src paths break under /daemonitor/")
     }

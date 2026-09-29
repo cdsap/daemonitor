@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Daemonitor CLI options — terminal monitor for Gradle daemons</title>
-  <meta name="description" content="Command-line options for daemonitor-cli: help, version, plain output, collect-only, custom database path, poll interval, and retention.">
+  <meta name="description" content="Native daemonitor-cli commands and options for interactive monitoring, one-shot snapshots, history, builds, logs, and core health.">
   <meta name="theme-color" content="#E9EFEA" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#101513" media="(prefers-color-scheme: dark)">
 
@@ -12,7 +12,7 @@
   <meta property="og:site_name" content="Daemonitor">
   <meta property="og:url" content="https://cdsap.github.io/daemonitor/cli.html">
   <meta property="og:title" content="Daemonitor CLI options">
-  <meta property="og:description" content="Command-line options for daemonitor-cli, the terminal Activity Monitor for Gradle daemons.">
+  <meta property="og:description" content="Native daemonitor-cli commands and options for interactive monitoring, one-shot snapshots, history, builds, logs, and core health.">
   <meta property="og:image" content="https://cdsap.github.io/daemonitor/assets/cli-monitor.png">
 
   <link rel="icon" type="image/png" href="assets/favicon.png">
@@ -44,8 +44,9 @@
         <p class="feature-kicker">Reference</p>
         <h1 id="cli-options-heading">CLI options</h1>
         <p class="section-lede">
-          <code>daemonitor-cli</code> is the standalone terminal monitor. It shares the desktop app’s
-          core runtime, SQLite database, and retention settings.
+          <code>daemonitor-cli</code> is a thin client for <code>daemonitor-cored</code>, the native core
+          that owns process data and the shared database. An installed package includes the sibling core;
+          the CLI starts it automatically when needed.
         </p>
         <pre class="install-snippet" tabindex="0"><code>brew tap cdsap/tap
 brew install daemonitor-cli
@@ -53,14 +54,56 @@ daemonitor-cli --help</code></pre>
         <p class="docs-lede-follow">
           Also available as <code>daemonitor-cli-*.zip</code> on
           <a href="https://github.com/cdsap/daemonitor/releases/latest" rel="noopener noreferrer">GitHub Releases</a>
-          (requires JDK 21).
+          (no JDK required).
         </p>
       </div>
     </section>
 
     <section class="section" aria-labelledby="options-table-heading">
       <div class="section-inner narrow">
-        <h2 id="options-table-heading">Flags</h2>
+        <h2 id="options-table-heading">Commands</h2>
+        <div class="options-table-wrap">
+          <table class="options-table">
+            <thead>
+              <tr>
+                <th scope="col">Command</th>
+                <th scope="col">What it does</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>daemonitor-cli</code></td>
+                <td>Open the interactive monitor on a TTY; otherwise print one process snapshot.</td>
+              </tr>
+              <tr>
+                <td><code>daemonitor-cli top</code></td>
+                <td>Open the interactive monitor. Requires a TTY.</td>
+              </tr>
+              <tr>
+                <td><code>daemonitor-cli ps</code></td>
+                <td>Print one process snapshot and exit.</td>
+              </tr>
+              <tr>
+                <td><code>daemonitor-cli history</code></td>
+                <td>Print recent process history.</td>
+              </tr>
+              <tr>
+                <td><code>daemonitor-cli builds</code></td>
+                <td>Print recent builds.</td>
+              </tr>
+              <tr>
+                <td><code>daemonitor-cli logs [pid]</code></td>
+                <td>List daemon logs, or show a retained log tail for one daemon.</td>
+              </tr>
+              <tr>
+                <td><code>daemonitor-cli health</code></td>
+                <td>Show core health and connection information.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="options-heading">Options</h2>
         <div class="options-table-wrap">
           <table class="options-table">
             <thead>
@@ -71,47 +114,45 @@ daemonitor-cli --help</code></pre>
             </thead>
             <tbody>
               <tr>
-                <td><code>-h</code>, <code>--help</code></td>
-                <td>Print usage and exit.</td>
+                <td><code>--socket PATH</code></td>
+                <td>Use an explicit <code>daemonitor-cored</code> Unix socket.</td>
               </tr>
               <tr>
-                <td><code>-v</code>, <code>--version</code></td>
-                <td>Print the Daemonitor version and exit.</td>
-              </tr>
-              <tr>
-                <td><code>--plain</code></td>
-                <td>Disable ANSI colors. Interactive TTYs still clear and refresh in place; prefer this when redirecting output or using a limited terminal.</td>
+                <td><code>--poll-interval DURATION</code></td>
+                <td>Set the interactive monitor refresh interval. Default: <code>2s</code>.</td>
               </tr>
               <tr>
                 <td><code>--no-color</code></td>
-                <td>Alias for <code>--plain</code>.</td>
+                <td>Disable color. The <code>NO_COLOR</code> environment variable does the same.</td>
               </tr>
               <tr>
-                <td><code>--collect-only</code></td>
-                <td>Collect and persist samples without rendering the live table. Useful for background collection.</td>
+                <td><code>--no-autostart</code></td>
+                <td>Do not start the sibling <code>daemonitor-cored</code> automatically.</td>
               </tr>
               <tr>
-                <td><code>--db PATH</code></td>
-                <td>Use this SQLite database file instead of the default app data location.</td>
+                <td><code>--json</code></td>
+                <td>Emit machine-readable JSON where supported by one-shot commands.</td>
               </tr>
               <tr>
-                <td><code>--poll-interval SECONDS</code></td>
-                <td>How often to poll processes. Default: <code>2</code>.</td>
+                <td><code>--help</code></td>
+                <td>Print usage and exit.</td>
               </tr>
               <tr>
-                <td><code>--retention DAYS</code></td>
-                <td>How long to retain history (1–90 days). Matches the desktop Settings retention window.</td>
+                <td><code>--version</code></td>
+                <td>Print the CLI version and exit.</td>
               </tr>
             </tbody>
           </table>
         </div>
 
         <h2 id="usage-heading">Everyday usage</h2>
+        <pre class="install-snippet" tabindex="0"><code>daemonitor-cli
+daemonitor-cli ps --json</code></pre>
         <ul class="docs-list">
           <li>Press <kbd>q</kbd> to quit the interactive monitor.</li>
           <li>Over SSH, allocate a TTY: <code>ssh -t host daemonitor-cli</code>.</li>
-          <li>First-poll CPU shows sampling placeholders until a delta exists; <code>0%</code> means idle afterward.</li>
-          <li>Live heap shows <code>n/a</code> for wrappers and test workers; daemons are probed when Attach/JMX succeeds.</li>
+          <li>Redirected or non-interactive sessions should use a one-shot command such as <code>daemonitor-cli ps --json</code>.</li>
+          <li>Use <code>daemonitor-cli top</code> for an explicit interactive monitor, or <code>daemonitor-cli health</code> to inspect the core connection.</li>
         </ul>
 
         <figure class="docs-figure">
