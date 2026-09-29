@@ -70,6 +70,10 @@ class PublicWebsiteTest {
             "CLI",
             "brew install daemonitor-cli",
             "No JDK required",
+            "native Go binary",
+            "Bubble Tea TUI",
+            "daemonitor-cored",
+            "separate packaged JVM application",
             "Build History",
             "MCP / Agent workflows",
             "id=\"privacy\"",
@@ -140,6 +144,14 @@ class PublicWebsiteTest {
             "no JDK required",
             "assets/cli-monitor.png",
             "Press",
+            "Interactive monitor",
+            "Interactive monitor key bindings",
+            "RSS, CPU, PID, type, uptime, and project",
+            "Pause or resume automatic refresh",
+            "retained daemon-log tail",
+            "restore the terminal",
+            "very narrow or short windows",
+            "TTY-only",
         ).plus(nativeCommands).plus(nativeOptions).forEach { required ->
             assertTrue(cliHtml.contains(required), "cli.html should include: $required")
         }

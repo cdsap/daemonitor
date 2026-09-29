@@ -214,6 +214,11 @@
               The same live monitor in your terminal — for SSH sessions, build machines, and anyone
               who prefers a lighter footprint than the desktop window.
             </p>
+            <p>
+              The standalone CLI is a native Go binary with a Bubble Tea TUI. It starts its sibling
+              <code>daemonitor-cored</code> automatically when needed and does not require Java or a JDK.
+              The desktop app remains a separate packaged JVM application.
+            </p>
             <ul>
               <li>Live process table with RSS, heap, CPU, and uptime</li>
               <li>Shares the desktop app’s local database and retention settings</li>

@@ -44,9 +44,9 @@
         <p class="feature-kicker">Reference</p>
         <h1 id="cli-options-heading">CLI options</h1>
         <p class="section-lede">
-          <code>daemonitor-cli</code> is a thin client for <code>daemonitor-cored</code>, the native core
-          that owns process data and the shared database. An installed package includes the sibling core;
-          the CLI starts it automatically when needed.
+          <code>daemonitor-cli</code> is a native Go thin client for <code>daemonitor-cored</code>, the
+          native core that owns process data and the shared database. An installed package includes the
+          sibling core; the CLI starts it automatically when needed. It does not require Java or a JDK.
         </p>
         <pre class="install-snippet" tabindex="0"><code>brew tap cdsap/tap
 brew install daemonitor-cli
@@ -154,6 +154,57 @@ daemonitor-cli ps --json</code></pre>
           <li>Redirected or non-interactive sessions should use a one-shot command such as <code>daemonitor-cli ps --json</code>.</li>
           <li>Use <code>daemonitor-cli top</code> for an explicit interactive monitor, or <code>daemonitor-cli health</code> to inspect the core connection.</li>
         </ul>
+
+        <h2 id="tui-heading">Interactive monitor</h2>
+        <p>
+          Run <code>daemonitor-cli</code> in a TTY to open the full-screen monitor. It refreshes every
+          two seconds by default and keeps the terminal in the monitor until you quit.
+        </p>
+        <div class="options-table-wrap">
+          <table class="options-table">
+            <caption class="sr-only">Interactive monitor key bindings</caption>
+            <thead>
+              <tr>
+                <th scope="col">Key</th>
+                <th scope="col">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><kbd>↑</kbd>/<kbd>↓</kbd> or <kbd>j</kbd>/<kbd>k</kbd></td>
+                <td>Select a process and scroll through the process rows. <kbd>g</kbd> and <kbd>G</kbd> jump to the first and last row.</td>
+              </tr>
+              <tr>
+                <td><kbd>s</kbd></td>
+                <td>Cycle the sort column: RSS, CPU, PID, type, uptime, and project.</td>
+              </tr>
+              <tr>
+                <td><kbd>S</kbd></td>
+                <td>Toggle ascending or descending sort order.</td>
+              </tr>
+              <tr>
+                <td><kbd>space</kbd></td>
+                <td>Pause or resume automatic refresh. Press <kbd>r</kbd> for an immediate refresh, including while paused.</td>
+              </tr>
+              <tr>
+                <td><kbd>enter</kbd></td>
+                <td>Open details for the selected process, including its retained daemon-log tail when available.</td>
+              </tr>
+              <tr>
+                <td><kbd>esc</kbd></td>
+                <td>Close process details and return to the table. <kbd>?</kbd> toggles the in-app key-help line.</td>
+              </tr>
+              <tr>
+                <td><kbd>q</kbd> or <kbd>Ctrl+C</kbd></td>
+                <td>Quit and restore the terminal. The monitor adapts its columns after a resize; very narrow or short windows ask you to enlarge the terminal.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="docs-lede-follow">
+          The TUI requires a terminal. For redirected output, scripts, or JSON consumers, use
+          <code>daemonitor-cli ps --json</code>; <code>daemonitor-cli top</code> is intentionally TTY-only.
+        </p>
 
         <figure class="docs-figure">
           <img
