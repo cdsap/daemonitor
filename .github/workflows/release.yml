@@ -129,11 +129,11 @@ jobs:
               cored_name=daemonitor-cored.exe
             fi
             CGO_ENABLED=0 GOOS="${{ matrix.goos }}" GOARCH="${{ matrix.extra_goarch }}" \
-              go build -trimpath -ldflags="-s -w" \
+              go build -trimpath -ldflags="-s -w -X github.com/cdsap/daemonitor/cored/internal/api.Version=${version}" \
               -o "$bin_dir/$cored_name" \
               ./cored/cmd/daemonitor-cored
             CGO_ENABLED=0 GOOS="${{ matrix.goos }}" GOARCH="${{ matrix.extra_goarch }}" \
-              go build -trimpath -ldflags="-s -w" \
+              go build -trimpath -ldflags="-s -w -X github.com/cdsap/daemonitor/cored/internal/api.Version=${version}" \
               -o "$bin_dir/$cli_name" \
               ./cored/cmd/daemonitor-cli
             chmod +x "$bin_dir/$cored_name" "$bin_dir/$cli_name" 2>/dev/null || true
@@ -179,7 +179,7 @@ jobs:
           version=$(./gradlew -q printNativePackageVersion --no-daemon)
           out="cored-release"
           mkdir -p "$out"
-          cored/scripts/cross-compile-cored.sh "$out/raw"
+          DAEMONITOR_VERSION="$version" cored/scripts/cross-compile-cored.sh "$out/raw"
           for f in "$out"/raw/*; do
             base=$(basename "$f")
             # daemonitor-cored-darwin-arm64 → daemonitor-cored-VERSION-darwin-arm64

@@ -13,6 +13,8 @@ group = "io.github.cdsap.daemonitor"
 version = "1.2.0"
 
 val nativePackageVersion = "1.2.0"
+val nativeVersionLdflags =
+    "-s -w -X github.com/cdsap/daemonitor/cored/internal/api.Version=$nativePackageVersion"
 
 val distributionChannel = (findProperty("daemonitor.distribution") as String?)
     ?.trim()
@@ -128,7 +130,7 @@ val buildDaemonitorCored = tasks.register<Exec>("buildDaemonitorCored") {
     commandLine(
         "go", "build",
         "-trimpath",
-        "-ldflags=-s -w",
+        "-ldflags=$nativeVersionLdflags",
         "-o", coredOutput.get().asFile.absolutePath,
         "./cmd/daemonitor-cored",
     )
@@ -158,11 +160,20 @@ val buildDaemonitorGoCli = tasks.register<Exec>("buildDaemonitorGoCli") {
     commandLine(
         "go", "build",
         "-trimpath",
-        "-ldflags=-s -w",
+        "-ldflags=$nativeVersionLdflags",
         "-o", goCliOutput.get().asFile.absolutePath,
         "./cmd/daemonitor-cli",
     )
     environment("CGO_ENABLED", "0")
+    doLast {
+        val process = ProcessBuilder(goCliOutput.get().asFile.absolutePath, "--version")
+            .redirectErrorStream(true)
+            .start()
+        val output = process.inputStream.bufferedReader().use { it.readText().trim() }
+        check(process.waitFor() == 0 && output == nativePackageVersion) {
+            "Native CLI version was '$output', expected $nativePackageVersion"
+        }
+    }
 }
 
 val nativeCliDistDir = layout.buildDirectory.dir("native-cli-dist")
@@ -200,6 +211,7 @@ val crossCompileDaemonitorCored = tasks.register<Exec>("crossCompileDaemonitorCo
         },
     )
     commandLine("bash", "scripts/cross-compile-cored.sh", outDir.get().asFile.absolutePath)
+    environment("DAEMONITOR_VERSION", nativePackageVersion)
 }
 
 val coredCliDistDir = layout.buildDirectory.dir("cored-cli-dist")

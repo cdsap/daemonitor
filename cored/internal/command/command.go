@@ -19,7 +19,7 @@ import (
 )
 
 // Version is the CLI package version (shown by -v / --version).
-const Version = api.Version
+var Version = api.Version
 
 // Options are global CLI flags.
 type Options struct {
