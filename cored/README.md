@@ -1,8 +1,9 @@
-# Go core + IPC clients
+# Go core + native IPC clients
 
 Native Daemonitor core that owns process polling + sample persistence and exposes a
-Unix-domain-socket HTTP API. Kotlin CLI / desktop / `--headless` **default** to attaching
-(and auto-starting packaged `daemonitor-cored`); use `--jvm-collector` for the legacy path.
+Unix-domain-socket HTTP API. The native `daemonitor-cli` is the default standalone CLI.
+The Kotlin desktop app and `--headless` mode attach to (and auto-start packaged)
+`daemonitor-cored`; use `--jvm-collector` for the legacy collector path.
 
 First-class Go module at `cored/` (`github.com/cdsap/daemonitor/cored`). Ships:
 
@@ -48,7 +49,7 @@ Or via Gradle (embeds cored next to the CLI):
 ```bash
 ./gradlew :cli:installDist
 build/install/daemonitor-cli/bin/daemonitor-cored
-build/install/daemonitor-cli/bin/daemonitor-cli --plain --core-socket "$HOME/Library/Application Support/Daemonitor/daemonitor-core.sock"
+build/install/daemonitor-cli/bin/daemonitor-cli --socket "$HOME/Library/Application Support/Daemonitor/daemonitor-core.sock"
 ```
 
 ## Cross-compile

@@ -34,7 +34,7 @@ build/install/daemonitor-cli/bin/daemonitor-cored
 # or from a Compose distributable:
 # build/compose/binaries/main/app/.../resources/daemonitor-cored
 # terminal 2
-build/install/daemonitor-cli/bin/daemonitor-cli --plain --core-socket "$HOME/Library/Application Support/Daemonitor/daemonitor-core.sock"
+build/install/daemonitor-cli/bin/daemonitor-cli --socket "$HOME/Library/Application Support/Daemonitor/daemonitor-core.sock"
 ```
 
 `DefaultWatcherDBPath()` / `DefaultSocketPath()` match Kotlin `AppDirectories`.
@@ -74,6 +74,7 @@ cd cored
 go test ./internal/store/ -count=1
 ./gradlew :core:test --tests 'io.github.cdsap.daemonitor.application.PollMonitoringTest'
 ./gradlew :cli:installDist
+file cli/build/install/daemonitor-cli/bin/daemonitor-cli
 ls cli/build/install/daemonitor-cli/bin/daemonitor-cored
 # Desktop app resources (after createDistributable):
 # find build/compose/binaries/main/app -name 'daemonitor-cored*'
