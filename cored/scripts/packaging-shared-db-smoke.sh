@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# E2E: bundled daemonitor-cored + CLI --core-socket against a shared SQLite file.
-# Proves packaging slice 4: installDist embeds cored, health db_path matches, CLI
-# reports shared-DB ownership (skips sample/build writes).
+# E2E: bundled native daemonitor-cli + daemonitor-cored against a shared SQLite file.
+# Proves packaging slice 4: installDist embeds both native binaries, the CLI
+# reaches the shared core, and CLI commands do not write samples.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -15,7 +15,6 @@ SOCK="$WORKDIR/daemonitor-packaging-e2e.sock"
 DB="$WORKDIR/daemonitor-packaging-e2e.sqlite"
 CLI_ERR="$WORKDIR/cli-stderr.txt"
 cored_pid=""
-cli_pid=""
 rm -f "$SOCK" "$DB" "$CLI_ERR" "${DB}-wal" "${DB}-shm"
 
 echo "==> Building CLI installDist (embeds host-arch daemonitor-cored when go is available)"
@@ -27,10 +26,6 @@ CLI="$BIN/daemonitor-cli"
 if [[ -x "$BIN/daemonitor-cored.exe" ]]; then
   CORED="$BIN/daemonitor-cored.exe"
 fi
-if [[ -x "$BIN/daemonitor-cli.bat" && ! -x "$CLI" ]]; then
-  CLI="$BIN/daemonitor-cli.bat"
-fi
-
 if [[ ! -x "$CORED" ]]; then
   echo "e2e failed: bundled daemonitor-cored missing at $CORED (is go on PATH?)" >&2
   ls -la "$BIN" >&2 || true
@@ -40,15 +35,15 @@ if [[ ! -x "$CLI" && ! -f "$CLI" ]]; then
   echo "e2e failed: bundled daemonitor-cli missing at $CLI" >&2
   exit 1
 fi
+if ! "$CLI" --help | grep -q "Commands:"; then
+  echo "e2e failed: installDist did not produce the native Bubble Tea CLI" >&2
+  exit 1
+fi
 
 echo "==> Starting bundled cored (shared temp DB) — warm samples, then slow poll"
 "$CORED" -socket "$SOCK" -db "$DB" -interval 200ms -retention 1h &
 cored_pid=$!
 cleanup() {
-  if [[ -n "${cli_pid:-}" ]]; then
-    kill "$cli_pid" 2>/dev/null || true
-    wait "$cli_pid" 2>/dev/null || true
-  fi
   if [[ -n "${cored_pid:-}" ]]; then
     kill "$cored_pid" 2>/dev/null || true
     wait "$cored_pid" 2>/dev/null || true
@@ -103,25 +98,10 @@ fi
 sleep 0.3
 before_count="$(sqlite3 "$DB" 'SELECT COUNT(*) FROM process_samples;')"
 
-echo "==> CLI --collect-only against shared DB (expect core-owns-writes banner; no new samples)"
-"$CLI" --plain --collect-only --core-socket "$SOCK" --db "$DB" >"$WORKDIR/cli-stdout.txt" 2>"$CLI_ERR" &
-cli_pid=$!
-sleep 3.5
-kill "$cli_pid" 2>/dev/null || true
-wait "$cli_pid" 2>/dev/null || true
-cli_pid=""
-
-if ! grep -q "shared DB" "$CLI_ERR"; then
-  echo "e2e failed: CLI stderr missing shared-DB ownership message" >&2
-  echo "----- cli stderr -----" >&2
-  cat "$CLI_ERR" >&2 || true
-  exit 1
-fi
-if ! grep -Eqi "core owns sample/build writes|owns sample/build writes" "$CLI_ERR"; then
-  echo "e2e failed: CLI stderr missing write-ownership phrase" >&2
-  cat "$CLI_ERR" >&2 || true
-  exit 1
-fi
+echo "==> CLI health + process snapshot against shared DB (no new samples)"
+"$CLI" --socket "$SOCK" health --json >"$WORKDIR/cli-stdout.txt" 2>"$CLI_ERR"
+grep -q '"db_path"' "$WORKDIR/cli-stdout.txt"
+"$CLI" --socket "$SOCK" ps --json >>"$WORKDIR/cli-stdout.txt" 2>>"$CLI_ERR"
 
 after_count="$(sqlite3 "$DB" 'SELECT COUNT(*) FROM process_samples;')"
 if [[ "$after_count" != "$before_count" ]]; then
