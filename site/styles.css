@@ -439,6 +439,10 @@ code {
   min-width: 0;
 }
 
+.section-inner.narrow > h2:not(:first-child) {
+  margin-top: var(--space-xl);
+}
+
 .why-layout,
 .privacy-layout,
 .download-layout {
