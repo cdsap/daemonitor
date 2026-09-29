@@ -18,7 +18,8 @@ import (
 	"github.com/cdsap/daemonitor/cored/internal/store"
 )
 
-const Version = "0.1.0"
+// Version is overridden by release builds with Go's -ldflags -X option.
+var Version = "0.1.0"
 
 // Server exposes a tiny HTTP API over a Unix domain socket.
 type Server struct {

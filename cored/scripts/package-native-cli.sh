@@ -54,9 +54,11 @@ mkdir -p "$root/bin"
 echo "==> Building native CLI ($OS_LABEL/$ARCH_LABEL)"
 cd "$GO_CORE"
 CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
-  go build -trimpath -ldflags="-s -w" -o "$root/bin/$cli_name" ./cmd/daemonitor-cli
+  go build -trimpath -ldflags="-s -w -X github.com/cdsap/daemonitor/cored/internal/api.Version=$VERSION" \
+  -o "$root/bin/$cli_name" ./cmd/daemonitor-cli
 CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
-  go build -trimpath -ldflags="-s -w" -o "$root/bin/$cored_name" ./cmd/daemonitor-cored
+  go build -trimpath -ldflags="-s -w -X github.com/cdsap/daemonitor/cored/internal/api.Version=$VERSION" \
+  -o "$root/bin/$cored_name" ./cmd/daemonitor-cored
 chmod +x "$root/bin/$cli_name" "$root/bin/$cored_name" 2>/dev/null || true
 
 zip_name="daemonitor-cli-${VERSION}-${OS_LABEL}-${ARCH_LABEL}.zip"

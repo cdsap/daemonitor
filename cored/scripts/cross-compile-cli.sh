@@ -23,6 +23,10 @@ targets=(
 
 echo "==> Cross-compiling daemonitor-cli + daemonitor-cored into $OUT"
 cd "$GO_CORE"
+ldflags="-s -w"
+if [[ -n "${DAEMONITOR_VERSION:-}" ]]; then
+  ldflags+=" -X github.com/cdsap/daemonitor/cored/internal/api.Version=${DAEMONITOR_VERSION}"
+fi
 for spec in "${targets[@]}"; do
   IFS=/ read -r goos goarch suffix <<<"$spec"
   ext=""
@@ -31,10 +35,10 @@ for spec in "${targets[@]}"; do
   fi
   echo "  - $goos/$goarch"
   CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
-    go build -trimpath -ldflags="-s -w" \
+    go build -trimpath -ldflags="$ldflags" \
     -o "$OUT/daemonitor-cli-${suffix}${ext}" ./cmd/daemonitor-cli
   CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
-    go build -trimpath -ldflags="-s -w" \
+    go build -trimpath -ldflags="$ldflags" \
     -o "$OUT/daemonitor-cored-${suffix}${ext}" ./cmd/daemonitor-cored
 done
 

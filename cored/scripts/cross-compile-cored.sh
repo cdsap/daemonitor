@@ -24,11 +24,15 @@ targets=(
 
 echo "==> Cross-compiling daemonitor-cored into $OUT"
 cd "$GO_CORE"
+ldflags="-s -w"
+if [[ -n "${DAEMONITOR_VERSION:-}" ]]; then
+  ldflags+=" -X github.com/cdsap/daemonitor/cored/internal/api.Version=${DAEMONITOR_VERSION}"
+fi
 for spec in "${targets[@]}"; do
   IFS=/ read -r goos goarch name <<<"$spec"
   echo "  - $goos/$goarch → $name"
   CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
-    go build -trimpath -ldflags="-s -w" \
+    go build -trimpath -ldflags="$ldflags" \
     -o "$OUT/$name" ./cmd/daemonitor-cored
 done
 
