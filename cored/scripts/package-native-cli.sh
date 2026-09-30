@@ -65,11 +65,10 @@ zip_name="daemonitor-cli-${VERSION}-${OS_LABEL}-${ARCH_LABEL}.zip"
 if command -v zip >/dev/null 2>&1; then
   (cd "$stage" && zip -qry "$OUT/$zip_name" "$(basename "$root")")
 elif [[ "$OS_LABEL" == "windows" ]] && command -v powershell.exe >/dev/null 2>&1; then
-  stage_win=$(cygpath -w "$stage")
+  root_win=$(cygpath -w "$root")
   output_win=$(cygpath -w "$OUT/$zip_name")
   powershell.exe -NoProfile -NonInteractive -Command \
-    '$stage = $args[0]; $output = $args[1]; $root = Join-Path $stage $args[2]; Compress-Archive -Path $root -DestinationPath $output -Force' \
-    -- "$stage_win" "$output_win" "$(basename "$root")"
+    "Compress-Archive -LiteralPath '$root_win' -DestinationPath '$output_win' -Force"
 else
   echo "A zip archiver is required (zip or PowerShell Compress-Archive on Windows)" >&2
   exit 1
