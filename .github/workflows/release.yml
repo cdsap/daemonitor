@@ -13,26 +13,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  create-release:
-    name: Create GitHub release
-    runs-on: ubuntu-latest
-    steps:
-      - name: Create or update release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          TAG_NAME: ${{ github.ref_name }}
-        run: |
-          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
-            exit 0
-          fi
-          gh release create "$TAG_NAME" \
-            --title "$TAG_NAME" \
-            --notes "Daemonitor ${TAG_NAME}"
-
   build-cli-asset:
     name: Build CLI archive (${{ matrix.platform }}-${{ matrix.arch }})
-    needs: create-release
     strategy:
       fail-fast: false
       matrix:
@@ -84,7 +66,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Build and test CLI
-        run: ./gradlew :cli:test buildDaemonitorGoCli --no-daemon --stacktrace
+        run: ./gradlew :test --tests io.github.cdsap.daemonitor.ReleaseMetadataTest :cli:test buildDaemonitorGoCli --no-daemon --stacktrace
 
       - name: Stage CLI release archive(s)
         id: stage
@@ -99,20 +81,25 @@ jobs:
             ls -la cli-release/
             test -f "cli-release/${primary}"
           fi
-          # Windows PowerShell 5.1 may write backslashes in ZIP entry names.
-          listing=$(unzip -l "cli-release/${primary}" | sed 's#\\#/#g')
-          if ! grep -E 'bin/daemonitor-cli(\.exe)?$' <<< "$listing"; then
-            echo "Release CLI archive missing daemonitor-cli binary" >&2
-            exit 1
-          fi
-          if ! grep -E 'bin/daemonitor-cored(\.exe)?$' <<< "$listing"; then
-            echo "Release CLI archive missing daemonitor-cored binary" >&2
-            exit 1
-          fi
-          if grep -Eiq '\.jar$' <<< "$listing"; then
-            echo "Native release archive must not contain JARs" >&2
-            exit 1
-          fi
+          validate_native_cli_archive() {
+            local archive=$1
+            # Windows PowerShell 5.1 may write backslashes in ZIP entry names.
+            local listing
+            listing=$(unzip -l "$archive" | sed 's#\\#/#g')
+            if ! grep -E 'bin/daemonitor-cli(\.exe)?$' <<< "$listing"; then
+              echo "Release CLI archive missing daemonitor-cli binary: $archive" >&2
+              exit 1
+            fi
+            if ! grep -E 'bin/daemonitor-cored(\.exe)?$' <<< "$listing"; then
+              echo "Release CLI archive missing daemonitor-cored binary: $archive" >&2
+              exit 1
+            fi
+            if grep -Eiq '\.jar$' <<< "$listing"; then
+              echo "Native release archive must not contain JARs: $archive" >&2
+              exit 1
+            fi
+          }
+          validate_native_cli_archive "cli-release/${primary}"
           echo "### Standalone CLI (${{ matrix.platform }}-${{ matrix.arch }})" >> "$GITHUB_STEP_SUMMARY"
           echo "- Archive: ${primary}" >> "$GITHUB_STEP_SUMMARY"
           echo "- Includes: native daemonitor-cli + daemonitor-cored (no JDK)" >> "$GITHUB_STEP_SUMMARY"
@@ -143,6 +130,7 @@ jobs:
             chmod +x "$bin_dir/$cored_name" "$bin_dir/$cli_name" 2>/dev/null || true
             extra="daemonitor-cli-${version}-${extra_label}.zip"
             (cd "$work" && zip -qry "$GITHUB_WORKSPACE/cli-release/${extra}" "$(basename "$root")")
+            validate_native_cli_archive "cli-release/${extra}"
             echo "- Extra archive: ${extra} (cli+cored ${{ matrix.goos }}/${{ matrix.extra_goarch }})" >> "$GITHUB_STEP_SUMMARY"
             rm -rf "$work"
           fi
@@ -157,7 +145,6 @@ jobs:
 
   build-cored-cross:
     name: Cross-compile daemonitor-cored
-    needs: create-release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -207,7 +194,6 @@ jobs:
 
   build-assets:
     name: Build release asset (${{ matrix.os }})
-    needs: create-release
     strategy:
       fail-fast: false
       matrix:
@@ -432,6 +418,19 @@ jobs:
           echo "- update.json" >> "$GITHUB_STEP_SUMMARY"
           echo "- checksums.txt" >> "$GITHUB_STEP_SUMMARY"
           echo "- per-asset .sha256 sidecars" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            exit 0
+          fi
+          gh release create "$TAG_NAME" \
+            --title "$TAG_NAME" \
+            --notes "Daemonitor ${TAG_NAME}"
 
       - name: Upload assets and metadata to GitHub release
         env:

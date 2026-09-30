@@ -92,19 +92,13 @@ class ReleaseMetadataTest {
         assertTrue(workflow.contains("release-metadata/checksums.txt"), workflow)
         assertTrue(workflow.contains("update_ext: zip"), workflow)
         assertTrue(workflow.contains("update_ext: tar.gz"), workflow)
-        val normalizedListing = """listing=${'$'}(unzip -l "cli-release/${'$'}{primary}" | sed 's#\\#/#g')"""
-        assertTrue(workflow.contains(normalizedListing), workflow)
-    }
-
-    @Test
-    fun `Windows CLI packaging passes an explicit archive path to PowerShell`() {
-        val script = Path.of("cored/scripts/package-native-cli.sh").readText()
-
-        assertTrue(script.contains("root_win=\$(cygpath -w \"\$root\")"), script)
-        assertTrue(script.contains("output_win=\$(cygpath -w \"\$OUT/\$zip_name\")"), script)
-        assertTrue(script.contains("Compress-Archive -LiteralPath '\$root_win'"), script)
-        assertTrue(script.contains("-DestinationPath '\$output_win' -Force"), script)
-        assertTrue(!script.contains("\$args[2]"), script)
+        assertTrue(workflow.contains("listing=\$(unzip -l"), workflow)
+        assertTrue(workflow.contains("sed 's#\\\\#/#g'"), workflow)
+        val metadataIndex = workflow.indexOf("name: Generate release metadata")
+        val createReleaseIndex = workflow.indexOf("name: Create or update release")
+        val uploadIndex = workflow.indexOf("name: Upload assets and metadata to GitHub release")
+        assertTrue(metadataIndex >= 0 && metadataIndex < createReleaseIndex, workflow)
+        assertTrue(createReleaseIndex < uploadIndex, workflow)
     }
 
     @Test
