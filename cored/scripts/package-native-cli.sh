@@ -62,6 +62,17 @@ CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
 chmod +x "$root/bin/$cli_name" "$root/bin/$cored_name" 2>/dev/null || true
 
 zip_name="daemonitor-cli-${VERSION}-${OS_LABEL}-${ARCH_LABEL}.zip"
-(cd "$stage" && zip -qry "$OUT/$zip_name" "$(basename "$root")")
+if command -v zip >/dev/null 2>&1; then
+  (cd "$stage" && zip -qry "$OUT/$zip_name" "$(basename "$root")")
+elif [[ "$OS_LABEL" == "windows" ]] && command -v powershell.exe >/dev/null 2>&1; then
+  stage_win=$(cygpath -w "$stage")
+  output_win=$(cygpath -w "$OUT/$zip_name")
+  powershell.exe -NoProfile -NonInteractive -Command \
+    '$stage = $args[0]; $output = $args[1]; $root = Join-Path $stage $args[2]; Compress-Archive -Path $root -DestinationPath $output -Force' \
+    -- "$stage_win" "$output_win" "$(basename "$root")"
+else
+  echo "A zip archiver is required (zip or PowerShell Compress-Archive on Windows)" >&2
+  exit 1
+fi
 echo "==> Wrote $OUT/$zip_name"
 ls -la "$OUT/$zip_name"
