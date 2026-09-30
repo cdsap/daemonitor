@@ -92,6 +92,8 @@ class ReleaseMetadataTest {
         assertTrue(workflow.contains("release-metadata/checksums.txt"), workflow)
         assertTrue(workflow.contains("update_ext: zip"), workflow)
         assertTrue(workflow.contains("update_ext: tar.gz"), workflow)
+        val normalizedListing = """listing=${'$'}(unzip -l "cli-release/${'$'}{primary}" | sed 's#\\#/#g')"""
+        assertTrue(workflow.contains(normalizedListing), workflow)
     }
 
     @Test

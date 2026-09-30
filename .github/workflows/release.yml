@@ -99,7 +99,8 @@ jobs:
             ls -la cli-release/
             test -f "cli-release/${primary}"
           fi
-          listing=$(unzip -l "cli-release/${primary}")
+          # Windows PowerShell 5.1 may write backslashes in ZIP entry names.
+          listing=$(unzip -l "cli-release/${primary}" | sed 's#\\#/#g')
           if ! grep -E 'bin/daemonitor-cli(\.exe)?$' <<< "$listing"; then
             echo "Release CLI archive missing daemonitor-cli binary" >&2
             exit 1
