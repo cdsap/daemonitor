@@ -128,14 +128,17 @@ jobs:
               cli_name=daemonitor-cli.exe
               cored_name=daemonitor-cored.exe
             fi
-            CGO_ENABLED=0 GOOS="${{ matrix.goos }}" GOARCH="${{ matrix.extra_goarch }}" \
-              go build -trimpath -ldflags="-s -w -X github.com/cdsap/daemonitor/cored/internal/api.Version=${version}" \
-              -o "$bin_dir/$cored_name" \
-              ./cored/cmd/daemonitor-cored
-            CGO_ENABLED=0 GOOS="${{ matrix.goos }}" GOARCH="${{ matrix.extra_goarch }}" \
-              go build -trimpath -ldflags="-s -w -X github.com/cdsap/daemonitor/cored/internal/api.Version=${version}" \
-              -o "$bin_dir/$cli_name" \
-              ./cored/cmd/daemonitor-cli
+            (
+              cd "$GITHUB_WORKSPACE/cored"
+              CGO_ENABLED=0 GOOS="${{ matrix.goos }}" GOARCH="${{ matrix.extra_goarch }}" \
+                go build -trimpath -ldflags="-s -w -X github.com/cdsap/daemonitor/cored/internal/api.Version=${version}" \
+                -o "$bin_dir/$cored_name" \
+                ./cmd/daemonitor-cored
+              CGO_ENABLED=0 GOOS="${{ matrix.goos }}" GOARCH="${{ matrix.extra_goarch }}" \
+                go build -trimpath -ldflags="-s -w -X github.com/cdsap/daemonitor/cored/internal/api.Version=${version}" \
+                -o "$bin_dir/$cli_name" \
+                ./cmd/daemonitor-cli
+            )
             chmod +x "$bin_dir/$cored_name" "$bin_dir/$cli_name" 2>/dev/null || true
             extra="daemonitor-cli-${version}-${extra_label}.zip"
             (cd "$work" && zip -qry "$GITHUB_WORKSPACE/cli-release/${extra}" "$(basename "$root")")
