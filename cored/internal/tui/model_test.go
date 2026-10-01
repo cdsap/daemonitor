@@ -252,6 +252,24 @@ func TestSmallTerminalMessage(t *testing.T) {
 	}
 }
 
+func TestNoColorRemovesAllANSIFromTable(t *testing.T) {
+	m := NewModel(Config{Now: fixedNow, NoColor: true})
+	m.width, m.height = 100, 20
+	m.connected = true
+	cpu := 92.0
+	m.applySnapshot(model.Snapshot{SampledAtMs: fixedNow().UnixMilli(), Processes: []model.Process{{PID: 9, Type: "GRADLE_DAEMON", RSSMemoryMB: 5_000, CPUPercent: &cpu, Automated: true}}})
+	if strings.Contains(m.View().Content, "\x1b[") {
+		t.Fatalf("--no-color emitted ANSI: %q", m.View().Content)
+	}
+}
+
+func TestColoredRowsUseSemanticANSI(t *testing.T) {
+	row := formatRowStyled(model.Process{PID: 9, Type: "GRADLE_DAEMON", RSSMemoryMB: 5_000, Automated: true}, columnSet{ids: []columnID{colType, colPID, colRSS}}, fixedNow().UnixMilli(), false, false)
+	if !strings.Contains(row, "\x1b[") {
+		t.Fatalf("expected semantic row colors: %q", row)
+	}
+}
+
 func TestRSSTrendIsCompactAndTracksRange(t *testing.T) {
 	trend := rssTrend([]model.Process{
 		{PID: 9, RSSMemoryMB: 100},

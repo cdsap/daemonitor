@@ -550,11 +550,14 @@ func (m Model) renderTable() string {
 	left := padRight("DAEMONITOR", leftWidth)
 	if !m.noColor {
 		pad := max(0, leftWidth-displaywidth.String("DAEMONITOR"))
-		left = titleStyle(false).Render("DAEMONITOR") + strings.Repeat(" ", pad)
+		left = titleStyle(m.noColor).Render("DAEMONITOR") + strings.Repeat(" ", pad)
 	}
 	fmt.Fprintf(&b, "%s%s\n", left, right)
 	line2 := fmt.Sprintf("%d processes   %s RSS   %s   Refresh %s",
 		len(m.processes), render.RSSText(totalRSS), status, m.pollInterval)
+	if !m.noColor {
+		line2 = fmt.Sprintf("%d processes   %s   RSS   %s   Refresh %s", len(m.processes), rssStyle(model.Process{RSSMemoryMB: totalRSS}, m.noColor).Render(render.RSSText(totalRSS)), statusStyle(status, m.noColor).Render(status), m.pollInterval)
+	}
 	if m.sortField != SortRSS || m.sortOrder != SortDesc {
 		line2 += fmt.Sprintf("   Sort %s %s", m.sortField, m.sortOrder)
 	} else {
@@ -564,7 +567,7 @@ func (m Model) renderTable() string {
 	if m.lastError != "" {
 		errLine := "Last refresh failed: " + m.lastError
 		if !m.noColor {
-			errLine = errorStyle(false).Render(errLine)
+			errLine = errorStyle(m.noColor).Render(errLine)
 		}
 		b.WriteString(truncateWidth(errLine, m.width) + "\n")
 	}
@@ -576,7 +579,11 @@ func (m Model) renderTable() string {
 		b.WriteString("Waiting for daemonitor-cored…\n")
 	} else {
 		cols := columnsForWidth(m.width)
-		b.WriteString(truncateWidth(headerLine(cols, m.sortField), m.width) + "\n")
+		header := headerLine(cols, m.sortField)
+		if !m.noColor {
+			header = headerStyle(m.noColor).Render(header)
+		}
+		b.WriteString(truncateWidth(header, m.width) + "\n")
 		visible := m.tableRows()
 		end := m.offset + visible
 		if end > len(m.processes) {
@@ -589,10 +596,10 @@ func (m Model) renderTable() string {
 			if selected {
 				prefix = "> "
 			}
-			row := prefix + formatRow(p, cols, now)
+			row := prefix + formatRowStyled(p, cols, now, m.noColor, selected)
 			row = truncateWidth(row, m.width)
 			if selected && !m.noColor {
-				row = selectedStyle(false).Render(row)
+				row = selectedStyle(m.noColor).Render(row)
 			}
 			b.WriteString(row + "\n")
 		}
@@ -617,7 +624,11 @@ func (m Model) renderDetails() string {
 	if now == 0 {
 		now = m.now().UnixMilli()
 	}
-	fmt.Fprintf(&b, "PROCESS DETAILS  pid=%d\n\n", p.PID)
+	heading := fmt.Sprintf("PROCESS DETAILS  pid=%d", p.PID)
+	if !m.noColor {
+		heading = detailHeadingStyle(m.noColor).Render(heading)
+	}
+	fmt.Fprintf(&b, "%s\n\n", heading)
 	writeField(&b, "Type", render.TypeDisplay(p.Type))
 	writeField(&b, "PID", fmt.Sprintf("%d", p.PID))
 	writeField(&b, "Name", na(p.Name))
@@ -863,6 +874,10 @@ func padColumn(s string, id columnID) string {
 }
 
 func formatRow(p model.Process, cols columnSet, nowMs int64) string {
+	return formatRowStyled(p, cols, nowMs, true, false)
+}
+
+func formatRowStyled(p model.Process, cols columnSet, nowMs int64, noColor, selected bool) string {
 	parts := make([]string, 0, len(cols.ids))
 	for _, id := range cols.ids {
 		var cell string
@@ -886,13 +901,32 @@ func formatRow(p model.Process, cols columnSet, nowMs int64) string {
 		case colProject:
 			cell = render.ProjectName(p)
 		}
-		parts = append(parts, padColumn(cell, id))
+		padded := padColumn(cell, id)
+		if !noColor && !selected {
+			switch id {
+			case colRSS:
+				padded = rssStyle(p, noColor).Render(padded)
+			case colCPU:
+				padded = cpuStyle(p, noColor).Render(padded)
+			case colHeapUsed, colHeapCmt, colXmx:
+				padded = heapStyle(noColor).Render(padded)
+			}
+		}
+		parts = append(parts, padded)
 	}
 	row := strings.Join(parts, " ")
 	if signals := render.ProcessSignals(p); len(signals) > 0 {
 		// Keep badges outside the fixed-width table cells. Prefixing a badge
 		// shifts every cell to the right while the header remains unchanged.
-		row += "  " + strings.Join(signals, " ")
+		if noColor || selected {
+			row += "  " + strings.Join(signals, " ")
+		} else {
+			styled := make([]string, 0, len(signals))
+			for _, signal := range signals {
+				styled = append(styled, signalStyle(signal, noColor).Render(signal))
+			}
+			row += "  " + strings.Join(styled, " ")
+		}
 	}
 	return row
 }
