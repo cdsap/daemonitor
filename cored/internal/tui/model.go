@@ -810,7 +810,9 @@ func formatRow(p model.Process, cols columnSet, nowMs int64) string {
 	}
 	row := strings.Join(parts, " ")
 	if signals := render.ProcessSignals(p); len(signals) > 0 {
-		row = strings.Join(signals, " ") + "  " + row
+		// Keep badges outside the fixed-width table cells. Prefixing a badge
+		// shifts every cell to the right while the header remains unchanged.
+		row += "  " + strings.Join(signals, " ")
 	}
 	return row
 }
