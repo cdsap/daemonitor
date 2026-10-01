@@ -4,6 +4,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/cdsap/daemonitor/cored/internal/client"
+	"github.com/cdsap/daemonitor/cored/internal/model"
 )
 
 func TestParseArgsDefaults(t *testing.T) {
@@ -53,3 +56,59 @@ func TestUsageMentionsCommands(t *testing.T) {
 		}
 	}
 }
+
+func TestParseArgsQueryAndWatchOptions(t *testing.T) {
+	opts, err := ParseArgs([]string{"history", "--since", "1h", "--limit", "25", "--pid", "42", "--project", "demo", "--status", "FAILED", "--format", "jsonl"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts.Since != time.Hour || opts.Limit != 25 || opts.PID != 42 || opts.Project != "demo" || opts.Status != "FAILED" || opts.Output != "jsonl" {
+		t.Fatalf("unexpected query options: %+v", opts)
+	}
+
+	opts, err = ParseArgs([]string{"ps", "--watch", "--until", "1m", "--poll-interval", "5s"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !opts.Watch || opts.Until != time.Minute || opts.PollInterval != 5*time.Second {
+		t.Fatalf("unexpected watch options: %+v", opts)
+	}
+	opts, err = ParseArgs([]string{"ps", "--watch", "--fail-on-rss", "8192"})
+	if err != nil || opts.FailOnRSS != 8192 {
+		t.Fatalf("unexpected RSS threshold: %+v, err=%v", opts, err)
+	}
+}
+
+func TestParseArgsRejectsInvalidOutputAndNegativeValues(t *testing.T) {
+	for _, argv := range [][]string{
+		{"ps", "--format", "xml"},
+		{"history", "--limit", "-1"},
+		{"ps", "--until", "-1s"},
+	} {
+		if _, err := ParseArgs(argv); err == nil {
+			t.Fatalf("expected ParseArgs(%v) to fail", argv)
+		}
+	}
+}
+
+func TestFiltersApplyToProcessesAndBuilds(t *testing.T) {
+	project := "/work/daemonitor"
+	processes := filterProcesses([]model.Process{
+		{PID: 1, ProjectPath: &project},
+		{PID: 2, ProjectPath: strPtr("/work/other")},
+	}, Options{Project: "DAEMONITOR"})
+	if len(processes) != 1 || processes[0].PID != 1 {
+		t.Fatalf("process filter=%+v", processes)
+	}
+
+	builds := filterBuilds([]client.BuildRecord{
+		{DaemonPID: 1, FinalStatus: "SUCCESS", ProjectPath: project},
+		{DaemonPID: 1, FinalStatus: "FAILED", ProjectPath: project},
+		{DaemonPID: 2, FinalStatus: "FAILED", ProjectPath: "/work/other"},
+	}, Options{PID: 1, Status: "failed", Project: "daemonitor"})
+	if len(builds) != 1 || builds[0].FinalStatus != "FAILED" {
+		t.Fatalf("build filter=%+v", builds)
+	}
+}
+
+func strPtr(s string) *string { return &s }

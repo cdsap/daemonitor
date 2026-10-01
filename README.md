@@ -61,6 +61,10 @@ daemonitor-cli              # interactive monitor (TTY)
 daemonitor-cli top          # force TUI
 daemonitor-cli ps           # one plain snapshot
 daemonitor-cli ps --json    # machine-readable snapshot
+daemonitor-cli ps --project daemonitor --format csv
+daemonitor-cli history --since 1h --limit 500 --format jsonl
+daemonitor-cli ps --watch --poll-interval 5s --until 1m
+daemonitor-cli ps --watch --fail-on-rss 8192
 daemonitor-cli health
 ```
 
@@ -88,7 +92,8 @@ stays `n/a` for wrappers and test workers (daemons only). More detail:
 
 ![Daemonitor CLI showing a live terminal table of Gradle-related processes with RSS, heap, CPU, and uptime](docs/images/cli-monitor.png)
 
-Native full-screen TUI (`top`-style): selection, sort, pause, resize, and process details — useful on
+Native full-screen TUI (`top`-style): selection, sort, pause, resize, process details, recent build/log
+context, and a compact RSS trend — useful on
 build machines and over SSH:
 
 ```bash

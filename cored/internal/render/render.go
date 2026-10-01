@@ -1,6 +1,7 @@
 package render
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,6 +18,83 @@ func WriteJSON(w io.Writer, v any) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(v)
+}
+
+// WriteJSONLine writes one compact JSON value followed by a newline.
+func WriteJSONLine(w io.Writer, v any) error {
+	return json.NewEncoder(w).Encode(v)
+}
+
+// WriteProcessesCSV writes a stable, row-oriented process export.
+func WriteProcessesCSV(w io.Writer, snap model.Snapshot) error {
+	c := csv.NewWriter(w)
+	if err := c.Write([]string{"sampled_at_ms", "pid", "type", "name", "rss_mb", "cpu_percent", "max_heap_mb", "heap_used_mb", "heap_committed_mb", "project", "status", "automated"}); err != nil {
+		return err
+	}
+	for _, p := range snap.Processes {
+		row := []string{fmt.Sprint(snap.SampledAtMs), fmt.Sprint(p.PID), p.Type, p.Name, fmt.Sprint(p.RSSMemoryMB), CPUText(p.CPUPercent), optionalInt64(p.MaxHeapMB), optionalInt64(p.HeapUsedMB), optionalInt64(p.HeapCommittedMB), ProjectName(p), p.Status, fmt.Sprint(p.Automated)}
+		if err := c.Write(row); err != nil {
+			return err
+		}
+	}
+	c.Flush()
+	return c.Error()
+}
+
+// WriteHistoryCSV writes timestamped process samples.
+func WriteHistoryCSV(w io.Writer, hist model.History) error {
+	c := csv.NewWriter(w)
+	if err := c.Write([]string{"sampled_at_ms", "pid", "type", "rss_mb", "heap_used_mb", "heap_committed_mb", "project"}); err != nil {
+		return err
+	}
+	for _, p := range hist.Processes {
+		if err := c.Write([]string{fmt.Sprint(p.SampledAtMs), fmt.Sprint(p.PID), p.Type, fmt.Sprint(p.RSSMemoryMB), optionalInt64(p.HeapUsedMB), optionalInt64(p.HeapCommittedMB), ProjectName(p)}); err != nil {
+			return err
+		}
+	}
+	c.Flush()
+	return c.Error()
+}
+
+// WriteBuildsCSV writes build records.
+func WriteBuildsCSV(w io.Writer, payload client.BuildsPayload) error {
+	c := csv.NewWriter(w)
+	if err := c.Write([]string{"build_id", "daemon_pid", "status", "source", "agent", "agent_provider", "project_path", "duration_seconds"}); err != nil {
+		return err
+	}
+	for _, b := range payload.Builds {
+		duration := ""
+		if b.DurationSeconds != nil {
+			duration = fmt.Sprintf("%.3f", *b.DurationSeconds)
+		}
+		if err := c.Write([]string{b.BuildID, fmt.Sprint(b.DaemonPID), b.FinalStatus, b.InferredSource, b.Agent, b.AgentProvider, b.ProjectPath, duration}); err != nil {
+			return err
+		}
+	}
+	c.Flush()
+	return c.Error()
+}
+
+// WriteLogsCSV writes discovered daemon logs.
+func WriteLogsCSV(w io.Writer, list []logs.DaemonLog) error {
+	c := csv.NewWriter(w)
+	if err := c.Write([]string{"pid", "gradle_version", "path"}); err != nil {
+		return err
+	}
+	for _, log := range list {
+		if err := c.Write([]string{fmt.Sprint(log.PID), log.GradleVersion, log.Path}); err != nil {
+			return err
+		}
+	}
+	c.Flush()
+	return c.Error()
+}
+
+func optionalInt64(v *int64) string {
+	if v == nil {
+		return ""
+	}
+	return fmt.Sprint(*v)
 }
 
 // WriteProcessesPlain prints one stable process snapshot without ANSI.

@@ -93,4 +93,22 @@ func TestWriteBuildsPlainIncludesOriginAndAgent(t *testing.T) {
 	}
 }
 
+func TestRowOrientedExports(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WriteProcessesCSV(&buf, model.Snapshot{SampledAtMs: 7, Processes: []model.Process{{PID: 9, Type: "GRADLE_DAEMON", RSSMemoryMB: 512, ProjectPath: strPtr("/tmp/demo")}}}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "sampled_at_ms,pid,type") || !strings.Contains(buf.String(), "7,9,GRADLE_DAEMON") {
+		t.Fatalf("unexpected process CSV: %s", buf.String())
+	}
+
+	buf.Reset()
+	if err := WriteJSONLine(&buf, map[string]string{"kind": "snapshot"}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(strings.TrimSpace(buf.String()), "\n") != 0 || !strings.HasSuffix(buf.String(), "\n") {
+		t.Fatalf("expected one JSON line: %q", buf.String())
+	}
+}
+
 func strPtr(s string) *string { return &s }

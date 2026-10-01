@@ -252,6 +252,21 @@ func TestSmallTerminalMessage(t *testing.T) {
 	}
 }
 
+func TestRSSTrendIsCompactAndTracksRange(t *testing.T) {
+	trend := rssTrend([]model.Process{
+		{PID: 9, RSSMemoryMB: 100},
+		{PID: 9, RSSMemoryMB: 200},
+		{PID: 9, RSSMemoryMB: 150},
+		{PID: 10, RSSMemoryMB: 999},
+	}, 9)
+	if !strings.Contains(trend, "100 MB–200 MB") {
+		t.Fatalf("trend=%q", trend)
+	}
+	if strings.Contains(trend, "999 MB") {
+		t.Fatalf("trend included another PID: %q", trend)
+	}
+}
+
 func fixedNow() time.Time {
 	return time.Unix(1_700_000_000, 0).UTC()
 }
