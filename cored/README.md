@@ -8,7 +8,7 @@ The Kotlin desktop app and `--headless` mode attach to (and auto-start packaged)
 First-class Go module at `cored/` (`github.com/cdsap/daemonitor/cored`). Ships:
 
 1. `daemonitor-cored` — long-running collector + SQLite + socket API
-2. `daemonitor-cli` — native Bubble Tea TUI + one-shot/JSON commands (thin client)
+2. `daemonitor-cli` — native Bubble Tea TUI + one-shot/query/JSON commands (thin client)
 3. `daemonitor-corectl` — small diagnostic client (commands mirrored in `daemonitor-cli`)
 
 ## Why
@@ -40,6 +40,8 @@ go build -o bin/daemonitor-corectl ./cmd/daemonitor-corectl
 
 ./bin/daemonitor-cored                 # terminal 1 — defaults to app data dir
 ./bin/daemonitor-cli ps --json         # terminal 2 — one-shot
+./bin/daemonitor-cli history --since 1h --format csv
+./bin/daemonitor-cli ps --watch --until 1m --format jsonl
 ./bin/daemonitor-cli top               # interactive TUI (TTY)
 ./bin/daemonitor-corectl health
 ```
@@ -62,7 +64,9 @@ build/install/daemonitor-cli/bin/daemonitor-cli --socket "$HOME/Library/Applicat
 Release publishes per-platform CLI zips (`daemonitor-cli-<ver>-<os>-<arch>.zip`) plus standalone
 `daemonitor-cored-<ver>-*` binaries for all darwin/linux/windows amd64+arm64 targets.
 
-Flags: `-socket`, `-db`, `-interval`, `-retention` (cored); `-since-min`, `-limit` (history).
+Core flags: `-socket`, `-db`, `-interval`, `-retention`; CLI flags include `--since`, `--limit`,
+`--pid`, `--project`, `--status`, `--watch`, `--until`, and `--format plain|json|jsonl|csv`.
+Watch mode can return exit code `3` with `--fail-on-rss MB` when a process reaches the threshold.
 
 Defaults: app data dir (`…/Daemonitor/daemonitor-core.sock` + `watcher.db`) — see
 `docs/sqlite-packaging.md`. Smoke tests still pass explicit temp paths.

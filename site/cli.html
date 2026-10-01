@@ -81,11 +81,11 @@ daemonitor-cli --help</code></pre>
               </tr>
               <tr>
                 <td><code>daemonitor-cli ps</code></td>
-                <td>Print one process snapshot and exit.</td>
+                <td>Print one process snapshot and exit. Supports PID/project filters and watch mode.</td>
               </tr>
               <tr>
                 <td><code>daemonitor-cli history</code></td>
-                <td>Print recent process history.</td>
+                <td>Print process history with a configurable time window and row limit.</td>
               </tr>
               <tr>
                 <td><code>daemonitor-cli builds</code></td>
@@ -134,6 +134,30 @@ daemonitor-cli --help</code></pre>
                 <td>Emit machine-readable JSON where supported by one-shot commands.</td>
               </tr>
               <tr>
+                <td><code>--format plain|json|jsonl|csv</code></td>
+                <td>Select human-readable, JSON, JSON Lines, or row-oriented CSV output.</td>
+              </tr>
+              <tr>
+                <td><code>--since DURATION</code></td>
+                <td>Set the history window, for example <code>1h</code> or <code>15m</code>.</td>
+              </tr>
+              <tr>
+                <td><code>--limit N</code></td>
+                <td>Limit returned history or build rows.</td>
+              </tr>
+              <tr>
+                <td><code>--pid PID</code> / <code>--project TEXT</code> / <code>--status TEXT</code></td>
+                <td>Filter process, log, project, or build results.</td>
+              </tr>
+              <tr>
+                <td><code>--watch --until DURATION</code></td>
+                <td>Continuously refresh <code>ps</code> output, optionally stopping after a bounded duration.</td>
+              </tr>
+              <tr>
+                <td><code>--fail-on-rss MB</code></td>
+                <td>In watch mode, print the triggering snapshot and exit with code <code>3</code> when RSS reaches the threshold.</td>
+              </tr>
+              <tr>
                 <td><code>--help</code></td>
                 <td>Print usage and exit.</td>
               </tr>
@@ -147,12 +171,16 @@ daemonitor-cli --help</code></pre>
 
         <h2 id="usage-heading">Everyday usage</h2>
         <pre class="install-snippet" tabindex="0"><code>daemonitor-cli
-daemonitor-cli ps --json</code></pre>
+daemonitor-cli ps --json
+daemonitor-cli builds --status FAILED --format csv
+daemonitor-cli history --since 1h --project daemonitor --format jsonl
+daemonitor-cli ps --watch --poll-interval 5s --until 1m</code></pre>
         <ul class="docs-list">
           <li>Press <kbd>q</kbd> to quit the interactive monitor.</li>
           <li>Over SSH, allocate a TTY: <code>ssh -t host daemonitor-cli</code>.</li>
           <li>Redirected or non-interactive sessions should use a one-shot command such as <code>daemonitor-cli ps --json</code>.</li>
           <li>Use <code>daemonitor-cli top</code> for an explicit interactive monitor, or <code>daemonitor-cli health</code> to inspect the core connection.</li>
+          <li>Press <kbd>enter</kbd> on a process to see recent build/log context and its RSS trend.</li>
         </ul>
 
         <h2 id="tui-heading">Interactive monitor</h2>
@@ -203,7 +231,7 @@ daemonitor-cli ps --json</code></pre>
         </div>
         <p class="docs-lede-follow">
           The TUI requires a terminal. For redirected output, scripts, or JSON consumers, use
-          <code>daemonitor-cli ps --json</code>; <code>daemonitor-cli top</code> is intentionally TTY-only.
+          <code>daemonitor-cli ps --json</code> or <code>--format jsonl</code>; <code>daemonitor-cli top</code> is intentionally TTY-only.
         </p>
 
         <figure class="docs-figure">

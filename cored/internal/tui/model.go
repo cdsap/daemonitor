@@ -98,6 +98,8 @@ type Model struct {
 	detailProcess *model.Process
 	detailLog     *logs.DaemonLog
 	detailTail    *logs.Tail
+	detailHistory []model.Process
+	detailBuilds  client.BuildsPayload
 	detailLoading bool
 	detailError   string
 }
@@ -113,10 +115,12 @@ type snapshotFailedMsg struct {
 }
 
 type detailsLoadedMsg struct {
-	pid  int64
-	log  *logs.DaemonLog
-	tail *logs.Tail
-	err  error
+	pid     int64
+	log     *logs.DaemonLog
+	tail    *logs.Tail
+	history []model.Process
+	builds  client.BuildsPayload
+	err     error
 }
 
 // NewModel constructs the interactive monitor model.
@@ -180,6 +184,8 @@ func (m Model) fetchDetails(pid int64) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		var logMeta *logs.DaemonLog
+		var history model.History
+		var builds client.BuildsPayload
 		list, err := c.DaemonLogs(ctx)
 		if err == nil {
 			for i := range list {
@@ -190,10 +196,15 @@ func (m Model) fetchDetails(pid int64) tea.Cmd {
 			}
 		}
 		tail, tailErr := c.DaemonLogTail(ctx, pid)
+		history, _ = c.History(ctx, time.Now().Add(-30*time.Minute).UnixMilli(), 500)
+		builds, _ = c.Builds(ctx, 20)
+		msg := detailsLoadedMsg{pid: pid, log: logMeta, history: history.Processes, builds: builds}
 		if tailErr != nil {
-			return detailsLoadedMsg{pid: pid, log: logMeta, err: tailErr}
+			msg.err = tailErr
+			return msg
 		}
-		return detailsLoadedMsg{pid: pid, log: logMeta, tail: &tail}
+		msg.tail = &tail
+		return msg
 	}
 }
 
@@ -236,6 +247,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.detailLoading = false
 		m.detailLog = msg.log
 		m.detailTail = msg.tail
+		m.detailHistory = msg.history
+		m.detailBuilds = msg.builds
 		if msg.err != nil {
 			m.detailError = msg.err.Error()
 		} else {
@@ -261,6 +274,8 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.detailProcess = nil
 			m.detailLog = nil
 			m.detailTail = nil
+			m.detailHistory = nil
+			m.detailBuilds = client.BuildsPayload{}
 			m.detailError = ""
 			m.detailLoading = false
 			return m, nil
@@ -311,6 +326,8 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.detailLoading = true
 			m.detailLog = nil
 			m.detailTail = nil
+			m.detailHistory = nil
+			m.detailBuilds = client.BuildsPayload{}
 			m.detailError = ""
 			return m, m.fetchDetails(int64(p.PID))
 		}
@@ -627,6 +644,35 @@ func (m Model) renderDetails() string {
 		writeField(&b, "Gradle", "n/a")
 		writeField(&b, "Daemon log", "n/a")
 	}
+	b.WriteString("\nRecent activity:\n")
+	trend := rssTrend(m.detailHistory, int32(p.PID))
+	if trend == "" {
+		b.WriteString("  Trend: n/a\n")
+	} else {
+		b.WriteString("  RSS trend: " + trend + "\n")
+	}
+	buildCount := 0
+	for _, build := range m.detailBuilds.Builds {
+		if build.DaemonPID != int64(p.PID) {
+			continue
+		}
+		buildCount++
+		duration := "-"
+		if build.DurationSeconds != nil {
+			duration = fmt.Sprintf("%.1fs", *build.DurationSeconds)
+		}
+		b.WriteString("  Build " + truncateWidth(build.FinalStatus+" "+render.ProjectName(*p)+" "+duration, max(20, m.width-4)) + "\n")
+		if buildCount == 3 {
+			break
+		}
+	}
+	if buildCount == 0 {
+		b.WriteString("  Builds: n/a\n")
+	}
+	if m.detailTail != nil && len(m.detailTail.Events) > 0 {
+		event := m.detailTail.Events[len(m.detailTail.Events)-1]
+		b.WriteString("  Last log event: " + string(event.Kind) + "\n")
+	}
 	b.WriteString("\nRecent log lines:\n")
 	if m.detailLoading {
 		b.WriteString("  Loading…\n")
@@ -649,6 +695,40 @@ func (m Model) renderDetails() string {
 	}
 	b.WriteString("\nesc back   q quit")
 	return b.String()
+}
+
+func rssTrend(samples []model.Process, pid int32) string {
+	values := make([]int64, 0, len(samples))
+	for _, sample := range samples {
+		if sample.PID == pid {
+			values = append(values, sample.RSSMemoryMB)
+		}
+	}
+	if len(values) < 2 {
+		return ""
+	}
+	if len(values) > 24 {
+		values = values[len(values)-24:]
+	}
+	minValue, maxValue := values[0], values[0]
+	for _, value := range values[1:] {
+		if value < minValue {
+			minValue = value
+		}
+		if value > maxValue {
+			maxValue = value
+		}
+	}
+	levels := []rune("▁▂▃▄▅▆▇█")
+	var b strings.Builder
+	for _, value := range values {
+		index := 0
+		if maxValue > minValue {
+			index = int((value - minValue) * int64(len(levels)-1) / (maxValue - minValue))
+		}
+		b.WriteRune(levels[index])
+	}
+	return b.String() + fmt.Sprintf("  %s–%s", render.RSSText(minValue), render.RSSText(maxValue))
 }
 
 func writeField(b *strings.Builder, label, value string) {
