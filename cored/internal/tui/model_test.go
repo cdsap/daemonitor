@@ -232,6 +232,18 @@ func TestFormatRowIncludesProcessSignals(t *testing.T) {
 	}
 }
 
+func TestFormatRowKeepsTableColumnsAlignedWithMemorySignal(t *testing.T) {
+	cols := columnSet{ids: []columnID{colType, colPID, colRSS, colProject}}
+	row := formatRow(model.Process{PID: 9, Type: "GRADLE_DAEMON", RSSMemoryMB: render.MemoryWarnMB}, cols, fixedNow().UnixMilli())
+
+	if !strings.HasPrefix(row, "Gradle daemon") {
+		t.Fatalf("memory signal shifted table columns: row=%q", row)
+	}
+	if strings.Index(row, "HIGH MEM") < strings.Index(row, "Gradle daemon") {
+		t.Fatalf("memory signal should follow table cells: row=%q", row)
+	}
+}
+
 func TestSmallTerminalMessage(t *testing.T) {
 	m := NewModel(Config{Now: fixedNow})
 	m.width, m.height = 20, 5
