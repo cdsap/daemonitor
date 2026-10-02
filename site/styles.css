@@ -443,6 +443,72 @@ code {
   margin-top: var(--space-xl);
 }
 
+.surface-intro {
+  display: grid;
+  grid-template-columns: minmax(0, 0.72fr) minmax(0, 1fr);
+  gap: var(--space-xl);
+  align-items: end;
+  margin-bottom: var(--space-lg);
+}
+
+.surface-intro .section-lede {
+  margin-top: 0;
+}
+
+.surface-panes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-md);
+}
+
+.surface-pane {
+  display: grid;
+  grid-template-rows: auto auto;
+  gap: var(--space-lg);
+  min-width: 0;
+  padding: var(--space-md);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-lg);
+  background: var(--color-paper-2);
+}
+
+.surface-pane-cli {
+  background: color-mix(in srgb, var(--color-accent-soft) 48%, var(--color-paper-2));
+}
+
+.surface-pane-copy {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+}
+
+.surface-pane-copy h3 {
+  margin: 0;
+  font-size: clamp(1.45rem, 2vw, 1.85rem);
+  line-height: 1.12;
+}
+
+.surface-pane-copy p:not(.feature-kicker) {
+  max-width: 42ch;
+  margin: var(--space-xs) 0 0;
+  color: var(--color-ink-2);
+}
+
+.surface-pane-copy .button {
+  margin-top: var(--space-md);
+}
+
+.surface-pane-visual {
+  display: flex;
+  align-items: end;
+  min-width: 0;
+  margin: 0;
+}
+
+.surface-pane-visual .screenshot {
+  align-self: end;
+}
+
 .why-layout,
 .privacy-layout,
 .download-layout {
@@ -718,6 +784,7 @@ code {
 
 @media (max-width: 900px) {
   .hero,
+  .surface-intro,
   .why-layout,
   .privacy-layout,
   .download-layout,
