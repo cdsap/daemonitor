@@ -28,6 +28,54 @@ func TestSortByRSSDescending(t *testing.T) {
 	}
 }
 
+func TestSortByHeapMetrics(t *testing.T) {
+	usedLow, usedHigh := int64(512), int64(2048)
+	committedLow, committedHigh := int64(1024), int64(4096)
+	xmxLow, xmxHigh := int64(2048), int64(8192)
+	processes := []model.Process{
+		{PID: 1, HeapUsedMB: &usedLow, HeapCommittedMB: &committedLow, MaxHeapMB: &xmxLow},
+		{PID: 2, HeapUsedMB: &usedHigh, HeapCommittedMB: &committedHigh, MaxHeapMB: &xmxHigh},
+		{PID: 3},
+	}
+
+	for _, field := range []SortField{SortHeapUsed, SortHeapCommitted, SortHeapMax} {
+		m := NewModel(Config{Now: fixedNow})
+		m.sortField = field
+		m.applySnapshot(model.Snapshot{SampledAtMs: 1_000_000, Processes: processes})
+		if got := pids(m.processes); !equalInt32s(got, []int32{2, 1, 3}) {
+			t.Fatalf("field %s descending order=%v", field, got)
+		}
+
+		m.sortOrder = SortAsc
+		m.sortProcesses()
+		if got := pids(m.processes); !equalInt32s(got, []int32{3, 1, 2}) {
+			t.Fatalf("field %s ascending order=%v", field, got)
+		}
+	}
+}
+
+func TestSortCyclesThroughHeapMetrics(t *testing.T) {
+	m := NewModel(Config{Now: fixedNow})
+	for _, want := range []SortField{SortCPU, SortPID, SortType, SortUptime, SortProject, SortHeapUsed, SortHeapCommitted, SortHeapMax, SortRSS} {
+		m.cycleSortField()
+		if m.sortField != want {
+			t.Fatalf("sort field=%s want %s", m.sortField, want)
+		}
+	}
+}
+
+func equalInt32s(a, b []int32) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func TestSelectionPreservedByPIDAcrossReorder(t *testing.T) {
 	m := NewModel(Config{Now: fixedNow})
 	m.applySnapshot(model.Snapshot{

@@ -27,6 +27,9 @@ const (
 	SortType
 	SortUptime
 	SortProject
+	SortHeapUsed
+	SortHeapCommitted
+	SortHeapMax
 )
 
 func (f SortField) String() string {
@@ -43,6 +46,12 @@ func (f SortField) String() string {
 		return "UPTIME"
 	case SortProject:
 		return "PROJECT"
+	case SortHeapUsed:
+		return "HEAP"
+	case SortHeapCommitted:
+		return "CMT"
+	case SortHeapMax:
+		return "XMX"
 	default:
 		return "?"
 	}
@@ -465,6 +474,12 @@ func compareProcesses(a, b model.Process, field SortField) int {
 		return cmpInt64(b.StartTimeMs, a.StartTimeMs)
 	case SortProject:
 		return strings.Compare(render.ProjectName(a), render.ProjectName(b))
+	case SortHeapUsed:
+		return cmpOptionalInt64(a.HeapUsedMB, b.HeapUsedMB)
+	case SortHeapCommitted:
+		return cmpOptionalInt64(a.HeapCommittedMB, b.HeapCommittedMB)
+	case SortHeapMax:
+		return cmpOptionalInt64(a.MaxHeapMB, b.MaxHeapMB)
 	default:
 		return 0
 	}
@@ -510,8 +525,21 @@ func cmpFloatPtr(a, b *float64) int {
 	}
 }
 
+func cmpOptionalInt64(a, b *int64) int {
+	if a == nil && b == nil {
+		return 0
+	}
+	if a == nil {
+		return -1
+	}
+	if b == nil {
+		return 1
+	}
+	return cmpInt64(*a, *b)
+}
+
 func (m *Model) cycleSortField() {
-	m.sortField = (m.sortField + 1) % 6
+	m.sortField = (m.sortField + 1) % 9
 }
 
 func (m *Model) selectedIndex() int {
@@ -951,6 +979,12 @@ func sortMatches(id columnID, sort SortField) bool {
 		return id == colUptime
 	case SortProject:
 		return id == colProject
+	case SortHeapUsed:
+		return id == colHeapUsed
+	case SortHeapCommitted:
+		return id == colHeapCmt
+	case SortHeapMax:
+		return id == colXmx
 	}
 	return false
 }
