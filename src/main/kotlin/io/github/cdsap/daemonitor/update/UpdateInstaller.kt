@@ -298,8 +298,21 @@ internal fun extractUpdatePayload(
         else -> error("Unsupported update package format: ${candidate.assetName}")
     }
 
-    return findPayload(extractRoot, candidate.platform)
+    val payload = findPayload(extractRoot, candidate.platform)
         ?: error("Update package did not contain a Daemonitor application payload")
+    if (candidate.platform == DesktopPlatform.MACOS) {
+        restoreMacAppExecutables(payload)
+    }
+    return payload
+}
+
+private fun restoreMacAppExecutables(app: Path) {
+    listOf(
+        app.resolve("Contents/MacOS/Daemonitor"),
+        app.resolve("Contents/app/resources/daemonitor-cored"),
+    ).filter(Files::isRegularFile).forEach { executable ->
+        executable.toFile().setExecutable(true, false)
+    }
 }
 
 private fun findPayload(extractRoot: Path, platform: DesktopPlatform): Path? {
