@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -282,6 +283,150 @@ func TestRSSTrendIsCompactAndTracksRange(t *testing.T) {
 	}
 	if strings.Contains(trend, "999 MB") {
 		t.Fatalf("trend included another PID: %q", trend)
+	}
+}
+
+type terminateCall struct {
+	pid         int32
+	startTimeMs int64
+}
+
+func recordingTerminate(calls *[]terminateCall, failPIDs ...int32) TerminateFunc {
+	return func(_ context.Context, pid int32, startTimeMs int64) error {
+		*calls = append(*calls, terminateCall{pid: pid, startTimeMs: startTimeMs})
+		for _, fail := range failPIDs {
+			if fail == pid {
+				return errString("operation not permitted")
+			}
+		}
+		return nil
+	}
+}
+
+func killTestModel(calls *[]terminateCall, failPIDs ...int32) Model {
+	m := NewModel(Config{Now: fixedNow, NoColor: true, Terminate: recordingTerminate(calls, failPIDs...)})
+	m.width, m.height = 100, 24
+	m.connected = true
+	m.applySnapshot(model.Snapshot{
+		SampledAtMs: 1,
+		Processes: []model.Process{
+			{PID: 1, Type: "GRADLE_DAEMON", RSSMemoryMB: 30, StartTimeMs: 1001},
+			{PID: 2, Type: "KOTLIN_DAEMON", RSSMemoryMB: 20, StartTimeMs: 1002},
+			{PID: 3, Type: "GRADLE_WORKER", RSSMemoryMB: 10, StartTimeMs: 1003},
+		},
+	})
+	return m
+}
+
+func press(t *testing.T, m Model, code rune) (Model, tea.Cmd) {
+	t.Helper()
+	next, cmd := m.Update(tea.KeyPressMsg(tea.Key{Code: code}))
+	return next.(Model), cmd
+}
+
+func TestKillSelectedRequiresConfirmationAndTargetsSelectedProcess(t *testing.T) {
+	var calls []terminateCall
+	m := killTestModel(&calls)
+	m.selectedPID = 2
+
+	m, cmd := press(t, m, 'x')
+	if cmd != nil || len(calls) != 0 {
+		t.Fatalf("x must only prompt; calls=%v", calls)
+	}
+	if m.pendingKill == nil || len(m.pendingKill.targets) != 1 || m.pendingKill.targets[0].PID != 2 {
+		t.Fatalf("pending kill=%+v want pid 2", m.pendingKill)
+	}
+	if body := m.View().Content; !strings.Contains(body, "Kill Kotlin daemon pid 2") || !strings.Contains(body, "y confirm") {
+		t.Fatalf("missing confirmation prompt: %s", body)
+	}
+
+	m, cmd = press(t, m, 'y')
+	if cmd == nil || !m.killing || m.pendingKill != nil {
+		t.Fatalf("y should start kill: killing=%v pending=%v", m.killing, m.pendingKill)
+	}
+	next, refresh := m.Update(cmd())
+	m = next.(Model)
+	if len(calls) != 1 || calls[0] != (terminateCall{pid: 2, startTimeMs: 1002}) {
+		t.Fatalf("terminate calls=%v want pid 2 with start time", calls)
+	}
+	if m.killing || m.noticeError || !strings.Contains(m.notice, "pid 2") {
+		t.Fatalf("unexpected notice=%q error=%v killing=%v", m.notice, m.noticeError, m.killing)
+	}
+	if refresh == nil {
+		t.Fatal("expected snapshot refresh after kill")
+	}
+}
+
+func TestKillAllFreezesTargetsAndReportsFailures(t *testing.T) {
+	var calls []terminateCall
+	m := killTestModel(&calls, 3)
+
+	m, _ = press(t, m, 'X')
+	if m.pendingKill == nil || !m.pendingKill.all {
+		t.Fatalf("X should prompt for kill all: %+v", m.pendingKill)
+	}
+	if body := m.View().Content; !strings.Contains(body, "Kill all 3 recorded processes") {
+		t.Fatalf("missing kill-all prompt: %s", body)
+	}
+	// A refresh while the prompt is open must not change what was confirmed.
+	m.applySnapshot(model.Snapshot{SampledAtMs: 2, Processes: []model.Process{{PID: 99, RSSMemoryMB: 1}}})
+
+	m, cmd := press(t, m, 'y')
+	next, _ := m.Update(cmd())
+	m = next.(Model)
+	if len(calls) != 3 || calls[0].pid != 1 || calls[1].pid != 2 || calls[2].pid != 3 {
+		t.Fatalf("terminate calls=%v want pids 1,2,3", calls)
+	}
+	if !m.noticeError || !strings.Contains(m.notice, "2 of 3") || !strings.Contains(m.notice, "pid 3: operation not permitted") {
+		t.Fatalf("unexpected failure notice=%q", m.notice)
+	}
+	if body := m.View().Content; !strings.Contains(body, "pid 3: operation not permitted") {
+		t.Fatalf("failure notice not rendered: %s", body)
+	}
+}
+
+func TestKillPromptCancelsOnOtherKey(t *testing.T) {
+	var calls []terminateCall
+	m := killTestModel(&calls)
+
+	m, _ = press(t, m, 'X')
+	m, cmd := press(t, m, 'n')
+	if cmd != nil || len(calls) != 0 || m.pendingKill != nil {
+		t.Fatalf("cancel should not kill: calls=%v pending=%v", calls, m.pendingKill)
+	}
+	if !strings.Contains(m.View().Content, "Kill cancelled") {
+		t.Fatalf("missing cancel notice: %s", m.View().Content)
+	}
+
+	m, _ = press(t, m, 'x')
+	m, cmd = press(t, m, 'q')
+	if cmd != nil || len(calls) != 0 {
+		t.Fatal("q while confirming should cancel, not quit or kill")
+	}
+}
+
+func TestKillKeysIgnoredWithoutProcesses(t *testing.T) {
+	var calls []terminateCall
+	m := NewModel(Config{Now: fixedNow, Terminate: recordingTerminate(&calls)})
+	m.connected = true
+	m.applySnapshot(model.Snapshot{SampledAtMs: 1})
+	for _, key := range []rune{'x', 'X'} {
+		m, _ = press(t, m, key)
+		if m.pendingKill != nil {
+			t.Fatalf("%c prompted with no processes", key)
+		}
+	}
+}
+
+func TestKillPromptFitsNarrowTerminal(t *testing.T) {
+	var calls []terminateCall
+	m := killTestModel(&calls)
+	m.width, m.height = 40, 10
+	m, _ = press(t, m, 'x')
+	for _, line := range strings.Split(m.View().Content, "\n") {
+		if displayLen(line) > m.width {
+			t.Fatalf("line exceeds width (%d): %q", displayLen(line), line)
+		}
 	}
 }
 

@@ -101,7 +101,8 @@ daemonitor-cli
 ssh -t build-machine daemonitor-cli
 ```
 
-Keys: `↑/↓` or `j/k` select · `s`/`S` sort · `space` pause · `r` refresh · `enter` details · `q` quit.
+Keys: `↑/↓` or `j/k` select · `s`/`S` sort · `space` pause · `r` refresh · `enter` details ·
+`x` kill selected · `X` kill all listed (confirm with `y`) · `q` quit.
 Live heap shows `n/a` until the Go core exposes it; RSS / Xmx / CPU remain available.
 
 Desktop apps also accept `--headless` for a similar terminal mode (JVM path).
