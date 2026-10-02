@@ -1,5 +1,9 @@
 package io.github.cdsap.daemonitor
 
+import io.github.cdsap.daemonitor.application.DaemonLog
+import io.github.cdsap.daemonitor.application.DaemonLogLine
+import io.github.cdsap.daemonitor.application.DaemonLogSource
+import io.github.cdsap.daemonitor.application.ProcessSource
 import io.github.cdsap.daemonitor.application.update.UpdateService
 import io.github.cdsap.daemonitor.collect.DaemonLogWatcher
 import io.github.cdsap.daemonitor.collect.ProcessCollector
@@ -16,16 +20,17 @@ import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertSame
 
 class AppContainerTest {
     @Test
-    fun `container exposes concrete infrastructure from the shared core wiring`(@TempDir tmp: Path) {
+    fun `container exposes default monitoring ports`(@TempDir tmp: Path) {
         AppContainer(
             databasePath = tmp.resolve("watcher.db"),
             settingsPath = tmp.resolve("settings.properties"),
         ).use { container ->
-            assertIs<ProcessCollector>(container.processCollector)
-            assertIs<DaemonLogWatcher>(container.daemonLogWatcher)
+            assertIs<ProcessCollector>(container.processSource)
+            assertIs<DaemonLogWatcher>(container.daemonLogSource)
             assertIs<WatcherDatabase>(container.database)
             assertIs<SettingsStore>(container.settingsStore)
             assertIs<BuildAggregator>(container.buildAggregator)
@@ -37,6 +42,28 @@ class AppContainerTest {
             assertIs<DaemonitorMcpServer>(
                 container.createMcpServer(currentProcessesProvider = { emptyList() }),
             )
+        }
+    }
+
+    @Test
+    fun `container exposes injected monitoring ports`(@TempDir tmp: Path) {
+        val processSource = ProcessSource { emptyList() }
+        val logSource = object : DaemonLogSource {
+            override fun discover() = emptyList<DaemonLog>()
+
+            override fun readNewLines(log: DaemonLog) = emptyList<DaemonLogLine>()
+
+            override fun tailFor(log: DaemonLog) = emptyList<String>()
+        }
+
+        AppContainer(
+            databasePath = tmp.resolve("watcher.db"),
+            settingsPath = tmp.resolve("settings.properties"),
+            processSource = processSource,
+            logSource = logSource,
+        ).use { container ->
+            assertSame(processSource, container.processSource)
+            assertSame(logSource, container.daemonLogSource)
         }
     }
 
