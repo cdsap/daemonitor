@@ -24,8 +24,8 @@ class CoreContainer(
     /** When true, daemonitor-cored owns sample/build inserts in [databasePath] (same-file open). */
     persistSamples: Boolean = true,
 ) : AutoCloseable {
-    val processCollector = ProcessCollector()
-    val daemonLogWatcher = DaemonLogWatcher()
+    val processSource: ProcessSource = processSource ?: ProcessCollector()
+    val daemonLogSource: DaemonLogSource = logSource ?: DaemonLogWatcher()
     val database = WatcherDatabase.open(databasePath)
     val settingsStore = SettingsStore(settingsPath)
     val buildAggregator = BuildAggregator(
@@ -36,8 +36,8 @@ class CoreContainer(
         },
     )
     val runtime = WatcherRuntime(
-        processSource = processSource ?: processCollector,
-        logSource = logSource ?: daemonLogWatcher,
+        processSource = this.processSource,
+        logSource = this.daemonLogSource,
         aggregator = buildAggregator,
         builds = database,
         samples = database,

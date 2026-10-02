@@ -5,8 +5,6 @@ import io.github.cdsap.daemonitor.application.DaemonLogSource
 import io.github.cdsap.daemonitor.application.DefaultDaemonitorQueryService
 import io.github.cdsap.daemonitor.application.ProcessSource
 import io.github.cdsap.daemonitor.application.update.UpdateService
-import io.github.cdsap.daemonitor.collect.DaemonLogWatcher
-import io.github.cdsap.daemonitor.collect.ProcessCollector
 import io.github.cdsap.daemonitor.config.MonitoringConfig
 import io.github.cdsap.daemonitor.domain.BuildAggregator
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
@@ -49,14 +47,14 @@ class AppContainer(
         persistSamples = persistSamples,
     )
 
-    val processCollector: ProcessCollector = core.processCollector
-    val daemonLogWatcher: DaemonLogWatcher = core.daemonLogWatcher
     val database: WatcherDatabase = core.database
     val settingsStore: SettingsStore = core.settingsStore
     val buildAggregator: BuildAggregator = core.buildAggregator
     val runtime: WatcherRuntime = core.runtime
+    val processSource: ProcessSource = core.processSource
+    val daemonLogSource: DaemonLogSource = core.daemonLogSource
     /** Live process source actually used by [runtime] (Go core or JVM collector). */
-    val liveProcessSource: ProcessSource = processSource ?: processCollector
+    val liveProcessSource: ProcessSource = this.processSource
 
     val distributionChannel: DistributionChannel = distribution
     val updateService: UpdateService = updateServiceForDistribution(distribution)
