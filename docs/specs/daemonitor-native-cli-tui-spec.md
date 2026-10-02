@@ -158,6 +158,9 @@ The first release supports sorting by:
 - Type
 - Uptime
 - Project
+- Heap used
+- Heap committed
+- Xmx
 
 The active sort field and direction must be visible in the column header. The selection must follow the selected PID when new snapshots reorder rows.
 

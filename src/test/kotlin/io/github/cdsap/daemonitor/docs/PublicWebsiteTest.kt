@@ -146,7 +146,7 @@ class PublicWebsiteTest {
             "Press",
             "Interactive monitor",
             "Interactive monitor key bindings",
-            "RSS, CPU, PID, type, uptime, and project",
+            "RSS, CPU, PID, type, uptime, project, heap used, heap committed, and Xmx",
             "Pause or resume automatic refresh",
             "retained daemon-log tail",
             "restore the terminal",
