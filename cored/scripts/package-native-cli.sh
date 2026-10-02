@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Package a native Go CLI zip: daemonitor-cli + daemonitor-cored (no JDK).
 # Usage: package-native-cli.sh <version> <os-label> <arch-label> [output-dir]
-# Example: package-native-cli.sh 1.2.0 macos arm64 build/native-cli
+# Example: package-native-cli.sh 1.2.1 macos arm64 build/native-cli
 set -euo pipefail
 
 if [[ $# -lt 3 ]]; then
