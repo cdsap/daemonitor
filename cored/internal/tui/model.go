@@ -69,6 +69,8 @@ type Config struct {
 	PollInterval time.Duration
 	NoColor      bool
 	Now          func() time.Time
+	// Terminate stops a process; defaults to TerminateProcess.
+	Terminate TerminateFunc
 }
 
 // Model is Bubble Tea presentation state for the process monitor.
@@ -77,6 +79,7 @@ type Model struct {
 	pollInterval time.Duration
 	noColor      bool
 	now          func() time.Time
+	terminate    TerminateFunc
 
 	width       int
 	height      int
@@ -102,6 +105,18 @@ type Model struct {
 	detailBuilds  client.BuildsPayload
 	detailLoading bool
 	detailError   string
+
+	pendingKill *killRequest
+	killing     bool
+	notice      string
+	noticeError bool
+}
+
+// killRequest captures the exact processes shown in the confirmation prompt so
+// a refresh between prompt and confirmation cannot change what gets stopped.
+type killRequest struct {
+	all     bool
+	targets []model.Process
 }
 
 type tickMsg time.Time
@@ -123,6 +138,17 @@ type detailsLoadedMsg struct {
 	err     error
 }
 
+type killFailure struct {
+	pid int32
+	err error
+}
+
+type killFinishedMsg struct {
+	all       bool
+	requested []model.Process
+	failures  []killFailure
+}
+
 // NewModel constructs the interactive monitor model.
 func NewModel(cfg Config) Model {
 	interval := cfg.PollInterval
@@ -133,11 +159,16 @@ func NewModel(cfg Config) Model {
 	if now == nil {
 		now = time.Now
 	}
+	terminate := cfg.Terminate
+	if terminate == nil {
+		terminate = TerminateProcess
+	}
 	return Model{
 		client:       cfg.Client,
 		pollInterval: interval,
 		noColor:      cfg.NoColor,
 		now:          now,
+		terminate:    terminate,
 		width:        80,
 		height:       24,
 		sortField:    SortRSS,
@@ -208,6 +239,22 @@ func (m Model) fetchDetails(pid int64) tea.Cmd {
 	}
 }
 
+func (m Model) killProcesses(req killRequest) tea.Cmd {
+	terminate := m.terminate
+	return func() tea.Msg {
+		msg := killFinishedMsg{all: req.all, requested: req.targets}
+		for _, p := range req.targets {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			err := terminate(ctx, p.PID, p.StartTimeMs)
+			cancel()
+			if err != nil {
+				msg.failures = append(msg.failures, killFailure{pid: p.PID, err: err})
+			}
+		}
+		return msg
+	}
+}
+
 // Update handles Bubble Tea messages.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -256,6 +303,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case killFinishedMsg:
+		m.killing = false
+		m.notice, m.noticeError = killNotice(msg)
+		if !m.inFlight {
+			m.inFlight = true
+			return m, m.fetchSnapshot()
+		}
+		return m, nil
+
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 	}
@@ -285,9 +341,32 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if m.pendingKill != nil {
+		req := *m.pendingKill
+		m.pendingKill = nil
+		switch key {
+		case "ctrl+c":
+			return m, tea.Quit
+		case "y", "Y":
+			m.killing = true
+			return m, m.killProcesses(req)
+		}
+		m.notice, m.noticeError = "Kill cancelled.", false
+		return m, nil
+	}
+	m.notice = ""
+
 	switch key {
 	case "q", "ctrl+c":
 		return m, tea.Quit
+	case "x":
+		if idx := m.selectedIndex(); idx >= 0 && !m.killing {
+			m.pendingKill = &killRequest{targets: []model.Process{m.processes[idx]}}
+		}
+	case "X":
+		if len(m.processes) > 0 && !m.killing {
+			m.pendingKill = &killRequest{all: true, targets: append([]model.Process(nil), m.processes...)}
+		}
 	case "up", "k":
 		m.moveSelection(-1)
 	case "down", "j":
@@ -477,6 +556,9 @@ func (m *Model) tableRows() int {
 	if m.helpOpen {
 		reserved += 6
 	}
+	if m.notice != "" || m.killing {
+		reserved++
+	}
 	rows := m.height - reserved
 	if rows < 1 {
 		rows = 1
@@ -606,12 +688,66 @@ func (m Model) renderTable() string {
 	}
 
 	b.WriteString("\n")
-	footer := "↑/↓ or j/k select   s sort   space pause   r refresh   enter details   ? help   q quit"
-	if m.helpOpen {
-		footer = "Keys: q quit · arrows/jk move · g/G home/end · s/S sort · space pause · r refresh · enter details · esc close details"
+	if status := m.killStatusLine(); status != "" {
+		b.WriteString(status + "\n")
 	}
-	b.WriteString(truncateWidth(footer, m.width))
+	footer := "↑/↓ or j/k select   s sort   space pause   r refresh   enter details   x kill   X kill all   ? help   q quit"
+	if m.helpOpen {
+		footer = "Keys: q quit · arrows/jk move · g/G home/end · s/S sort · space pause · r refresh · enter details · x kill selected · X kill all · esc close details"
+	}
+	footer = truncateWidth(footer, m.width)
+	if m.pendingKill != nil {
+		footer = truncateWidth(killPrompt(*m.pendingKill), m.width)
+		if !m.noColor {
+			footer = errorStyle(m.noColor).Bold(true).Render(footer)
+		}
+	}
+	b.WriteString(footer)
 	return b.String()
+}
+
+func (m Model) killStatusLine() string {
+	if m.killing {
+		return truncateWidth("Sending termination signal…", m.width)
+	}
+	if m.notice == "" {
+		return ""
+	}
+	line := truncateWidth(m.notice, m.width)
+	if m.noticeError && !m.noColor {
+		return errorStyle(m.noColor).Render(line)
+	}
+	return line
+}
+
+func killPrompt(req killRequest) string {
+	const suffix = "?  y confirm · any other key cancels"
+	if req.all {
+		return fmt.Sprintf("Kill all %d recorded processes%s", len(req.targets), suffix)
+	}
+	p := req.targets[0]
+	return fmt.Sprintf("Kill %s pid %d (%s)%s", render.TypeDisplay(p.Type), p.PID, render.ProjectName(p), suffix)
+}
+
+func killNotice(msg killFinishedMsg) (string, bool) {
+	total := len(msg.requested)
+	failed := len(msg.failures)
+	if failed == 0 {
+		if msg.all {
+			return fmt.Sprintf("Sent termination signal to %d processes.", total), false
+		}
+		p := msg.requested[0]
+		return fmt.Sprintf("Sent termination signal to %s pid %d.", render.TypeDisplay(p.Type), p.PID), false
+	}
+	first := msg.failures[0]
+	if !msg.all {
+		return fmt.Sprintf("Could not kill pid %d: %v", first.pid, first.err), true
+	}
+	text := fmt.Sprintf("Sent termination signal to %d of %d processes; pid %d: %v", total-failed, total, first.pid, first.err)
+	if failed > 1 {
+		text += fmt.Sprintf(" (+%d more failed)", failed-1)
+	}
+	return text, true
 }
 
 func (m Model) renderDetails() string {

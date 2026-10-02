@@ -219,6 +219,10 @@ daemonitor-cli ps --watch --poll-interval 5s --until 1m</code></pre>
                 <td>Open details for the selected process, including its retained daemon-log tail when available.</td>
               </tr>
               <tr>
+                <td><kbd>x</kbd> / <kbd>X</kbd></td>
+                <td>Kill the selected process, or every listed process. Press <kbd>y</kbd> to confirm; any other key cancels. Processes receive a termination signal (SIGTERM on macOS and Linux).</td>
+              </tr>
+              <tr>
                 <td><kbd>esc</kbd></td>
                 <td>Close process details and return to the table. <kbd>?</kbd> toggles the in-app key-help line.</td>
               </tr>

@@ -139,6 +139,8 @@ The exact styling may evolve, but the information hierarchy and key behavior are
 | `space` | Pause or resume automatic refresh |
 | `r` | Refresh immediately |
 | `enter` | Open process details |
+| `x` | Kill the selected process (asks for `y` confirmation) |
+| `X` | Kill all listed processes (asks for `y` confirmation) |
 | `esc` | Close details and return to the table |
 | `?` | Toggle expanded help |
 
