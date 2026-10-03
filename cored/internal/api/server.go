@@ -243,7 +243,20 @@ func (s *Server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 			limit = v
 		}
 	}
-	rows, err := s.Store.ListBuilds(limit)
+	var rows []builds.Build
+	var err error
+	pidRaw, startRaw := r.URL.Query().Get("pid"), r.URL.Query().Get("start_time_ms")
+	if pidRaw != "" || startRaw != "" {
+		pid, pidErr := strconv.ParseInt(pidRaw, 10, 64)
+		startMs, startErr := strconv.ParseInt(startRaw, 10, 64)
+		if pidErr != nil || startErr != nil || pid <= 0 || startMs <= 0 {
+			http.Error(w, "pid and start_time_ms are required for daemon-scoped builds", http.StatusBadRequest)
+			return
+		}
+		rows, err = s.Store.ListBuildsForDaemon(pid, startMs, limit)
+	} else {
+		rows, err = s.Store.ListBuilds(limit)
+	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

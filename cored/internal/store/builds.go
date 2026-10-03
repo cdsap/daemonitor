@@ -41,6 +41,17 @@ ON CONFLICT(build_id) DO UPDATE SET
 
 // ListBuilds returns recent builds newest-first.
 func (s *Store) ListBuilds(limit int) ([]builds.Build, error) {
+	return s.listBuilds(``, nil, limit)
+}
+
+// ListBuildsForDaemon returns recent builds from one daemon lifetime. The
+// start-time bound prevents rows from an earlier process using the same PID
+// from appearing in the selected daemon's details.
+func (s *Store) ListBuildsForDaemon(pid, daemonStartMs int64, limit int) ([]builds.Build, error) {
+	return s.listBuilds(`WHERE daemon_pid = ? AND start_time >= ?`, []any{pid, daemonStartMs}, limit)
+}
+
+func (s *Store) listBuilds(where string, args []any, limit int) ([]builds.Build, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
@@ -49,8 +60,9 @@ SELECT build_id, daemon_pid, daemon_identity, command_line, working_directory, p
        start_time, end_time, duration_seconds, peak_memory_mb, avg_memory_mb,
        peak_cpu_percent, inferred_source, final_status, log_snippet, agent, agent_provider
 FROM builds
+`+where+`
 ORDER BY start_time DESC
-LIMIT ?`, limit)
+LIMIT ?`, append(args, limit)...)
 	if err != nil {
 		return nil, err
 	}
