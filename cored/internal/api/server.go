@@ -243,7 +243,24 @@ func (s *Server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 			limit = v
 		}
 	}
-	rows, err := s.Store.ListBuilds(limit)
+	var rows []builds.Build
+	var err error
+	if rawPID := r.URL.Query().Get("pid"); rawPID != "" {
+		pid, parseErr := strconv.ParseInt(rawPID, 10, 64)
+		if parseErr != nil || pid <= 0 {
+			http.Error(w, "invalid pid", http.StatusBadRequest)
+			return
+		}
+		// Resolve identity in the core. Clients must not be able to turn this
+		// into a PID-only query, which could mix history after PID reuse.
+		identity := ""
+		if s.Logs != nil {
+			identity = s.Logs.DaemonIdentity(pid)
+		}
+		rows, err = s.Store.ListBuildsForDaemon(pid, identity, limit)
+	} else {
+		rows, err = s.Store.ListBuilds(limit)
+	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

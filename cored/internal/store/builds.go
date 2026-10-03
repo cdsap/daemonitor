@@ -41,16 +41,32 @@ ON CONFLICT(build_id) DO UPDATE SET
 
 // ListBuilds returns recent builds newest-first.
 func (s *Store) ListBuilds(limit int) ([]builds.Build, error) {
+	return s.listBuilds(``, nil, limit)
+}
+
+// ListBuildsForDaemon returns builds correlated to one daemon incarnation.
+// PID alone is deliberately insufficient because operating systems can reuse it.
+func (s *Store) ListBuildsForDaemon(pid int64, identity string, limit int) ([]builds.Build, error) {
+	if pid <= 0 || identity == "" {
+		return []builds.Build{}, nil
+	}
+	return s.listBuilds(`WHERE daemon_pid = ? AND daemon_identity = ?`, []any{pid, identity}, limit)
+}
+
+func (s *Store) listBuilds(where string, args []any, limit int) ([]builds.Build, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
-	rows, err := s.db.Query(`
+	query := `
 SELECT build_id, daemon_pid, daemon_identity, command_line, working_directory, project_path,
        start_time, end_time, duration_seconds, peak_memory_mb, avg_memory_mb,
        peak_cpu_percent, inferred_source, final_status, log_snippet, agent, agent_provider
 FROM builds
+	` + where + `
 ORDER BY start_time DESC
-LIMIT ?`, limit)
+LIMIT ?`
+	args = append(args, limit)
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}

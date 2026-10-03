@@ -126,6 +126,39 @@ func TestBuildsTableMatchesAppWatcherColumns(t *testing.T) {
 	}
 }
 
+func TestListBuildsForDaemonMatchesIdentityAsWellAsPID(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "scoped-builds.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	for _, b := range []builds.Build{
+		{BuildID: "old", DaemonPID: 42, DaemonIdentity: "old-uid", StartTimeMs: 1, InferredSource: builds.SourceUnknown, FinalStatus: builds.StatusSuccess},
+		{BuildID: "current", DaemonPID: 42, DaemonIdentity: "current-uid", StartTimeMs: 2, InferredSource: builds.SourceUnknown, FinalStatus: builds.StatusSuccess},
+		{BuildID: "other-pid", DaemonPID: 7, DaemonIdentity: "current-uid", StartTimeMs: 3, InferredSource: builds.SourceUnknown, FinalStatus: builds.StatusSuccess},
+	} {
+		if err := s.InsertBuild(b); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	rows, err := s.ListBuildsForDaemon(42, "current-uid", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].BuildID != "current" {
+		t.Fatalf("scoped builds=%v", rows)
+	}
+	rows, err = s.ListBuildsForDaemon(42, "", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("identity-less query returned PID history: %v", rows)
+	}
+}
+
 func TestMigratesLegacyBuildsColumns(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "legacy.sqlite")
