@@ -30,6 +30,14 @@ func TestServerHealthAndProcessesOverUnixSocket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	for _, b := range []builds.Build{
+		{BuildID: "selected", DaemonPID: 42, FinalStatus: builds.StatusSuccess},
+		{BuildID: "other", DaemonPID: 7, FinalStatus: builds.StatusSuccess},
+	} {
+		if err := srv.Store.InsertBuild(b); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -82,6 +90,24 @@ func TestServerHealthAndProcessesOverUnixSocket(t *testing.T) {
 	}
 	if snap.Processes == nil {
 		t.Fatal("expected processes array (possibly empty), got null")
+	}
+
+	resp, err = client.Get("http://daemonitor/v1/builds?pid=42")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var buildsPayload struct {
+		Count  int `json:"count"`
+		Builds []struct {
+			DaemonPID int64 `json:"daemon_pid"`
+		} `json:"builds"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&buildsPayload); err != nil {
+		t.Fatal(err)
+	}
+	if buildsPayload.Count != 1 || len(buildsPayload.Builds) != 1 || buildsPayload.Builds[0].DaemonPID != 42 {
+		t.Fatalf("filtered builds=%+v", buildsPayload)
 	}
 
 	cancel()
