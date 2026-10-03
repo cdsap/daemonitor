@@ -3,7 +3,6 @@ package store_test
 import (
 	"database/sql"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -155,7 +154,7 @@ func TestListBuildsForDaemonFiltersNewestFirstAndAppliesLimit(t *testing.T) {
 	}
 }
 
-func TestListBuildsForDaemonReturnsEmptyAndRejectsInvalidIdentifiers(t *testing.T) {
+func TestListBuildsForDaemonReturnsEmptyForInvalidIdentifiers(t *testing.T) {
 	s, err := store.Open(filepath.Join(t.TempDir(), "builds.sqlite"))
 	if err != nil {
 		t.Fatal(err)
@@ -175,8 +174,8 @@ func TestListBuildsForDaemonReturnsEmptyAndRejectsInvalidIdentifiers(t *testing.
 		{pid: 42, identity: ""},
 		{pid: 42, identity: "   "},
 	} {
-		if _, err := s.ListBuildsForDaemon(tc.pid, tc.identity, 10); err == nil || !strings.Contains(err.Error(), "invalid daemon identifier") {
-			t.Errorf("pid=%d identity=%q err=%v", tc.pid, tc.identity, err)
+		if rows, err := s.ListBuildsForDaemon(tc.pid, tc.identity, 10); err != nil || len(rows) != 0 {
+			t.Errorf("pid=%d identity=%q rows=%v err=%v", tc.pid, tc.identity, rows, err)
 		}
 	}
 }
@@ -192,7 +191,6 @@ func equalStrings(got, want []string) bool {
 	}
 	return true
 }
-
 func TestMigratesLegacyBuildsColumns(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "legacy.sqlite")

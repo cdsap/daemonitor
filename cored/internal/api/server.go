@@ -243,23 +243,36 @@ func (s *Server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 			limit = v
 		}
 	}
-
-	pidRaw, identity := r.URL.Query().Get("daemon_pid"), r.URL.Query().Get("daemon_identity")
 	var rows []builds.Build
 	var err error
-	switch {
-	case pidRaw == "" && identity == "":
-		rows, err = s.Store.ListBuilds(limit)
-	case pidRaw == "" || strings.TrimSpace(identity) == "":
-		http.Error(w, "invalid daemon identifier", http.StatusBadRequest)
-		return
-	default:
+	query := r.URL.Query()
+	if rawPID := query.Get("pid"); rawPID != "" {
+		pid, parseErr := strconv.ParseInt(rawPID, 10, 64)
+		if parseErr != nil || pid <= 0 {
+			http.Error(w, "invalid pid", http.StatusBadRequest)
+			return
+		}
+		// Resolve identity in the core. Clients must not be able to turn this
+		// into a PID-only query, which could mix history after PID reuse.
+		identity := ""
+		if s.Logs != nil {
+			identity = s.Logs.DaemonIdentity(pid)
+		}
+		rows, err = s.Store.ListBuildsForDaemon(pid, identity, limit)
+	} else if query.Has("daemon_pid") || query.Has("daemon_identity") {
+		pidRaw, identity := query.Get("daemon_pid"), query.Get("daemon_identity")
+		if pidRaw == "" || strings.TrimSpace(identity) == "" {
+			http.Error(w, "invalid daemon identifier", http.StatusBadRequest)
+			return
+		}
 		pid, parseErr := strconv.ParseInt(pidRaw, 10, 64)
 		if parseErr != nil || pid <= 0 {
 			http.Error(w, "invalid daemon identifier", http.StatusBadRequest)
 			return
 		}
 		rows, err = s.Store.ListBuildsForDaemon(pid, identity, limit)
+	} else {
+		rows, err = s.Store.ListBuilds(limit)
 	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

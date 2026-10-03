@@ -114,7 +114,6 @@ func TestBuildsEndpointFiltersByDaemonAndRejectsInvalidIdentifiers(t *testing.T)
 			t.Fatal(err)
 		}
 	}
-
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.Run(ctx) }()
 	client := &http.Client{
@@ -179,6 +178,68 @@ func TestBuildsEndpointFiltersByDaemonAndRejectsInvalidIdentifiers(t *testing.T)
 	case <-errCh:
 	case <-time.After(3 * time.Second):
 		t.Fatal("server did not shut down")
+	}
+}
+
+func TestBuildsPIDQueryUsesCoreResolvedDaemonIdentity(t *testing.T) {
+	gradleHome := t.TempDir()
+	logDir := filepath.Join(gradleHome, "daemon", "8.9")
+	if err := os.MkdirAll(logDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(logDir, "daemon-42.out.log"), []byte("2026-06-24T14:42:12.402-0700 [INFO] [x] DefaultDaemonContext[uid=current-uid, daemonOpts=-Xmx1g]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	socket := filepath.Join(os.TempDir(), fmt.Sprintf("dmn-pid-builds-%d.sock", os.Getpid()))
+	_ = os.Remove(socket)
+	defer os.Remove(socket)
+	srv, err := api.NewServer(socket, filepath.Join(t.TempDir(), "core.sqlite"), time.Hour, time.Hour, gradleHome)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Store.Close()
+	for _, b := range []builds.Build{
+		{BuildID: "old", DaemonPID: 42, DaemonIdentity: "old-uid", StartTimeMs: 1, FinalStatus: builds.StatusSuccess},
+		{BuildID: "current", DaemonPID: 42, DaemonIdentity: "current-uid", StartTimeMs: 2, FinalStatus: builds.StatusSuccess},
+	} {
+		if err := srv.Store.InsertBuild(b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := srv.Logs.Poll(nil); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Run(ctx) }()
+	client := &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "unix", socket)
+	}}, Timeout: 3 * time.Second}
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		payload, requestErr := func() (buildsPayload, error) {
+			resp, err := client.Get("http://daemonitor/v1/builds?pid=42")
+			if err != nil {
+				return buildsPayload{}, err
+			}
+			defer resp.Body.Close()
+			var p buildsPayload
+			err = json.NewDecoder(resp.Body).Decode(&p)
+			return p, err
+		}()
+		if requestErr == nil {
+			if len(payload.Builds) != 1 || payload.Builds[0].BuildID != "current" {
+				t.Fatalf("scoped API builds=%v", payload.Builds)
+			}
+			cancel()
+			<-errCh
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("server never became ready: %v", requestErr)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 
