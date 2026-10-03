@@ -246,14 +246,27 @@ func (s *Server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 	var rows []builds.Build
 	var err error
 	pidRaw, startRaw := r.URL.Query().Get("pid"), r.URL.Query().Get("start_time_ms")
-	if pidRaw != "" || startRaw != "" {
+	if startRaw != "" {
 		pid, pidErr := strconv.ParseInt(pidRaw, 10, 64)
 		startMs, startErr := strconv.ParseInt(startRaw, 10, 64)
 		if pidErr != nil || startErr != nil || pid <= 0 || startMs <= 0 {
 			http.Error(w, "pid and start_time_ms are required for daemon-scoped builds", http.StatusBadRequest)
 			return
 		}
-		rows, err = s.Store.ListBuildsForDaemon(pid, startMs, limit)
+		rows, err = s.Store.ListBuildsForDaemonSince(pid, startMs, limit)
+	} else if pidRaw != "" {
+		pid, parseErr := strconv.ParseInt(pidRaw, 10, 64)
+		if parseErr != nil || pid <= 0 {
+			http.Error(w, "invalid pid", http.StatusBadRequest)
+			return
+		}
+		// Resolve identity in the core. Clients must not be able to turn this
+		// into a PID-only query, which could mix history after PID reuse.
+		identity := ""
+		if s.Logs != nil {
+			identity = s.Logs.DaemonIdentity(pid)
+		}
+		rows, err = s.Store.ListBuildsForDaemon(pid, identity, limit)
 	} else {
 		rows, err = s.Store.ListBuilds(limit)
 	}

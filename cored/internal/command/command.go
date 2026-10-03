@@ -297,12 +297,19 @@ func runOneShot(ctx context.Context, opts Options, cmd string, args []string, st
 		if limit == 0 {
 			limit = 100
 		}
-		payload, err := c.Builds(ctx, limit)
+		var payload client.BuildsPayload
+		if opts.PID > 0 {
+			payload, err = c.BuildsForDaemonPID(ctx, opts.PID, limit)
+		} else {
+			payload, err = c.Builds(ctx, limit)
+		}
 		if err != nil {
 			fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
 			return 1
 		}
-		payload.Builds = filterBuilds(payload.Builds, opts)
+		if opts.PID == 0 {
+			payload.Builds = filterBuilds(payload.Builds, opts)
+		}
 		payload.Count = len(payload.Builds)
 		if err := writeBuilds(stdout, payload, opts.Output); err != nil {
 			fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)

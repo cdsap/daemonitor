@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	defaultTailLines       = 100
+	defaultTailLines        = 100
 	defaultInitialReadBytes = 256 * 1024
 	defaultReadChunkBytes   = 16 * 1024
 )
@@ -203,6 +203,21 @@ func (w *Watcher) TailFor(pid int64) (Tail, bool) {
 		lines = r.slice()
 	}
 	return makeTail(log, lines), true
+}
+
+// DaemonIdentity returns the latest Gradle daemon uid observed in its log.
+// The uid, together with the PID, identifies one daemon incarnation.
+func (w *Watcher) DaemonIdentity(pid int64) string {
+	tail, ok := w.TailFor(pid)
+	if !ok {
+		return ""
+	}
+	for i := len(tail.Events) - 1; i >= 0; i-- {
+		if tail.Events[i].Kind == KindDaemonContext && tail.Events[i].UID != "" {
+			return tail.Events[i].UID
+		}
+	}
+	return ""
 }
 
 // AllTails returns tails for every known log.

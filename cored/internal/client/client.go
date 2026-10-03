@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/cdsap/daemonitor/cored/internal/logs"
@@ -101,9 +102,25 @@ type BuildRecord struct {
 
 // Builds fetches recent builds.
 func (c *Client) Builds(ctx context.Context, limit int) (BuildsPayload, error) {
+	return c.builds(ctx, limit, 0)
+}
+
+// BuildsForDaemonPID fetches history for the daemon currently observed for a PID.
+func (c *Client) BuildsForDaemonPID(ctx context.Context, pid int64, limit int) (BuildsPayload, error) {
+	return c.builds(ctx, limit, pid)
+}
+
+func (c *Client) builds(ctx context.Context, limit int, pid int64) (BuildsPayload, error) {
 	path := "/v1/builds"
 	if limit > 0 {
 		path += "?limit=" + strconv.Itoa(limit)
+	}
+	if pid > 0 {
+		separator := "?"
+		if strings.Contains(path, "?") {
+			separator = "&"
+		}
+		path += separator + "pid=" + strconv.FormatInt(pid, 10)
 	}
 	var payload BuildsPayload
 	err := c.getJSON(ctx, path, &payload)

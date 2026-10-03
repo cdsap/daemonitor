@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -845,7 +846,11 @@ func (m Model) renderDetails() string {
 			if i == 3 {
 				break
 			}
-			b.WriteString("  " + truncateWidth(buildSummary(build), m.width-2) + "\n")
+			summaryWidth := m.width - 2
+			if m.width >= 80 {
+				summaryWidth = m.width
+			}
+			b.WriteString("  " + truncateWidth(buildSummary(build), summaryWidth) + "\n")
 		}
 	}
 	if m.detailTail != nil && len(m.detailTail.Events) > 0 {
@@ -879,7 +884,7 @@ func (m Model) renderDetails() string {
 func buildSummary(build client.BuildRecord) string {
 	duration := "-"
 	if build.DurationSeconds != nil {
-		duration = fmt.Sprintf("%.1fs", *build.DurationSeconds)
+		duration = fmt.Sprintf("%.1fs", math.Round(*build.DurationSeconds*10)/10)
 	}
 	return fmt.Sprintf("%s project=%s duration=%s start=%s source=%s agent=%s",
 		na(build.FinalStatus), na(build.ProjectPath), duration, formatStart(build.StartTimeMs),
