@@ -104,8 +104,8 @@ func WriteProcessesPlain(w io.Writer, snap model.Snapshot) {
 		fmt.Fprintln(w, "No Gradle-related processes are currently running.")
 		return
 	}
-	fmt.Fprintf(w, "%-16s %7s %8s %7s %8s %8s  %-24s %s\n",
-		"TYPE", "PID", "RSS", "CPU", "XMX", "UPTIME", "PROJECT", "SIGNALS")
+	fmt.Fprintf(w, "%-16s %-8s %7s %8s %7s %8s %8s  %-24s %s\n",
+		"TYPE", "GC", "PID", "RSS", "CPU", "XMX", "UPTIME", "PROJECT", "SIGNALS")
 	now := snap.SampledAtMs
 	if now == 0 {
 		now = time.Now().UnixMilli()
@@ -115,8 +115,9 @@ func WriteProcessesPlain(w io.Writer, snap model.Snapshot) {
 		if signals == "" {
 			signals = "-"
 		}
-		fmt.Fprintf(w, "%-16s %7d %8s %7s %8s %8s  %-24s %s\n",
+		fmt.Fprintf(w, "%-16s %-8s %7d %8s %7s %8s %8s  %-24s %s\n",
 			TypeDisplay(p.Type),
+			GCText(p.GC),
 			p.PID,
 			fmt.Sprintf("%dMB", p.RSSMemoryMB),
 			CPUText(p.CPUPercent),
@@ -227,6 +228,14 @@ func HeapText(v *int64) string {
 		return "n/a"
 	}
 	return formatBytesMB(*v)
+}
+
+// GCText formats a garbage collector name or n/a when it was unavailable.
+func GCText(v *string) string {
+	if v == nil || *v == "" {
+		return "n/a"
+	}
+	return *v
 }
 
 const (

@@ -925,6 +925,7 @@ type columnID int
 
 const (
 	colType columnID = iota
+	colGC
 	colPID
 	colRSS
 	colHeapUsed
@@ -942,11 +943,11 @@ type columnSet struct {
 func columnsForWidth(width int) columnSet {
 	switch {
 	case width >= 110:
-		return columnSet{ids: []columnID{colType, colPID, colRSS, colHeapUsed, colHeapCmt, colXmx, colCPU, colUptime, colProject}}
+		return columnSet{ids: []columnID{colType, colGC, colPID, colRSS, colHeapUsed, colHeapCmt, colXmx, colCPU, colUptime, colProject}}
 	case width >= 80:
-		return columnSet{ids: []columnID{colType, colPID, colRSS, colXmx, colCPU, colUptime, colProject}}
+		return columnSet{ids: []columnID{colType, colGC, colPID, colRSS, colXmx, colCPU, colUptime, colProject}}
 	default:
-		return columnSet{ids: []columnID{colType, colPID, colRSS, colCPU, colProject}}
+		return columnSet{ids: []columnID{colType, colGC, colPID, colRSS, colCPU, colProject}}
 	}
 }
 
@@ -990,6 +991,8 @@ func columnLabel(id columnID) string {
 	switch id {
 	case colType:
 		return "TYPE"
+	case colGC:
+		return "GC"
 	case colPID:
 		return "PID"
 	case colRSS:
@@ -1015,6 +1018,8 @@ func columnWidth(id columnID) int {
 	switch id {
 	case colType:
 		return 16
+	case colGC:
+		return 8
 	case colPID:
 		return 7
 	case colRSS:
@@ -1051,6 +1056,8 @@ func formatRowStyled(p model.Process, cols columnSet, nowMs int64, noColor, sele
 		switch id {
 		case colType:
 			cell = render.TypeDisplay(p.Type)
+		case colGC:
+			cell = render.GCText(p.GC)
 		case colPID:
 			cell = fmt.Sprintf("%d", p.PID)
 		case colRSS:
