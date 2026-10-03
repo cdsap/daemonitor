@@ -9,9 +9,10 @@ import (
 
 // BuildFilters are applied by the core before rows cross the IPC boundary.
 type BuildFilters struct {
-	PID     int64
-	Project string
-	Status  string
+	PID            int64
+	DaemonIdentity string
+	Project        string
+	Status         string
 }
 
 // InsertBuild upserts a confirmed build record into the app-aligned builds table.
@@ -67,6 +68,10 @@ FROM builds
 	if filters.PID > 0 {
 		query += " AND daemon_pid = ?"
 		args = append(args, filters.PID)
+	}
+	if filters.DaemonIdentity != "" {
+		query += " AND daemon_identity = ?"
+		args = append(args, filters.DaemonIdentity)
 	}
 	if filters.Project != "" {
 		query += " AND LOWER(COALESCE(project_path, '')) LIKE ? ESCAPE '\\'"
@@ -131,6 +136,15 @@ FROM builds
 		out = append(out, b)
 	}
 	return out, rows.Err()
+}
+
+// ListBuildsForDaemon returns builds correlated to one daemon incarnation.
+// PID alone is deliberately insufficient because operating systems can reuse it.
+func (s *Store) ListBuildsForDaemon(pid int64, identity string, limit int) ([]builds.Build, error) {
+	if pid <= 0 || identity == "" {
+		return []builds.Build{}, nil
+	}
+	return s.ListBuildsFiltered(BuildFilters{PID: pid, DaemonIdentity: identity}, limit)
 }
 
 func escapeLike(value string) string {

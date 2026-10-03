@@ -243,20 +243,30 @@ func (s *Server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 			limit = v
 		}
 	}
-	pid := int64(0)
-	if raw := r.URL.Query().Get("pid"); raw != "" {
-		if v, err := strconv.ParseInt(raw, 10, 64); err == nil {
-			pid = v
-		} else {
+	var filters store.BuildFilters
+	var rows []builds.Build
+	if rawPID := r.URL.Query().Get("pid"); rawPID != "" {
+		pid, parseErr := strconv.ParseInt(rawPID, 10, 64)
+		if parseErr != nil || pid <= 0 {
 			http.Error(w, "invalid pid", http.StatusBadRequest)
 			return
 		}
+		// Resolve identity in the core. Clients must not be able to turn this
+		// into a PID-only query, which could mix history after PID reuse.
+		if s.Logs != nil {
+			filters.DaemonIdentity = s.Logs.DaemonIdentity(pid)
+		}
+		filters.PID = pid
+		if filters.DaemonIdentity == "" {
+			rows = []builds.Build{}
+		}
 	}
-	rows, err := s.Store.ListBuildsFiltered(store.BuildFilters{
-		PID:     pid,
-		Project: r.URL.Query().Get("project"),
-		Status:  r.URL.Query().Get("status"),
-	}, limit)
+	filters.Project = r.URL.Query().Get("project")
+	filters.Status = r.URL.Query().Get("status")
+	var err error
+	if rows == nil {
+		rows, err = s.Store.ListBuildsFiltered(filters, limit)
+	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

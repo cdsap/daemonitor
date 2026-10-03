@@ -237,7 +237,7 @@ func (m Model) fetchDetails(pid int64) tea.Cmd {
 		}
 		tail, tailErr := c.DaemonLogTail(ctx, pid)
 		history, _ = c.History(ctx, time.Now().Add(-30*time.Minute).UnixMilli(), 500)
-		builds, _ = c.Builds(ctx, 20)
+		builds, _ = c.BuildsForDaemon(ctx, pid, 20)
 		msg := detailsLoadedMsg{pid: pid, log: logMeta, history: history.Processes, builds: builds}
 		if tailErr != nil {
 			msg.err = tailErr
@@ -828,9 +828,6 @@ func (m Model) renderDetails() string {
 	}
 	buildCount := 0
 	for _, build := range m.detailBuilds.Builds {
-		if build.DaemonPID != int64(p.PID) {
-			continue
-		}
 		buildCount++
 		duration := "-"
 		if build.DurationSeconds != nil {

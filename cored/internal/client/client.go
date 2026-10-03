@@ -136,6 +136,12 @@ func (c *Client) BuildsFiltered(ctx context.Context, query BuildQuery) (BuildsPa
 	return payload, err
 }
 
+// BuildsForDaemon fetches history for one daemon incarnation. The core resolves
+// the daemon identity and applies the PID+identity correlation rule.
+func (c *Client) BuildsForDaemon(ctx context.Context, pid int64, limit int) (BuildsPayload, error) {
+	return c.BuildsFiltered(ctx, BuildQuery{Limit: limit, PID: pid})
+}
+
 func (c *Client) getJSON(ctx context.Context, path string, dest any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://daemonitor"+path, nil)
 	if err != nil {

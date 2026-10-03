@@ -117,3 +117,65 @@ func TestServerHealthAndProcessesOverUnixSocket(t *testing.T) {
 		t.Fatal("server did not shut down")
 	}
 }
+
+func TestBuildsPIDQueryUsesCoreResolvedDaemonIdentity(t *testing.T) {
+	gradleHome := t.TempDir()
+	logDir := filepath.Join(gradleHome, "daemon", "8.9")
+	if err := os.MkdirAll(logDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(logDir, "daemon-42.out.log")
+	if err := os.WriteFile(logPath, []byte("2026-06-24T14:42:12.402-0700 [INFO] [x] DefaultDaemonContext[uid=current-uid, daemonOpts=-Xmx1g]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	srv, err := api.NewServer(filepath.Join(os.TempDir(), fmt.Sprintf("dmn-builds-%d.sock", os.Getpid())), filepath.Join(t.TempDir(), "core.sqlite"), time.Hour, time.Hour, gradleHome)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Store.Close()
+	defer os.Remove(srv.SocketPath)
+	for _, b := range []builds.Build{
+		{BuildID: "old", DaemonPID: 42, DaemonIdentity: "old-uid", StartTimeMs: 1, InferredSource: builds.SourceUnknown, FinalStatus: builds.StatusSuccess},
+		{BuildID: "current", DaemonPID: 42, DaemonIdentity: "current-uid", StartTimeMs: 2, InferredSource: builds.SourceUnknown, FinalStatus: builds.StatusSuccess},
+	} {
+		if err := srv.Store.InsertBuild(b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := srv.Logs.Poll(nil); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Run(ctx) }()
+
+	client := &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "unix", srv.SocketPath)
+	}}, Timeout: 3 * time.Second}
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		resp, requestErr := client.Get("http://daemonitor/v1/builds?pid=42")
+		if requestErr == nil {
+			defer resp.Body.Close()
+			var payload struct {
+				Builds []builds.Build `json:"builds"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+				t.Fatal(err)
+			}
+			if len(payload.Builds) != 1 || payload.Builds[0].BuildID != "current" {
+				t.Fatalf("scoped API builds=%v", payload.Builds)
+			}
+			cancel()
+			<-errCh
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("server never became ready: %v", requestErr)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
