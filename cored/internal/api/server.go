@@ -243,7 +243,20 @@ func (s *Server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 			limit = v
 		}
 	}
-	rows, err := s.Store.ListBuilds(limit)
+	pid := int64(0)
+	if raw := r.URL.Query().Get("pid"); raw != "" {
+		if v, err := strconv.ParseInt(raw, 10, 64); err == nil {
+			pid = v
+		} else {
+			http.Error(w, "invalid pid", http.StatusBadRequest)
+			return
+		}
+	}
+	rows, err := s.Store.ListBuildsFiltered(store.BuildFilters{
+		PID:     pid,
+		Project: r.URL.Query().Get("project"),
+		Status:  r.URL.Query().Get("status"),
+	}, limit)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
