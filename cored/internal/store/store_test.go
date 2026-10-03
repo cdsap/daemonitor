@@ -126,6 +126,40 @@ func TestBuildsTableMatchesAppWatcherColumns(t *testing.T) {
 	}
 }
 
+func TestFilteredBuildHistoryComposesFiltersAndSummarizesMatches(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "filtered-builds.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	now := time.Now().UnixMilli()
+	duration := 2.0
+	for _, b := range []builds.Build{
+		{BuildID: "success", DaemonPID: 42, DaemonIdentity: "current", ProjectPath: "/work/demo", StartTimeMs: now - 1_000, DurationSeconds: &duration, FinalStatus: builds.StatusSuccess, LogSnippet: "secret"},
+		{BuildID: "failed", DaemonPID: 42, DaemonIdentity: "current", ProjectPath: "/work/demo", StartTimeMs: now - 2_000, DurationSeconds: &duration, FinalStatus: builds.StatusFailed},
+		{BuildID: "other-project", DaemonPID: 42, DaemonIdentity: "current", ProjectPath: "/work/other", StartTimeMs: now - 3_000, FinalStatus: builds.StatusFailed},
+	} {
+		if err := s.InsertBuild(b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	query := store.BuildQuery{SinceMs: now - time.Hour.Milliseconds(), DaemonPID: 42, DaemonIdentity: "current", Project: "demo", Limit: 1}
+	rows, err := s.ListBuildsFiltered(query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].BuildID != "success" {
+		t.Fatalf("rows=%v", rows)
+	}
+	summary, err := s.SummarizeBuilds(query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Count != 2 || summary.FailureCount != 1 || summary.LatestStatus != string(builds.StatusSuccess) || summary.AverageDurationSeconds == nil || *summary.AverageDurationSeconds != duration {
+		t.Fatalf("summary=%+v", summary)
+	}
+}
+
 func TestMigratesLegacyBuildsColumns(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "legacy.sqlite")

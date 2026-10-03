@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -82,8 +83,16 @@ func (c *Client) DaemonLogTail(ctx context.Context, pid int64) (logs.Tail, error
 
 // BuildsPayload is the /v1/builds response.
 type BuildsPayload struct {
-	Count  int           `json:"count"`
-	Builds []BuildRecord `json:"builds"`
+	Count   int           `json:"count"`
+	Summary BuildSummary  `json:"summary"`
+	Builds  []BuildRecord `json:"builds"`
+}
+
+type BuildSummary struct {
+	Count                  int      `json:"count"`
+	FailureCount           int      `json:"failure_count"`
+	AverageDurationSeconds *float64 `json:"average_duration_seconds"`
+	LatestStatus           string   `json:"latest_status"`
 }
 
 // BuildRecord is one build row from the core API.
@@ -96,13 +105,37 @@ type BuildRecord struct {
 	AgentProvider   string   `json:"agent_provider"`
 	ProjectPath     string   `json:"project_path"`
 	DurationSeconds *float64 `json:"duration_seconds"`
+	LogSnippet      string   `json:"log_snippet,omitempty"`
 }
 
 // Builds fetches recent builds.
 func (c *Client) Builds(ctx context.Context, limit int) (BuildsPayload, error) {
-	path := "/v1/builds"
+	return c.BuildsFiltered(ctx, limit, 0, 0, "", "", false)
+}
+
+func (c *Client) BuildsFiltered(ctx context.Context, limit int, sinceMs int64, pid int64, project, status string, includeLogs bool) (BuildsPayload, error) {
+	values := url.Values{}
 	if limit > 0 {
-		path += "?limit=" + strconv.Itoa(limit)
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	if sinceMs > 0 {
+		values.Set("since_ms", strconv.FormatInt(sinceMs, 10))
+	}
+	if pid > 0 {
+		values.Set("pid", strconv.FormatInt(pid, 10))
+	}
+	if project != "" {
+		values.Set("project", project)
+	}
+	if status != "" {
+		values.Set("status", status)
+	}
+	if includeLogs {
+		values.Set("include_logs", "true")
+	}
+	path := "/v1/builds"
+	if encoded := values.Encode(); encoded != "" {
+		path += "?" + encoded
 	}
 	var payload BuildsPayload
 	err := c.getJSON(ctx, path, &payload)
