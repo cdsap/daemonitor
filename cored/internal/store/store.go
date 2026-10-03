@@ -274,7 +274,9 @@ func (s *Store) ensureBuildsAlignedWithApp() error {
 			return err
 		}
 	}
-	_, err = s.db.Exec(`CREATE INDEX IF NOT EXISTS builds_project ON builds(project_path)`)
+	_, err = s.db.Exec(`
+CREATE INDEX IF NOT EXISTS builds_project ON builds(project_path);
+CREATE INDEX IF NOT EXISTS builds_daemon_pid ON builds(daemon_pid)`)
 	return err
 }
 
@@ -301,6 +303,7 @@ CREATE TABLE IF NOT EXISTS builds (
 );
 CREATE INDEX IF NOT EXISTS builds_start ON builds(start_time);
 CREATE INDEX IF NOT EXISTS builds_project ON builds(project_path);
+CREATE INDEX IF NOT EXISTS builds_daemon_pid ON builds(daemon_pid);
 `)
 	return err
 }
@@ -357,6 +360,9 @@ FROM builds`); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`CREATE INDEX IF NOT EXISTS builds_project ON builds(project_path)`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`CREATE INDEX IF NOT EXISTS builds_daemon_pid ON builds(daemon_pid)`); err != nil {
 		return err
 	}
 	return tx.Commit()

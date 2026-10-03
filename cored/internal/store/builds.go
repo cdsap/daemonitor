@@ -2,9 +2,19 @@ package store
 
 import (
 	"database/sql"
+	"strings"
 
 	"github.com/cdsap/daemonitor/cored/internal/builds"
 )
+
+// BuildFilters are applied by the core before rows cross the IPC boundary.
+type BuildFilters struct {
+	PID            int64
+	DaemonIdentity string
+	StartTimeMs    int64
+	Project        string
+	Status         string
+}
 
 // InsertBuild upserts a confirmed build record into the app-aligned builds table.
 func (s *Store) InsertBuild(b builds.Build) error {
@@ -41,7 +51,7 @@ ON CONFLICT(build_id) DO UPDATE SET
 
 // ListBuilds returns recent builds newest-first.
 func (s *Store) ListBuilds(limit int) ([]builds.Build, error) {
-	return s.listBuilds(``, nil, limit)
+	return s.ListBuildsFiltered(BuildFilters{}, limit)
 }
 
 // ListBuildsForDaemon returns builds correlated to one daemon incarnation.
@@ -50,15 +60,19 @@ func (s *Store) ListBuildsForDaemon(pid int64, identity string, limit int) ([]bu
 	if pid <= 0 || identity == "" {
 		return []builds.Build{}, nil
 	}
-	return s.listBuilds(`WHERE daemon_pid = ? AND daemon_identity = ?`, []any{pid, identity}, limit)
+	return s.ListBuildsFiltered(BuildFilters{PID: pid, DaemonIdentity: identity}, limit)
 }
 
 // ListBuildsForDaemonSince returns builds from one daemon lifetime.
 func (s *Store) ListBuildsForDaemonSince(pid, daemonStartMs int64, limit int) ([]builds.Build, error) {
-	return s.listBuilds(`WHERE daemon_pid = ? AND start_time >= ?`, []any{pid, daemonStartMs}, limit)
+	if pid <= 0 || daemonStartMs <= 0 {
+		return []builds.Build{}, nil
+	}
+	return s.ListBuildsFiltered(BuildFilters{PID: pid, StartTimeMs: daemonStartMs}, limit)
 }
 
-func (s *Store) listBuilds(where string, args []any, limit int) ([]builds.Build, error) {
+// ListBuildsFiltered returns recent builds newest-first, applying filters in SQLite.
+func (s *Store) ListBuildsFiltered(filters BuildFilters, limit int) ([]builds.Build, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
@@ -67,9 +81,29 @@ SELECT build_id, daemon_pid, daemon_identity, command_line, working_directory, p
        start_time, end_time, duration_seconds, peak_memory_mb, avg_memory_mb,
        peak_cpu_percent, inferred_source, final_status, log_snippet, agent, agent_provider
 FROM builds
-	` + where + `
-ORDER BY start_time DESC
-LIMIT ?`
+	WHERE 1 = 1`
+	args := make([]any, 0, 4)
+	if filters.PID > 0 {
+		query += " AND daemon_pid = ?"
+		args = append(args, filters.PID)
+	}
+	if filters.DaemonIdentity != "" {
+		query += " AND daemon_identity = ?"
+		args = append(args, filters.DaemonIdentity)
+	}
+	if filters.StartTimeMs > 0 {
+		query += " AND start_time >= ?"
+		args = append(args, filters.StartTimeMs)
+	}
+	if filters.Project != "" {
+		query += " AND LOWER(COALESCE(project_path, '')) LIKE ? ESCAPE '\\'"
+		args = append(args, "%"+escapeLike(strings.ToLower(filters.Project))+"%")
+	}
+	if filters.Status != "" {
+		query += " AND LOWER(final_status) = ?"
+		args = append(args, strings.ToLower(filters.Status))
+	}
+	query += " ORDER BY start_time DESC LIMIT ?"
 	args = append(args, limit)
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
@@ -124,6 +158,12 @@ LIMIT ?`
 		out = append(out, b)
 	}
 	return out, rows.Err()
+}
+
+func escapeLike(value string) string {
+	value = strings.ReplaceAll(value, `\`, `\\`)
+	value = strings.ReplaceAll(value, "%", `\%`)
+	return strings.ReplaceAll(value, "_", `\_`)
 }
 
 // SamplesAsBuildSamples maps DB rows into builds.Sample for the aggregator.

@@ -297,20 +297,16 @@ func runOneShot(ctx context.Context, opts Options, cmd string, args []string, st
 		if limit == 0 {
 			limit = 100
 		}
-		var payload client.BuildsPayload
-		if opts.PID > 0 {
-			payload, err = c.BuildsForDaemonPID(ctx, opts.PID, limit)
-		} else {
-			payload, err = c.Builds(ctx, limit)
-		}
+		payload, err := c.BuildsFiltered(ctx, client.BuildQuery{
+			Limit:   limit,
+			PID:     opts.PID,
+			Project: opts.Project,
+			Status:  opts.Status,
+		})
 		if err != nil {
 			fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
 			return 1
 		}
-		if opts.PID == 0 {
-			payload.Builds = filterBuilds(payload.Builds, opts)
-		}
-		payload.Count = len(payload.Builds)
 		if err := writeBuilds(stdout, payload, opts.Output); err != nil {
 			fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
 			return 1
@@ -382,24 +378,6 @@ func filterProcesses(items []model.Process, opts Options) []model.Process {
 			continue
 		}
 		out = append(out, p)
-	}
-	return out
-}
-
-func filterBuilds(items []client.BuildRecord, opts Options) []client.BuildRecord {
-	out := items[:0]
-	project, status := strings.ToLower(opts.Project), strings.ToLower(opts.Status)
-	for _, b := range items {
-		if opts.PID > 0 && b.DaemonPID != opts.PID {
-			continue
-		}
-		if project != "" && !strings.Contains(strings.ToLower(b.ProjectPath), project) {
-			continue
-		}
-		if status != "" && !strings.EqualFold(b.FinalStatus, status) {
-			continue
-		}
-		out = append(out, b)
 	}
 	return out
 }

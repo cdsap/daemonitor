@@ -8,8 +8,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/cdsap/daemonitor/cored/internal/logs"
@@ -100,31 +100,46 @@ type BuildRecord struct {
 	DurationSeconds *float64 `json:"duration_seconds"`
 }
 
+// BuildQuery describes the filters supported by the core build endpoint.
+type BuildQuery struct {
+	Limit   int
+	PID     int64
+	Project string
+	Status  string
+}
+
 // Builds fetches recent builds.
 func (c *Client) Builds(ctx context.Context, limit int) (BuildsPayload, error) {
-	return c.builds(ctx, limit, 0)
+	return c.BuildsFiltered(ctx, BuildQuery{Limit: limit})
 }
 
-// BuildsForDaemonPID fetches history for the daemon currently observed for a PID.
-func (c *Client) BuildsForDaemonPID(ctx context.Context, pid int64, limit int) (BuildsPayload, error) {
-	return c.builds(ctx, limit, pid)
-}
-
-func (c *Client) builds(ctx context.Context, limit int, pid int64) (BuildsPayload, error) {
-	path := "/v1/builds"
-	if limit > 0 {
-		path += "?limit=" + strconv.Itoa(limit)
+// BuildsFiltered fetches builds with filters applied by daemonitor-cored.
+func (c *Client) BuildsFiltered(ctx context.Context, query BuildQuery) (BuildsPayload, error) {
+	params := url.Values{}
+	if query.Limit > 0 {
+		params.Set("limit", strconv.Itoa(query.Limit))
 	}
-	if pid > 0 {
-		separator := "?"
-		if strings.Contains(path, "?") {
-			separator = "&"
-		}
-		path += separator + "pid=" + strconv.FormatInt(pid, 10)
+	if query.PID > 0 {
+		params.Set("pid", strconv.FormatInt(query.PID, 10))
+	}
+	if query.Project != "" {
+		params.Set("project", query.Project)
+	}
+	if query.Status != "" {
+		params.Set("status", query.Status)
+	}
+	path := "/v1/builds"
+	if encoded := params.Encode(); encoded != "" {
+		path += "?" + encoded
 	}
 	var payload BuildsPayload
 	err := c.getJSON(ctx, path, &payload)
 	return payload, err
+}
+
+// BuildsForDaemonPID fetches history for the daemon currently observed for a PID.
+func (c *Client) BuildsForDaemonPID(ctx context.Context, pid int64, limit int) (BuildsPayload, error) {
+	return c.BuildsFiltered(ctx, BuildQuery{Limit: limit, PID: pid})
 }
 
 // BuildsForDaemon fetches recent builds from the selected daemon lifetime.

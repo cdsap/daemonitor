@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cdsap/daemonitor/cored/internal/client"
 	"github.com/cdsap/daemonitor/cored/internal/model"
 )
 
@@ -58,11 +57,11 @@ func TestUsageMentionsCommands(t *testing.T) {
 }
 
 func TestParseArgsQueryAndWatchOptions(t *testing.T) {
-	opts, err := ParseArgs([]string{"history", "--since", "1h", "--limit", "25", "--pid", "42", "--project", "demo", "--status", "FAILED", "--format", "jsonl"})
+	opts, err := ParseArgs([]string{"builds", "--limit", "25", "--pid", "42", "--project", "demo", "--status", "FAILED", "--format", "jsonl"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if opts.Since != time.Hour || opts.Limit != 25 || opts.PID != 42 || opts.Project != "demo" || opts.Status != "FAILED" || opts.Output != "jsonl" {
+	if opts.Limit != 25 || opts.PID != 42 || opts.Project != "demo" || opts.Status != "FAILED" || opts.Output != "jsonl" {
 		t.Fatalf("unexpected query options: %+v", opts)
 	}
 
@@ -91,7 +90,7 @@ func TestParseArgsRejectsInvalidOutputAndNegativeValues(t *testing.T) {
 	}
 }
 
-func TestFiltersApplyToProcessesAndBuilds(t *testing.T) {
+func TestFiltersApplyToProcesses(t *testing.T) {
 	project := "/work/daemonitor"
 	processes := filterProcesses([]model.Process{
 		{PID: 1, ProjectPath: &project},
@@ -101,14 +100,6 @@ func TestFiltersApplyToProcessesAndBuilds(t *testing.T) {
 		t.Fatalf("process filter=%+v", processes)
 	}
 
-	builds := filterBuilds([]client.BuildRecord{
-		{DaemonPID: 1, FinalStatus: "SUCCESS", ProjectPath: project},
-		{DaemonPID: 1, FinalStatus: "FAILED", ProjectPath: project},
-		{DaemonPID: 2, FinalStatus: "FAILED", ProjectPath: "/work/other"},
-	}, Options{PID: 1, Status: "failed", Project: "daemonitor"})
-	if len(builds) != 1 || builds[0].FinalStatus != "FAILED" {
-		t.Fatalf("build filter=%+v", builds)
-	}
 }
 
 func strPtr(s string) *string { return &s }
