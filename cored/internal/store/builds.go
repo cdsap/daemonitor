@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"strings"
 
 	"github.com/cdsap/daemonitor/cored/internal/builds"
 )
@@ -47,7 +48,7 @@ func (s *Store) ListBuilds(limit int) ([]builds.Build, error) {
 // ListBuildsForDaemon returns builds correlated to one daemon incarnation.
 // PID alone is deliberately insufficient because operating systems can reuse it.
 func (s *Store) ListBuildsForDaemon(pid int64, identity string, limit int) ([]builds.Build, error) {
-	if pid <= 0 || identity == "" {
+	if pid <= 0 || strings.TrimSpace(identity) == "" {
 		return []builds.Build{}, nil
 	}
 	return s.listBuilds(`WHERE daemon_pid = ? AND daemon_identity = ?`, []any{pid, identity}, limit)

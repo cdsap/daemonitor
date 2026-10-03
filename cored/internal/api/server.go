@@ -245,7 +245,8 @@ func (s *Server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 	}
 	var rows []builds.Build
 	var err error
-	if rawPID := r.URL.Query().Get("pid"); rawPID != "" {
+	query := r.URL.Query()
+	if rawPID := query.Get("pid"); rawPID != "" {
 		pid, parseErr := strconv.ParseInt(rawPID, 10, 64)
 		if parseErr != nil || pid <= 0 {
 			http.Error(w, "invalid pid", http.StatusBadRequest)
@@ -256,6 +257,18 @@ func (s *Server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 		identity := ""
 		if s.Logs != nil {
 			identity = s.Logs.DaemonIdentity(pid)
+		}
+		rows, err = s.Store.ListBuildsForDaemon(pid, identity, limit)
+	} else if query.Has("daemon_pid") || query.Has("daemon_identity") {
+		pidRaw, identity := query.Get("daemon_pid"), query.Get("daemon_identity")
+		if pidRaw == "" || strings.TrimSpace(identity) == "" {
+			http.Error(w, "invalid daemon identifier", http.StatusBadRequest)
+			return
+		}
+		pid, parseErr := strconv.ParseInt(pidRaw, 10, 64)
+		if parseErr != nil || pid <= 0 {
+			http.Error(w, "invalid daemon identifier", http.StatusBadRequest)
+			return
 		}
 		rows, err = s.Store.ListBuildsForDaemon(pid, identity, limit)
 	} else {
