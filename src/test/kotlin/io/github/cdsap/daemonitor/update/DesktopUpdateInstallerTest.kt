@@ -59,6 +59,38 @@ class DesktopUpdateInstallerTest {
     }
 
     @Test
+    @EnabledOnOs(OS.LINUX, OS.MAC)
+    fun `restores executable bits for macOS app launchers after zip extraction`(@TempDir tmp: Path) = runTest {
+        val candidate = UpdateCandidate(
+            version = "1.0.7",
+            releaseUrl = "https://github.com/cdsap/daemonitor/releases/tag/v1.0.7",
+            assetName = "Daemonitor-1.0.7-macos-arm64.zip",
+            downloadUrl = "https://github.com/cdsap/daemonitor/releases/download/v1.0.7/Daemonitor-1.0.7-macos-arm64.zip",
+            sha256 = "24fa35b9fcbe9e069c677b045b7509a01d5376b46cdb8aa655d61069575564c1",
+            sizeBytes = 128,
+            platform = DesktopPlatform.MACOS,
+            architecture = CpuArchitecture.ARM64,
+            role = UpdateArtifactRole.UpdatePackage,
+            installMode = UpdateInstallMode.Automatic,
+        )
+        val zip = tmp.resolve("input.zip").also { writeMacAppZip(it) }
+        val installer = DesktopUpdateInstaller(
+            updateDirectory = tmp.resolve("updates"),
+            installation = macInstall(),
+            downloader = { update, directory, _ ->
+                Files.createDirectories(directory)
+                directory.resolve(update.assetName).also { path -> Files.copy(zip, path) }
+            },
+        )
+
+        val staged = installer.prepare(candidate) {}
+        val app = assertNotNull(staged).payloadPath
+
+        assertTrue(Files.isExecutable(app.resolve("Contents/MacOS/Daemonitor")))
+        assertTrue(Files.isExecutable(app.resolve("Contents/app/resources/daemonitor-cored")))
+    }
+
+    @Test
     fun `manual mode downloads and opens local installer path`(@TempDir tmp: Path) = runTest {
         val opened = mutableListOf<Path>()
         val candidate = UpdateCandidate(
@@ -326,6 +358,12 @@ class DesktopUpdateInstallerTest {
             zip.closeEntry()
             zip.putNextEntry(ZipEntry("Daemonitor.app/Contents/Info.plist"))
             zip.write("plist".toByteArray())
+            zip.closeEntry()
+            zip.putNextEntry(ZipEntry("Daemonitor.app/Contents/MacOS/Daemonitor"))
+            zip.write("launcher".toByteArray())
+            zip.closeEntry()
+            zip.putNextEntry(ZipEntry("Daemonitor.app/Contents/app/resources/daemonitor-cored"))
+            zip.write("cored".toByteArray())
             zip.closeEntry()
         }
     }
