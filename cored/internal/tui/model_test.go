@@ -302,7 +302,8 @@ func TestDetailsShowScopedBuildFieldsAndFitNarrowWidth(t *testing.T) {
 	}}}
 	m.width = 120
 	body := m.View().Content
-	for _, want := range []string{"SUCCESS", "project=/very/long/project/path", "duration=1.3s", "start=1969", "source=TERMINAL", "agent=Claude Code"} {
+	start := "start=" + formatStart(300)
+	for _, want := range []string{"SUCCESS", "project=/very/long/project/path", "duration=1.3s", start, "source=TERMINAL", "agent=Claude Code"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("build summary missing %q: %s", want, body)
 		}
