@@ -243,7 +243,24 @@ func (s *Server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 			limit = v
 		}
 	}
-	rows, err := s.Store.ListBuilds(limit)
+
+	pidRaw, identity := r.URL.Query().Get("daemon_pid"), r.URL.Query().Get("daemon_identity")
+	var rows []builds.Build
+	var err error
+	switch {
+	case pidRaw == "" && identity == "":
+		rows, err = s.Store.ListBuilds(limit)
+	case pidRaw == "" || strings.TrimSpace(identity) == "":
+		http.Error(w, "invalid daemon identifier", http.StatusBadRequest)
+		return
+	default:
+		pid, parseErr := strconv.ParseInt(pidRaw, 10, 64)
+		if parseErr != nil || pid <= 0 {
+			http.Error(w, "invalid daemon identifier", http.StatusBadRequest)
+			return
+		}
+		rows, err = s.Store.ListBuildsForDaemon(pid, identity, limit)
+	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
