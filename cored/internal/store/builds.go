@@ -2,9 +2,29 @@ package store
 
 import (
 	"database/sql"
+	"strings"
+	"time"
 
 	"github.com/cdsap/daemonitor/cored/internal/builds"
 )
+
+const maxBuildHistoryWindow = 90 * 24 * time.Hour
+
+type BuildQuery struct {
+	SinceMs        int64
+	DaemonPID      int64
+	DaemonIdentity string
+	Project        string
+	Status         string
+	Limit          int
+}
+
+type BuildSummary struct {
+	Count                  int      `json:"count"`
+	FailureCount           int      `json:"failure_count"`
+	AverageDurationSeconds *float64 `json:"average_duration_seconds"`
+	LatestStatus           string   `json:"latest_status"`
+}
 
 // InsertBuild upserts a confirmed build record into the app-aligned builds table.
 func (s *Store) InsertBuild(b builds.Build) error {
@@ -41,16 +61,18 @@ ON CONFLICT(build_id) DO UPDATE SET
 
 // ListBuilds returns recent builds newest-first.
 func (s *Store) ListBuilds(limit int) ([]builds.Build, error) {
-	if limit <= 0 || limit > 500 {
-		limit = 100
-	}
+	return s.ListBuildsFiltered(BuildQuery{Limit: limit})
+}
+
+func (s *Store) ListBuildsFiltered(q BuildQuery) ([]builds.Build, error) {
+	where, args := buildWhere(q)
+	args = append(args, normalizeBuildLimit(q.Limit))
 	rows, err := s.db.Query(`
 SELECT build_id, daemon_pid, daemon_identity, command_line, working_directory, project_path,
        start_time, end_time, duration_seconds, peak_memory_mb, avg_memory_mb,
        peak_cpu_percent, inferred_source, final_status, log_snippet, agent, agent_provider
 FROM builds
-ORDER BY start_time DESC
-LIMIT ?`, limit)
+	`+where+` ORDER BY start_time DESC LIMIT ?`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -103,6 +125,61 @@ LIMIT ?`, limit)
 		out = append(out, b)
 	}
 	return out, rows.Err()
+}
+
+func (s *Store) SummarizeBuilds(q BuildQuery) (BuildSummary, error) {
+	where, args := buildWhere(q)
+	var summary BuildSummary
+	var average sql.NullFloat64
+	if err := s.db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(CASE WHEN final_status = 'FAILED' THEN 1 ELSE 0 END), 0), AVG(duration_seconds) FROM builds `+where, args...).Scan(&summary.Count, &summary.FailureCount, &average); err != nil {
+		return summary, err
+	}
+	if average.Valid {
+		v := average.Float64
+		summary.AverageDurationSeconds = &v
+	}
+	if err := s.db.QueryRow(`SELECT final_status FROM builds `+where+` ORDER BY start_time DESC LIMIT 1`, args...).Scan(&summary.LatestStatus); err != nil && err != sql.ErrNoRows {
+		return summary, err
+	}
+	return summary, nil
+}
+
+func normalizeBuildLimit(limit int) int {
+	if limit <= 0 || limit > 500 {
+		return 100
+	}
+	return limit
+}
+
+func buildWhere(q BuildQuery) (string, []any) {
+	clauses := make([]string, 0, 5)
+	args := make([]any, 0, 5)
+	if q.SinceMs > 0 {
+		cutoff := time.Now().Add(-maxBuildHistoryWindow).UnixMilli()
+		if q.SinceMs < cutoff {
+			q.SinceMs = cutoff
+		}
+		clauses = append(clauses, "start_time >= ?")
+		args = append(args, q.SinceMs)
+	}
+	if q.DaemonPID > 0 && q.DaemonIdentity != "" {
+		clauses = append(clauses, "daemon_pid = ? AND daemon_identity = ?")
+		args = append(args, q.DaemonPID, q.DaemonIdentity)
+	} else if q.DaemonPID > 0 {
+		clauses = append(clauses, "1 = 0")
+	}
+	if strings.TrimSpace(q.Project) != "" {
+		clauses = append(clauses, "LOWER(project_path) LIKE LOWER(?)")
+		args = append(args, "%"+strings.TrimSpace(q.Project)+"%")
+	}
+	if strings.TrimSpace(q.Status) != "" {
+		clauses = append(clauses, "LOWER(final_status) = LOWER(?)")
+		args = append(args, strings.TrimSpace(q.Status))
+	}
+	if len(clauses) == 0 {
+		return "", args
+	}
+	return "WHERE " + strings.Join(clauses, " AND "), args
 }
 
 // SamplesAsBuildSamples maps DB rows into builds.Sample for the aggregator.

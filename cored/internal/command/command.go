@@ -37,6 +37,7 @@ type Options struct {
 	PID          int64
 	Project      string
 	Status       string
+	IncludeLogs  bool
 	Watch        bool
 	Until        time.Duration
 	FailOnRSS    int64
@@ -57,6 +58,7 @@ var flagsWithValue = map[string]bool{
 	"-pid": true, "--pid": true,
 	"-project": true, "--project": true,
 	"-status": true, "--status": true,
+	"-include-logs": true, "--include-logs": true,
 	"-until": true, "--until": true,
 	"-format": true, "--format": true,
 	"-fail-on-rss": true, "--fail-on-rss": true,
@@ -101,6 +103,7 @@ func ParseArgs(argv []string) (Options, error) {
 	fs.Int64Var(&opts.PID, "pid", 0, "Filter by process or daemon PID")
 	fs.StringVar(&opts.Project, "project", "", "Filter by project path or name")
 	fs.StringVar(&opts.Status, "status", "", "Filter builds by final status")
+	fs.BoolVar(&opts.IncludeLogs, "include-logs", false, "Include retained build log snippets")
 	fs.BoolVar(&opts.Watch, "watch", false, "Continuously refresh a non-interactive ps snapshot")
 	fs.DurationVar(&opts.Until, "until", 0, "Stop watch mode after this duration")
 	fs.Int64Var(&opts.FailOnRSS, "fail-on-rss", 0, "Exit 3 in watch mode when any process reaches this RSS in MB")
@@ -164,6 +167,7 @@ Options:
   --pid PID                Filter by process or daemon PID
   --project TEXT           Filter by project path or name
   --status TEXT            Filter builds by final status
+  --include-logs           Include retained build log snippets (opt-in)
   --watch                  Continuously refresh non-interactive ps output
   --until DURATION         Stop watch mode after this duration
   --fail-on-rss MB         In watch mode, exit 3 when any process reaches this RSS
@@ -297,12 +301,15 @@ func runOneShot(ctx context.Context, opts Options, cmd string, args []string, st
 		if limit == 0 {
 			limit = 100
 		}
-		payload, err := c.Builds(ctx, limit)
+		sinceMs := int64(0)
+		if opts.Since > 0 {
+			sinceMs = time.Now().Add(-opts.Since).UnixMilli()
+		}
+		payload, err := c.BuildsFiltered(ctx, limit, sinceMs, opts.PID, opts.Project, opts.Status, opts.IncludeLogs)
 		if err != nil {
 			fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
 			return 1
 		}
-		payload.Builds = filterBuilds(payload.Builds, opts)
 		payload.Count = len(payload.Builds)
 		if err := writeBuilds(stdout, payload, opts.Output); err != nil {
 			fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)

@@ -40,7 +40,8 @@ go build -o bin/daemonitor-corectl ./cmd/daemonitor-corectl
 
 ./bin/daemonitor-cored                 # terminal 1 — defaults to app data dir
 ./bin/daemonitor-cli ps --json         # terminal 2 — one-shot
-./bin/daemonitor-cli history --since 1h --format csv
+./bin/daemonitor-cli builds --since 1h --status FAILED --project daemonitor --format csv
+./bin/daemonitor-cli builds --pid 12345 --since 24h --include-logs
 ./bin/daemonitor-cli ps --watch --until 1m --format jsonl
 ./bin/daemonitor-cli top               # interactive TUI (TTY)
 ./bin/daemonitor-corectl health
@@ -65,8 +66,16 @@ Release publishes per-platform CLI zips (`daemonitor-cli-<ver>-<os>-<arch>.zip`)
 `daemonitor-cored-<ver>-*` binaries for all darwin/linux/windows amd64+arm64 targets.
 
 Core flags: `-socket`, `-db`, `-interval`, `-retention`; CLI flags include `--since`, `--limit`,
-`--pid`, `--project`, `--status`, `--watch`, `--until`, and `--format plain|json|jsonl|csv`.
+`--pid`, `--project`, `--status`, `--include-logs`, `--watch`, `--until`, and `--format plain|json|jsonl|csv`.
 Watch mode can return exit code `3` with `--fail-on-rss MB` when a process reaches the threshold.
+
+Build history filters compose with daemon selection: `--pid` selects the current daemon
+incarnation, then `--since`, `--status`, and `--project` apply together. Results are newest-first
+and bounded to 500 rows; `--since` is bounded to 90 days and actual data is further limited by
+retention (15 days by default, configurable from 1 to 90 days). Plain and machine-readable output
+also includes matching count, failure count, average duration, and latest status. Log snippets are
+excluded unless `--include-logs` is supplied. Active daemon history is incarnation-scoped; without
+`--pid`, `builds` queries the retained global history.
 
 Defaults: app data dir (`…/Daemonitor/daemonitor-core.sock` + `watcher.db`) — see
 `docs/sqlite-packaging.md`. Smoke tests still pass explicit temp paths.

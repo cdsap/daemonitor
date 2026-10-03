@@ -77,6 +77,10 @@ func TestParseArgsQueryAndWatchOptions(t *testing.T) {
 	if err != nil || opts.FailOnRSS != 8192 {
 		t.Fatalf("unexpected RSS threshold: %+v, err=%v", opts, err)
 	}
+	opts, err = ParseArgs([]string{"builds", "--include-logs"})
+	if err != nil || !opts.IncludeLogs {
+		t.Fatalf("unexpected log option: %+v, err=%v", opts, err)
+	}
 }
 
 func TestParseArgsRejectsInvalidOutputAndNegativeValues(t *testing.T) {

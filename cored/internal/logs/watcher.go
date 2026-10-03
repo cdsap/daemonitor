@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	defaultTailLines       = 100
+	defaultTailLines        = 100
 	defaultInitialReadBytes = 256 * 1024
 	defaultReadChunkBytes   = 16 * 1024
 )
@@ -42,11 +42,12 @@ type Watcher struct {
 	initialBytes   int
 	chunkBytes     int
 
-	mu        sync.Mutex
-	offsets   map[string]int64
-	leftovers map[string][]byte
-	tails     map[string]*ring
-	meta      map[string]DaemonLog
+	mu         sync.Mutex
+	offsets    map[string]int64
+	leftovers  map[string][]byte
+	tails      map[string]*ring
+	meta       map[string]DaemonLog
+	identities map[int64]string
 }
 
 func NewWatcher(gradleUserHome string) *Watcher {
@@ -63,6 +64,7 @@ func NewWatcher(gradleUserHome string) *Watcher {
 		leftovers:      make(map[string][]byte),
 		tails:          make(map[string]*ring),
 		meta:           make(map[string]DaemonLog),
+		identities:     make(map[int64]string),
 	}
 }
 
@@ -142,16 +144,19 @@ func (w *Watcher) Poll(activePIDs map[int64]struct{}) (map[int64][]string, error
 			continue
 		}
 		if len(lines) > 0 {
+			w.rememberIdentities(log.PID, lines)
 			newByPID[log.PID] = append(newByPID[log.PID], lines...)
 		}
 	}
 	w.mu.Lock()
 	for path := range w.meta {
 		if _, ok := seen[path]; !ok {
+			stalePID := w.meta[path].PID
 			delete(w.meta, path)
 			delete(w.offsets, path)
 			delete(w.leftovers, path)
 			delete(w.tails, path)
+			delete(w.identities, stalePID)
 		}
 	}
 	w.mu.Unlock()
@@ -203,6 +208,36 @@ func (w *Watcher) TailFor(pid int64) (Tail, bool) {
 		lines = r.slice()
 	}
 	return makeTail(log, lines), true
+}
+
+// DaemonIdentity returns the current daemon incarnation UID from its retained log.
+func (w *Watcher) DaemonIdentity(pid int64) string {
+	w.mu.Lock()
+	identity := w.identities[pid]
+	w.mu.Unlock()
+	if identity != "" {
+		return identity
+	}
+	tail, ok := w.TailFor(pid)
+	if !ok {
+		return ""
+	}
+	for i := len(tail.Events) - 1; i >= 0; i-- {
+		if tail.Events[i].UID != "" {
+			return tail.Events[i].UID
+		}
+	}
+	return ""
+}
+
+func (w *Watcher) rememberIdentities(pid int64, lines []string) {
+	for _, line := range lines {
+		if event, ok := ParseLine(line); ok && event.UID != "" {
+			w.mu.Lock()
+			w.identities[pid] = event.UID
+			w.mu.Unlock()
+		}
+	}
 }
 
 // AllTails returns tails for every known log.

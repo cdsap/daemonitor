@@ -155,7 +155,7 @@ func WriteLogTailPlain(w io.Writer, tail logs.Tail) {
 
 // WriteBuildsPlain prints builds.
 func WriteBuildsPlain(w io.Writer, payload client.BuildsPayload) {
-	fmt.Fprintf(w, "builds=%d\n", payload.Count)
+	fmt.Fprintf(w, "builds=%d matching=%d failures=%d average_duration=%s latest_status=%s\n", payload.Count, payload.Summary.Count, payload.Summary.FailureCount, optionalFloat(payload.Summary.AverageDurationSeconds), valueOrDash(payload.Summary.LatestStatus))
 	for _, b := range payload.Builds {
 		dur := "-"
 		if b.DurationSeconds != nil {
@@ -172,6 +172,20 @@ func WriteBuildsPlain(w io.Writer, payload client.BuildsPayload) {
 		fmt.Fprintf(w, "  id=%-36s pid=%-7d status=%-20s source=%-8s agent=%-20s provider=%-10s dur=%s  %s\n",
 			truncate(b.BuildID, 36), b.DaemonPID, b.FinalStatus, b.InferredSource, truncate(agent, 20), truncate(provider, 10), dur, truncate(b.ProjectPath, 40))
 	}
+}
+
+func optionalFloat(v *float64) string {
+	if v == nil {
+		return "n/a"
+	}
+	return fmt.Sprintf("%.3fs", *v)
+}
+
+func valueOrDash(v string) string {
+	if v == "" {
+		return "-"
+	}
+	return v
 }
 
 // WriteHealthPlain prints health.
