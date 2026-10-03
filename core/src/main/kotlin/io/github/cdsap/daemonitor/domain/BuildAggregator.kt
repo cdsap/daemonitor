@@ -53,7 +53,27 @@ class BuildAggregator(
 
         if (event != null) {
             when (event) {
-                is DaemonContextEvent -> event.uid?.let { state.uid = it }
+                is DaemonContextEvent -> {
+                    event.uid?.let { uid ->
+                        // A PID can be reused while the monitor is polling. A changed Gradle
+                        // UID therefore starts a new daemon lifetime; never let the open window
+                        // from the previous lifetime absorb the new daemon's events.
+                        if (state.uid != null && state.uid != uid) {
+                            state.window?.takeIf { it.qualified }?.let { window ->
+                                emitted += window.toBuild(
+                                    daemonPid,
+                                    state.uid,
+                                    endMs = event.timestampMs,
+                                    sampleProvider,
+                                    ambientEnvNames,
+                                    interrupted = true,
+                                )
+                            }
+                            state.window = null
+                        }
+                        state.uid = uid
+                    }
+                }
 
                 is BusyMark -> {
                     // If a prior qualified window never saw its idle marker (e.g. a missed line),

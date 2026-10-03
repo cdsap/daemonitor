@@ -10,6 +10,14 @@ enum class FinalStatus {
     INTERRUPTED,
 }
 
+/** How confidently a retained build can be associated with one daemon lifetime. */
+enum class DaemonIdentityConfidence {
+    /** The Gradle daemon UID was read from DefaultDaemonContext. */
+    EXACT,
+    /** No UID was retained, so callers must treat PID matching as a compatibility fallback. */
+    UNKNOWN,
+}
+
 /**
  * One confirmed build invocation, reconstructed by correlating daemon-log events with poll
  * samples (U5). A daemon serves many of these over its PID lifetime (KTD-1). `commandLine` and
@@ -36,4 +44,11 @@ data class Build(
     val agent: String? = null,
     /** LLM provider for the agent: a concrete name, "configurable", or "unknown"; null if no agent. */
     val agentProvider: String? = null,
-)
+) {
+    val daemonIdentityConfidence: DaemonIdentityConfidence
+        get() = if (daemonIdentity.isNullOrBlank()) {
+            DaemonIdentityConfidence.UNKNOWN
+        } else {
+            DaemonIdentityConfidence.EXACT
+        }
+}

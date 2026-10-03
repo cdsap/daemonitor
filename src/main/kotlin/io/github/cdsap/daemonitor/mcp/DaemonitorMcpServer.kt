@@ -207,6 +207,7 @@ class DaemonitorMcpServer(
         "buildId" to JsonString(buildId),
         "daemonPid" to JsonNumber(daemonPid),
         "daemonIdentity" to jsonStringOrNull(daemonIdentity),
+        "daemonIdentityConfidence" to JsonString(daemonIdentityConfidence.name),
         "commandLine" to jsonStringOrNull(commandLine),
         "workingDirectory" to jsonStringOrNull(workingDirectory),
         "projectPath" to jsonStringOrNull(projectPath),
