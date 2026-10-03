@@ -53,6 +53,11 @@ func (s *Store) ListBuildsForDaemon(pid int64, identity string, limit int) ([]bu
 	return s.listBuilds(`WHERE daemon_pid = ? AND daemon_identity = ?`, []any{pid, identity}, limit)
 }
 
+// ListBuildsForDaemonSince returns builds from one daemon lifetime.
+func (s *Store) ListBuildsForDaemonSince(pid, daemonStartMs int64, limit int) ([]builds.Build, error) {
+	return s.listBuilds(`WHERE daemon_pid = ? AND start_time >= ?`, []any{pid, daemonStartMs}, limit)
+}
+
 func (s *Store) listBuilds(where string, args []any, limit int) ([]builds.Build, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 100

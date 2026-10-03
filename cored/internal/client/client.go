@@ -91,6 +91,7 @@ type BuildsPayload struct {
 type BuildRecord struct {
 	BuildID         string   `json:"build_id"`
 	DaemonPID       int64    `json:"daemon_pid"`
+	StartTimeMs     int64    `json:"start_time_ms"`
 	FinalStatus     string   `json:"final_status"`
 	InferredSource  string   `json:"inferred_source"`
 	Agent           string   `json:"agent"`
@@ -104,9 +105,8 @@ func (c *Client) Builds(ctx context.Context, limit int) (BuildsPayload, error) {
 	return c.builds(ctx, limit, 0)
 }
 
-// BuildsForDaemon fetches history for one daemon incarnation. The core resolves
-// the daemon identity and applies the PID+identity correlation rule.
-func (c *Client) BuildsForDaemon(ctx context.Context, pid int64, limit int) (BuildsPayload, error) {
+// BuildsForDaemonPID fetches history for the daemon currently observed for a PID.
+func (c *Client) BuildsForDaemonPID(ctx context.Context, pid int64, limit int) (BuildsPayload, error) {
 	return c.builds(ctx, limit, pid)
 }
 
@@ -121,6 +121,18 @@ func (c *Client) builds(ctx context.Context, limit int, pid int64) (BuildsPayloa
 			separator = "&"
 		}
 		path += separator + "pid=" + strconv.FormatInt(pid, 10)
+	}
+	var payload BuildsPayload
+	err := c.getJSON(ctx, path, &payload)
+	return payload, err
+}
+
+// BuildsForDaemon fetches recent builds from the selected daemon lifetime.
+func (c *Client) BuildsForDaemon(ctx context.Context, pid, startTimeMs int64, limit int) (BuildsPayload, error) {
+	path := "/v1/builds?pid=" + strconv.FormatInt(pid, 10) +
+		"&start_time_ms=" + strconv.FormatInt(startTimeMs, 10)
+	if limit > 0 {
+		path += "&limit=" + strconv.Itoa(limit)
 	}
 	var payload BuildsPayload
 	err := c.getJSON(ctx, path, &payload)

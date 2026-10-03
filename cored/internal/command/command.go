@@ -299,7 +299,7 @@ func runOneShot(ctx context.Context, opts Options, cmd string, args []string, st
 		}
 		var payload client.BuildsPayload
 		if opts.PID > 0 {
-			payload, err = c.BuildsForDaemon(ctx, opts.PID, limit)
+			payload, err = c.BuildsForDaemonPID(ctx, opts.PID, limit)
 		} else {
 			payload, err = c.Builds(ctx, limit)
 		}
