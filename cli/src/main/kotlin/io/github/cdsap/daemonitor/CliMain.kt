@@ -52,8 +52,7 @@ internal object CliLauncher {
             databasePath = databasePath,
             processSource = resolved.wiring.processSource,
             logSource = resolved.wiring.logSource,
-            buildSource = resolved.wiring.buildSource,
-            persistSamples = resolved.wiring.persistSamples,
+            mode = resolved.wiring.mode,
         ).use { container ->
             runMonitor(container, options, output, error, input)
         }

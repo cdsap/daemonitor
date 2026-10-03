@@ -10,9 +10,8 @@ import io.github.cdsap.daemonitor.domain.model.ProcessType
  * Application polling use case: collect processes and daemon logs through ports, persist samples
  * and builds through repositories, and correlate builds with [BuildAggregator].
  *
- * When [buildSource] is set (Go core dual-run with a separate DB), confirmed builds are imported
- * from that source and JVM log re-aggregation is skipped. When [persistSamples] is false (same-file
- * open with daemonitor-cored), the core owns sample inserts — this layer only reads live IPC.
+ * The [mode] determines whether this runtime aggregates local daemon logs, imports builds from an
+ * external core, or leaves both sample and build persistence to a shared core.
  */
 class PollMonitoring(
     private val processSource: ProcessSource,
@@ -20,8 +19,7 @@ class PollMonitoring(
     private val builds: BuildWriter,
     private val samples: ProcessSampleWriter,
     private val aggregator: BuildAggregator,
-    private val buildSource: BuildSource? = null,
-    private val persistSamples: Boolean = true,
+    private val mode: MonitoringMode = MonitoringMode.Local,
     private val retentionDays: () -> Long = { RetentionPolicy.DEFAULT.defaultDays },
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
@@ -37,18 +35,19 @@ class PollMonitoring(
     fun pollOnce(): PollResult {
         val now = clock()
         val processes = processSource.currentProcesses()
-        if (persistSamples) {
+        if (mode != MonitoringMode.SharedCoreOwnedPersistence) {
             processes.forEach { samples.save(it, now) }
         }
 
         val logs = logSource.discover()
-        val buildsChanged = buildSource?.let { syncRemoteBuilds(it) }
-            ?: if (persistSamples) {
-                processForBuilds(logs, activeDaemonPids = processes.activeDaemonPids())
-            } else {
+        val buildsChanged = when (val monitoringMode = mode) {
+            MonitoringMode.Local -> processForBuilds(logs, activeDaemonPids = processes.activeDaemonPids())
+            is MonitoringMode.RemoteBuilds -> syncRemoteBuilds(monitoringMode.source)
+            MonitoringMode.SharedCoreOwnedPersistence -> {
                 // Core owns builds in the shared DB; still discover logs for the UI tail panel.
                 false
             }
+        }
         return PollResult(
             processes = processes,
             daemonLogs = logs,
