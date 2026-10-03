@@ -141,7 +141,7 @@ FROM builds
 // ListBuildsForDaemon returns builds correlated to one daemon incarnation.
 // PID alone is deliberately insufficient because operating systems can reuse it.
 func (s *Store) ListBuildsForDaemon(pid int64, identity string, limit int) ([]builds.Build, error) {
-	if pid <= 0 || identity == "" {
+	if pid <= 0 || strings.TrimSpace(identity) == "" {
 		return []builds.Build{}, nil
 	}
 	return s.ListBuildsFiltered(BuildFilters{PID: pid, DaemonIdentity: identity}, limit)

@@ -157,30 +157,62 @@ func TestListBuildsForDaemonMatchesIdentityAsWellAsPID(t *testing.T) {
 	}
 	defer s.Close()
 	for _, b := range []builds.Build{
-		{BuildID: "old", DaemonPID: 42, DaemonIdentity: "old-uid", StartTimeMs: 1, InferredSource: builds.SourceUnknown, FinalStatus: builds.StatusSuccess},
-		{BuildID: "current", DaemonPID: 42, DaemonIdentity: "current-uid", StartTimeMs: 2, InferredSource: builds.SourceUnknown, FinalStatus: builds.StatusSuccess},
-		{BuildID: "other-pid", DaemonPID: 7, DaemonIdentity: "current-uid", StartTimeMs: 3, InferredSource: builds.SourceUnknown, FinalStatus: builds.StatusSuccess},
+		{BuildID: "other", DaemonPID: 7, DaemonIdentity: "daemon-a", StartTimeMs: 400, FinalStatus: builds.StatusSuccess},
+		{BuildID: "old", DaemonPID: 42, DaemonIdentity: "daemon-a", StartTimeMs: 100, FinalStatus: builds.StatusSuccess},
+		{BuildID: "newest", DaemonPID: 42, DaemonIdentity: "daemon-a", StartTimeMs: 300, FinalStatus: builds.StatusSuccess},
+		{BuildID: "different-identity", DaemonPID: 42, DaemonIdentity: "daemon-b", StartTimeMs: 500, FinalStatus: builds.StatusSuccess},
+		{BuildID: "middle", DaemonPID: 42, DaemonIdentity: "daemon-a", StartTimeMs: 200, FinalStatus: builds.StatusSuccess},
 	} {
 		if err := s.InsertBuild(b); err != nil {
 			t.Fatal(err)
 		}
 	}
-	rows, err := s.ListBuildsForDaemon(42, "current-uid", 10)
+	rows, err := s.ListBuildsForDaemon(42, "daemon-a", 2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 1 || rows[0].BuildID != "current" {
-		t.Fatalf("scoped builds=%v", rows)
-	}
-	rows, err = s.ListBuildsForDaemon(42, "", 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(rows) != 0 {
-		t.Fatalf("identity-less query returned PID history: %v", rows)
+	if got := []string{rows[0].BuildID, rows[1].BuildID}; !equalStrings(got, []string{"newest", "middle"}) {
+		t.Fatalf("build ids=%v", got)
 	}
 }
 
+func TestListBuildsForDaemonReturnsEmptyForInvalidIdentifiers(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "builds.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	rows, err := s.ListBuildsForDaemon(42, "missing", 10)
+	if err != nil || len(rows) != 0 {
+		t.Fatalf("rows=%v err=%v", rows, err)
+	}
+	for _, tc := range []struct {
+		pid      int64
+		identity string
+	}{
+		{pid: 0, identity: "daemon-a"},
+		{pid: -1, identity: "daemon-a"},
+		{pid: 42, identity: ""},
+		{pid: 42, identity: "   "},
+	} {
+		if rows, err := s.ListBuildsForDaemon(tc.pid, tc.identity, 10); err != nil || len(rows) != 0 {
+			t.Errorf("pid=%d identity=%q rows=%v err=%v", tc.pid, tc.identity, rows, err)
+		}
+	}
+}
+
+func equalStrings(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}
 func TestMigratesLegacyBuildsColumns(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "legacy.sqlite")

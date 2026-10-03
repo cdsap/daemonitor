@@ -245,7 +245,9 @@ func (s *Server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 	}
 	var filters store.BuildFilters
 	var rows []builds.Build
-	if rawPID := r.URL.Query().Get("pid"); rawPID != "" {
+	var err error
+	query := r.URL.Query()
+	if rawPID := query.Get("pid"); rawPID != "" {
 		pid, parseErr := strconv.ParseInt(rawPID, 10, 64)
 		if parseErr != nil || pid <= 0 {
 			http.Error(w, "invalid pid", http.StatusBadRequest)
@@ -260,10 +262,22 @@ func (s *Server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 		if filters.DaemonIdentity == "" {
 			rows = []builds.Build{}
 		}
+	} else if query.Has("daemon_pid") || query.Has("daemon_identity") {
+		pidRaw, identity := query.Get("daemon_pid"), query.Get("daemon_identity")
+		if pidRaw == "" || strings.TrimSpace(identity) == "" {
+			http.Error(w, "invalid daemon identifier", http.StatusBadRequest)
+			return
+		}
+		pid, parseErr := strconv.ParseInt(pidRaw, 10, 64)
+		if parseErr != nil || pid <= 0 {
+			http.Error(w, "invalid daemon identifier", http.StatusBadRequest)
+			return
+		}
+		filters.PID = pid
+		filters.DaemonIdentity = strings.TrimSpace(identity)
 	}
-	filters.Project = r.URL.Query().Get("project")
-	filters.Status = r.URL.Query().Get("status")
-	var err error
+	filters.Project = query.Get("project")
+	filters.Status = query.Get("status")
 	if rows == nil {
 		rows, err = s.Store.ListBuildsFiltered(filters, limit)
 	}
