@@ -243,6 +243,7 @@ func (s *Server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 			limit = v
 		}
 	}
+	var filters store.BuildFilters
 	var rows []builds.Build
 	var err error
 	query := r.URL.Query()
@@ -254,11 +255,13 @@ func (s *Server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 		}
 		// Resolve identity in the core. Clients must not be able to turn this
 		// into a PID-only query, which could mix history after PID reuse.
-		identity := ""
 		if s.Logs != nil {
-			identity = s.Logs.DaemonIdentity(pid)
+			filters.DaemonIdentity = s.Logs.DaemonIdentity(pid)
 		}
-		rows, err = s.Store.ListBuildsForDaemon(pid, identity, limit)
+		filters.PID = pid
+		if filters.DaemonIdentity == "" {
+			rows = []builds.Build{}
+		}
 	} else if query.Has("daemon_pid") || query.Has("daemon_identity") {
 		pidRaw, identity := query.Get("daemon_pid"), query.Get("daemon_identity")
 		if pidRaw == "" || strings.TrimSpace(identity) == "" {
@@ -270,9 +273,13 @@ func (s *Server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid daemon identifier", http.StatusBadRequest)
 			return
 		}
-		rows, err = s.Store.ListBuildsForDaemon(pid, identity, limit)
-	} else {
-		rows, err = s.Store.ListBuilds(limit)
+		filters.PID = pid
+		filters.DaemonIdentity = strings.TrimSpace(identity)
+	}
+	filters.Project = query.Get("project")
+	filters.Status = query.Get("status")
+	if rows == nil {
+		rows, err = s.Store.ListBuildsFiltered(filters, limit)
 	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

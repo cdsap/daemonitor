@@ -93,6 +93,23 @@ func TestWriteBuildsPlainIncludesOriginAndAgent(t *testing.T) {
 	}
 }
 
+func TestWriteBuildsJSONKeepsBuildMetadataForScopedResult(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WriteJSON(&buf, client.BuildsPayload{
+		Count:  1,
+		Builds: []client.BuildRecord{{BuildID: "build-42", DaemonPID: 42, FinalStatus: "SUCCESS", InferredSource: "IDE", ProjectPath: "/work/demo"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var payload client.BuildsPayload
+	if err := json.Unmarshal(buf.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Count != 1 || len(payload.Builds) != 1 || payload.Builds[0].DaemonPID != 42 || payload.Builds[0].ProjectPath != "/work/demo" {
+		t.Fatalf("scoped build payload=%+v", payload)
+	}
+}
+
 func TestRowOrientedExports(t *testing.T) {
 	var buf bytes.Buffer
 	if err := WriteProcessesCSV(&buf, model.Snapshot{SampledAtMs: 7, Processes: []model.Process{{PID: 9, Type: "GRADLE_DAEMON", RSSMemoryMB: 512, ProjectPath: strPtr("/tmp/demo")}}}); err != nil {

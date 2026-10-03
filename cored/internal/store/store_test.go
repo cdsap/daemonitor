@@ -126,13 +126,36 @@ func TestBuildsTableMatchesAppWatcherColumns(t *testing.T) {
 	}
 }
 
-func TestListBuildsForDaemonFiltersNewestFirstAndAppliesLimit(t *testing.T) {
+func TestListBuildsFilteredAppliesDaemonProjectAndStatus(t *testing.T) {
 	s, err := store.Open(filepath.Join(t.TempDir(), "builds.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
+	for _, b := range []builds.Build{
+		{BuildID: "match", DaemonPID: 42, DaemonIdentity: "current-uid", ProjectPath: "/work/demo", FinalStatus: builds.StatusFailed},
+		{BuildID: "other-pid", DaemonPID: 7, DaemonIdentity: "current-uid", ProjectPath: "/work/demo", FinalStatus: builds.StatusFailed},
+		{BuildID: "other-status", DaemonPID: 42, DaemonIdentity: "current-uid", ProjectPath: "/work/demo", FinalStatus: builds.StatusSuccess},
+	} {
+		if err := s.InsertBuild(b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, err := s.ListBuildsFiltered(store.BuildFilters{PID: 42, Project: "DEMO", Status: "failed"}, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].BuildID != "match" {
+		t.Fatalf("filtered builds=%+v", rows)
+	}
+}
 
+func TestListBuildsForDaemonMatchesIdentityAsWellAsPID(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "scoped-builds.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
 	for _, b := range []builds.Build{
 		{BuildID: "other", DaemonPID: 7, DaemonIdentity: "daemon-a", StartTimeMs: 400, FinalStatus: builds.StatusSuccess},
 		{BuildID: "old", DaemonPID: 42, DaemonIdentity: "daemon-a", StartTimeMs: 100, FinalStatus: builds.StatusSuccess},
@@ -144,7 +167,6 @@ func TestListBuildsForDaemonFiltersNewestFirstAndAppliesLimit(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-
 	rows, err := s.ListBuildsForDaemon(42, "daemon-a", 2)
 	if err != nil {
 		t.Fatal(err)

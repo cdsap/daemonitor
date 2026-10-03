@@ -41,6 +41,8 @@ go build -o bin/daemonitor-corectl ./cmd/daemonitor-corectl
 ./bin/daemonitor-cored                 # terminal 1 — defaults to app data dir
 ./bin/daemonitor-cli ps --json         # terminal 2 — one-shot
 ./bin/daemonitor-cli history --since 1h --format csv
+./bin/daemonitor-cli ps                  # find the active daemon PID
+./bin/daemonitor-cli builds --pid 12345  # show that daemon's build history
 ./bin/daemonitor-cli ps --watch --until 1m --format jsonl
 ./bin/daemonitor-cli top               # interactive TUI (TTY)
 ./bin/daemonitor-corectl health
@@ -100,7 +102,7 @@ GET /v1/processes
 GET /v1/processes/history?since_ms=<epoch_ms>&limit=<n>
 GET /v1/daemon-logs
 GET /v1/daemon-logs/{pid}/tail   # lines + parsed U3 events
-GET /v1/builds?limit=<n>
+GET /v1/builds?limit=<n>&pid=<pid>&project=<text>&status=<status>
 ```
 
 ## Status
