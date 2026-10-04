@@ -181,13 +181,13 @@ func TestErrorKeepsLastSnapshot(t *testing.T) {
 }
 
 func TestAdaptiveColumns(t *testing.T) {
-	if n := len(columnsForWidth(120).ids); n < 8 {
+	if n := len(columnsForWidth(120).ids); n < 9 {
 		t.Fatalf("wide columns=%d", n)
 	}
-	if n := len(columnsForWidth(90).ids); n != 7 {
+	if n := len(columnsForWidth(90).ids); n != 8 {
 		t.Fatalf("medium columns=%d", n)
 	}
-	if n := len(columnsForWidth(70).ids); n != 5 {
+	if n := len(columnsForWidth(70).ids); n != 6 {
 		t.Fatalf("narrow columns=%d", n)
 	}
 }
@@ -341,6 +341,14 @@ func TestFormatRowUsesLiveHeapValues(t *testing.T) {
 	row := formatRow(p, columnSet{ids: []columnID{colHeapUsed, colHeapCmt}}, fixedNow().UnixMilli())
 	if !strings.Contains(row, "512 MB") || !strings.Contains(row, "1 GB") {
 		t.Fatalf("row=%q missing live heap values", row)
+	}
+}
+
+func TestFormatRowIncludesGarbageCollector(t *testing.T) {
+	gc := "G1"
+	row := formatRow(model.Process{GC: &gc}, columnSet{ids: []columnID{colGC}}, fixedNow().UnixMilli())
+	if !strings.Contains(row, "G1") {
+		t.Fatalf("row=%q missing GC type", row)
 	}
 }
 
