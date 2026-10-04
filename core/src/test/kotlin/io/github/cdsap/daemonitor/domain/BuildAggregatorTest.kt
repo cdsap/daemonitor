@@ -209,4 +209,24 @@ class BuildAggregatorTest {
         assertEquals(listOf("uid-abc", "uid-abc"), emitted.map { it.daemonIdentity })
         assertEquals(listOf("/proj/a", "/proj/b"), emitted.map { it.projectPath })
     }
+
+    @Test
+    fun `reused pid with a new daemon uid starts a separate lifetime`() {
+        val agg = BuildAggregator()
+        val emitted = agg.onEvents(
+            pid,
+            listOf(
+                context(0),
+                BusyMark(1_000), start(1_010, "/proj/old"),
+                // The old daemon is still open when the same PID is observed with a new UID.
+                DaemonContextEvent(2_000, uid = "uid-new", daemonOpts = "-Xmx512m"),
+                BusyMark(2_010), start(2_020, "/proj/new"), Outcome(true, 1.0), IdleMark(3_000),
+            ),
+        )
+
+        assertEquals(2, emitted.size)
+        assertEquals(listOf("uid-abc", "uid-new"), emitted.map { it.daemonIdentity })
+        assertEquals(FinalStatus.INTERRUPTED, emitted.first().finalStatus)
+        assertEquals(listOf("/proj/old", "/proj/new"), emitted.map { it.projectPath })
+    }
 }
