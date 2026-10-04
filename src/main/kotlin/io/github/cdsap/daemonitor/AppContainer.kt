@@ -47,6 +47,7 @@ class AppContainer(
 
     val database: WatcherDatabase = core.database
     val settingsStore: SettingsStore = core.settingsStore
+    val settingsService: SettingsService = core.settingsService
     val buildAggregator: BuildAggregator = core.buildAggregator
     val runtime: WatcherRuntime = core.runtime
     val processSource: ProcessSource = core.processSource
@@ -63,7 +64,7 @@ class AppContainer(
     ): WatcherService = WatcherService(
         runtime = runtime,
         historyService = HistoryService(database),
-        settingsService = SettingsService(settingsStore, database, clock),
+        settingsService = settingsService,
         mcpController = McpServiceController.create(::createMcpServer),
         updateService = updateService,
         monitoringService = MonitoringService(

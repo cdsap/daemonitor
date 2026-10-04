@@ -93,8 +93,8 @@ internal object CliLauncher {
         }, "daemonitor-cli-shutdown")
 
         return try {
-            val retentionDays = options.retentionDays ?: container.settingsStore.load().retentionDays
-            container.database.purgeOlderThan(System.currentTimeMillis(), retentionDays)
+            val retentionDays = options.retentionDays ?: container.settingsService.load().retentionDays
+            container.settingsService.purgeNow(retentionDays)
             Runtime.getRuntime().addShutdownHook(shutdownHook)
             var lastResult = WatcherRuntime.PollResult(emptyList(), emptyList(), false)
             var pollError: String? = null

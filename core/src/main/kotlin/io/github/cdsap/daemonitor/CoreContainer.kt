@@ -26,6 +26,7 @@ class CoreContainer(
     val daemonLogSource: DaemonLogSource = logSource ?: DaemonLogWatcher()
     val database = WatcherDatabase.open(databasePath)
     val settingsStore = SettingsStore(settingsPath)
+    val settingsService = SettingsService(settingsStore, database, clock)
     val buildAggregator = BuildAggregator(
         sampleProvider = database,
         ambientEnvNames = ambientEnvNames,
