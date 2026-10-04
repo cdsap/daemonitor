@@ -247,8 +247,17 @@ func (s *Server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 	var rows []builds.Build
 	var err error
 	query := r.URL.Query()
-	if rawPID := query.Get("pid"); rawPID != "" {
-		pid, parseErr := strconv.ParseInt(rawPID, 10, 64)
+	pidRaw, startRaw := query.Get("pid"), query.Get("start_time_ms")
+	if startRaw != "" {
+		pid, pidErr := strconv.ParseInt(pidRaw, 10, 64)
+		startMs, startErr := strconv.ParseInt(startRaw, 10, 64)
+		if pidErr != nil || startErr != nil || pid <= 0 || startMs <= 0 {
+			http.Error(w, "pid and start_time_ms are required for daemon-scoped builds", http.StatusBadRequest)
+			return
+		}
+		rows, err = s.Store.ListBuildsForDaemonSince(pid, startMs, limit)
+	} else if pidRaw != "" {
+		pid, parseErr := strconv.ParseInt(pidRaw, 10, 64)
 		if parseErr != nil || pid <= 0 {
 			http.Error(w, "invalid pid", http.StatusBadRequest)
 			return

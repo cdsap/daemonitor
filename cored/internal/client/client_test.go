@@ -15,6 +15,31 @@ import (
 	"github.com/cdsap/daemonitor/cored/internal/client"
 )
 
+type recordingTransport struct {
+	request *http.Request
+}
+
+func (t *recordingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	t.request = r
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(`{"count":0,"builds":[]}`)),
+		Header:     make(http.Header),
+		Request:    r,
+	}, nil
+}
+
+func TestBuildsForDaemonRequestsPIDAndStartTime(t *testing.T) {
+	transport := &recordingTransport{}
+	c := &client.Client{HTTP: &http.Client{Transport: transport}}
+	if _, err := c.BuildsForDaemon(context.Background(), 9, 200, 20); err != nil {
+		t.Fatal(err)
+	}
+	if got := transport.request.URL.RawQuery; got != "pid=9&start_time_ms=200&limit=20" {
+		t.Fatalf("query=%q", got)
+	}
+}
+
 func TestBuildsFilteredSendsCoreSideQuery(t *testing.T) {
 	var got *http.Request
 	c := client.New("unused")

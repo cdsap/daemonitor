@@ -176,13 +176,36 @@ func TestListBuildsForDaemonMatchesIdentityAsWellAsPID(t *testing.T) {
 	}
 }
 
+func TestListBuildsForDaemonSinceExcludesEarlierPIDLifetime(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "scoped-since.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	for _, b := range []builds.Build{
+		{BuildID: "old", DaemonPID: 9, StartTimeMs: 100, ProjectPath: "/old", FinalStatus: builds.StatusSuccess},
+		{BuildID: "current", DaemonPID: 9, StartTimeMs: 200, ProjectPath: "/current", FinalStatus: builds.StatusSuccess},
+		{BuildID: "other", DaemonPID: 10, StartTimeMs: 300, ProjectPath: "/other", FinalStatus: builds.StatusSuccess},
+	} {
+		if err := s.InsertBuild(b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, err := s.ListBuildsForDaemonSince(9, 200, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].BuildID != "current" {
+		t.Fatalf("scoped rows=%v", rows)
+	}
+}
+
 func TestListBuildsForDaemonReturnsEmptyForInvalidIdentifiers(t *testing.T) {
 	s, err := store.Open(filepath.Join(t.TempDir(), "builds.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
-
 	rows, err := s.ListBuildsForDaemon(42, "missing", 10)
 	if err != nil || len(rows) != 0 {
 		t.Fatalf("rows=%v err=%v", rows, err)

@@ -11,6 +11,7 @@ import (
 type BuildFilters struct {
 	PID            int64
 	DaemonIdentity string
+	StartTimeMs    int64
 	Project        string
 	Status         string
 }
@@ -53,6 +54,23 @@ func (s *Store) ListBuilds(limit int) ([]builds.Build, error) {
 	return s.ListBuildsFiltered(BuildFilters{}, limit)
 }
 
+// ListBuildsForDaemon returns builds correlated to one daemon incarnation.
+// PID alone is deliberately insufficient because operating systems can reuse it.
+func (s *Store) ListBuildsForDaemon(pid int64, identity string, limit int) ([]builds.Build, error) {
+	if pid <= 0 || identity == "" {
+		return []builds.Build{}, nil
+	}
+	return s.ListBuildsFiltered(BuildFilters{PID: pid, DaemonIdentity: identity}, limit)
+}
+
+// ListBuildsForDaemonSince returns builds from one daemon lifetime.
+func (s *Store) ListBuildsForDaemonSince(pid, daemonStartMs int64, limit int) ([]builds.Build, error) {
+	if pid <= 0 || daemonStartMs <= 0 {
+		return []builds.Build{}, nil
+	}
+	return s.ListBuildsFiltered(BuildFilters{PID: pid, StartTimeMs: daemonStartMs}, limit)
+}
+
 // ListBuildsFiltered returns recent builds newest-first, applying filters in SQLite.
 func (s *Store) ListBuildsFiltered(filters BuildFilters, limit int) ([]builds.Build, error) {
 	if limit <= 0 || limit > 500 {
@@ -72,6 +90,10 @@ FROM builds
 	if filters.DaemonIdentity != "" {
 		query += " AND daemon_identity = ?"
 		args = append(args, filters.DaemonIdentity)
+	}
+	if filters.StartTimeMs > 0 {
+		query += " AND start_time >= ?"
+		args = append(args, filters.StartTimeMs)
 	}
 	if filters.Project != "" {
 		query += " AND LOWER(COALESCE(project_path, '')) LIKE ? ESCAPE '\\'"
@@ -136,15 +158,6 @@ FROM builds
 		out = append(out, b)
 	}
 	return out, rows.Err()
-}
-
-// ListBuildsForDaemon returns builds correlated to one daemon incarnation.
-// PID alone is deliberately insufficient because operating systems can reuse it.
-func (s *Store) ListBuildsForDaemon(pid int64, identity string, limit int) ([]builds.Build, error) {
-	if pid <= 0 || strings.TrimSpace(identity) == "" {
-		return []builds.Build{}, nil
-	}
-	return s.ListBuildsFiltered(BuildFilters{PID: pid, DaemonIdentity: identity}, limit)
 }
 
 func escapeLike(value string) string {
