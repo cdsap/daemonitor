@@ -1,5 +1,6 @@
 package io.github.cdsap.daemonitor.coreipc
 
+import io.github.cdsap.daemonitor.application.MonitoringMode
 import kotlin.io.path.Path
 import kotlin.test.Test
 import kotlin.test.assertFalse
@@ -13,8 +14,7 @@ class GoCoreWiringTest {
         val wiring = wireGoCore(null, Path("/tmp/watcher.db"))
         assertNull(wiring.processSource)
         assertNull(wiring.logSource)
-        assertNull(wiring.buildSource)
-        assertTrue(wiring.persistSamples)
+        assertTrue(wiring.mode is MonitoringMode.Local)
         assertNull(wiring.banner)
     }
 
@@ -28,8 +28,7 @@ class GoCoreWiringTest {
         )
         assertNotNull(wiring.processSource)
         assertNotNull(wiring.logSource)
-        assertNull(wiring.buildSource)
-        assertFalse(wiring.persistSamples)
+        assertTrue(wiring.mode is MonitoringMode.SharedCoreOwnedPersistence)
         val sharedBanner = assertNotNull(wiring.banner)
         assertTrue(sharedBanner.contains("shared DB"))
         assertFalse(sharedBanner.contains("unavailable on Go path"))
@@ -44,8 +43,7 @@ class GoCoreWiringTest {
             defaultDatabase = Path("/tmp/Daemonitor/watcher.db"),
         )
         assertNotNull(wiring.processSource)
-        assertNotNull(wiring.buildSource)
-        assertTrue(wiring.persistSamples)
+        assertTrue(wiring.mode is MonitoringMode.RemoteBuilds)
         val banner = assertNotNull(wiring.banner)
         assertFalse(banner.contains("shared DB"))
         assertFalse(banner.contains("unavailable on Go path"))

@@ -43,6 +43,7 @@ class PollMonitoringTest {
             builds = builds,
             samples = samples,
             aggregator = BuildAggregator(),
+            mode = MonitoringMode.Local,
             clock = { 5_000 },
         )
 
@@ -249,9 +250,9 @@ class PollMonitoringTest {
             builds = builds,
             samples = RecordingSampleWriter(),
             aggregator = BuildAggregator(),
-            buildSource = object : BuildSource {
+            mode = MonitoringMode.RemoteBuilds(object : BuildSource {
                 override fun recentBuilds(limit: Int) = listOf(remote)
-            },
+            }),
             clock = { 5_000 },
         )
 
@@ -276,8 +277,7 @@ class PollMonitoringTest {
             builds = builds,
             samples = samples,
             aggregator = BuildAggregator(),
-            buildSource = null,
-            persistSamples = false,
+            mode = MonitoringMode.SharedCoreOwnedPersistence,
             clock = { 5_000 },
         )
 
