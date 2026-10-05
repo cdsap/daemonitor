@@ -25,6 +25,15 @@ enum class TimelineMetric {
     RSS,
     HEAP_USED,
     HEAP_LIMIT,
+    THREADS,
+    READ_BYTES,
+    WRITE_BYTES,
+    PAGE_FAULTS,
+    CONTEXT_SWITCHES,
+    OPEN_FILES,
+    METASPACE,
+    YOUNG_GC,
+    OLD_GC,
 }
 
 data class TimelineSeries(
@@ -33,6 +42,7 @@ data class TimelineSeries(
     val pid: Long? = null,
     val isTotal: Boolean = false,
     val metric: TimelineMetric = TimelineMetric.RSS,
+    val defaultVisible: Boolean = true,
 ) {
     /** Dashed stroke reserved for configured heap limit (`-Xmx`), not live occupancy. */
     val dashed: Boolean get() = metric == TimelineMetric.HEAP_LIMIT
@@ -114,7 +124,7 @@ object VisualChartModel {
             .sortedByDescending { it.rssMemoryMb }
             .map { it.pid } +
             visible
-                .flatMap { it.byPid.keys + it.heapLimitByPid.keys + it.heapUsedByPid.keys }
+                .flatMap { it.byPid.keys + it.heapLimitByPid.keys + it.heapUsedByPid.keys + it.extendedByPid.keys }
                 .distinct()
                 .filterNot { it in liveByPid }
                 .sorted()
@@ -153,6 +163,17 @@ object VisualChartModel {
                         ),
                     )
                 }
+                extendedMetrics.forEach { (metric, label, value) ->
+                    if (visible.any { value(it.extendedByPid[pid]) != null }) {
+                        add(TimelineSeries(
+                            id = extendedSeriesId(pid, metric),
+                            label = "$baseLabel · $label",
+                            pid = pid,
+                            metric = metric,
+                            defaultVisible = false,
+                        ))
+                    }
+                }
             }
         }
 
@@ -184,6 +205,7 @@ object VisualChartModel {
                     TimelineMetric.HEAP_USED -> sample.heapUsedByPid[pid]
                         ?: liveByPid[pid]?.liveHeap?.takeIf { it.available }?.usedMb
                     TimelineMetric.HEAP_LIMIT -> sample.heapLimitByPid[pid] ?: liveByPid[pid]?.maxHeapMb
+                    else -> extendedValue(item.metric, sample.extendedByPid[pid])
                 } ?: 0L
                 values[item.id] = value
             }
@@ -196,6 +218,33 @@ object VisualChartModel {
     fun rssSeriesId(pid: Long): String = "pid-$pid-rss"
     fun heapUsedSeriesId(pid: Long): String = "pid-$pid-heap-used"
     fun heapLimitSeriesId(pid: Long): String = "pid-$pid-heap-limit"
+
+    fun extendedSeriesId(pid: Long, metric: TimelineMetric): String = "pid-$pid-${metric.name.lowercase()}"
+
+    private val extendedMetrics = listOf(
+        Triple(TimelineMetric.THREADS, "Threads", { p: ProcessMetricSample? -> p?.threadCount }),
+        Triple(TimelineMetric.READ_BYTES, "Read", { p: ProcessMetricSample? -> p?.readBytes }),
+        Triple(TimelineMetric.WRITE_BYTES, "Write", { p: ProcessMetricSample? -> p?.writeBytes }),
+        Triple(TimelineMetric.PAGE_FAULTS, "Page faults", { p: ProcessMetricSample? -> p?.pageFaults }),
+        Triple(TimelineMetric.CONTEXT_SWITCHES, "Context switches", { p: ProcessMetricSample? -> p?.contextSwitches }),
+        Triple(TimelineMetric.OPEN_FILES, "Open files", { p: ProcessMetricSample? -> p?.openFileDescriptors }),
+        Triple(TimelineMetric.METASPACE, "Metaspace", { p: ProcessMetricSample? -> p?.metaspaceUsedMb }),
+        Triple(TimelineMetric.YOUNG_GC, "Young GC", { p: ProcessMetricSample? -> p?.youngGcCount }),
+        Triple(TimelineMetric.OLD_GC, "Old GC", { p: ProcessMetricSample? -> p?.oldGcCount }),
+    )
+
+    private fun extendedValue(metric: TimelineMetric, sample: ProcessMetricSample?): Long? = when (metric) {
+        TimelineMetric.THREADS -> sample?.threadCount
+        TimelineMetric.READ_BYTES -> sample?.readBytes
+        TimelineMetric.WRITE_BYTES -> sample?.writeBytes
+        TimelineMetric.PAGE_FAULTS -> sample?.pageFaults
+        TimelineMetric.CONTEXT_SWITCHES -> sample?.contextSwitches
+        TimelineMetric.OPEN_FILES -> sample?.openFileDescriptors
+        TimelineMetric.METASPACE -> sample?.metaspaceUsedMb
+        TimelineMetric.YOUNG_GC -> sample?.youngGcCount
+        TimelineMetric.OLD_GC -> sample?.oldGcCount
+        else -> null
+    }
 
     /** @deprecated Prefer [heapLimitSeriesId]. */
     fun heapSeriesId(pid: Long): String = heapLimitSeriesId(pid)

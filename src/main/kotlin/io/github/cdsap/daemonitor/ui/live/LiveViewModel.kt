@@ -32,6 +32,19 @@ class LiveViewModel(
             heapUsedByPid = processes.mapNotNull { process ->
                 process.liveHeap?.takeIf { it.available }?.usedMb?.let { used -> process.pid to used }
             }.toMap(),
+            extendedByPid = processes.associate { process ->
+                process.pid to ProcessMetricSample(
+                    threadCount = process.threadCount,
+                    readBytes = process.readBytes,
+                    writeBytes = process.writeBytes,
+                    pageFaults = listOfNotNull(process.minorPageFaults, process.majorPageFaults).sum().takeIf { process.minorPageFaults != null || process.majorPageFaults != null },
+                    contextSwitches = listOfNotNull(process.voluntaryContextSwitches, process.involuntaryContextSwitches).sum().takeIf { process.voluntaryContextSwitches != null || process.involuntaryContextSwitches != null },
+                    openFileDescriptors = process.openFileDescriptors,
+                    metaspaceUsedMb = process.metaspaceUsedMb,
+                    youngGcCount = process.youngGcCount,
+                    oldGcCount = process.oldGcCount,
+                )
+            }.filterValues { it != ProcessMetricSample() },
         )
         val nextTailState = when {
             // Keep a completed tail for an ended process; drop in-flight Loading so the panel

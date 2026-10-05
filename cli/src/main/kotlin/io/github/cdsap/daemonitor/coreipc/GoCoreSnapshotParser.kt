@@ -104,6 +104,27 @@ internal object GoCoreSnapshotParser {
             status = status,
             automated = automated,
             liveHeap = parseLiveHeap(obj),
+            virtualMemoryMb = longField(obj, "virtual_memory_mb"),
+            swapMemoryMb = longField(obj, "swap_memory_mb"),
+            threadCount = longField(obj, "thread_count"),
+            readBytes = longField(obj, "read_bytes"),
+            writeBytes = longField(obj, "write_bytes"),
+            readOperations = longField(obj, "read_operations"),
+            writeOperations = longField(obj, "write_operations"),
+            minorPageFaults = longField(obj, "minor_page_faults"),
+            majorPageFaults = longField(obj, "major_page_faults"),
+            voluntaryContextSwitches = longField(obj, "voluntary_context_switches"),
+            involuntaryContextSwitches = longField(obj, "involuntary_context_switches"),
+            openFileDescriptors = longField(obj, "open_file_descriptors"),
+            metaspaceUsedMb = longField(obj, "metaspace_used_mb"),
+            metaspaceCommittedMb = longField(obj, "metaspace_committed_mb"),
+            youngGcCount = longField(obj, "young_gc_count"),
+            youngGcTimeMs = longField(obj, "young_gc_time_ms"),
+            oldGcCount = longField(obj, "old_gc_count"),
+            oldGcTimeMs = longField(obj, "old_gc_time_ms"),
+            javaVersion = stringField(obj, "java_version"),
+            javaVendor = stringField(obj, "java_vendor"),
+            activeProcessorCount = longField(obj, "active_processor_count"),
         )
     }
 
@@ -266,6 +287,8 @@ internal object GoCoreSnapshotParser {
             return obj.substring(start, i).toDoubleOrNull()
         }
     }
+
+    private fun longField(obj: String, name: String): Long? = numberField(obj, name)?.toLong()
 
     private fun booleanField(obj: String, name: String): Boolean? {
         val key = "\"$name\""

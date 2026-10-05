@@ -20,6 +20,27 @@ CREATE TABLE process_samples (
     heap_max_mb       INTEGER,           -- runtime heap max from MemoryMXBean; NULL = unavailable
     heap_sampled_at_ms INTEGER,          -- probe wall clock; set even when unavailable
     heap_available    INTEGER,           -- 1 = live heap fields present; 0/NULL = unavailable
+    virtual_memory_mb INTEGER,
+    swap_memory_mb INTEGER,
+    thread_count INTEGER,
+    read_bytes INTEGER,
+    write_bytes INTEGER,
+    read_operations INTEGER,
+    write_operations INTEGER,
+    minor_page_faults INTEGER,
+    major_page_faults INTEGER,
+    voluntary_context_switches INTEGER,
+    involuntary_context_switches INTEGER,
+    open_file_descriptors INTEGER,
+    metaspace_used_mb INTEGER,
+    metaspace_committed_mb INTEGER,
+    young_gc_count INTEGER,
+    young_gc_time_ms INTEGER,
+    old_gc_count INTEGER,
+    old_gc_time_ms INTEGER,
+    java_version TEXT,
+    java_vendor TEXT,
+    active_processor_count INTEGER,
     status            TEXT NOT NULL
 );
 
@@ -49,8 +70,8 @@ CREATE INDEX builds_start ON builds(start_time);
 CREATE INDEX builds_project ON builds(project_path);
 
 insertSample:
-INSERT INTO process_samples(timestamp, pid, parent_pid, process_type, command_line, working_directory, project_path, cpu_percent, rss_memory_mb, max_heap_mb, heap_used_mb, heap_committed_mb, heap_max_mb, heap_sampled_at_ms, heap_available, status)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO process_samples(timestamp, pid, parent_pid, process_type, command_line, working_directory, project_path, cpu_percent, rss_memory_mb, max_heap_mb, heap_used_mb, heap_committed_mb, heap_max_mb, heap_sampled_at_ms, heap_available, virtual_memory_mb, swap_memory_mb, thread_count, read_bytes, write_bytes, read_operations, write_operations, minor_page_faults, major_page_faults, voluntary_context_switches, involuntary_context_switches, open_file_descriptors, metaspace_used_mb, metaspace_committed_mb, young_gc_count, young_gc_time_ms, old_gc_count, old_gc_time_ms, java_version, java_vendor, active_processor_count, status)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 samplesInWindow:
 SELECT rss_memory_mb, cpu_percent

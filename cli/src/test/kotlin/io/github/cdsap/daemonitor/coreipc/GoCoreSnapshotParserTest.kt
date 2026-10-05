@@ -38,7 +38,22 @@ class GoCoreSnapshotParserTest {
                   "heap_committed_mb": 1024,
                   "heap_max_mb": null,
                   "heap_sampled_at_ms": 1000,
-                  "heap_available": true
+                  "heap_available": true,
+                  "virtual_memory_mb": 4096,
+                  "swap_memory_mb": 12,
+                  "thread_count": 84,
+                  "read_bytes": 1048576,
+                  "write_bytes": 2048,
+                  "minor_page_faults": 11,
+                  "major_page_faults": 2,
+                  "voluntary_context_switches": 30,
+                  "open_file_descriptors": 41,
+                  "metaspace_used_mb": 72,
+                  "young_gc_count": 8,
+                  "young_gc_time_ms": 120,
+                  "java_version": "21.0.8",
+                  "java_vendor": "Eclipse Adoptium",
+                  "active_processor_count": 8
                 },
                 {
                   "pid": 7,
@@ -87,6 +102,21 @@ class GoCoreSnapshotParserTest {
         assertEquals(1024L, live.committedMb)
         assertNull(live.maxMb)
         assertEquals(1000L, live.sampledAtMs)
+        assertEquals(4096L, daemon.virtualMemoryMb)
+        assertEquals(12L, daemon.swapMemoryMb)
+        assertEquals(84L, daemon.threadCount)
+        assertEquals(1048576L, daemon.readBytes)
+        assertEquals(2048L, daemon.writeBytes)
+        assertEquals(11L, daemon.minorPageFaults)
+        assertEquals(2L, daemon.majorPageFaults)
+        assertEquals(30L, daemon.voluntaryContextSwitches)
+        assertEquals(41L, daemon.openFileDescriptors)
+        assertEquals(72L, daemon.metaspaceUsedMb)
+        assertEquals(8L, daemon.youngGcCount)
+        assertEquals(120L, daemon.youngGcTimeMs)
+        assertEquals("21.0.8", daemon.javaVersion)
+        assertEquals("Eclipse Adoptium", daemon.javaVendor)
+        assertEquals(8L, daemon.activeProcessorCount)
 
         val wrapper = processes[1]
         assertEquals(ProcessType.GRADLE_WRAPPER, wrapper.type)

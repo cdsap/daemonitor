@@ -115,14 +115,15 @@ fun OverallRssTimelineChart(
     val crosshairColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
     val points = chart.points
     val series = chart.series
-    var visibleIds by remember(series.map { it.id }) {
-        mutableStateOf(series.map { it.id }.toSet())
+    var visibleIds by remember(series.map { it.id to it.defaultVisible }) {
+        mutableStateOf(series.filter { it.defaultVisible }.map { it.id }.toSet())
     }
     var hover by remember(points, visibleIds) { mutableStateOf<HoverLegend?>(null) }
     var plotSize by remember { mutableStateOf(IntSize.Zero) }
     val density = LocalDensity.current
     val visibleSeries = series.filter { it.id in visibleIds }
     val processCount = series.mapNotNull { it.pid }.distinct().size
+    val axisUnit = if (visibleSeries.all { it.metric in setOf(TimelineMetric.RSS, TimelineMetric.HEAP_USED, TimelineMetric.HEAP_LIMIT, TimelineMetric.METASPACE) }) "MB" else "value"
 
     SectionCard("RSS & Heap", modifier) {
         Column(
@@ -197,7 +198,7 @@ fun OverallRssTimelineChart(
                     ) {
                         yTicks.asReversed().forEach { tick ->
                             Text(
-                                "$tick MB",
+                                "$tick $axisUnit",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = labelColor,
                             )

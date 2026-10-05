@@ -113,6 +113,48 @@ class WatcherDatabaseTest {
     }
 
     @Test
+    fun `extended cored metrics round-trip through local history`(@TempDirArg tmp: Path) {
+        val db = WatcherDatabase.open(tmp.resolve("watcher.db"))
+        db.save(
+            GradleProcess(
+                pid = 12,
+                parentPid = 1,
+                type = ProcessType.GRADLE_DAEMON,
+                commandLine = "java GradleDaemon",
+                workingDirectory = "/p",
+                projectPath = "/p",
+                cpuPercent = 1.0,
+                rssMemoryMb = 256,
+                maxHeapMb = null,
+                minHeapMb = null,
+                gc = "G1",
+                startTimeMs = 1,
+                status = "RUNNING",
+                virtualMemoryMb = 1024,
+                threadCount = 32,
+                readBytes = 4096,
+                majorPageFaults = 2,
+                openFileDescriptors = 17,
+                metaspaceUsedMb = 64,
+                youngGcCount = 5,
+                javaVersion = "21",
+            ),
+            timestampMs = 2_000,
+        )
+
+        val sample = db.processSamplesForPid(12).single()
+        assertEquals(1024L, sample.virtualMemoryMb)
+        assertEquals(32L, sample.threadCount)
+        assertEquals(4096L, sample.readBytes)
+        assertEquals(2L, sample.majorPageFaults)
+        assertEquals(17L, sample.openFileDescriptors)
+        assertEquals(64L, sample.metaspaceUsedMb)
+        assertEquals(5L, sample.youngGcCount)
+        assertEquals("21", sample.javaVersion)
+        assertEquals(null, sample.swapMemoryMb)
+    }
+
+    @Test
     fun `kotlin daemon samples are persisted by process type`(@TempDirArg tmp: Path) {
         val db = WatcherDatabase.open(tmp.resolve("watcher.db"))
         val p = GradleProcess(

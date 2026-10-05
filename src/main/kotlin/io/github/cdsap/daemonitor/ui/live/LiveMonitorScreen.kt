@@ -272,10 +272,10 @@ private fun ProcessDetails(p: GradleProcess, ended: Boolean, nowMs: Long) {
             Text("PID ${p.pid} · ${p.type.displayLabel()}", fontWeight = FontWeight.SemiBold)
         }
         Spacer(Modifier.padding(Space.xs))
-        DetailRow("Uptime", if (ended) "—" else formatUptime(p.startTimeMs, nowMs))
-        DetailRow("Working dir", p.workingDirectory ?: "unavailable")
+        DetailSection("Memory")
         DetailRow("RSS", "${p.rssMemoryMb} MB")
-        DetailRow("CPU", LiveMetricLabels.cpuDetail(p.cpuPercent))
+        DetailRow("Virtual memory", p.virtualMemoryMb.metric("MB"))
+        DetailRow("Swap", p.swapMemoryMb.metric("MB"))
         DetailRow("Heap used", LiveMetricLabels.liveHeapUsedDetail(p.liveHeap, p.type))
         DetailRow(
             "Heap committed",
@@ -286,12 +286,65 @@ private fun ProcessDetails(p: GradleProcess, ended: Boolean, nowMs: Long) {
             "Heap max (runtime)",
             p.liveHeap?.takeIf { it.available }?.maxMb?.let { "$it MB" } ?: LiveMetricLabels.HEAP_UNAVAILABLE_DETAIL,
         )
-        DetailRow("GC", p.gc ?: "—")
+        DetailSection("CPU")
+        DetailRow("CPU", LiveMetricLabels.cpuDetail(p.cpuPercent))
+        DetailRow("Active processors", p.activeProcessorCount.metric())
+
+        DetailSection("JVM")
+        DetailRow("Java", listOfNotNull(p.javaVersion, p.javaVendor).joinToString(" · ").ifBlank { "unavailable" })
+        DetailRow("GC", p.gc ?: "unavailable")
+        DetailRow("Metaspace used", p.metaspaceUsedMb.metric("MB"))
+        DetailRow("Metaspace committed", p.metaspaceCommittedMb.metric("MB"))
+
+        DetailSection("GC")
+        DetailRow("Young GC", p.youngGcCount.metric("collections"))
+        DetailRow("Young GC time", p.youngGcTimeMs.metric("ms"))
+        DetailRow("Old GC", p.oldGcCount.metric("collections"))
+        DetailRow("Old GC time", p.oldGcTimeMs.metric("ms"))
+
+        DetailSection("I/O")
+        DetailRow("Read", p.readBytes.metricBytes())
+        DetailRow("Write", p.writeBytes.metricBytes())
+        DetailRow("Read operations", p.readOperations.metric())
+        DetailRow("Write operations", p.writeOperations.metric())
+        DetailRow("Minor page faults", p.minorPageFaults.metric())
+        DetailRow("Major page faults", p.majorPageFaults.metric())
+
+        DetailSection("Process")
+        DetailRow("Threads", p.threadCount.metric())
+        DetailRow("Open file descriptors", p.openFileDescriptors.metric())
+        DetailRow("Context switches", listOfNotNull(
+            p.voluntaryContextSwitches?.let { "voluntary $it" },
+            p.involuntaryContextSwitches?.let { "involuntary $it" },
+        ).ifEmpty { listOf("unavailable") }.joinToString(", "))
+        DetailRow("Uptime", if (ended) "—" else formatUptime(p.startTimeMs, nowMs))
+        DetailRow("Working dir", p.workingDirectory ?: "unavailable")
         Spacer(Modifier.padding(Space.xs))
         Text("Command line", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(p.commandLine, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
     }
 }
+
+@Composable
+private fun DetailSection(label: String) {
+    Text(
+        label,
+        modifier = Modifier.padding(top = Space.sm, bottom = Space.xs),
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.primary,
+    )
+}
+
+private fun Long?.metric(unit: String = ""): String = this?.let { if (unit.isBlank()) it.toString() else "$it $unit" } ?: "unavailable"
+
+private fun Long?.metricBytes(): String = this?.let {
+    when {
+        it >= 1024L * 1024L -> "%.1f MB".format(it / (1024.0 * 1024.0))
+        it >= 1024L -> "%.1f KB".format(it / 1024.0)
+        else -> "$it B"
+    }
+} ?: "unavailable"
 
 @Composable
 private fun LogCard(tailState: LogTailState, modifier: Modifier = Modifier) {

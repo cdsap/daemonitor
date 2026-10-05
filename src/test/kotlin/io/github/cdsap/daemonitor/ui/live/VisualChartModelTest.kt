@@ -103,6 +103,26 @@ class VisualChartModelTest {
     }
 
     @Test
+    fun `timeline chart exposes extended metrics without making them default noise`() {
+        val chart = VisualChartModel.timelineChart(
+            samples = listOf(
+                RssTimelineSample(
+                    atMs = 1_000,
+                    totalRssMb = 100,
+                    byPid = mapOf(1L to 100L),
+                    extendedByPid = mapOf(1L to ProcessMetricSample(threadCount = 24, readBytes = 4096)),
+                ),
+            ),
+            processes = listOf(process(pid = 1, rss = 100, heapLimit = null, heapUsed = null)),
+        )
+
+        val threads = chart.series.first { it.id == VisualChartModel.extendedSeriesId(1, TimelineMetric.THREADS) }
+        assertEquals(false, threads.defaultVisible)
+        assertEquals(24L, chart.points.single().valuesBySeriesId[threads.id])
+        assertTrue(chart.series.any { it.metric == TimelineMetric.READ_BYTES })
+    }
+
+    @Test
     fun `timeline chart keeps only the active window`() {
         val chart = VisualChartModel.timelineChart(
             samples = listOf(
