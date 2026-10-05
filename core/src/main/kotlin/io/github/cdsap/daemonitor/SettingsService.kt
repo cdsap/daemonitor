@@ -37,8 +37,8 @@ class SettingsService(
         return current
     }
 
-    /** Purge rows older than the currently configured retention window. */
-    fun purgeNow() {
-        retention.purgeOlderThan(clock(), current.retentionDays)
+    /** Purge rows older than the configured retention window or the supplied override. */
+    fun purgeNow(retentionDays: Long = current.retentionDays) {
+        retention.purgeOlderThan(clock(), retentionDays)
     }
 }

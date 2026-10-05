@@ -45,6 +45,19 @@ class SettingsServiceTest {
     }
 
     @Test
+    fun `purgeNow uses a retention override without changing settings`() {
+        val store = FakeSettingsRepository(Settings(retentionDays = 30))
+        val retention = FakeRetentionRepository()
+        val now = 100L * 24 * 60 * 60 * 1000
+        val service = SettingsService(store, retention, clock = { now })
+
+        service.purgeNow(7)
+
+        assertEquals(30, service.load().retentionDays)
+        assertEquals(listOf(now to 7L), retention.purges)
+    }
+
+    @Test
     fun `updateAppearance persists preference`() {
         val store = FakeSettingsRepository()
         val service = SettingsService(store, FakeRetentionRepository())
