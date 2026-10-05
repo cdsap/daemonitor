@@ -24,12 +24,16 @@ func TestInsertHistoryAndPurge(t *testing.T) {
 	now := time.Now().UnixMilli()
 	cpu := 1.5
 	maxHeap := int64(1024)
+	vms, threads, readBytes, youngGC := int64(2048), int64(42), int64(12345), int64(7)
+	javaVersion, javaVendor := "21.0.1", "Eclipse Adoptium"
 	snap := model.Snapshot{
 		SampledAtMs: now,
 		Processes: []model.Process{{
 			PID: 42, Type: "GRADLE_DAEMON", Name: "java",
-			CommandLine: "GradleDaemon", RSSMemoryMB: 100, CPUPercent: &cpu,
-			MaxHeapMB: &maxHeap, SampledAtMs: now, Status: "R",
+			CommandLine: "GradleDaemon", RSSMemoryMB: 100, VirtualMemoryMB: &vms, ThreadCount: &threads,
+			ReadBytes: &readBytes, YoungGCCount: &youngGC, JavaVersion: &javaVersion, JavaVendor: &javaVendor,
+			CPUPercent: &cpu,
+			MaxHeapMB:  &maxHeap, SampledAtMs: now, Status: "R",
 		}},
 	}
 	if err := s.InsertSnapshot(snap); err != nil {
@@ -46,6 +50,15 @@ func TestInsertHistoryAndPurge(t *testing.T) {
 	}
 	if hist[0].MaxHeapMB == nil || *hist[0].MaxHeapMB != 1024 {
 		t.Fatalf("max heap=%v", hist[0].MaxHeapMB)
+	}
+	if hist[0].VirtualMemoryMB == nil || *hist[0].VirtualMemoryMB != vms || hist[0].ThreadCount == nil || *hist[0].ThreadCount != threads {
+		t.Fatalf("OS metrics: vms=%v threads=%v", hist[0].VirtualMemoryMB, hist[0].ThreadCount)
+	}
+	if hist[0].ReadBytes == nil || *hist[0].ReadBytes != readBytes || hist[0].YoungGCCount == nil || *hist[0].YoungGCCount != youngGC {
+		t.Fatalf("counter metrics: read=%v young=%v", hist[0].ReadBytes, hist[0].YoungGCCount)
+	}
+	if hist[0].JavaVersion == nil || *hist[0].JavaVersion != javaVersion || hist[0].JavaVendor == nil || *hist[0].JavaVendor != javaVendor {
+		t.Fatalf("JVM identity: version=%v vendor=%v", hist[0].JavaVersion, hist[0].JavaVendor)
 	}
 
 	old := model.Snapshot{
