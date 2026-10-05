@@ -34,6 +34,15 @@ func TestParseJstatGC(t *testing.T) {
 	if s.Source != "jstat" {
 		t.Fatalf("source: %q", s.Source)
 	}
+	if s.YoungGCCount == nil || *s.YoungGCCount != 0 || s.YoungGCTimeMs == nil || *s.YoungGCTimeMs != 0 {
+		t.Fatalf("young GC metrics: count=%v time=%v", s.YoungGCCount, s.YoungGCTimeMs)
+	}
+	if s.OldGCCount == nil || *s.OldGCCount != 0 || s.OldGCTimeMs == nil || *s.OldGCTimeMs != 0 {
+		t.Fatalf("old GC metrics: count=%v time=%v", s.OldGCCount, s.OldGCTimeMs)
+	}
+	if s.MetaspaceUsedMB == nil || *s.MetaspaceUsedMB != 0 || s.MetaspaceCommittedMB == nil || *s.MetaspaceCommittedMB != 0 {
+		t.Fatalf("metaspace metrics: used=%v committed=%v", s.MetaspaceUsedMB, s.MetaspaceCommittedMB)
+	}
 }
 
 func TestParseJcmdHeapInfo(t *testing.T) {
@@ -50,6 +59,21 @@ func TestParseJcmdHeapInfo(t *testing.T) {
 	}
 	if s.Source != "jcmd" {
 		t.Fatalf("source: %q", s.Source)
+	}
+	if s.MetaspaceUsedMB == nil || *s.MetaspaceUsedMB != 0 || s.MetaspaceCommittedMB == nil || *s.MetaspaceCommittedMB != 0 {
+		t.Fatalf("metaspace metrics: used=%v committed=%v", s.MetaspaceUsedMB, s.MetaspaceCommittedMB)
+	}
+}
+
+func TestParseJcmdVMInfo(t *testing.T) {
+	version, vendor, processors := heap.ParseJcmdVMInfo(`openjdk version "21.0.1" 2023-10-17
+OpenJDK Runtime Environment
+available processors: 8`)
+	if version == nil || *version != "21.0.1" || vendor == nil || *vendor != "openjdk" {
+		t.Fatalf("identity: version=%v vendor=%v", version, vendor)
+	}
+	if processors == nil || *processors != 8 {
+		t.Fatalf("processors=%v", processors)
 	}
 }
 

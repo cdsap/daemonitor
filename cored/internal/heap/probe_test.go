@@ -58,15 +58,15 @@ func TestProberCacheTTL(t *testing.T) {
 	if _, err := p.SampleFor(ctx, 7, 99); err != nil {
 		t.Fatal(err)
 	}
-	if calls != 1 {
-		t.Fatalf("expected 1 probe call, got %d", calls)
+	if calls != 2 {
+		t.Fatalf("expected 2 probe calls, got %d", calls)
 	}
 	// Different startTimeMs → cache miss
 	if _, err := p.SampleFor(ctx, 7, 100); err != nil {
 		t.Fatal(err)
 	}
-	if calls != 2 {
-		t.Fatalf("expected 2 probe calls after identity change, got %d", calls)
+	if calls != 4 {
+		t.Fatalf("expected 4 probe calls after identity change, got %d", calls)
 	}
 }
 
