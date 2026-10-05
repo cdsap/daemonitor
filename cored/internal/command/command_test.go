@@ -22,11 +22,11 @@ func TestParseArgsDefaults(t *testing.T) {
 }
 
 func TestParseArgsFlags(t *testing.T) {
-	opts, err := ParseArgs([]string{"--json", "--no-autostart", "--no-color", "ps"})
+	opts, err := ParseArgs([]string{"--json", "--no-autostart", "--no-color", "--details", "ps"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !opts.JSON || !opts.NoAutostart || !opts.NoColor {
+	if !opts.JSON || !opts.NoAutostart || !opts.NoColor || !opts.Details {
 		t.Fatalf("flags not set: %+v", opts)
 	}
 	if len(opts.Args) != 1 || opts.Args[0] != "ps" {

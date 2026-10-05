@@ -40,6 +40,27 @@ func TestWriteProcessesPlainNoANSI(t *testing.T) {
 	}
 }
 
+func TestWriteProcessesDetailedPlainIncludesExtendedMetrics(t *testing.T) {
+	threads, readBytes, writeBytes := int64(12), int64(1024), int64(2048)
+	metaspace, youngTime, oldTime := int64(64), int64(7), int64(9)
+	javaVersion, javaVendor := "21", "Temurin"
+	var buf bytes.Buffer
+	WriteProcessesDetailedPlain(&buf, model.Snapshot{SampledAtMs: 100, Processes: []model.Process{{
+		PID: 7, Type: "GRADLE_DAEMON", RSSMemoryMB: 256, ThreadCount: &threads,
+		ReadBytes: &readBytes, WriteBytes: &writeBytes, MetaspaceUsedMB: &metaspace,
+		YoungGCTimeMs: &youngTime, OldGCTimeMs: &oldTime, JavaVersion: &javaVersion, JavaVendor: &javaVendor,
+	}}})
+	out := buf.String()
+	for _, want := range []string{"pid=7", "threads=12", "read_bytes=1024", "write_bytes=2048", "metaspace_used_mb=64", "young_gc_time_ms=7", "old_gc_time_ms=9", "java_version=21", "java_vendor=Temurin"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("detailed output missing %q: %s", want, out)
+		}
+	}
+	if !strings.Contains(out, "open_file_descriptors=n/a") {
+		t.Fatalf("unavailable metric was not rendered cleanly: %s", out)
+	}
+}
+
 func TestWriteJSONStableSchema(t *testing.T) {
 	var buf bytes.Buffer
 	snap := model.Snapshot{SampledAtMs: 42, Processes: []model.Process{}}
@@ -55,6 +76,29 @@ func TestWriteJSONStableSchema(t *testing.T) {
 	}
 	if _, ok := decoded["processes"]; !ok {
 		t.Fatalf("missing processes: %v", decoded)
+	}
+}
+
+func TestStructuredProcessExportsIncludeExtendedMetrics(t *testing.T) {
+	threads := int64(12)
+	snap := model.Snapshot{Processes: []model.Process{{PID: 7, ThreadCount: &threads}}}
+	for name, write := range map[string]func(*bytes.Buffer) error{
+		"json":  func(buf *bytes.Buffer) error { return WriteJSON(buf, snap) },
+		"jsonl": func(buf *bytes.Buffer) error { return WriteJSONLine(buf, snap) },
+	} {
+		var buf bytes.Buffer
+		if err := write(&buf); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		var decoded struct {
+			Processes []map[string]any `json:"processes"`
+		}
+		if err := json.Unmarshal(buf.Bytes(), &decoded); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if got := decoded.Processes[0]["thread_count"]; got != float64(12) {
+			t.Fatalf("%s thread_count=%v", name, got)
+		}
 	}
 }
 
@@ -118,12 +162,16 @@ func TestWriteBuildsJSONKeepsBuildMetadataForScopedResult(t *testing.T) {
 }
 
 func TestRowOrientedExports(t *testing.T) {
+	threads, readBytes, writeBytes := int64(4), int64(10), int64(20)
 	var buf bytes.Buffer
-	if err := WriteProcessesCSV(&buf, model.Snapshot{SampledAtMs: 7, Processes: []model.Process{{PID: 9, Type: "GRADLE_DAEMON", RSSMemoryMB: 512, ProjectPath: strPtr("/tmp/demo")}}}); err != nil {
+	if err := WriteProcessesCSV(&buf, model.Snapshot{SampledAtMs: 7, Processes: []model.Process{{PID: 9, Type: "GRADLE_DAEMON", RSSMemoryMB: 512, ThreadCount: &threads, ReadBytes: &readBytes, WriteBytes: &writeBytes, ProjectPath: strPtr("/tmp/demo")}}}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(buf.String(), "sampled_at_ms,pid,type") || !strings.Contains(buf.String(), "7,9,GRADLE_DAEMON") {
+	if !strings.Contains(buf.String(), "sampled_at_ms,pid,parent_pid,type") || !strings.Contains(buf.String(), "7,9,0,GRADLE_DAEMON") {
 		t.Fatalf("unexpected process CSV: %s", buf.String())
+	}
+	if !strings.Contains(buf.String(), "thread_count") || !strings.Contains(buf.String(), "read_bytes") || !strings.Contains(buf.String(), "write_bytes") || !strings.Contains(buf.String(), ",4,10,20,") {
+		t.Fatalf("extended process metrics missing from CSV: %s", buf.String())
 	}
 
 	buf.Reset()

@@ -28,11 +28,30 @@ func WriteJSONLine(w io.Writer, v any) error {
 // WriteProcessesCSV writes a stable, row-oriented process export.
 func WriteProcessesCSV(w io.Writer, snap model.Snapshot) error {
 	c := csv.NewWriter(w)
-	if err := c.Write([]string{"sampled_at_ms", "pid", "type", "name", "rss_mb", "cpu_percent", "max_heap_mb", "heap_used_mb", "heap_committed_mb", "project", "status", "automated"}); err != nil {
+	if err := c.Write([]string{
+		"sampled_at_ms", "pid", "parent_pid", "type", "name", "command_line", "working_directory", "project",
+		"rss_mb", "virtual_memory_mb", "swap_memory_mb", "thread_count", "read_bytes", "write_bytes",
+		"read_operations", "write_operations", "minor_page_faults", "major_page_faults", "voluntary_context_switches",
+		"involuntary_context_switches", "open_file_descriptors", "cpu_percent", "max_heap_mb", "min_heap_mb", "gc",
+		"heap_used_mb", "heap_committed_mb", "heap_max_mb", "heap_sampled_at_ms", "heap_available", "metaspace_used_mb",
+		"metaspace_committed_mb", "young_gc_count", "young_gc_time_ms", "old_gc_count", "old_gc_time_ms", "java_version",
+		"java_vendor", "active_processor_count", "start_time_ms", "status", "automated",
+	}); err != nil {
 		return err
 	}
 	for _, p := range snap.Processes {
-		row := []string{fmt.Sprint(snap.SampledAtMs), fmt.Sprint(p.PID), p.Type, p.Name, fmt.Sprint(p.RSSMemoryMB), CPUText(p.CPUPercent), optionalInt64(p.MaxHeapMB), optionalInt64(p.HeapUsedMB), optionalInt64(p.HeapCommittedMB), ProjectName(p), p.Status, fmt.Sprint(p.Automated)}
+		row := []string{
+			fmt.Sprint(snap.SampledAtMs), fmt.Sprint(p.PID), fmt.Sprint(p.ParentPID), p.Type, p.Name, p.CommandLine,
+			optionalString(p.WorkingDirectory), ProjectName(p), fmt.Sprint(p.RSSMemoryMB), optionalInt64(p.VirtualMemoryMB),
+			optionalInt64(p.SwapMemoryMB), optionalInt64(p.ThreadCount), optionalInt64(p.ReadBytes), optionalInt64(p.WriteBytes),
+			optionalInt64(p.ReadOperations), optionalInt64(p.WriteOperations), optionalInt64(p.MinorPageFaults), optionalInt64(p.MajorPageFaults),
+			optionalInt64(p.VoluntaryContextSwitches), optionalInt64(p.InvoluntaryContextSwitches), optionalInt64(p.OpenFileDescriptors),
+			CPUText(p.CPUPercent), optionalInt64(p.MaxHeapMB), optionalInt64(p.MinHeapMB), GCText(p.GC), optionalInt64(p.HeapUsedMB),
+			optionalInt64(p.HeapCommittedMB), optionalInt64(p.HeapMaxMB), optionalInt64(p.HeapSampledAtMs), fmt.Sprint(p.HeapAvailable),
+			optionalInt64(p.MetaspaceUsedMB), optionalInt64(p.MetaspaceCommittedMB), optionalInt64(p.YoungGCCount), optionalInt64(p.YoungGCTimeMs),
+			optionalInt64(p.OldGCCount), optionalInt64(p.OldGCTimeMs), optionalString(p.JavaVersion), optionalString(p.JavaVendor),
+			optionalInt64(p.ActiveProcessorCount), fmt.Sprint(p.StartTimeMs), p.Status, fmt.Sprint(p.Automated),
+		}
 		if err := c.Write(row); err != nil {
 			return err
 		}
@@ -97,6 +116,13 @@ func optionalInt64(v *int64) string {
 	return fmt.Sprint(*v)
 }
 
+func optionalString(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return *v
+}
+
 // WriteProcessesPlain prints one stable process snapshot without ANSI.
 func WriteProcessesPlain(w io.Writer, snap model.Snapshot) {
 	fmt.Fprintf(w, "sampled_at_ms=%d processes=%d\n", snap.SampledAtMs, len(snap.Processes))
@@ -126,6 +152,89 @@ func WriteProcessesPlain(w io.Writer, snap model.Snapshot) {
 			ProjectName(p), signals,
 		)
 	}
+}
+
+// WriteProcessesDetailedPlain prints every process metric in a readable key/value view.
+// Pointer-backed values use n/a when the platform or collector could not provide them.
+func WriteProcessesDetailedPlain(w io.Writer, snap model.Snapshot) {
+	fmt.Fprintf(w, "sampled_at_ms=%d processes=%d\n", snap.SampledAtMs, len(snap.Processes))
+	if len(snap.Processes) == 0 {
+		fmt.Fprintln(w, "No Gradle-related processes are currently running.")
+		return
+	}
+	for i, p := range snap.Processes {
+		if i > 0 {
+			fmt.Fprintln(w)
+		}
+		fmt.Fprintf(w, "process %d:\n", i+1)
+		writeProcessMetric(w, "pid", fmt.Sprint(p.PID))
+		writeProcessMetric(w, "parent_pid", fmt.Sprint(p.ParentPID))
+		writeProcessMetric(w, "type", TypeDisplay(p.Type))
+		writeProcessMetric(w, "name", textOrNA(p.Name))
+		writeProcessMetric(w, "command_line", textOrNA(p.CommandLine))
+		writeProcessMetric(w, "working_directory", optionalValue(p.WorkingDirectory))
+		writeProcessMetric(w, "project", ProjectName(p))
+		writeProcessMetric(w, "rss_mb", fmt.Sprint(p.RSSMemoryMB))
+		writeProcessMetric(w, "virtual_memory_mb", optionalInt64Value(p.VirtualMemoryMB))
+		writeProcessMetric(w, "swap_memory_mb", optionalInt64Value(p.SwapMemoryMB))
+		writeProcessMetric(w, "threads", optionalInt64Value(p.ThreadCount))
+		writeProcessMetric(w, "read_bytes", optionalInt64Value(p.ReadBytes))
+		writeProcessMetric(w, "write_bytes", optionalInt64Value(p.WriteBytes))
+		writeProcessMetric(w, "read_operations", optionalInt64Value(p.ReadOperations))
+		writeProcessMetric(w, "write_operations", optionalInt64Value(p.WriteOperations))
+		writeProcessMetric(w, "minor_page_faults", optionalInt64Value(p.MinorPageFaults))
+		writeProcessMetric(w, "major_page_faults", optionalInt64Value(p.MajorPageFaults))
+		writeProcessMetric(w, "voluntary_context_switches", optionalInt64Value(p.VoluntaryContextSwitches))
+		writeProcessMetric(w, "involuntary_context_switches", optionalInt64Value(p.InvoluntaryContextSwitches))
+		writeProcessMetric(w, "open_file_descriptors", optionalInt64Value(p.OpenFileDescriptors))
+		writeProcessMetric(w, "cpu_percent", CPUText(p.CPUPercent))
+		writeProcessMetric(w, "max_heap_mb", optionalInt64Value(p.MaxHeapMB))
+		writeProcessMetric(w, "min_heap_mb", optionalInt64Value(p.MinHeapMB))
+		writeProcessMetric(w, "gc", GCText(p.GC))
+		writeProcessMetric(w, "heap_used_mb", optionalInt64Value(p.HeapUsedMB))
+		writeProcessMetric(w, "heap_committed_mb", optionalInt64Value(p.HeapCommittedMB))
+		writeProcessMetric(w, "heap_max_mb", optionalInt64Value(p.HeapMaxMB))
+		writeProcessMetric(w, "heap_percent", HeapPercentText(p.HeapUsedMB, p.HeapMaxMB))
+		writeProcessMetric(w, "heap_sampled_at_ms", optionalInt64Value(p.HeapSampledAtMs))
+		writeProcessMetric(w, "heap_available", fmt.Sprint(p.HeapAvailable))
+		writeProcessMetric(w, "metaspace_used_mb", optionalInt64Value(p.MetaspaceUsedMB))
+		writeProcessMetric(w, "metaspace_committed_mb", optionalInt64Value(p.MetaspaceCommittedMB))
+		writeProcessMetric(w, "young_gc_count", optionalInt64Value(p.YoungGCCount))
+		writeProcessMetric(w, "young_gc_time_ms", optionalInt64Value(p.YoungGCTimeMs))
+		writeProcessMetric(w, "old_gc_count", optionalInt64Value(p.OldGCCount))
+		writeProcessMetric(w, "old_gc_time_ms", optionalInt64Value(p.OldGCTimeMs))
+		writeProcessMetric(w, "java_version", optionalValue(p.JavaVersion))
+		writeProcessMetric(w, "java_vendor", optionalValue(p.JavaVendor))
+		writeProcessMetric(w, "active_processor_count", optionalInt64Value(p.ActiveProcessorCount))
+		writeProcessMetric(w, "start_time_ms", fmt.Sprint(p.StartTimeMs))
+		writeProcessMetric(w, "status", textOrNA(p.Status))
+		writeProcessMetric(w, "automated", fmt.Sprint(p.Automated))
+	}
+}
+
+func writeProcessMetric(w io.Writer, name, value string) {
+	fmt.Fprintf(w, "  %s=%s\n", name, value)
+}
+
+func optionalInt64Value(v *int64) string {
+	if v == nil {
+		return "n/a"
+	}
+	return fmt.Sprint(*v)
+}
+
+func optionalValue(v *string) string {
+	if v == nil || strings.TrimSpace(*v) == "" {
+		return "n/a"
+	}
+	return *v
+}
+
+func textOrNA(v string) string {
+	if strings.TrimSpace(v) == "" {
+		return "n/a"
+	}
+	return v
 }
 
 // WriteHistoryPlain prints history rows.
@@ -242,6 +351,14 @@ func HeapText(v *int64) string {
 		return "n/a"
 	}
 	return formatBytesMB(*v)
+}
+
+// HeapPercentText formats live heap as a percentage of the observed JVM max.
+func HeapPercentText(used, max *int64) string {
+	if used == nil || max == nil || *max <= 0 {
+		return "n/a"
+	}
+	return fmt.Sprintf("%.1f%%", float64(*used)*100/float64(*max))
 }
 
 // GCText formats a garbage collector name or n/a when it was unavailable.
