@@ -60,6 +60,9 @@ func TestParseJcmdHeapInfo(t *testing.T) {
 	if s.Source != "jcmd" {
 		t.Fatalf("source: %q", s.Source)
 	}
+	if s.GC == nil || *s.GC != "G1" {
+		t.Fatalf("gc: %v", s.GC)
+	}
 	if s.MetaspaceUsedMB == nil || *s.MetaspaceUsedMB != 0 || s.MetaspaceCommittedMB == nil || *s.MetaspaceCommittedMB != 0 {
 		t.Fatalf("metaspace metrics: used=%v committed=%v", s.MetaspaceUsedMB, s.MetaspaceCommittedMB)
 	}
