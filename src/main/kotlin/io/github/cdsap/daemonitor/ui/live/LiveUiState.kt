@@ -46,6 +46,20 @@ data class RssTimelineSample(
     val heapLimitByPid: Map<Long, Long> = emptyMap(),
     /** Live heap used (Attach/JMX) per PID when the probe succeeds. */
     val heapUsedByPid: Map<Long, Long> = emptyMap(),
+    val extendedByPid: Map<Long, ProcessMetricSample> = emptyMap(),
+)
+
+/** Historical values that are useful as trends but are intentionally hidden until selected. */
+data class ProcessMetricSample(
+    val threadCount: Long? = null,
+    val readBytes: Long? = null,
+    val writeBytes: Long? = null,
+    val pageFaults: Long? = null,
+    val contextSwitches: Long? = null,
+    val openFileDescriptors: Long? = null,
+    val metaspaceUsedMb: Long? = null,
+    val youngGcCount: Long? = null,
+    val oldGcCount: Long? = null,
 )
 
 /** Full immutable state the Live Monitor renders. */

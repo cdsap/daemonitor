@@ -87,4 +87,27 @@ data class GradleProcess(
      * false means probed/typed but unavailable.
      */
     val liveHeap: LiveJvmHeap? = null,
+    // Extended OS/JVM metrics supplied by daemonitor-cored. Null means unavailable on the
+    // current platform or for the selected process; it is never a synthetic zero.
+    val virtualMemoryMb: Long? = null,
+    val swapMemoryMb: Long? = null,
+    val threadCount: Long? = null,
+    val readBytes: Long? = null,
+    val writeBytes: Long? = null,
+    val readOperations: Long? = null,
+    val writeOperations: Long? = null,
+    val minorPageFaults: Long? = null,
+    val majorPageFaults: Long? = null,
+    val voluntaryContextSwitches: Long? = null,
+    val involuntaryContextSwitches: Long? = null,
+    val openFileDescriptors: Long? = null,
+    val metaspaceUsedMb: Long? = null,
+    val metaspaceCommittedMb: Long? = null,
+    val youngGcCount: Long? = null,
+    val youngGcTimeMs: Long? = null,
+    val oldGcCount: Long? = null,
+    val oldGcTimeMs: Long? = null,
+    val javaVersion: String? = null,
+    val javaVendor: String? = null,
+    val activeProcessorCount: Long? = null,
 )
