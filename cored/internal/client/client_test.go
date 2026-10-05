@@ -3,14 +3,74 @@ package client_test
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/cdsap/daemonitor/cored/internal/api"
 	"github.com/cdsap/daemonitor/cored/internal/client"
 )
+
+type recordingTransport struct {
+	request *http.Request
+}
+
+func (t *recordingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	t.request = r
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(`{"count":0,"builds":[]}`)),
+		Header:     make(http.Header),
+		Request:    r,
+	}, nil
+}
+
+func TestBuildsForDaemonRequestsPIDAndStartTime(t *testing.T) {
+	transport := &recordingTransport{}
+	c := &client.Client{HTTP: &http.Client{Transport: transport}}
+	if _, err := c.BuildsForDaemon(context.Background(), 9, 200, 20); err != nil {
+		t.Fatal(err)
+	}
+	query := transport.request.URL.Query()
+	if query.Get("pid") != "9" || query.Get("start_time_ms") != "200" || query.Get("limit") != "20" {
+		t.Fatalf("query=%v", query)
+	}
+}
+
+func TestBuildsFilteredSendsCoreSideQuery(t *testing.T) {
+	var got *http.Request
+	c := client.New("unused")
+	c.HTTP = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		got = req
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"count":0,"builds":[]}`)),
+			Header:     make(http.Header),
+			Request:    req,
+		}, nil
+	})}
+
+	if _, err := c.BuildsFiltered(context.Background(), client.BuildQuery{
+		Limit: 25, PID: 42, Project: "/work/demo", Status: "FAILED",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.URL.Path != "/v1/builds" {
+		t.Fatalf("request=%v", got)
+	}
+	q := got.URL.Query()
+	if q.Get("limit") != "25" || q.Get("pid") != "42" || q.Get("project") != "/work/demo" || q.Get("status") != "FAILED" {
+		t.Fatalf("query=%v", q)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
 
 func TestClientProcessesAgainstLiveServer(t *testing.T) {
 	// Keep the socket path short: macOS sun_path is ~104 bytes.

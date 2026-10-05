@@ -1,7 +1,7 @@
 package io.github.cdsap.daemonitor.coreipc
 
-import io.github.cdsap.daemonitor.application.BuildSource
 import io.github.cdsap.daemonitor.application.DaemonLogSource
+import io.github.cdsap.daemonitor.application.MonitoringMode
 import io.github.cdsap.daemonitor.application.ProcessSource
 import io.github.cdsap.daemonitor.platform.AppDirectories
 import java.nio.file.Path
@@ -10,15 +10,14 @@ import java.nio.file.Path
 data class GoCoreWiring(
     val processSource: ProcessSource? = null,
     val logSource: DaemonLogSource? = null,
-    val buildSource: BuildSource? = null,
-    val persistSamples: Boolean = true,
+    val mode: MonitoringMode = MonitoringMode.Local,
     /** Human-readable stderr/log line when Go core is active; null when JVM collector is used. */
     val banner: String? = null,
 )
 
 /**
  * Build Go-core IPC sources for [coreSocket]. When the core's `db_path` matches [databasePath],
- * sample/build persistence stays with cored (`persistSamples = false`, no HTTP build import).
+ * sample/build persistence stays with cored (`SharedCoreOwnedPersistence`, no HTTP build import).
  */
 fun wireGoCore(
     coreSocket: Path?,
@@ -30,8 +29,11 @@ fun wireGoCore(
     return GoCoreWiring(
         processSource = GoCoreProcessSource(coreSocket),
         logSource = GoCoreDaemonLogSource(coreSocket),
-        buildSource = if (owns) null else GoCoreBuildSource(coreSocket),
-        persistSamples = !owns,
+        mode = if (owns) {
+            MonitoringMode.SharedCoreOwnedPersistence
+        } else {
+            MonitoringMode.RemoteBuilds(GoCoreBuildSource(coreSocket))
+        },
         banner = if (owns) {
             "Reading live processes/logs from Go core at $coreSocket " +
                 "(shared DB $databasePath — core owns sample/build writes)"

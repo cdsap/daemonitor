@@ -150,6 +150,7 @@ class WatcherDatabase private constructor(
             sanitizedQuery,
             sanitizedQuery,
             sanitizedQuery,
+            sanitizedQuery,
             limit.coerceQueryLimit(),
         ).executeAsList().map { it.toDomain() }
     }

@@ -8,9 +8,48 @@ import (
 
 // Sample is live heap usage in megabytes (floor division from KB tool output).
 type Sample struct {
-	UsedMB      int64
-	CommittedMB int64
-	Source      string // "jcmd" | "jstat"
+	UsedMB               int64
+	CommittedMB          int64
+	Source               string // "jcmd" | "jstat"
+	MetaspaceUsedMB      *int64
+	MetaspaceCommittedMB *int64
+	YoungGCCount         *int64
+	YoungGCTimeMs        *int64
+	OldGCCount           *int64
+	OldGCTimeMs          *int64
+	JavaVersion          *string
+	JavaVendor           *string
+	ActiveProcessorCount *int64
+}
+
+// ParseJcmdVMInfo extracts optional JVM identity and processor information.
+func ParseJcmdVMInfo(out string) (version, vendor *string, processors *int64) {
+	for _, line := range strings.Split(out, "\n") {
+		trimmed := strings.TrimSpace(line)
+		lower := strings.ToLower(trimmed)
+		if strings.Contains(lower, "version") && strings.Contains(trimmed, `"`) {
+			if start := strings.Index(trimmed, `"`); start >= 0 {
+				if end := strings.Index(trimmed[start+1:], `"`); end >= 0 {
+					v := trimmed[start+1 : start+1+end]
+					version = &v
+				}
+			}
+			fields := strings.Fields(trimmed)
+			if len(fields) > 0 {
+				v := fields[0]
+				vendor = &v
+			}
+		}
+		if idx := strings.Index(lower, "available processors:"); idx >= 0 {
+			fields := strings.Fields(trimmed[idx+len("available processors:"):])
+			if len(fields) > 0 {
+				if n, err := strconv.ParseInt(fields[0], 10, 64); err == nil {
+					processors = &n
+				}
+			}
+		}
+	}
+	return
 }
 
 // ParseJcmdHeapInfo parses `jcmd <pid> GC.heap_info` output.
@@ -18,8 +57,14 @@ type Sample struct {
 //
 //	garbage-first heap   total reserved 262144K, committed 262144K, used 36447K [...]
 func ParseJcmdHeapInfo(out string) (Sample, error) {
+	var metaspaceUsed, metaspaceCommitted *int64
+	var heapUsed, heapCommitted *int64
 	for _, line := range strings.Split(out, "\n") {
 		lower := strings.ToLower(line)
+		if strings.Contains(lower, "metaspace") {
+			metaspaceUsed = parseJcmdMetaspace(line, "used")
+			metaspaceCommitted = parseJcmdMetaspace(line, "committed")
+		}
 		if !strings.Contains(lower, "committed") || !strings.Contains(lower, "used") {
 			continue
 		}
@@ -31,14 +76,15 @@ func ParseJcmdHeapInfo(out string) (Sample, error) {
 		if !okC || !okU {
 			continue
 		}
-		return Sample{
-			UsedMB:      kbToMB(usedKB),
-			CommittedMB: kbToMB(committedKB),
-			Source:      "jcmd",
-		}, nil
+		heapUsed, heapCommitted = ptrInt64(kbToMB(usedKB)), ptrInt64(kbToMB(committedKB))
 	}
-	return Sample{}, fmt.Errorf("jcmd GC.heap_info: no heap used/committed line")
+	if heapUsed == nil || heapCommitted == nil {
+		return Sample{}, fmt.Errorf("jcmd GC.heap_info: no heap used/committed line")
+	}
+	return Sample{UsedMB: *heapUsed, CommittedMB: *heapCommitted, Source: "jcmd", MetaspaceUsedMB: metaspaceUsed, MetaspaceCommittedMB: metaspaceCommitted}, nil
 }
+
+func ptrInt64(v int64) *int64 { return &v }
 
 // ParseJstatGC parses one sample of `jstat -gc <pid>` (header + data row).
 // Used ≈ S0U+S1U+EU+OU; committed ≈ S0C+S1C+EC+OC (all KB). Missing columns treated as 0.
@@ -67,16 +113,74 @@ func ParseJstatGC(out string) (Sample, error) {
 		}
 		return v
 	}
+	getInt := func(name string) (int64, bool) {
+		i, ok := idx[name]
+		if !ok || i >= len(values) {
+			return 0, false
+		}
+		v, err := strconv.ParseInt(values[i], 10, 64)
+		return v, err == nil
+	}
+	getMillis := func(name string) (int64, bool) {
+		v, ok := getValue(name, idx, values)
+		if !ok {
+			return 0, false
+		}
+		return int64(v * 1000), true
+	}
+	getMB := func(name string) (int64, bool) {
+		v, ok := getValue(name, idx, values)
+		if !ok {
+			return 0, false
+		}
+		return kbToMB(v), true
+	}
 	usedKB := get("S0U") + get("S1U") + get("EU") + get("OU")
 	committedKB := get("S0C") + get("S1C") + get("EC") + get("OC")
 	if committedKB <= 0 && usedKB <= 0 {
 		return Sample{}, fmt.Errorf("jstat -gc: zero used and committed")
 	}
+	var youngCount, oldCount *int64
+	var youngTime, oldTime *int64
+	if v, ok := getInt("YGC"); ok {
+		youngCount = &v
+	}
+	if v, ok := getMillis("YGCT"); ok {
+		youngTime = &v
+	}
+	if v, ok := getInt("FGC"); ok {
+		oldCount = &v
+	}
+	if v, ok := getMillis("FGCT"); ok {
+		oldTime = &v
+	}
+	var metaspaceUsed, metaspaceCommitted *int64
+	if v, ok := getMB("MU"); ok {
+		metaspaceUsed = &v
+	}
+	if v, ok := getMB("MC"); ok {
+		metaspaceCommitted = &v
+	}
 	return Sample{
-		UsedMB:      kbToMB(usedKB),
-		CommittedMB: kbToMB(committedKB),
-		Source:      "jstat",
+		UsedMB:          kbToMB(usedKB),
+		CommittedMB:     kbToMB(committedKB),
+		Source:          "jstat",
+		MetaspaceUsedMB: metaspaceUsed, MetaspaceCommittedMB: metaspaceCommitted,
+		YoungGCCount: youngCount, YoungGCTimeMs: youngTime,
+		OldGCCount: oldCount, OldGCTimeMs: oldTime,
 	}, nil
+}
+
+func parseJcmdMetaspace(line, label string) *int64 {
+	if !strings.Contains(strings.ToLower(line), "metaspace") {
+		return nil
+	}
+	v, ok := findKBToken(line, label)
+	if !ok {
+		return nil
+	}
+	result := kbToMB(v)
+	return &result
 }
 
 func kbToMB(kb float64) int64 {
@@ -84,6 +188,15 @@ func kbToMB(kb float64) int64 {
 		return 0
 	}
 	return int64(kb) / 1024
+}
+
+func getValue(name string, idx map[string]int, values []string) (float64, bool) {
+	i, ok := idx[name]
+	if !ok || i >= len(values) {
+		return 0, false
+	}
+	v, err := strconv.ParseFloat(values[i], 64)
+	return v, err == nil
 }
 
 func findKBToken(line, label string) (float64, bool) {

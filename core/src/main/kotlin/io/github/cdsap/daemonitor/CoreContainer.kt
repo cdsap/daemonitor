@@ -1,7 +1,7 @@
 package io.github.cdsap.daemonitor
 
-import io.github.cdsap.daemonitor.application.BuildSource
 import io.github.cdsap.daemonitor.application.DaemonLogSource
+import io.github.cdsap.daemonitor.application.MonitoringMode
 import io.github.cdsap.daemonitor.application.ProcessSource
 import io.github.cdsap.daemonitor.collect.DaemonLogWatcher
 import io.github.cdsap.daemonitor.collect.ProcessCollector
@@ -20,14 +20,13 @@ class CoreContainer(
     ambientEnvNames: Set<String> = System.getenv().keys.toSet(),
     processSource: ProcessSource? = null,
     logSource: DaemonLogSource? = null,
-    buildSource: BuildSource? = null,
-    /** When true, daemonitor-cored owns sample/build inserts in [databasePath] (same-file open). */
-    persistSamples: Boolean = true,
+    mode: MonitoringMode = MonitoringMode.Local,
 ) : AutoCloseable {
     val processSource: ProcessSource = processSource ?: ProcessCollector()
     val daemonLogSource: DaemonLogSource = logSource ?: DaemonLogWatcher()
     val database = WatcherDatabase.open(databasePath)
     val settingsStore = SettingsStore(settingsPath)
+    val settingsService = SettingsService(settingsStore, database, clock)
     val buildAggregator = BuildAggregator(
         sampleProvider = database,
         ambientEnvNames = ambientEnvNames,
@@ -41,8 +40,7 @@ class CoreContainer(
         aggregator = buildAggregator,
         builds = database,
         samples = database,
-        buildSource = buildSource,
-        persistSamples = persistSamples,
+        mode = mode,
         retentionDays = { settingsStore.load().retentionDays },
         clock = clock,
     )

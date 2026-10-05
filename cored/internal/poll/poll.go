@@ -79,6 +79,7 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 		seen[pid] = struct{}{}
 
 		rssMB := int64(0)
+		osMetrics := collectOSMetrics(ctx, p)
 		if mem, err := p.MemoryInfoWithContext(ctx); err == nil && mem != nil {
 			rssMB = int64(mem.RSS) / (1024 * 1024)
 		}
@@ -133,6 +134,7 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 		usedMB, committedMB, maxMB, heapSampledAt, heapAvail := liveHeapFields(
 			ctx, c.Heap, p, pid, kind, startMs, now,
 		)
+		jvmMetrics := collectJVMMetrics(ctx, c.Heap, p, pid, kind, startMs, now)
 		out = append(out, model.Process{
 			PID:              pid,
 			ParentPID:        parentPID,
@@ -142,19 +144,31 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 			WorkingDirectory: cwd,
 			ProjectPath:      project,
 			RSSMemoryMB:      rssMB,
-			CPUPercent:       cpuPct,
-			MaxHeapMB:        jvm.MaxHeapMB,
-			MinHeapMB:        jvm.MinHeapMB,
-			GC:               jvm.GC,
-			HeapUsedMB:       usedMB,
-			HeapCommittedMB:  committedMB,
-			HeapMaxMB:        maxMB,
-			HeapSampledAtMs:  heapSampledAt,
-			HeapAvailable:    heapAvail,
-			StartTimeMs:      startMs,
-			Status:           status,
-			Automated:        IsNonInteractive(cmdline),
-			SampledAtMs:      now,
+			VirtualMemoryMB:  osMetrics.virtualMemoryMB, SwapMemoryMB: osMetrics.swapMemoryMB,
+			ThreadCount: osMetrics.threadCount, ReadBytes: osMetrics.readBytes, WriteBytes: osMetrics.writeBytes,
+			ReadOperations: osMetrics.readOperations, WriteOperations: osMetrics.writeOperations,
+			MinorPageFaults: osMetrics.minorPageFaults, MajorPageFaults: osMetrics.majorPageFaults,
+			VoluntaryContextSwitches:   osMetrics.voluntaryContextSwitches,
+			InvoluntaryContextSwitches: osMetrics.involuntaryContextSwitches,
+			OpenFileDescriptors:        osMetrics.openFileDescriptors,
+			CPUPercent:                 cpuPct,
+			MaxHeapMB:                  jvm.MaxHeapMB,
+			MinHeapMB:                  jvm.MinHeapMB,
+			GC:                         jvm.GC,
+			HeapUsedMB:                 usedMB,
+			HeapCommittedMB:            committedMB,
+			HeapMaxMB:                  maxMB,
+			HeapSampledAtMs:            heapSampledAt,
+			HeapAvailable:              heapAvail,
+			MetaspaceUsedMB:            jvmMetrics.MetaspaceUsedMB, MetaspaceCommittedMB: jvmMetrics.MetaspaceCommittedMB,
+			YoungGCCount: jvmMetrics.YoungGCCount, YoungGCTimeMs: jvmMetrics.YoungGCTimeMs,
+			OldGCCount: jvmMetrics.OldGCCount, OldGCTimeMs: jvmMetrics.OldGCTimeMs,
+			JavaVersion: jvmMetrics.JavaVersion, JavaVendor: jvmMetrics.JavaVendor,
+			ActiveProcessorCount: jvmMetrics.ActiveProcessorCount,
+			StartTimeMs:          startMs,
+			Status:               status,
+			Automated:            IsNonInteractive(cmdline),
+			SampledAtMs:          now,
 		})
 	}
 
@@ -176,6 +190,49 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 // ShouldProbeLiveHeap mirrors Kotlin: only Gradle/Kotlin daemons are probed.
 func ShouldProbeLiveHeap(kind string) bool {
 	return kind == "GRADLE_DAEMON" || kind == "KOTLIN_DAEMON"
+}
+
+type osMetrics struct {
+	virtualMemoryMB, swapMemoryMB, threadCount             *int64
+	readBytes, writeBytes, readOperations, writeOperations *int64
+	minorPageFaults, majorPageFaults                       *int64
+	voluntaryContextSwitches, involuntaryContextSwitches   *int64
+	openFileDescriptors                                    *int64
+}
+
+func collectOSMetrics(ctx context.Context, p *process.Process) osMetrics {
+	m := osMetrics{}
+	if mem, err := p.MemoryInfoWithContext(ctx); err == nil && mem != nil {
+		m.virtualMemoryMB, m.swapMemoryMB = ptrInt64(int64(mem.VMS)/(1024*1024)), ptrInt64(int64(mem.Swap)/(1024*1024))
+	}
+	if v, err := p.NumThreadsWithContext(ctx); err == nil {
+		m.threadCount = ptrInt64(int64(v))
+	}
+	if io, err := p.IOCountersWithContext(ctx); err == nil && io != nil {
+		m.readBytes, m.writeBytes = ptrInt64(int64(io.ReadBytes)), ptrInt64(int64(io.WriteBytes))
+		m.readOperations, m.writeOperations = ptrInt64(int64(io.ReadCount)), ptrInt64(int64(io.WriteCount))
+	}
+	if faults, err := p.PageFaultsWithContext(ctx); err == nil && faults != nil {
+		m.minorPageFaults, m.majorPageFaults = ptrInt64(int64(faults.MinorFaults)), ptrInt64(int64(faults.MajorFaults))
+	}
+	if switches, err := p.NumCtxSwitchesWithContext(ctx); err == nil && switches != nil {
+		m.voluntaryContextSwitches, m.involuntaryContextSwitches = ptrInt64(switches.Voluntary), ptrInt64(switches.Involuntary)
+	}
+	if v, err := p.NumFDsWithContext(ctx); err == nil {
+		m.openFileDescriptors = ptrInt64(int64(v))
+	}
+	return m
+}
+
+func collectJVMMetrics(ctx context.Context, prober *heap.Prober, proc *process.Process, pid int32, kind string, startMs, now int64) heap.Sample {
+	if !ShouldProbeLiveHeap(kind) || int(pid) == os.Getpid() || !sameUID(ctx, proc) || prober == nil {
+		return heap.Sample{}
+	}
+	sample, err := prober.SampleFor(ctx, pid, startMs)
+	if err != nil {
+		return heap.Sample{}
+	}
+	return sample
 }
 
 func liveHeapFields(

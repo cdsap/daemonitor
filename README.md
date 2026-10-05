@@ -63,6 +63,8 @@ daemonitor-cli ps           # one plain snapshot
 daemonitor-cli ps --json    # machine-readable snapshot
 daemonitor-cli ps --project daemonitor --format csv
 daemonitor-cli history --since 1h --limit 500 --format jsonl
+daemonitor-cli ps --format plain       # find the active daemon PID
+daemonitor-cli builds --pid 12345      # show that daemon's build history
 daemonitor-cli ps --watch --poll-interval 5s --until 1m
 daemonitor-cli ps --watch --fail-on-rss 8192
 daemonitor-cli health

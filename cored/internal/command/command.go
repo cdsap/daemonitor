@@ -58,7 +58,7 @@ var flagsWithValue = map[string]bool{
 	"-pid": true, "--pid": true,
 	"-project": true, "--project": true,
 	"-status": true, "--status": true,
-	"-include-logs": true, "--include-logs": true,
+	"-include-logs": false, "--include-logs": false,
 	"-until": true, "--until": true,
 	"-format": true, "--format": true,
 	"-fail-on-rss": true, "--fail-on-rss": true,
@@ -167,7 +167,6 @@ Options:
   --pid PID                Filter by process or daemon PID
   --project TEXT           Filter by project path or name
   --status TEXT            Filter builds by final status
-  --include-logs           Include retained build log snippets (opt-in)
   --watch                  Continuously refresh non-interactive ps output
   --until DURATION         Stop watch mode after this duration
   --fail-on-rss MB         In watch mode, exit 3 when any process reaches this RSS
@@ -305,12 +304,18 @@ func runOneShot(ctx context.Context, opts Options, cmd string, args []string, st
 		if opts.Since > 0 {
 			sinceMs = time.Now().Add(-opts.Since).UnixMilli()
 		}
-		payload, err := c.BuildsFiltered(ctx, limit, sinceMs, opts.PID, opts.Project, opts.Status, opts.IncludeLogs)
+		payload, err := c.BuildsFiltered(ctx, client.BuildQuery{
+			Limit:       limit,
+			SinceMs:     sinceMs,
+			PID:         opts.PID,
+			Project:     opts.Project,
+			Status:      opts.Status,
+			IncludeLogs: opts.IncludeLogs,
+		})
 		if err != nil {
 			fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
 			return 1
 		}
-		payload.Count = len(payload.Builds)
 		if err := writeBuilds(stdout, payload, opts.Output); err != nil {
 			fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
 			return 1
@@ -382,24 +387,6 @@ func filterProcesses(items []model.Process, opts Options) []model.Process {
 			continue
 		}
 		out = append(out, p)
-	}
-	return out
-}
-
-func filterBuilds(items []client.BuildRecord, opts Options) []client.BuildRecord {
-	out := items[:0]
-	project, status := strings.ToLower(opts.Project), strings.ToLower(opts.Status)
-	for _, b := range items {
-		if opts.PID > 0 && b.DaemonPID != opts.PID {
-			continue
-		}
-		if project != "" && !strings.Contains(strings.ToLower(b.ProjectPath), project) {
-			continue
-		}
-		if status != "" && !strings.EqualFold(b.FinalStatus, status) {
-			continue
-		}
-		out = append(out, b)
 	}
 	return out
 }

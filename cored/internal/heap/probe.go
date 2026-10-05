@@ -138,6 +138,9 @@ func (p *Prober) probe(ctx context.Context, pid int32) (Sample, error) {
 		out, err := run(ctx, jcmdPath, fmt.Sprintf("%d", pid), "GC.heap_info")
 		if err == nil {
 			if s, perr := ParseJcmdHeapInfo(out); perr == nil {
+				if info, infoErr := run(ctx, jcmdPath, fmt.Sprintf("%d", pid), "VM.info"); infoErr == nil {
+					s.JavaVersion, s.JavaVendor, s.ActiveProcessorCount = ParseJcmdVMInfo(info)
+				}
 				return s, nil
 			}
 		}

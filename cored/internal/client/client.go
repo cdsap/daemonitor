@@ -99,6 +99,7 @@ type BuildSummary struct {
 type BuildRecord struct {
 	BuildID         string   `json:"build_id"`
 	DaemonPID       int64    `json:"daemon_pid"`
+	StartTimeMs     int64    `json:"start_time_ms"`
 	FinalStatus     string   `json:"final_status"`
 	InferredSource  string   `json:"inferred_source"`
 	Agent           string   `json:"agent"`
@@ -108,38 +109,63 @@ type BuildRecord struct {
 	LogSnippet      string   `json:"log_snippet,omitempty"`
 }
 
-// Builds fetches recent builds.
-func (c *Client) Builds(ctx context.Context, limit int) (BuildsPayload, error) {
-	return c.BuildsFiltered(ctx, limit, 0, 0, "", "", false)
+// BuildQuery describes the filters supported by the core build endpoint.
+type BuildQuery struct {
+	Limit       int
+	SinceMs     int64
+	StartTimeMs int64
+	PID         int64
+	Project     string
+	Status      string
+	IncludeLogs bool
 }
 
-func (c *Client) BuildsFiltered(ctx context.Context, limit int, sinceMs int64, pid int64, project, status string, includeLogs bool) (BuildsPayload, error) {
-	values := url.Values{}
-	if limit > 0 {
-		values.Set("limit", strconv.Itoa(limit))
+// Builds fetches recent builds.
+func (c *Client) Builds(ctx context.Context, limit int) (BuildsPayload, error) {
+	return c.BuildsFiltered(ctx, BuildQuery{Limit: limit})
+}
+
+// BuildsFiltered fetches builds with filters applied by daemonitor-cored.
+func (c *Client) BuildsFiltered(ctx context.Context, query BuildQuery) (BuildsPayload, error) {
+	params := url.Values{}
+	if query.Limit > 0 {
+		params.Set("limit", strconv.Itoa(query.Limit))
 	}
-	if sinceMs > 0 {
-		values.Set("since_ms", strconv.FormatInt(sinceMs, 10))
+	if query.SinceMs > 0 {
+		params.Set("since_ms", strconv.FormatInt(query.SinceMs, 10))
 	}
-	if pid > 0 {
-		values.Set("pid", strconv.FormatInt(pid, 10))
+	if query.StartTimeMs > 0 {
+		params.Set("start_time_ms", strconv.FormatInt(query.StartTimeMs, 10))
 	}
-	if project != "" {
-		values.Set("project", project)
+	if query.PID > 0 {
+		params.Set("pid", strconv.FormatInt(query.PID, 10))
 	}
-	if status != "" {
-		values.Set("status", status)
+	if query.Project != "" {
+		params.Set("project", query.Project)
 	}
-	if includeLogs {
-		values.Set("include_logs", "true")
+	if query.Status != "" {
+		params.Set("status", query.Status)
+	}
+	if query.IncludeLogs {
+		params.Set("include_logs", "true")
 	}
 	path := "/v1/builds"
-	if encoded := values.Encode(); encoded != "" {
+	if encoded := params.Encode(); encoded != "" {
 		path += "?" + encoded
 	}
 	var payload BuildsPayload
 	err := c.getJSON(ctx, path, &payload)
 	return payload, err
+}
+
+// BuildsForDaemonPID fetches history for the daemon currently observed for a PID.
+func (c *Client) BuildsForDaemonPID(ctx context.Context, pid int64, limit int) (BuildsPayload, error) {
+	return c.BuildsFiltered(ctx, BuildQuery{Limit: limit, PID: pid})
+}
+
+// BuildsForDaemon fetches recent builds from the selected daemon lifetime.
+func (c *Client) BuildsForDaemon(ctx context.Context, pid, startTimeMs int64, limit int) (BuildsPayload, error) {
+	return c.BuildsFiltered(ctx, BuildQuery{Limit: limit, StartTimeMs: startTimeMs, PID: pid})
 }
 
 func (c *Client) getJSON(ctx context.Context, path string, dest any) error {

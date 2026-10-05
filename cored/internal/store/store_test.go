@@ -24,12 +24,16 @@ func TestInsertHistoryAndPurge(t *testing.T) {
 	now := time.Now().UnixMilli()
 	cpu := 1.5
 	maxHeap := int64(1024)
+	vms, threads, readBytes, youngGC := int64(2048), int64(42), int64(12345), int64(7)
+	javaVersion, javaVendor := "21.0.1", "Eclipse Adoptium"
 	snap := model.Snapshot{
 		SampledAtMs: now,
 		Processes: []model.Process{{
 			PID: 42, Type: "GRADLE_DAEMON", Name: "java",
-			CommandLine: "GradleDaemon", RSSMemoryMB: 100, CPUPercent: &cpu,
-			MaxHeapMB: &maxHeap, SampledAtMs: now, Status: "R",
+			CommandLine: "GradleDaemon", RSSMemoryMB: 100, VirtualMemoryMB: &vms, ThreadCount: &threads,
+			ReadBytes: &readBytes, YoungGCCount: &youngGC, JavaVersion: &javaVersion, JavaVendor: &javaVendor,
+			CPUPercent: &cpu,
+			MaxHeapMB:  &maxHeap, SampledAtMs: now, Status: "R",
 		}},
 	}
 	if err := s.InsertSnapshot(snap); err != nil {
@@ -46,6 +50,15 @@ func TestInsertHistoryAndPurge(t *testing.T) {
 	}
 	if hist[0].MaxHeapMB == nil || *hist[0].MaxHeapMB != 1024 {
 		t.Fatalf("max heap=%v", hist[0].MaxHeapMB)
+	}
+	if hist[0].VirtualMemoryMB == nil || *hist[0].VirtualMemoryMB != vms || hist[0].ThreadCount == nil || *hist[0].ThreadCount != threads {
+		t.Fatalf("OS metrics: vms=%v threads=%v", hist[0].VirtualMemoryMB, hist[0].ThreadCount)
+	}
+	if hist[0].ReadBytes == nil || *hist[0].ReadBytes != readBytes || hist[0].YoungGCCount == nil || *hist[0].YoungGCCount != youngGC {
+		t.Fatalf("counter metrics: read=%v young=%v", hist[0].ReadBytes, hist[0].YoungGCCount)
+	}
+	if hist[0].JavaVersion == nil || *hist[0].JavaVersion != javaVersion || hist[0].JavaVendor == nil || *hist[0].JavaVendor != javaVendor {
+		t.Fatalf("JVM identity: version=%v vendor=%v", hist[0].JavaVersion, hist[0].JavaVendor)
 	}
 
 	old := model.Snapshot{
@@ -126,40 +139,116 @@ func TestBuildsTableMatchesAppWatcherColumns(t *testing.T) {
 	}
 }
 
-func TestFilteredBuildHistoryComposesFiltersAndSummarizesMatches(t *testing.T) {
-	s, err := store.Open(filepath.Join(t.TempDir(), "filtered-builds.sqlite"))
+func TestListBuildsFilteredAppliesDaemonProjectAndStatus(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "builds.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	now := time.Now().UnixMilli()
-	duration := 2.0
 	for _, b := range []builds.Build{
-		{BuildID: "success", DaemonPID: 42, DaemonIdentity: "current", ProjectPath: "/work/demo", StartTimeMs: now - 1_000, DurationSeconds: &duration, FinalStatus: builds.StatusSuccess, LogSnippet: "secret"},
-		{BuildID: "failed", DaemonPID: 42, DaemonIdentity: "current", ProjectPath: "/work/demo", StartTimeMs: now - 2_000, DurationSeconds: &duration, FinalStatus: builds.StatusFailed},
-		{BuildID: "other-project", DaemonPID: 42, DaemonIdentity: "current", ProjectPath: "/work/other", StartTimeMs: now - 3_000, FinalStatus: builds.StatusFailed},
+		{BuildID: "match", DaemonPID: 42, DaemonIdentity: "current-uid", ProjectPath: "/work/demo", FinalStatus: builds.StatusFailed},
+		{BuildID: "other-pid", DaemonPID: 7, DaemonIdentity: "current-uid", ProjectPath: "/work/demo", FinalStatus: builds.StatusFailed},
+		{BuildID: "other-status", DaemonPID: 42, DaemonIdentity: "current-uid", ProjectPath: "/work/demo", FinalStatus: builds.StatusSuccess},
 	} {
 		if err := s.InsertBuild(b); err != nil {
 			t.Fatal(err)
 		}
 	}
-	query := store.BuildQuery{SinceMs: now - time.Hour.Milliseconds(), DaemonPID: 42, DaemonIdentity: "current", Project: "demo", Limit: 1}
-	rows, err := s.ListBuildsFiltered(query)
+	rows, err := s.ListBuildsFiltered(store.BuildFilters{PID: 42, Project: "DEMO", Status: "failed"}, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 1 || rows[0].BuildID != "success" {
-		t.Fatalf("rows=%v", rows)
-	}
-	summary, err := s.SummarizeBuilds(query)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if summary.Count != 2 || summary.FailureCount != 1 || summary.LatestStatus != string(builds.StatusSuccess) || summary.AverageDurationSeconds == nil || *summary.AverageDurationSeconds != duration {
-		t.Fatalf("summary=%+v", summary)
+	if len(rows) != 1 || rows[0].BuildID != "match" {
+		t.Fatalf("filtered builds=%+v", rows)
 	}
 }
 
+func TestListBuildsForDaemonMatchesIdentityAsWellAsPID(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "scoped-builds.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	for _, b := range []builds.Build{
+		{BuildID: "other", DaemonPID: 7, DaemonIdentity: "daemon-a", StartTimeMs: 400, FinalStatus: builds.StatusSuccess},
+		{BuildID: "old", DaemonPID: 42, DaemonIdentity: "daemon-a", StartTimeMs: 100, FinalStatus: builds.StatusSuccess},
+		{BuildID: "newest", DaemonPID: 42, DaemonIdentity: "daemon-a", StartTimeMs: 300, FinalStatus: builds.StatusSuccess},
+		{BuildID: "different-identity", DaemonPID: 42, DaemonIdentity: "daemon-b", StartTimeMs: 500, FinalStatus: builds.StatusSuccess},
+		{BuildID: "middle", DaemonPID: 42, DaemonIdentity: "daemon-a", StartTimeMs: 200, FinalStatus: builds.StatusSuccess},
+	} {
+		if err := s.InsertBuild(b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, err := s.ListBuildsForDaemon(42, "daemon-a", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := []string{rows[0].BuildID, rows[1].BuildID}; !equalStrings(got, []string{"newest", "middle"}) {
+		t.Fatalf("build ids=%v", got)
+	}
+}
+
+func TestListBuildsForDaemonSinceExcludesEarlierPIDLifetime(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "scoped-since.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	for _, b := range []builds.Build{
+		{BuildID: "old", DaemonPID: 9, StartTimeMs: 100, ProjectPath: "/old", FinalStatus: builds.StatusSuccess},
+		{BuildID: "current", DaemonPID: 9, StartTimeMs: 200, ProjectPath: "/current", FinalStatus: builds.StatusSuccess},
+		{BuildID: "other", DaemonPID: 10, StartTimeMs: 300, ProjectPath: "/other", FinalStatus: builds.StatusSuccess},
+	} {
+		if err := s.InsertBuild(b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, err := s.ListBuildsForDaemonSince(9, 200, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].BuildID != "current" {
+		t.Fatalf("scoped rows=%v", rows)
+	}
+}
+
+func TestListBuildsForDaemonReturnsEmptyForInvalidIdentifiers(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "builds.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	rows, err := s.ListBuildsForDaemon(42, "missing", 10)
+	if err != nil || len(rows) != 0 {
+		t.Fatalf("rows=%v err=%v", rows, err)
+	}
+	for _, tc := range []struct {
+		pid      int64
+		identity string
+	}{
+		{pid: 0, identity: "daemon-a"},
+		{pid: -1, identity: "daemon-a"},
+		{pid: 42, identity: ""},
+		{pid: 42, identity: "   "},
+	} {
+		if rows, err := s.ListBuildsForDaemon(tc.pid, tc.identity, 10); err != nil || len(rows) != 0 {
+			t.Errorf("pid=%d identity=%q rows=%v err=%v", tc.pid, tc.identity, rows, err)
+		}
+	}
+}
+
+func equalStrings(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}
 func TestMigratesLegacyBuildsColumns(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "legacy.sqlite")

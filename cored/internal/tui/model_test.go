@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/clipperhouse/displaywidth"
 
+	"github.com/cdsap/daemonitor/cored/internal/client"
 	"github.com/cdsap/daemonitor/cored/internal/model"
 	"github.com/cdsap/daemonitor/cored/internal/render"
 )
@@ -180,13 +181,13 @@ func TestErrorKeepsLastSnapshot(t *testing.T) {
 }
 
 func TestAdaptiveColumns(t *testing.T) {
-	if n := len(columnsForWidth(120).ids); n < 8 {
+	if n := len(columnsForWidth(120).ids); n < 9 {
 		t.Fatalf("wide columns=%d", n)
 	}
-	if n := len(columnsForWidth(90).ids); n != 7 {
+	if n := len(columnsForWidth(90).ids); n != 8 {
 		t.Fatalf("medium columns=%d", n)
 	}
-	if n := len(columnsForWidth(70).ids); n != 5 {
+	if n := len(columnsForWidth(70).ids); n != 6 {
 		t.Fatalf("narrow columns=%d", n)
 	}
 }
@@ -263,6 +264,76 @@ func TestGoldenEmptyAndDetails(t *testing.T) {
 	}
 }
 
+func TestDetailsBuildHistoryLoadingEmptyAndFailureStates(t *testing.T) {
+	p := model.Process{PID: 9, Type: "GRADLE_DAEMON", StartTimeMs: 200}
+	m := NewModel(Config{Now: fixedNow, NoColor: true, Client: client.New("/tmp/missing-daemonitor.sock")})
+	m.width, m.height = 80, 24
+	m.detailsOpen = true
+	m.selectedPID = int64(p.PID)
+	m.detailProcess = &p
+	m.detailLoading = true
+	if body := m.View().Content; !strings.Contains(body, "Recent builds:") || !strings.Contains(body, "Loading…") {
+		t.Fatalf("loading state missing: %s", body)
+	}
+
+	m.detailLoading = false
+	if body := m.View().Content; !strings.Contains(body, "No build history for this daemon.") {
+		t.Fatalf("empty state missing: %s", body)
+	}
+
+	next, _ := m.Update(detailsLoadedMsg{pid: 9, startMs: 200, buildsErr: errString("HTTP 500")})
+	m = next.(Model)
+	if body := m.View().Content; !strings.Contains(body, "Unavailable: build history unavailable: HTTP 500") {
+		t.Fatalf("failure state missing: %s", body)
+	}
+}
+
+func TestDetailsShowScopedBuildFieldsAndFitNarrowWidth(t *testing.T) {
+	duration := 1.25
+	p := model.Process{PID: 9, Type: "GRADLE_DAEMON", StartTimeMs: 200}
+	m := NewModel(Config{Now: fixedNow, NoColor: true})
+	m.width, m.height = 40, 20
+	m.detailsOpen = true
+	m.selectedPID = int64(p.PID)
+	m.detailProcess = &p
+	m.detailBuilds = client.BuildsPayload{Builds: []client.BuildRecord{{
+		FinalStatus: "SUCCESS", ProjectPath: "/very/long/project/path", DurationSeconds: &duration,
+		StartTimeMs: 300, InferredSource: "TERMINAL", Agent: "Claude Code",
+	}}}
+	m.width = 120
+	body := m.View().Content
+	start := "start=" + formatStart(300)
+	for _, want := range []string{"SUCCESS", "project=/very/long/project/path", "duration=1.3s", start, "source=TERMINAL", "agent=Claude Code"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("build summary missing %q: %s", want, body)
+		}
+	}
+	m.width = 40
+	body = m.View().Content
+	if !strings.Contains(body, "SUCCESS") || !strings.Contains(body, "Recent builds:") {
+		t.Fatalf("build summary missing: %s", body)
+	}
+	for _, line := range strings.Split(body, "\n") {
+		if displayLen(line) > m.width {
+			t.Fatalf("line exceeds width (%d): %q", m.width, line)
+		}
+	}
+}
+
+func TestDetailsIgnoreBuildsForReplacedPID(t *testing.T) {
+	p := model.Process{PID: 9, Type: "GRADLE_DAEMON", StartTimeMs: 200}
+	m := NewModel(Config{Now: fixedNow, NoColor: true})
+	m.detailsOpen = true
+	m.selectedPID = int64(p.PID)
+	m.detailProcess = &p
+	m.detailLoading = true
+	next, _ := m.Update(detailsLoadedMsg{pid: 9, startMs: 100, builds: client.BuildsPayload{Builds: []client.BuildRecord{{FinalStatus: "SUCCESS"}}}})
+	m = next.(Model)
+	if !m.detailLoading || len(m.detailBuilds.Builds) != 0 {
+		t.Fatalf("stale details result applied: loading=%v builds=%v", m.detailLoading, m.detailBuilds.Builds)
+	}
+}
+
 func TestFormatRowUsesLiveHeapValues(t *testing.T) {
 	used := int64(512)
 	committed := int64(1024)
@@ -270,6 +341,14 @@ func TestFormatRowUsesLiveHeapValues(t *testing.T) {
 	row := formatRow(p, columnSet{ids: []columnID{colHeapUsed, colHeapCmt}}, fixedNow().UnixMilli())
 	if !strings.Contains(row, "512 MB") || !strings.Contains(row, "1 GB") {
 		t.Fatalf("row=%q missing live heap values", row)
+	}
+}
+
+func TestFormatRowIncludesGarbageCollector(t *testing.T) {
+	gc := "G1"
+	row := formatRow(model.Process{GC: &gc}, columnSet{ids: []columnID{colGC}}, fixedNow().UnixMilli())
+	if !strings.Contains(row, "G1") {
+		t.Fatalf("row=%q missing GC type", row)
 	}
 }
 

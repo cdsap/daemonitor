@@ -1,8 +1,8 @@
 package io.github.cdsap.daemonitor
 
-import io.github.cdsap.daemonitor.application.BuildSource
 import io.github.cdsap.daemonitor.application.DaemonLogSource
 import io.github.cdsap.daemonitor.application.DefaultDaemonitorQueryService
+import io.github.cdsap.daemonitor.application.MonitoringMode
 import io.github.cdsap.daemonitor.application.ProcessSource
 import io.github.cdsap.daemonitor.application.update.UpdateService
 import io.github.cdsap.daemonitor.config.MonitoringConfig
@@ -33,8 +33,7 @@ class AppContainer(
     distribution: DistributionChannel = BuildInfo.current.distribution,
     processSource: ProcessSource? = null,
     logSource: DaemonLogSource? = null,
-    buildSource: BuildSource? = null,
-    persistSamples: Boolean = true,
+    mode: MonitoringMode = MonitoringMode.Local,
 ) : AutoCloseable {
     private val core = CoreContainer(
         databasePath = databasePath,
@@ -43,12 +42,12 @@ class AppContainer(
         ambientEnvNames = ambientEnvNames,
         processSource = processSource,
         logSource = logSource,
-        buildSource = buildSource,
-        persistSamples = persistSamples,
+        mode = mode,
     )
 
     val database: WatcherDatabase = core.database
     val settingsStore: SettingsStore = core.settingsStore
+    val settingsService: SettingsService = core.settingsService
     val buildAggregator: BuildAggregator = core.buildAggregator
     val runtime: WatcherRuntime = core.runtime
     val processSource: ProcessSource = core.processSource
@@ -65,7 +64,7 @@ class AppContainer(
     ): WatcherService = WatcherService(
         runtime = runtime,
         historyService = HistoryService(database),
-        settingsService = SettingsService(settingsStore, database, clock),
+        settingsService = settingsService,
         mcpController = McpServiceController.create(::createMcpServer),
         updateService = updateService,
         monitoringService = MonitoringService(

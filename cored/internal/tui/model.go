@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -139,12 +140,14 @@ type snapshotFailedMsg struct {
 }
 
 type detailsLoadedMsg struct {
-	pid     int64
-	log     *logs.DaemonLog
-	tail    *logs.Tail
-	history []model.Process
-	builds  client.BuildsPayload
-	err     error
+	pid       int64
+	startMs   int64
+	log       *logs.DaemonLog
+	tail      *logs.Tail
+	history   []model.Process
+	builds    client.BuildsPayload
+	buildsErr error
+	err       error
 }
 
 type killFailure struct {
@@ -215,7 +218,7 @@ func (m Model) fetchSnapshot() tea.Cmd {
 	}
 }
 
-func (m Model) fetchDetails(pid int64) tea.Cmd {
+func (m Model) fetchDetails(pid, startMs int64) tea.Cmd {
 	if m.client == nil {
 		return nil
 	}
@@ -237,8 +240,8 @@ func (m Model) fetchDetails(pid int64) tea.Cmd {
 		}
 		tail, tailErr := c.DaemonLogTail(ctx, pid)
 		history, _ = c.History(ctx, time.Now().Add(-30*time.Minute).UnixMilli(), 500)
-		builds, _ = c.Builds(ctx, 20)
-		msg := detailsLoadedMsg{pid: pid, log: logMeta, history: history.Processes, builds: builds}
+		builds, buildsErr := c.BuildsForDaemon(ctx, pid, startMs, 20)
+		msg := detailsLoadedMsg{pid: pid, startMs: startMs, log: logMeta, history: history.Processes, builds: builds, buildsErr: buildsErr}
 		if tailErr != nil {
 			msg.err = tailErr
 			return msg
@@ -300,6 +303,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.detailsOpen || m.selectedPID != msg.pid {
 			return m, nil
 		}
+		if m.detailProcess == nil || m.detailProcess.StartTimeMs != msg.startMs {
+			return m, nil
+		}
 		m.detailLoading = false
 		m.detailLog = msg.log
 		m.detailTail = msg.tail
@@ -307,6 +313,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.detailBuilds = msg.builds
 		if msg.err != nil {
 			m.detailError = msg.err.Error()
+		} else if msg.buildsErr != nil {
+			m.detailError = "build history unavailable: " + msg.buildsErr.Error()
 		} else {
 			m.detailError = ""
 		}
@@ -417,7 +425,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.detailHistory = nil
 			m.detailBuilds = client.BuildsPayload{}
 			m.detailError = ""
-			return m, m.fetchDetails(int64(p.PID))
+			return m, m.fetchDetails(int64(p.PID), p.StartTimeMs)
 		}
 	case "?":
 		m.helpOpen = !m.helpOpen
@@ -793,31 +801,31 @@ func (m Model) renderDetails() string {
 		heading = detailHeadingStyle(m.noColor).Render(heading)
 	}
 	fmt.Fprintf(&b, "%s\n\n", heading)
-	writeField(&b, "Type", render.TypeDisplay(p.Type))
-	writeField(&b, "PID", fmt.Sprintf("%d", p.PID))
-	writeField(&b, "Name", na(p.Name))
-	writeField(&b, "Project", render.ProjectName(*p))
+	writeDetailField(&b, m.width, "Type", render.TypeDisplay(p.Type))
+	writeDetailField(&b, m.width, "PID", fmt.Sprintf("%d", p.PID))
+	writeDetailField(&b, m.width, "Name", na(p.Name))
+	writeDetailField(&b, m.width, "Project", render.ProjectName(*p))
 	if p.WorkingDirectory != nil {
-		writeField(&b, "Working dir", *p.WorkingDirectory)
+		writeDetailField(&b, m.width, "Working dir", *p.WorkingDirectory)
 	} else {
-		writeField(&b, "Working dir", "n/a")
+		writeDetailField(&b, m.width, "Working dir", "n/a")
 	}
-	writeField(&b, "RSS", render.RSSText(p.RSSMemoryMB))
-	writeField(&b, "CPU", render.CPUText(p.CPUPercent))
-	writeField(&b, "Xmx", render.HeapLimitText(p.MaxHeapMB))
-	writeField(&b, "Heap used", render.HeapText(p.HeapUsedMB))
-	writeField(&b, "Heap committed", render.HeapText(p.HeapCommittedMB))
-	writeField(&b, "Start", formatStart(p.StartTimeMs))
-	writeField(&b, "Uptime", render.Uptime(p.StartTimeMs, now))
+	writeDetailField(&b, m.width, "RSS", render.RSSText(p.RSSMemoryMB))
+	writeDetailField(&b, m.width, "CPU", render.CPUText(p.CPUPercent))
+	writeDetailField(&b, m.width, "Xmx", render.HeapLimitText(p.MaxHeapMB))
+	writeDetailField(&b, m.width, "Heap used", render.HeapText(p.HeapUsedMB))
+	writeDetailField(&b, m.width, "Heap committed", render.HeapText(p.HeapCommittedMB))
+	writeDetailField(&b, m.width, "Start", formatStart(p.StartTimeMs))
+	writeDetailField(&b, m.width, "Uptime", render.Uptime(p.StartTimeMs, now))
 	if m.detailLog != nil {
-		writeField(&b, "Gradle", na(m.detailLog.GradleVersion))
-		writeField(&b, "Daemon log", na(m.detailLog.Path))
+		writeDetailField(&b, m.width, "Gradle", na(m.detailLog.GradleVersion))
+		writeDetailField(&b, m.width, "Daemon log", na(m.detailLog.Path))
 	} else if m.detailLoading {
-		writeField(&b, "Gradle", "…")
-		writeField(&b, "Daemon log", "…")
+		writeDetailField(&b, m.width, "Gradle", "…")
+		writeDetailField(&b, m.width, "Daemon log", "…")
 	} else {
-		writeField(&b, "Gradle", "n/a")
-		writeField(&b, "Daemon log", "n/a")
+		writeDetailField(&b, m.width, "Gradle", "n/a")
+		writeDetailField(&b, m.width, "Daemon log", "n/a")
 	}
 	b.WriteString("\nRecent activity:\n")
 	trend := rssTrend(m.detailHistory, int32(p.PID))
@@ -826,23 +834,24 @@ func (m Model) renderDetails() string {
 	} else {
 		b.WriteString("  RSS trend: " + trend + "\n")
 	}
-	buildCount := 0
-	for _, build := range m.detailBuilds.Builds {
-		if build.DaemonPID != int64(p.PID) {
-			continue
+	b.WriteString("\nRecent builds:\n")
+	if m.detailLoading {
+		b.WriteString("  Loading…\n")
+	} else if m.detailError != "" && len(m.detailBuilds.Builds) == 0 {
+		b.WriteString("  " + truncateWidth("Unavailable: "+m.detailError, m.width-2) + "\n")
+	} else if len(m.detailBuilds.Builds) == 0 {
+		b.WriteString("  No build history for this daemon.\n")
+	} else {
+		for i, build := range m.detailBuilds.Builds {
+			if i == 3 {
+				break
+			}
+			summaryWidth := m.width - 2
+			if m.width >= 80 {
+				summaryWidth = m.width
+			}
+			b.WriteString("  " + truncateWidth(buildSummary(build), summaryWidth) + "\n")
 		}
-		buildCount++
-		duration := "-"
-		if build.DurationSeconds != nil {
-			duration = fmt.Sprintf("%.1fs", *build.DurationSeconds)
-		}
-		b.WriteString("  Build " + truncateWidth(build.FinalStatus+" "+render.ProjectName(*p)+" "+duration, max(20, m.width-4)) + "\n")
-		if buildCount == 3 {
-			break
-		}
-	}
-	if buildCount == 0 {
-		b.WriteString("  Builds: n/a\n")
 	}
 	if m.detailTail != nil && len(m.detailTail.Events) > 0 {
 		event := m.detailTail.Events[len(m.detailTail.Events)-1]
@@ -870,6 +879,16 @@ func (m Model) renderDetails() string {
 	}
 	b.WriteString("\nesc back   q quit")
 	return b.String()
+}
+
+func buildSummary(build client.BuildRecord) string {
+	duration := "-"
+	if build.DurationSeconds != nil {
+		duration = fmt.Sprintf("%.1fs", math.Round(*build.DurationSeconds*10)/10)
+	}
+	return fmt.Sprintf("%s project=%s duration=%s start=%s source=%s agent=%s",
+		na(build.FinalStatus), na(build.ProjectPath), duration, formatStart(build.StartTimeMs),
+		na(build.InferredSource), na(build.Agent))
 }
 
 func rssTrend(samples []model.Process, pid int32) string {
@@ -910,6 +929,10 @@ func writeField(b *strings.Builder, label, value string) {
 	fmt.Fprintf(b, "  %-14s %s\n", label+":", value)
 }
 
+func writeDetailField(b *strings.Builder, width int, label, value string) {
+	writeField(b, label, truncateWidth(value, max(1, width-18)))
+}
+
 func na(s string) string {
 	if strings.TrimSpace(s) == "" {
 		return "n/a"
@@ -928,6 +951,7 @@ type columnID int
 
 const (
 	colType columnID = iota
+	colGC
 	colPID
 	colRSS
 	colHeapUsed
@@ -945,11 +969,11 @@ type columnSet struct {
 func columnsForWidth(width int) columnSet {
 	switch {
 	case width >= 110:
-		return columnSet{ids: []columnID{colType, colPID, colRSS, colHeapUsed, colHeapCmt, colXmx, colCPU, colUptime, colProject}}
+		return columnSet{ids: []columnID{colType, colGC, colPID, colRSS, colHeapUsed, colHeapCmt, colXmx, colCPU, colUptime, colProject}}
 	case width >= 80:
-		return columnSet{ids: []columnID{colType, colPID, colRSS, colXmx, colCPU, colUptime, colProject}}
+		return columnSet{ids: []columnID{colType, colGC, colPID, colRSS, colXmx, colCPU, colUptime, colProject}}
 	default:
-		return columnSet{ids: []columnID{colType, colPID, colRSS, colCPU, colProject}}
+		return columnSet{ids: []columnID{colType, colGC, colPID, colRSS, colCPU, colProject}}
 	}
 }
 
@@ -993,6 +1017,8 @@ func columnLabel(id columnID) string {
 	switch id {
 	case colType:
 		return "TYPE"
+	case colGC:
+		return "GC"
 	case colPID:
 		return "PID"
 	case colRSS:
@@ -1018,6 +1044,8 @@ func columnWidth(id columnID) int {
 	switch id {
 	case colType:
 		return 16
+	case colGC:
+		return 8
 	case colPID:
 		return 7
 	case colRSS:
@@ -1054,6 +1082,8 @@ func formatRowStyled(p model.Process, cols columnSet, nowMs int64, noColor, sele
 		switch id {
 		case colType:
 			cell = render.TypeDisplay(p.Type)
+		case colGC:
+			cell = render.GCText(p.GC)
 		case colPID:
 			cell = fmt.Sprintf("%d", p.PID)
 		case colRSS:

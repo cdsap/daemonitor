@@ -32,8 +32,7 @@ data class DesktopLaunchOptions(
             databasePath = resolveDatabasePath(),
             processSource = wiring.processSource,
             logSource = wiring.logSource,
-            buildSource = wiring.buildSource,
-            persistSamples = wiring.persistSamples,
+            mode = wiring.mode,
         )
     }
 

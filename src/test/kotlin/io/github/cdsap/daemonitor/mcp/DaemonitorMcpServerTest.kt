@@ -48,6 +48,23 @@ class DaemonitorMcpServerTest {
         val builds = payload.array("builds")!!.values.filterIsInstance<JsonObject>()
         assertEquals(listOf("match"), builds.map { it.string("buildId") })
         assertEquals("FAILED", builds.single().string("finalStatus"))
+        assertEquals("EXACT", builds.single().string("daemonIdentityConfidence"))
+    }
+
+    @Test
+    fun `history JSON marks rows without daemon identity as unknown`(@TempDirArg tmp: Path) {
+        val db = WatcherDatabase.open(tmp.resolve("watcher.db"))
+        db.insertBuild(build("legacy", 1_000, identity = null))
+        val server = DaemonitorMcpServer(queryService(db, emptyList()))
+
+        val payload = server.callTool(
+            "daemonitor_search_history",
+            jsonObject("query" to JsonString("legacy")),
+        )
+
+        val row = payload.array("builds")!!.values.single() as JsonObject
+        assertEquals(null, row.string("daemonIdentity"))
+        assertEquals("UNKNOWN", row.string("daemonIdentityConfidence"))
     }
 
     @Test
@@ -221,11 +238,12 @@ class DaemonitorMcpServerTest {
         startMs: Long,
         pid: Long = 1,
         project: String = "/repo",
+        identity: String? = "uid-$pid",
         status: FinalStatus = FinalStatus.SUCCESS,
     ) = Build(
         buildId = id,
         daemonPid = pid,
-        daemonIdentity = "uid-$pid",
+        daemonIdentity = identity,
         commandLine = "gradlew build",
         workingDirectory = project,
         projectPath = project,

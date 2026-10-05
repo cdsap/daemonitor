@@ -243,41 +243,73 @@ func (s *Server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 			limit = v
 		}
 	}
-	query := store.BuildQuery{
-		Limit:   limit,
-		Project: r.URL.Query().Get("project"),
-		Status:  r.URL.Query().Get("status"),
-	}
-	if raw := r.URL.Query().Get("since_ms"); raw != "" {
-		v, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil || v < 0 {
-			http.Error(w, "invalid since_ms", http.StatusBadRequest)
+	var filters store.BuildFilters
+	var rows []builds.Build
+	var err error
+	query := r.URL.Query()
+	pidRaw, startRaw := query.Get("pid"), query.Get("start_time_ms")
+	if startRaw != "" {
+		pid, pidErr := strconv.ParseInt(pidRaw, 10, 64)
+		startMs, startErr := strconv.ParseInt(startRaw, 10, 64)
+		if pidErr != nil || startErr != nil || pid <= 0 || startMs <= 0 {
+			http.Error(w, "pid and start_time_ms are required for daemon-scoped builds", http.StatusBadRequest)
 			return
 		}
-		query.SinceMs = v
-	}
-	if raw := r.URL.Query().Get("pid"); raw != "" {
-		pid, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil || pid <= 0 {
+		filters.PID = pid
+		filters.StartTimeMs = startMs
+		rows, err = s.Store.ListBuildsForDaemonSince(pid, startMs, limit)
+	} else if pidRaw != "" {
+		pid, parseErr := strconv.ParseInt(pidRaw, 10, 64)
+		if parseErr != nil || pid <= 0 {
 			http.Error(w, "invalid pid", http.StatusBadRequest)
 			return
 		}
-		query.DaemonPID = pid
+		// Resolve identity in the core. Clients must not be able to turn this
+		// into a PID-only query, which could mix history after PID reuse.
 		if s.Logs != nil {
-			query.DaemonIdentity = s.Logs.DaemonIdentity(pid)
+			filters.DaemonIdentity = s.Logs.DaemonIdentity(pid)
 		}
+		filters.PID = pid
+		if filters.DaemonIdentity == "" {
+			rows = []builds.Build{}
+		}
+	} else if query.Has("daemon_pid") || query.Has("daemon_identity") {
+		pidRaw, identity := query.Get("daemon_pid"), query.Get("daemon_identity")
+		if pidRaw == "" || strings.TrimSpace(identity) == "" {
+			http.Error(w, "invalid daemon identifier", http.StatusBadRequest)
+			return
+		}
+		pid, parseErr := strconv.ParseInt(pidRaw, 10, 64)
+		if parseErr != nil || pid <= 0 {
+			http.Error(w, "invalid daemon identifier", http.StatusBadRequest)
+			return
+		}
+		filters.PID = pid
+		filters.DaemonIdentity = strings.TrimSpace(identity)
 	}
-	rows, err := s.Store.ListBuildsFiltered(query)
+	filters.Project = query.Get("project")
+	filters.Status = query.Get("status")
+	if rawSince := query.Get("since_ms"); rawSince != "" {
+		sinceMs, parseErr := strconv.ParseInt(rawSince, 10, 64)
+		if parseErr != nil || sinceMs < 0 {
+			http.Error(w, "invalid since_ms", http.StatusBadRequest)
+			return
+		}
+		filters.StartTimeMs = sinceMs
+	}
+	if rows == nil {
+		rows, err = s.Store.ListBuildsFiltered(filters, limit)
+	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	summary, err := s.Store.SummarizeBuilds(query)
+	summary, err := s.Store.SummarizeBuilds(filters)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	includeLogs := r.URL.Query().Get("include_logs") == "true"
+	includeLogs := query.Get("include_logs") == "true"
 	response := make([]buildResponse, 0, len(rows))
 	for _, row := range rows {
 		response = append(response, newBuildResponse(row, includeLogs))
@@ -292,6 +324,7 @@ func (s *Server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 type buildResponse struct {
 	BuildID         string   `json:"build_id"`
 	DaemonPID       int64    `json:"daemon_pid"`
+	StartTimeMs     int64    `json:"start_time_ms"`
 	FinalStatus     string   `json:"final_status"`
 	InferredSource  string   `json:"inferred_source"`
 	Agent           string   `json:"agent"`
@@ -302,7 +335,12 @@ type buildResponse struct {
 }
 
 func newBuildResponse(b builds.Build, includeLogs bool) buildResponse {
-	response := buildResponse{BuildID: b.BuildID, DaemonPID: b.DaemonPID, FinalStatus: string(b.FinalStatus), InferredSource: string(b.InferredSource), Agent: b.Agent, AgentProvider: b.AgentProvider, ProjectPath: b.ProjectPath, DurationSeconds: b.DurationSeconds}
+	response := buildResponse{
+		BuildID: b.BuildID, DaemonPID: b.DaemonPID, StartTimeMs: b.StartTimeMs,
+		FinalStatus: string(b.FinalStatus), InferredSource: string(b.InferredSource),
+		Agent: b.Agent, AgentProvider: b.AgentProvider, ProjectPath: b.ProjectPath,
+		DurationSeconds: b.DurationSeconds,
+	}
 	if includeLogs {
 		response.LogSnippet = b.LogSnippet
 	}

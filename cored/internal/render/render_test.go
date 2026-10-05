@@ -14,11 +14,12 @@ func TestWriteProcessesPlainNoANSI(t *testing.T) {
 	cpu := 12.5
 	xmx := int64(2048)
 	used := int64(4500)
+	gc := "G1"
 	var buf bytes.Buffer
 	WriteProcessesPlain(&buf, model.Snapshot{
 		SampledAtMs: 100,
 		Processes: []model.Process{
-			{PID: 1, Type: "GRADLE_DAEMON", RSSMemoryMB: 4500, CPUPercent: &cpu, MaxHeapMB: &xmx, HeapUsedMB: &used, Automated: true, ProjectPath: strPtr("/a/b")},
+			{PID: 1, Type: "GRADLE_DAEMON", RSSMemoryMB: 4500, CPUPercent: &cpu, MaxHeapMB: &xmx, HeapUsedMB: &used, GC: &gc, Automated: true, ProjectPath: strPtr("/a/b")},
 		},
 	})
 	out := buf.String()
@@ -27,6 +28,12 @@ func TestWriteProcessesPlainNoANSI(t *testing.T) {
 	}
 	if !strings.Contains(out, "Gradle daemon") {
 		t.Fatalf("missing type: %s", out)
+	}
+	if !strings.Contains(out, "G1") {
+		t.Fatalf("missing GC type: %s", out)
+	}
+	if !strings.Contains(out, "GC") {
+		t.Fatalf("missing GC column: %s", out)
 	}
 	if !strings.Contains(out, "HIGH MEM") || !strings.Contains(out, "AUTOMATED") {
 		t.Fatalf("missing process signals: %s", out)
@@ -90,6 +97,23 @@ func TestWriteBuildsPlainIncludesOriginAndAgent(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, "source=IDE") || !strings.Contains(out, "agent=Claude Code") || !strings.Contains(out, "provider=Anthropic") {
 		t.Fatalf("missing build origin or agent: %s", out)
+	}
+}
+
+func TestWriteBuildsJSONKeepsBuildMetadataForScopedResult(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WriteJSON(&buf, client.BuildsPayload{
+		Count:  1,
+		Builds: []client.BuildRecord{{BuildID: "build-42", DaemonPID: 42, FinalStatus: "SUCCESS", InferredSource: "IDE", ProjectPath: "/work/demo"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var payload client.BuildsPayload
+	if err := json.Unmarshal(buf.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Count != 1 || len(payload.Builds) != 1 || payload.Builds[0].DaemonPID != 42 || payload.Builds[0].ProjectPath != "/work/demo" {
+		t.Fatalf("scoped build payload=%+v", payload)
 	}
 }
 

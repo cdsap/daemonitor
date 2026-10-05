@@ -43,7 +43,7 @@ internal object HeadlessLauncher {
         input: InputStream,
     ): Int {
         val runtime = container.runtime
-        val retentionDays = container.settingsStore.load().retentionDays
+        val retentionDays = container.settingsService.load().retentionDays
         val terminal = HeadlessTerminalUi(
             output = output,
             input = input,
@@ -75,7 +75,7 @@ internal object HeadlessLauncher {
         )
 
         return try {
-            container.database.purgeOlderThan(System.currentTimeMillis(), retentionDays)
+            container.settingsService.purgeNow(retentionDays)
             Runtime.getRuntime().addShutdownHook(shutdownHook)
             var lastResult = WatcherRuntime.PollResult(emptyList(), emptyList(), false)
             var pollError: String? = null

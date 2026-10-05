@@ -3,20 +3,17 @@ package store
 import (
 	"database/sql"
 	"strings"
-	"time"
 
 	"github.com/cdsap/daemonitor/cored/internal/builds"
 )
 
-const maxBuildHistoryWindow = 90 * 24 * time.Hour
-
-type BuildQuery struct {
-	SinceMs        int64
-	DaemonPID      int64
+// BuildFilters are applied by the core before rows cross the IPC boundary.
+type BuildFilters struct {
+	PID            int64
 	DaemonIdentity string
+	StartTimeMs    int64
 	Project        string
 	Status         string
-	Limit          int
 }
 
 type BuildSummary struct {
@@ -61,18 +58,61 @@ ON CONFLICT(build_id) DO UPDATE SET
 
 // ListBuilds returns recent builds newest-first.
 func (s *Store) ListBuilds(limit int) ([]builds.Build, error) {
-	return s.ListBuildsFiltered(BuildQuery{Limit: limit})
+	return s.ListBuildsFiltered(BuildFilters{}, limit)
 }
 
-func (s *Store) ListBuildsFiltered(q BuildQuery) ([]builds.Build, error) {
-	where, args := buildWhere(q)
-	args = append(args, normalizeBuildLimit(q.Limit))
-	rows, err := s.db.Query(`
+// ListBuildsForDaemon returns builds correlated to one daemon incarnation.
+// PID alone is deliberately insufficient because operating systems can reuse it.
+func (s *Store) ListBuildsForDaemon(pid int64, identity string, limit int) ([]builds.Build, error) {
+	if pid <= 0 || identity == "" {
+		return []builds.Build{}, nil
+	}
+	return s.ListBuildsFiltered(BuildFilters{PID: pid, DaemonIdentity: identity}, limit)
+}
+
+// ListBuildsForDaemonSince returns builds from one daemon lifetime.
+func (s *Store) ListBuildsForDaemonSince(pid, daemonStartMs int64, limit int) ([]builds.Build, error) {
+	if pid <= 0 || daemonStartMs <= 0 {
+		return []builds.Build{}, nil
+	}
+	return s.ListBuildsFiltered(BuildFilters{PID: pid, StartTimeMs: daemonStartMs}, limit)
+}
+
+// ListBuildsFiltered returns recent builds newest-first, applying filters in SQLite.
+func (s *Store) ListBuildsFiltered(filters BuildFilters, limit int) ([]builds.Build, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	query := `
 SELECT build_id, daemon_pid, daemon_identity, command_line, working_directory, project_path,
        start_time, end_time, duration_seconds, peak_memory_mb, avg_memory_mb,
        peak_cpu_percent, inferred_source, final_status, log_snippet, agent, agent_provider
 FROM builds
-	`+where+` ORDER BY start_time DESC LIMIT ?`, args...)
+	WHERE 1 = 1`
+	args := make([]any, 0, 4)
+	if filters.PID > 0 {
+		query += " AND daemon_pid = ?"
+		args = append(args, filters.PID)
+	}
+	if filters.DaemonIdentity != "" {
+		query += " AND daemon_identity = ?"
+		args = append(args, filters.DaemonIdentity)
+	}
+	if filters.StartTimeMs > 0 {
+		query += " AND start_time >= ?"
+		args = append(args, filters.StartTimeMs)
+	}
+	if filters.Project != "" {
+		query += " AND LOWER(COALESCE(project_path, '')) LIKE ? ESCAPE '\\'"
+		args = append(args, "%"+escapeLike(strings.ToLower(filters.Project))+"%")
+	}
+	if filters.Status != "" {
+		query += " AND LOWER(final_status) = ?"
+		args = append(args, strings.ToLower(filters.Status))
+	}
+	query += " ORDER BY start_time DESC LIMIT ?"
+	args = append(args, limit)
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -127,59 +167,56 @@ FROM builds
 	return out, rows.Err()
 }
 
-func (s *Store) SummarizeBuilds(q BuildQuery) (BuildSummary, error) {
-	where, args := buildWhere(q)
+func (s *Store) SummarizeBuilds(filters BuildFilters) (BuildSummary, error) {
+	where, args := buildFiltersWhere(filters)
 	var summary BuildSummary
 	var average sql.NullFloat64
-	if err := s.db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(CASE WHEN final_status = 'FAILED' THEN 1 ELSE 0 END), 0), AVG(duration_seconds) FROM builds `+where, args...).Scan(&summary.Count, &summary.FailureCount, &average); err != nil {
+	if err := s.db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(CASE WHEN final_status = 'FAILED' THEN 1 ELSE 0 END), 0), AVG(duration_seconds) FROM builds`+where, args...).Scan(&summary.Count, &summary.FailureCount, &average); err != nil {
 		return summary, err
 	}
 	if average.Valid {
-		v := average.Float64
-		summary.AverageDurationSeconds = &v
+		value := average.Float64
+		summary.AverageDurationSeconds = &value
 	}
-	if err := s.db.QueryRow(`SELECT final_status FROM builds `+where+` ORDER BY start_time DESC LIMIT 1`, args...).Scan(&summary.LatestStatus); err != nil && err != sql.ErrNoRows {
+	if err := s.db.QueryRow(`SELECT final_status FROM builds`+where+` ORDER BY start_time DESC LIMIT 1`, args...).Scan(&summary.LatestStatus); err != nil && err != sql.ErrNoRows {
 		return summary, err
 	}
 	return summary, nil
 }
 
-func normalizeBuildLimit(limit int) int {
-	if limit <= 0 || limit > 500 {
-		return 100
-	}
-	return limit
-}
-
-func buildWhere(q BuildQuery) (string, []any) {
+func buildFiltersWhere(filters BuildFilters) (string, []any) {
 	clauses := make([]string, 0, 5)
 	args := make([]any, 0, 5)
-	if q.SinceMs > 0 {
-		cutoff := time.Now().Add(-maxBuildHistoryWindow).UnixMilli()
-		if q.SinceMs < cutoff {
-			q.SinceMs = cutoff
-		}
+	if filters.PID > 0 {
+		clauses = append(clauses, "daemon_pid = ?")
+		args = append(args, filters.PID)
+	}
+	if filters.DaemonIdentity != "" {
+		clauses = append(clauses, "daemon_identity = ?")
+		args = append(args, filters.DaemonIdentity)
+	}
+	if filters.StartTimeMs > 0 {
 		clauses = append(clauses, "start_time >= ?")
-		args = append(args, q.SinceMs)
+		args = append(args, filters.StartTimeMs)
 	}
-	if q.DaemonPID > 0 && q.DaemonIdentity != "" {
-		clauses = append(clauses, "daemon_pid = ? AND daemon_identity = ?")
-		args = append(args, q.DaemonPID, q.DaemonIdentity)
-	} else if q.DaemonPID > 0 {
-		clauses = append(clauses, "1 = 0")
+	if filters.Project != "" {
+		clauses = append(clauses, "LOWER(COALESCE(project_path, '')) LIKE ? ESCAPE '\\'")
+		args = append(args, "%"+escapeLike(strings.ToLower(filters.Project))+"%")
 	}
-	if strings.TrimSpace(q.Project) != "" {
-		clauses = append(clauses, "LOWER(project_path) LIKE LOWER(?)")
-		args = append(args, "%"+strings.TrimSpace(q.Project)+"%")
-	}
-	if strings.TrimSpace(q.Status) != "" {
-		clauses = append(clauses, "LOWER(final_status) = LOWER(?)")
-		args = append(args, strings.TrimSpace(q.Status))
+	if filters.Status != "" {
+		clauses = append(clauses, "LOWER(final_status) = ?")
+		args = append(args, strings.ToLower(filters.Status))
 	}
 	if len(clauses) == 0 {
 		return "", args
 	}
-	return "WHERE " + strings.Join(clauses, " AND "), args
+	return " WHERE " + strings.Join(clauses, " AND "), args
+}
+
+func escapeLike(value string) string {
+	value = strings.ReplaceAll(value, `\`, `\\`)
+	value = strings.ReplaceAll(value, "%", `\%`)
+	return strings.ReplaceAll(value, "_", `\_`)
 }
 
 // SamplesAsBuildSamples maps DB rows into builds.Sample for the aggregator.
