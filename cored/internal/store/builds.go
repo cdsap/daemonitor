@@ -16,6 +16,13 @@ type BuildFilters struct {
 	Status         string
 }
 
+type BuildSummary struct {
+	Count                  int      `json:"count"`
+	FailureCount           int      `json:"failure_count"`
+	AverageDurationSeconds *float64 `json:"average_duration_seconds"`
+	LatestStatus           string   `json:"latest_status"`
+}
+
 // InsertBuild upserts a confirmed build record into the app-aligned builds table.
 func (s *Store) InsertBuild(b builds.Build) error {
 	var commandLine any
@@ -158,6 +165,52 @@ FROM builds
 		out = append(out, b)
 	}
 	return out, rows.Err()
+}
+
+func (s *Store) SummarizeBuilds(filters BuildFilters) (BuildSummary, error) {
+	where, args := buildFiltersWhere(filters)
+	var summary BuildSummary
+	var average sql.NullFloat64
+	if err := s.db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(CASE WHEN final_status = 'FAILED' THEN 1 ELSE 0 END), 0), AVG(duration_seconds) FROM builds`+where, args...).Scan(&summary.Count, &summary.FailureCount, &average); err != nil {
+		return summary, err
+	}
+	if average.Valid {
+		value := average.Float64
+		summary.AverageDurationSeconds = &value
+	}
+	if err := s.db.QueryRow(`SELECT final_status FROM builds`+where+` ORDER BY start_time DESC LIMIT 1`, args...).Scan(&summary.LatestStatus); err != nil && err != sql.ErrNoRows {
+		return summary, err
+	}
+	return summary, nil
+}
+
+func buildFiltersWhere(filters BuildFilters) (string, []any) {
+	clauses := make([]string, 0, 5)
+	args := make([]any, 0, 5)
+	if filters.PID > 0 {
+		clauses = append(clauses, "daemon_pid = ?")
+		args = append(args, filters.PID)
+	}
+	if filters.DaemonIdentity != "" {
+		clauses = append(clauses, "daemon_identity = ?")
+		args = append(args, filters.DaemonIdentity)
+	}
+	if filters.StartTimeMs > 0 {
+		clauses = append(clauses, "start_time >= ?")
+		args = append(args, filters.StartTimeMs)
+	}
+	if filters.Project != "" {
+		clauses = append(clauses, "LOWER(COALESCE(project_path, '')) LIKE ? ESCAPE '\\'")
+		args = append(args, "%"+escapeLike(strings.ToLower(filters.Project))+"%")
+	}
+	if filters.Status != "" {
+		clauses = append(clauses, "LOWER(final_status) = ?")
+		args = append(args, strings.ToLower(filters.Status))
+	}
+	if len(clauses) == 0 {
+		return "", args
+	}
+	return " WHERE " + strings.Join(clauses, " AND "), args
 }
 
 func escapeLike(value string) string {

@@ -255,6 +255,8 @@ func (s *Server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "pid and start_time_ms are required for daemon-scoped builds", http.StatusBadRequest)
 			return
 		}
+		filters.PID = pid
+		filters.StartTimeMs = startMs
 		rows, err = s.Store.ListBuildsForDaemonSince(pid, startMs, limit)
 	} else if pidRaw != "" {
 		pid, parseErr := strconv.ParseInt(pidRaw, 10, 64)
@@ -287,6 +289,14 @@ func (s *Server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 	}
 	filters.Project = query.Get("project")
 	filters.Status = query.Get("status")
+	if rawSince := query.Get("since_ms"); rawSince != "" {
+		sinceMs, parseErr := strconv.ParseInt(rawSince, 10, 64)
+		if parseErr != nil || sinceMs < 0 {
+			http.Error(w, "invalid since_ms", http.StatusBadRequest)
+			return
+		}
+		filters.StartTimeMs = sinceMs
+	}
 	if rows == nil {
 		rows, err = s.Store.ListBuildsFiltered(filters, limit)
 	}
@@ -294,10 +304,47 @@ func (s *Server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	summary, err := s.Store.SummarizeBuilds(filters)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	includeLogs := query.Get("include_logs") == "true"
+	response := make([]buildResponse, 0, len(rows))
+	for _, row := range rows {
+		response = append(response, newBuildResponse(row, includeLogs))
+	}
 	writeJSON(w, map[string]any{
-		"count":  len(rows),
-		"builds": rows,
+		"count":   len(response),
+		"summary": summary,
+		"builds":  response,
 	})
+}
+
+type buildResponse struct {
+	BuildID         string   `json:"build_id"`
+	DaemonPID       int64    `json:"daemon_pid"`
+	StartTimeMs     int64    `json:"start_time_ms"`
+	FinalStatus     string   `json:"final_status"`
+	InferredSource  string   `json:"inferred_source"`
+	Agent           string   `json:"agent"`
+	AgentProvider   string   `json:"agent_provider"`
+	ProjectPath     string   `json:"project_path"`
+	DurationSeconds *float64 `json:"duration_seconds"`
+	LogSnippet      string   `json:"log_snippet,omitempty"`
+}
+
+func newBuildResponse(b builds.Build, includeLogs bool) buildResponse {
+	response := buildResponse{
+		BuildID: b.BuildID, DaemonPID: b.DaemonPID, StartTimeMs: b.StartTimeMs,
+		FinalStatus: string(b.FinalStatus), InferredSource: string(b.InferredSource),
+		Agent: b.Agent, AgentProvider: b.AgentProvider, ProjectPath: b.ProjectPath,
+		DurationSeconds: b.DurationSeconds,
+	}
+	if includeLogs {
+		response.LogSnippet = b.LogSnippet
+	}
+	return response
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

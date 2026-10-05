@@ -121,7 +121,11 @@ focus a series.
 ![Daemonitor build history showing status and source tags, agent attribution, metrics, and build details](docs/images/build-history.png)
 
 Reconstructed builds with duration, peak RSS, status, source, and coding-agent attribution when
-detectable. Filter by project and time range.
+detectable. The native CLI supports bounded, composable investigation filters, for example
+`daemonitor-cli builds --pid 12345 --since 1h --status FAILED --project daemonitor`. Active daemon
+history is incarnation-scoped; omitting `--pid` queries retained global history. Summaries include
+matching count, failures, average duration, and latest status. Log snippets are opt-in with
+`--include-logs`.
 
 ### MCP (optional)
 

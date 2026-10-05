@@ -35,8 +35,9 @@ func TestBuildsForDaemonRequestsPIDAndStartTime(t *testing.T) {
 	if _, err := c.BuildsForDaemon(context.Background(), 9, 200, 20); err != nil {
 		t.Fatal(err)
 	}
-	if got := transport.request.URL.RawQuery; got != "pid=9&start_time_ms=200&limit=20" {
-		t.Fatalf("query=%q", got)
+	query := transport.request.URL.Query()
+	if query.Get("pid") != "9" || query.Get("start_time_ms") != "200" || query.Get("limit") != "20" {
+		t.Fatalf("query=%v", query)
 	}
 }
 

@@ -83,8 +83,16 @@ func (c *Client) DaemonLogTail(ctx context.Context, pid int64) (logs.Tail, error
 
 // BuildsPayload is the /v1/builds response.
 type BuildsPayload struct {
-	Count  int           `json:"count"`
-	Builds []BuildRecord `json:"builds"`
+	Count   int           `json:"count"`
+	Summary BuildSummary  `json:"summary"`
+	Builds  []BuildRecord `json:"builds"`
+}
+
+type BuildSummary struct {
+	Count                  int      `json:"count"`
+	FailureCount           int      `json:"failure_count"`
+	AverageDurationSeconds *float64 `json:"average_duration_seconds"`
+	LatestStatus           string   `json:"latest_status"`
 }
 
 // BuildRecord is one build row from the core API.
@@ -98,14 +106,18 @@ type BuildRecord struct {
 	AgentProvider   string   `json:"agent_provider"`
 	ProjectPath     string   `json:"project_path"`
 	DurationSeconds *float64 `json:"duration_seconds"`
+	LogSnippet      string   `json:"log_snippet,omitempty"`
 }
 
 // BuildQuery describes the filters supported by the core build endpoint.
 type BuildQuery struct {
-	Limit   int
-	PID     int64
-	Project string
-	Status  string
+	Limit       int
+	SinceMs     int64
+	StartTimeMs int64
+	PID         int64
+	Project     string
+	Status      string
+	IncludeLogs bool
 }
 
 // Builds fetches recent builds.
@@ -119,6 +131,12 @@ func (c *Client) BuildsFiltered(ctx context.Context, query BuildQuery) (BuildsPa
 	if query.Limit > 0 {
 		params.Set("limit", strconv.Itoa(query.Limit))
 	}
+	if query.SinceMs > 0 {
+		params.Set("since_ms", strconv.FormatInt(query.SinceMs, 10))
+	}
+	if query.StartTimeMs > 0 {
+		params.Set("start_time_ms", strconv.FormatInt(query.StartTimeMs, 10))
+	}
 	if query.PID > 0 {
 		params.Set("pid", strconv.FormatInt(query.PID, 10))
 	}
@@ -127,6 +145,9 @@ func (c *Client) BuildsFiltered(ctx context.Context, query BuildQuery) (BuildsPa
 	}
 	if query.Status != "" {
 		params.Set("status", query.Status)
+	}
+	if query.IncludeLogs {
+		params.Set("include_logs", "true")
 	}
 	path := "/v1/builds"
 	if encoded := params.Encode(); encoded != "" {
@@ -144,14 +165,7 @@ func (c *Client) BuildsForDaemonPID(ctx context.Context, pid int64, limit int) (
 
 // BuildsForDaemon fetches recent builds from the selected daemon lifetime.
 func (c *Client) BuildsForDaemon(ctx context.Context, pid, startTimeMs int64, limit int) (BuildsPayload, error) {
-	path := "/v1/builds?pid=" + strconv.FormatInt(pid, 10) +
-		"&start_time_ms=" + strconv.FormatInt(startTimeMs, 10)
-	if limit > 0 {
-		path += "&limit=" + strconv.Itoa(limit)
-	}
-	var payload BuildsPayload
-	err := c.getJSON(ctx, path, &payload)
-	return payload, err
+	return c.BuildsFiltered(ctx, BuildQuery{Limit: limit, StartTimeMs: startTimeMs, PID: pid})
 }
 
 func (c *Client) getJSON(ctx context.Context, path string, dest any) error {
