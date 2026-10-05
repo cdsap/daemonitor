@@ -811,10 +811,39 @@ func (m Model) renderDetails() string {
 		writeDetailField(&b, m.width, "Working dir", "n/a")
 	}
 	writeDetailField(&b, m.width, "RSS", render.RSSText(p.RSSMemoryMB))
+	writeDetailField(&b, m.width, "Virtual memory", optionalInt64Text(p.VirtualMemoryMB, "MB"))
+	writeDetailField(&b, m.width, "Swap memory", optionalInt64Text(p.SwapMemoryMB, "MB"))
+	writeDetailField(&b, m.width, "Threads", optionalInt64Text(p.ThreadCount, ""))
+	writeDetailField(&b, m.width, "Disk read", optionalInt64Text(p.ReadBytes, "bytes"))
+	writeDetailField(&b, m.width, "Disk write", optionalInt64Text(p.WriteBytes, "bytes"))
+	writeDetailField(&b, m.width, "Read operations", optionalInt64Text(p.ReadOperations, ""))
+	writeDetailField(&b, m.width, "Write operations", optionalInt64Text(p.WriteOperations, ""))
+	writeDetailField(&b, m.width, "Minor page faults", optionalInt64Text(p.MinorPageFaults, ""))
+	writeDetailField(&b, m.width, "Major page faults", optionalInt64Text(p.MajorPageFaults, ""))
+	writeDetailField(&b, m.width, "Voluntary switches", optionalInt64Text(p.VoluntaryContextSwitches, ""))
+	writeDetailField(&b, m.width, "Involuntary switches", optionalInt64Text(p.InvoluntaryContextSwitches, ""))
+	writeDetailField(&b, m.width, "Open file descriptors", optionalInt64Text(p.OpenFileDescriptors, ""))
 	writeDetailField(&b, m.width, "CPU", render.CPUText(p.CPUPercent))
 	writeDetailField(&b, m.width, "Xmx", render.HeapLimitText(p.MaxHeapMB))
+	writeDetailField(&b, m.width, "Xms", optionalInt64Text(p.MinHeapMB, "MB"))
+	writeDetailField(&b, m.width, "GC", render.GCText(p.GC))
 	writeDetailField(&b, m.width, "Heap used", render.HeapText(p.HeapUsedMB))
 	writeDetailField(&b, m.width, "Heap committed", render.HeapText(p.HeapCommittedMB))
+	writeDetailField(&b, m.width, "Heap max", render.HeapText(p.HeapMaxMB))
+	writeDetailField(&b, m.width, "Heap %", render.HeapPercentText(p.HeapUsedMB, p.HeapMaxMB))
+	writeDetailField(&b, m.width, "Heap sampled", optionalInt64Text(p.HeapSampledAtMs, ""))
+	writeDetailField(&b, m.width, "Heap available", fmt.Sprint(p.HeapAvailable))
+	writeDetailField(&b, m.width, "Metaspace used", optionalInt64Text(p.MetaspaceUsedMB, "MB"))
+	writeDetailField(&b, m.width, "Metaspace committed", optionalInt64Text(p.MetaspaceCommittedMB, "MB"))
+	writeDetailField(&b, m.width, "Young GC count", optionalInt64Text(p.YoungGCCount, ""))
+	writeDetailField(&b, m.width, "Young GC time", optionalInt64Text(p.YoungGCTimeMs, "ms"))
+	writeDetailField(&b, m.width, "Old GC count", optionalInt64Text(p.OldGCCount, ""))
+	writeDetailField(&b, m.width, "Old GC time", optionalInt64Text(p.OldGCTimeMs, "ms"))
+	writeDetailField(&b, m.width, "Java version", optionalStringText(p.JavaVersion))
+	writeDetailField(&b, m.width, "Java vendor", optionalStringText(p.JavaVendor))
+	writeDetailField(&b, m.width, "Active processors", optionalInt64Text(p.ActiveProcessorCount, ""))
+	writeDetailField(&b, m.width, "Status", na(p.Status))
+	writeDetailField(&b, m.width, "Automated", fmt.Sprint(p.Automated))
 	writeDetailField(&b, m.width, "Start", formatStart(p.StartTimeMs))
 	writeDetailField(&b, m.width, "Uptime", render.Uptime(p.StartTimeMs, now))
 	if m.detailLog != nil {
@@ -940,6 +969,23 @@ func na(s string) string {
 	return s
 }
 
+func optionalInt64Text(v *int64, unit string) string {
+	if v == nil {
+		return "n/a"
+	}
+	if unit == "" {
+		return fmt.Sprint(*v)
+	}
+	return fmt.Sprintf("%d %s", *v, unit)
+}
+
+func optionalStringText(v *string) string {
+	if v == nil || strings.TrimSpace(*v) == "" {
+		return "n/a"
+	}
+	return *v
+}
+
 func formatStart(ms int64) string {
 	if ms <= 0 {
 		return "n/a"
@@ -954,6 +1000,9 @@ const (
 	colGC
 	colPID
 	colRSS
+	colThreads
+	colHeapPercent
+	colMetaspace
 	colHeapUsed
 	colHeapCmt
 	colXmx
@@ -969,7 +1018,7 @@ type columnSet struct {
 func columnsForWidth(width int) columnSet {
 	switch {
 	case width >= 110:
-		return columnSet{ids: []columnID{colType, colGC, colPID, colRSS, colHeapUsed, colHeapCmt, colXmx, colCPU, colUptime, colProject}}
+		return columnSet{ids: []columnID{colType, colGC, colPID, colRSS, colThreads, colHeapPercent, colMetaspace, colHeapUsed, colHeapCmt, colXmx, colCPU, colUptime, colProject}}
 	case width >= 80:
 		return columnSet{ids: []columnID{colType, colGC, colPID, colRSS, colXmx, colCPU, colUptime, colProject}}
 	default:
@@ -1023,6 +1072,12 @@ func columnLabel(id columnID) string {
 		return "PID"
 	case colRSS:
 		return "RSS"
+	case colThreads:
+		return "THR"
+	case colHeapPercent:
+		return "HEAP%"
+	case colMetaspace:
+		return "META"
 	case colHeapUsed:
 		return "HEAP"
 	case colHeapCmt:
@@ -1050,6 +1105,12 @@ func columnWidth(id columnID) int {
 		return 7
 	case colRSS:
 		return 8
+	case colThreads:
+		return 6
+	case colHeapPercent:
+		return 7
+	case colMetaspace:
+		return 8
 	case colHeapUsed, colHeapCmt, colXmx:
 		return 8
 	case colCPU:
@@ -1065,7 +1126,7 @@ func columnWidth(id columnID) int {
 
 func padColumn(s string, id columnID) string {
 	w := columnWidth(id)
-	if id == colPID || id == colRSS || id == colCPU || id == colXmx || id == colHeapUsed || id == colHeapCmt || id == colUptime {
+	if id == colPID || id == colRSS || id == colThreads || id == colHeapPercent || id == colMetaspace || id == colCPU || id == colXmx || id == colHeapUsed || id == colHeapCmt || id == colUptime {
 		return padLeft(truncateWidth(s, w), w)
 	}
 	return padRight(truncateWidth(s, w), w)
@@ -1088,6 +1149,12 @@ func formatRowStyled(p model.Process, cols columnSet, nowMs int64, noColor, sele
 			cell = fmt.Sprintf("%d", p.PID)
 		case colRSS:
 			cell = render.RSSText(p.RSSMemoryMB)
+		case colThreads:
+			cell = optionalInt64Text(p.ThreadCount, "")
+		case colHeapPercent:
+			cell = render.HeapPercentText(p.HeapUsedMB, p.HeapMaxMB)
+		case colMetaspace:
+			cell = render.HeapText(p.MetaspaceUsedMB)
 		case colHeapUsed:
 			cell = render.HeapText(p.HeapUsedMB)
 		case colHeapCmt:

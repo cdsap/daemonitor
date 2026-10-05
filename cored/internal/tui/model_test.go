@@ -181,7 +181,7 @@ func TestErrorKeepsLastSnapshot(t *testing.T) {
 }
 
 func TestAdaptiveColumns(t *testing.T) {
-	if n := len(columnsForWidth(120).ids); n < 9 {
+	if n := len(columnsForWidth(120).ids); n < 11 {
 		t.Fatalf("wide columns=%d", n)
 	}
 	if n := len(columnsForWidth(90).ids); n != 8 {
@@ -341,6 +341,29 @@ func TestFormatRowUsesLiveHeapValues(t *testing.T) {
 	row := formatRow(p, columnSet{ids: []columnID{colHeapUsed, colHeapCmt}}, fixedNow().UnixMilli())
 	if !strings.Contains(row, "512 MB") || !strings.Contains(row, "1 GB") {
 		t.Fatalf("row=%q missing live heap values", row)
+	}
+}
+
+func TestFormatRowIncludesExtendedColumns(t *testing.T) {
+	threads, used, max := int64(12), int64(512), int64(1024)
+	row := formatRow(model.Process{ThreadCount: &threads, HeapUsedMB: &used, HeapMaxMB: &max, MetaspaceUsedMB: &used}, columnSet{ids: []columnID{colThreads, colHeapPercent, colMetaspace}}, fixedNow().UnixMilli())
+	for _, want := range []string{"12", "50.0%", "512 MB"} {
+		if !strings.Contains(row, want) {
+			t.Fatalf("row=%q missing %q", row, want)
+		}
+	}
+}
+
+func TestDetailsShowExtendedMetricsAndUnavailableValues(t *testing.T) {
+	threads, used, max := int64(12), int64(512), int64(1024)
+	p := model.Process{PID: 9, ThreadCount: &threads, HeapUsedMB: &used, HeapMaxMB: &max, MetaspaceUsedMB: &used}
+	m := NewModel(Config{Now: fixedNow, NoColor: true})
+	m.width, m.height, m.detailsOpen, m.detailProcess = 120, 30, true, &p
+	body := m.View().Content
+	for _, want := range []string{"Threads", "Heap %", "Metaspace used", "Virtual memory", "Disk read", "Young GC time", "Java version", "n/a"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("details missing %q: %s", want, body)
+		}
 	}
 }
 

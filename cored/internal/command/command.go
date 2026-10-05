@@ -31,6 +31,7 @@ type Options struct {
 	NoColor      bool
 	NoAutostart  bool
 	JSON         bool
+	Details      bool
 	Output       string
 	Since        time.Duration
 	Limit        int
@@ -95,6 +96,7 @@ func ParseArgs(argv []string) (Options, error) {
 	fs.BoolVar(&opts.NoColor, "no-color", false, "Disable color")
 	fs.BoolVar(&opts.NoAutostart, "no-autostart", false, "Do not start daemonitor-cored automatically")
 	fs.BoolVar(&opts.JSON, "json", false, "Emit JSON where supported")
+	fs.BoolVar(&opts.Details, "details", false, "Show all process metrics in detailed plain output")
 	fs.StringVar(&opts.Output, "format", opts.Output, "Output format: plain, json, jsonl, or csv")
 	fs.DurationVar(&opts.Since, "since", 0, "History window (for example 1h or 15m)")
 	fs.IntVar(&opts.Limit, "limit", 0, "Maximum rows to return")
@@ -158,6 +160,7 @@ Options:
   --no-color               Disable color (NO_COLOR also honored)
   --no-autostart           Do not start daemonitor-cored automatically
   --json                   Emit machine-readable output where supported
+  --details                Show all process metrics for ps in plain output
   --format FORMAT          Output format: plain, json, jsonl, or csv
   --since DURATION         History window, for example 1h or 15m
   --limit N                Maximum rows to return
@@ -269,7 +272,7 @@ func runOneShot(ctx context.Context, opts Options, cmd string, args []string, st
 			return 1
 		}
 		snap.Processes = filterProcesses(snap.Processes, opts)
-		if err := writeProcesses(stdout, snap, opts.Output); err != nil {
+		if err := writeProcesses(stdout, snap, opts.Output, opts.Details); err != nil {
 			fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
 			return 1
 		}
@@ -409,10 +412,14 @@ func writeValue(w io.Writer, v any, output string, plain func()) error {
 	}
 }
 
-func writeProcesses(w io.Writer, snap model.Snapshot, output string) error {
+func writeProcesses(w io.Writer, snap model.Snapshot, output string, details bool) error {
 	switch output {
 	case "plain":
-		render.WriteProcessesPlain(w, snap)
+		if details {
+			render.WriteProcessesDetailedPlain(w, snap)
+		} else {
+			render.WriteProcessesPlain(w, snap)
+		}
 		return nil
 	case "json":
 		return render.WriteJSON(w, snap)
@@ -507,14 +514,14 @@ func runWatch(ctx context.Context, opts Options, stdout, stderr io.Writer) int {
 		if opts.FailOnRSS > 0 {
 			for _, process := range snap.Processes {
 				if process.RSSMemoryMB >= opts.FailOnRSS {
-					if err := writeProcesses(stdout, snap, opts.Output); err != nil {
+					if err := writeProcesses(stdout, snap, opts.Output, opts.Details); err != nil {
 						fmt.Fprintln(stderr, err)
 					}
 					return 3
 				}
 			}
 		}
-		if err := writeProcesses(stdout, snap, opts.Output); err != nil {
+		if err := writeProcesses(stdout, snap, opts.Output, opts.Details); err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1
 		}
