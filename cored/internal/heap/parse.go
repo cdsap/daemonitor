@@ -24,6 +24,7 @@ type Sample struct {
 	JavaVersion          *string
 	JavaVendor           *string
 	ActiveProcessorCount *int64
+	Diagnostics          []Diagnostic
 }
 
 // ParseJcmdVMInfo extracts optional JVM identity and processor information.

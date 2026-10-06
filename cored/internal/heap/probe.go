@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -20,6 +21,58 @@ const (
 
 // ErrUnavailable means the probe failed or tools were missing.
 var ErrUnavailable = errors.New("live heap unavailable")
+
+// Failure categories are part of the diagnostic contract. They deliberately
+// contain no tool output, paths, or JVM properties.
+const (
+	FailureMissingTool      = "missing_tool"
+	FailureTimeout          = "timeout"
+	FailurePermissionDenied = "permission_denied"
+	FailureStalePID         = "stale_pid"
+	FailureParseError       = "parse_error"
+	FailureUnsupportedJDK   = "unsupported_jdk"
+	FailureProbeError       = "probe_error"
+)
+
+// Diagnostic describes one failed probe attempt without exposing its output.
+type Diagnostic struct {
+	Tool      string
+	Operation string
+	Category  string
+}
+
+// ProbeError is safe to classify and unwrap while keeping its message
+// internal to the collector.
+type ProbeError struct {
+	Category    string
+	Diagnostics []Diagnostic
+	err         error
+}
+
+func (e *ProbeError) Error() string { return e.Category }
+func (e *ProbeError) Unwrap() error { return e.err }
+
+// FailureCategory returns the stable category for a probe error.
+func FailureCategory(err error) string {
+	if err == nil {
+		return ""
+	}
+	var probeErr *ProbeError
+	if errors.As(err, &probeErr) {
+		return probeErr.Category
+	}
+	return FailureProbeError
+}
+
+// FailureDiagnostics returns sanitized attempt summaries carried by a probe
+// error. It returns nil for unrelated errors.
+func FailureDiagnostics(err error) []Diagnostic {
+	var probeErr *ProbeError
+	if err == nil || !errors.As(err, &probeErr) {
+		return nil
+	}
+	return probeErr.Diagnostics
+}
 
 // Prober obtains live heap samples for HotSpot PIDs via jcmd/jstat.
 type Prober struct {
@@ -133,35 +186,49 @@ func (p *Prober) probe(ctx context.Context, pid int32) (Sample, error) {
 		run = defaultRunner
 	}
 
+	var diagnostics []Diagnostic
 	jcmdPath, jcmdErr := look("jcmd")
+	if jcmdErr != nil {
+		diagnostics = append(diagnostics, diagnostic("jcmd", "GC.heap_info", jcmdErr))
+	}
 	if jcmdErr == nil {
 		out, err := run(ctx, jcmdPath, fmt.Sprintf("%d", pid), "GC.heap_info")
 		if err == nil {
-			if s, perr := ParseJcmdHeapInfo(out); perr == nil {
+			s, perr := ParseJcmdHeapInfo(out)
+			if perr == nil {
+				s.Diagnostics = diagnostics
 				if info, infoErr := run(ctx, jcmdPath, fmt.Sprintf("%d", pid), "VM.info"); infoErr == nil {
 					s.JavaVersion, s.JavaVendor, s.ActiveProcessorCount = ParseJcmdVMInfo(info)
+				} else {
+					s.Diagnostics = append(s.Diagnostics, diagnostic("jcmd", "VM.info", infoErr))
 				}
 				p.supplementGC(ctx, look, run, pid, &s)
 				return s, nil
 			}
+			diagnostics = append(diagnostics, diagnostic("jcmd", "GC.heap_info", perr))
+		} else {
+			diagnostics = append(diagnostics, diagnostic("jcmd", "GC.heap_info", err))
 		}
 	}
 
 	jstatPath, jstatErr := look("jstat")
 	if jstatErr != nil {
-		if jcmdErr != nil {
-			return Sample{}, fmt.Errorf("%w: jcmd and jstat not on PATH", ErrUnavailable)
-		}
-		return Sample{}, fmt.Errorf("%w: jcmd failed and jstat missing", ErrUnavailable)
+		diagnostics = append(diagnostics, diagnostic("jstat", "-gc", jstatErr))
+	}
+	if jstatErr != nil {
+		return Sample{}, unavailableError(diagnostics, jcmdErr, jstatErr)
 	}
 	out, err := run(ctx, jstatPath, "-gc", fmt.Sprintf("%d", pid))
 	if err != nil {
-		return Sample{}, fmt.Errorf("%w: jstat: %v", ErrUnavailable, err)
+		diagnostics = append(diagnostics, diagnostic("jstat", "-gc", err))
+		return Sample{}, unavailableError(diagnostics, jcmdErr, err)
 	}
 	s, err := ParseJstatGC(out)
 	if err != nil {
-		return Sample{}, fmt.Errorf("%w: %v", ErrUnavailable, err)
+		diagnostics = append(diagnostics, diagnostic("jstat", "-gc", err))
+		return Sample{}, unavailableError(diagnostics, jcmdErr, err)
 	}
+	s.Diagnostics = diagnostics
 	p.supplementGC(ctx, look, run, pid, &s)
 	return s, nil
 }
@@ -181,12 +248,58 @@ func (p *Prober) supplementGC(
 	}
 	jinfoPath, err := look("jinfo")
 	if err != nil {
+		sample.Diagnostics = append(sample.Diagnostics, diagnostic("jinfo", "-flags", err))
 		return
 	}
 	out, err := run(ctx, jinfoPath, "-flags", fmt.Sprintf("%d", pid))
 	if err == nil {
 		sample.GC = ParseJinfoFlags(out)
+	} else {
+		sample.Diagnostics = append(sample.Diagnostics, diagnostic("jinfo", "-flags", err))
 	}
+}
+
+func diagnostic(tool, operation string, err error) Diagnostic {
+	return Diagnostic{Tool: tool, Operation: operation, Category: classifyFailure(err)}
+}
+
+func classifyFailure(err error) string {
+	if err == nil {
+		return ""
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return FailureTimeout
+	}
+	message := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(message, "no heap"), strings.Contains(message, "need header"), strings.Contains(message, "column count mismatch"), strings.Contains(message, "zero used"):
+		return FailureParseError
+	case strings.Contains(message, "permission denied"), strings.Contains(message, "operation not permitted"), strings.Contains(message, "access is denied"), strings.Contains(message, "attach denied"):
+		return FailurePermissionDenied
+	case strings.Contains(message, "no such process"), strings.Contains(message, "process not found"), strings.Contains(message, "could not find"):
+		return FailureStalePID
+	case strings.Contains(message, "unsupported"), strings.Contains(message, "not supported"), strings.Contains(message, "unrecognized option"), strings.Contains(message, "not recognized"):
+		return FailureUnsupportedJDK
+	case strings.Contains(message, "not found"), strings.Contains(message, "executable file"), strings.Contains(message, "cannot find"):
+		return FailureMissingTool
+	default:
+		return FailureProbeError
+	}
+}
+
+func unavailableError(diagnostics []Diagnostic, first, last error) error {
+	category := FailureProbeError
+	if len(diagnostics) > 0 {
+		category = diagnostics[len(diagnostics)-1].Category
+	}
+	return &ProbeError{Category: category, Diagnostics: diagnostics, err: fmt.Errorf("%w: %v", ErrUnavailable, lastOrFirst(first, last))}
+}
+
+func lastOrFirst(first, last error) error {
+	if last != nil {
+		return last
+	}
+	return first
 }
 
 func defaultRunner(ctx context.Context, name string, args ...string) (string, error) {
@@ -196,6 +309,9 @@ func defaultRunner(ctx context.Context, name string, args ...string) (string, er
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	if err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
 		msg := stringsTrim(stderr.String())
 		if msg == "" {
 			msg = err.Error()
