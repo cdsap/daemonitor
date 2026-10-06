@@ -123,7 +123,12 @@ internal object GoCoreSnapshotParser {
             oldGcCount = longField(obj, "old_gc_count"),
             oldGcTimeMs = longField(obj, "old_gc_time_ms"),
             javaVersion = stringField(obj, "java_version"),
+            javaRuntimeVersion = stringField(obj, "java_runtime_version"),
             javaVendor = stringField(obj, "java_vendor"),
+            javaVmName = stringField(obj, "java_vm_name"),
+            javaVmVersion = stringField(obj, "java_vm_version"),
+            osName = stringField(obj, "os_name"),
+            osArch = stringField(obj, "os_arch"),
             activeProcessorCount = longField(obj, "active_processor_count"),
         )
     }

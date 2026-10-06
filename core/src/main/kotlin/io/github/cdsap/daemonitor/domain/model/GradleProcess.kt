@@ -108,6 +108,11 @@ data class GradleProcess(
     val oldGcCount: Long? = null,
     val oldGcTimeMs: Long? = null,
     val javaVersion: String? = null,
+    val javaRuntimeVersion: String? = null,
     val javaVendor: String? = null,
+    val javaVmName: String? = null,
+    val javaVmVersion: String? = null,
+    val osName: String? = null,
+    val osArch: String? = null,
     val activeProcessorCount: Long? = null,
 )
