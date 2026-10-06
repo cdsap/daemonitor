@@ -100,6 +100,7 @@ type BuildRecord struct {
 	BuildID         string   `json:"build_id"`
 	DaemonPID       int64    `json:"daemon_pid"`
 	StartTimeMs     int64    `json:"start_time_ms"`
+	EndTimeMs       *int64   `json:"end_time_ms"`
 	FinalStatus     string   `json:"final_status"`
 	InferredSource  string   `json:"inferred_source"`
 	Agent           string   `json:"agent"`

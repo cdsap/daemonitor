@@ -12,6 +12,7 @@ import (
 	"github.com/clipperhouse/displaywidth"
 	"github.com/rivo/uniseg"
 
+	"github.com/cdsap/daemonitor/cored/internal/analysis"
 	"github.com/cdsap/daemonitor/cored/internal/client"
 	"github.com/cdsap/daemonitor/cored/internal/logs"
 	"github.com/cdsap/daemonitor/cored/internal/model"
@@ -857,6 +858,26 @@ func (m Model) renderDetails() string {
 		writeDetailField(&b, m.width, "Daemon log", "n/a")
 	}
 	b.WriteString("\nRecent activity:\n")
+	memory := analysis.Analyze(m.detailHistory, int32(p.PID), p.StartTimeMs)
+	b.WriteString("MEMORY TREND\n")
+	b.WriteString(memoryTrendLine("RSS", memory.RSS, m.width) + "\n")
+	if memory.Heap.Available {
+		b.WriteString(memoryTrendLine("Heap", memory.Heap, m.width) + "\n")
+	} else {
+		b.WriteString(truncateWidth("  Heap  n/a (insufficient valid heap samples)", m.width) + "\n")
+	}
+	b.WriteString(truncateWidth("  Assessment: "+memoryAssessmentText(memory.Assessment), m.width) + "\n")
+	retentions := analysis.AnalyzeBuildRetention(m.detailHistory, analysisBuilds(m.detailBuilds.Builds), int32(p.PID), p.StartTimeMs)
+	if len(retentions) > 0 {
+		b.WriteString("  Build retention:\n")
+		for i, retention := range retentions {
+			if i == 3 {
+				break
+			}
+			line := fmt.Sprintf("    %s  %s → %s → %s  retained %s", na(retention.BuildID), render.RSSText(retention.BeforeMB), render.RSSText(retention.PeakMB), render.RSSText(retention.AfterMB), signedMemory(retention.RetainedMB))
+			b.WriteString(truncateWidth(line, m.width) + "\n")
+		}
+	}
 	trend := rssTrend(m.detailHistory, int32(p.PID))
 	if trend == "" {
 		b.WriteString("  Trend: n/a\n")
@@ -908,6 +929,75 @@ func (m Model) renderDetails() string {
 	}
 	b.WriteString("\nesc back   q quit")
 	return b.String()
+}
+
+func analysisBuilds(builds []client.BuildRecord) []analysis.Build {
+	result := make([]analysis.Build, 0, len(builds))
+	for _, build := range builds {
+		result = append(result, analysis.Build{ID: build.BuildID, PID: int32(build.DaemonPID), StartTimeMs: build.StartTimeMs, EndTimeMs: build.EndTimeMs})
+	}
+	return result
+}
+
+func memoryTrendLine(label string, metric analysis.Metric, width int) string {
+	if !metric.Available {
+		return "  " + label + "  n/a"
+	}
+	trend := memorySparkline(metric.Values, width)
+	return truncateWidth(fmt.Sprintf("  %-5s %s  %s → %s  %s", label, trend, render.RSSText(metric.BaselineMB), render.RSSText(metric.CurrentMB), signedMemory(metric.AbsoluteGrowthMB)), max(1, width))
+}
+
+func memorySparkline(values []int64, width int) string {
+	if len(values) == 0 {
+		return "n/a"
+	}
+	maxValues := 16
+	if width < 60 {
+		maxValues = 8
+	}
+	if len(values) > maxValues {
+		values = values[len(values)-maxValues:]
+	}
+	minValue, maxValue := values[0], values[0]
+	for _, value := range values[1:] {
+		if value < minValue {
+			minValue = value
+		}
+		if value > maxValue {
+			maxValue = value
+		}
+	}
+	levels := []rune("▁▂▃▄▅▆▇█")
+	var b strings.Builder
+	for _, value := range values {
+		index := 0
+		if maxValue > minValue {
+			index = int((value - minValue) * int64(len(levels)-1) / (maxValue - minValue))
+		}
+		b.WriteRune(levels[index])
+	}
+	return b.String()
+}
+
+func signedMemory(value int64) string {
+	if value > 0 {
+		return "+" + render.RSSText(value)
+	}
+	if value < 0 {
+		return "-" + render.RSSText(-value)
+	}
+	return render.RSSText(0)
+}
+
+func memoryAssessmentText(assessment analysis.Assessment) string {
+	switch assessment {
+	case analysis.Growing, analysis.HighGrowth:
+		return "⚠ Sustained memory growth detected"
+	case analysis.Stable:
+		return "Stable in recent window"
+	default:
+		return "INSUFFICIENT_DATA"
+	}
 }
 
 func buildSummary(build client.BuildRecord) string {
