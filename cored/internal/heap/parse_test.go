@@ -138,6 +138,26 @@ os.arch = \uZZZZ
 	}
 }
 
+func TestParseJinfoFlags(t *testing.T) {
+	s := heap.ParseJinfoFlags(`-XX:ActiveProcessorCount=8
+-XX:+UseG1GC
+-XX:MaxHeapSize=4294967296
+`)
+	if s == nil || *s != "G1" {
+		t.Fatalf("gc=%v", s)
+	}
+}
+
+func TestParseJinfoFlagsIgnoresPropertiesAndDisabledFlags(t *testing.T) {
+	s := heap.ParseJinfoFlags(`-Dfile.encoding=UTF-8
+-XX:-UseG1GC
+-XX:+UseParallelGCX
+`)
+	if s != nil {
+		t.Fatalf("gc=%v", *s)
+	}
+}
+
 func TestParseJcmdIgnoresMetaspace(t *testing.T) {
 	// Only metaspace lines — should fail (no garbage-first / heap committed+used pair we accept).
 	_, err := heap.ParseJcmdHeapInfo("Metaspace       used 80K, committed 320K, reserved 1114112K\n")
@@ -146,5 +166,38 @@ func TestParseJcmdIgnoresMetaspace(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "no heap") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParseJinfoFlagsGC(t *testing.T) {
+	tests := []struct {
+		name string
+		out  string
+		want string
+	}{
+		{name: "g1", out: "63124:\nNon-default VM flags: -XX:+UseG1GC -XX:MaxGCPauseMillis=100\n", want: "G1"},
+		{name: "parallel", out: "VM Flags:\n-XX:+UseParallelGC -XX:+UseCompressedOops\n", want: "Parallel"},
+		{name: "serial", out: "VM Flags:\n-XX:+UseSerialGC\n", want: "Serial"},
+		{name: "shenandoah", out: "VM Flags:\n-XX:+UseShenandoahGC\n", want: "Shenandoah"},
+		{name: "zgc", out: "VM Flags:\n-XX:+UseZGC\n", want: "ZGC"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := heap.ParseJinfoFlagsGC(tt.out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got == nil || *got != tt.want {
+				t.Fatalf("gc=%v want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseJinfoFlagsGCRejectsUnsupportedOutput(t *testing.T) {
+	for _, out := range []string{"", "VM Flags:\n-XX:+UseEpsilonGC\n", "permission denied"} {
+		if _, err := heap.ParseJinfoFlagsGC(out); err == nil {
+			t.Fatalf("expected unsupported output error for %q", out)
+		}
 	}
 }

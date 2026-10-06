@@ -37,6 +37,63 @@ func TestProberPrefersJcmdThenFallsBackToJstat(t *testing.T) {
 	}
 }
 
+func TestProberUsesJinfoOnlyToSupplementUnknownGC(t *testing.T) {
+	p := heap.NewProber()
+	calls := []string{}
+	p.LookPath = func(name string) (string, error) {
+		if name == "jcmd" || name == "jinfo" {
+			return "/fake/" + name, nil
+		}
+		return "", errors.New("missing")
+	}
+	p.Runner = func(ctx context.Context, name string, args ...string) (string, error) {
+		calls = append(calls, name+" "+strings.Join(args, " "))
+		switch {
+		case strings.Contains(name, "jcmd") && strings.Contains(strings.Join(args, " "), "GC.heap_info"):
+			return "pid:\nheap total reserved 128K, committed 128K, used 64K\n", nil
+		case strings.Contains(name, "jcmd"):
+			return "", errors.New("unsupported VM.info")
+		case strings.Contains(name, "jinfo"):
+			return "-XX:+UseG1GC\n", nil
+		default:
+			return "", errors.New("unexpected command")
+		}
+	}
+	s, err := p.SampleFor(context.Background(), 42, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.GC == nil || *s.GC != "G1" {
+		t.Fatalf("gc=%v", s.GC)
+	}
+	if len(calls) != 4 || !strings.Contains(calls[2], "-flags 42") || !strings.Contains(calls[3], "-sysprops 42") {
+		t.Fatalf("calls=%v", calls)
+	}
+}
+
+func TestProberDoesNotRequireJinfoForHeapSample(t *testing.T) {
+	p := heap.NewProber()
+	p.LookPath = func(name string) (string, error) {
+		if name == "jcmd" || name == "jinfo" {
+			return "/fake/" + name, nil
+		}
+		return "", errors.New("missing")
+	}
+	p.Runner = func(ctx context.Context, name string, args ...string) (string, error) {
+		if strings.Contains(name, "jinfo") {
+			return "", errors.New("attach denied")
+		}
+		return jcmdHeapInfoFixture, nil
+	}
+	s, err := p.SampleFor(context.Background(), 42, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.UsedMB != 35 || s.CommittedMB != 256 {
+		t.Fatalf("sample=%+v", s)
+	}
+}
+
 func TestProberRetainsOnlyAllowlistedJinfoMetadata(t *testing.T) {
 	p := heap.NewProber()
 	p.LookPath = func(name string) (string, error) {
@@ -80,6 +137,9 @@ func TestProberLeavesJinfoMetadataUnavailableWhenAttachFails(t *testing.T) {
 	s, err := p.SampleFor(context.Background(), 42, 1000)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if s.UsedMB != 34 || s.CommittedMB != 256 {
+		t.Fatalf("sample=%+v", s)
 	}
 	if s.JavaVersion != nil || s.JavaVendor != nil || s.OSName != nil || s.OSArch != nil {
 		t.Fatalf("metadata should be unavailable after attach failure: %+v", s)
@@ -147,6 +207,65 @@ func TestProberUnavailableOnEmptyParse(t *testing.T) {
 	}
 	if !errors.Is(err, heap.ErrUnavailable) {
 		t.Fatalf("want ErrUnavailable, got %v", err)
+	}
+}
+
+func TestProberGCFlagsUsesBoundedCachedAttachProbe(t *testing.T) {
+	p := heap.NewProber()
+	p.CacheTTL = time.Hour
+	p.LookPath = func(name string) (string, error) {
+		if name == "jinfo" {
+			return "/fake/jinfo", nil
+		}
+		return "", errors.New("not found")
+	}
+	calls := 0
+	p.Runner = func(ctx context.Context, name string, args ...string) (string, error) {
+		calls++
+		if name != "/fake/jinfo" || len(args) != 2 || args[0] != "-flags" || args[1] != "42" {
+			t.Fatalf("unexpected jinfo command: %s %v", name, args)
+		}
+		return "VM Flags: -XX:+UseG1GC\n", nil
+	}
+
+	got, err := p.GCFor(context.Background(), 42, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || *got != "G1" {
+		t.Fatalf("gc=%v", got)
+	}
+	if _, err := p.GCFor(context.Background(), 42, 1000); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("expected cached probe, got %d calls", calls)
+	}
+}
+
+func TestProberGCFlagsReturnsUnavailableWhenJinfoIsMissing(t *testing.T) {
+	p := heap.NewProber()
+	p.LookPath = func(name string) (string, error) {
+		if name == "jinfo" {
+			return "", errors.New("permission denied")
+		}
+		return "", errors.New("not found")
+	}
+	if _, err := p.GCFor(context.Background(), 42, 1000); err == nil || !errors.Is(err, heap.ErrUnavailable) {
+		t.Fatalf("want unavailable jinfo error, got %v", err)
+	}
+}
+
+func TestProberGCFlagsHonorsTimeout(t *testing.T) {
+	p := heap.NewProber()
+	p.Timeout = 10 * time.Millisecond
+	p.LookPath = func(string) (string, error) { return "/fake/jinfo", nil }
+	p.Runner = func(ctx context.Context, name string, args ...string) (string, error) {
+		<-ctx.Done()
+		return "", ctx.Err()
+	}
+	if _, err := p.GCFor(context.Background(), 42, 1000); err == nil || !errors.Is(err, heap.ErrUnavailable) {
+		t.Fatalf("want unavailable timeout error, got %v", err)
 	}
 }
 

@@ -235,7 +235,12 @@ func collectJVMMetrics(ctx context.Context, prober *heap.Prober, proc *process.P
 	}
 	sample, err := prober.SampleFor(ctx, pid, startMs)
 	if err != nil {
-		return heap.Sample{}
+		sample = heap.Sample{}
+	}
+	if sample.GC == nil {
+		if gc, gcErr := prober.GCFor(ctx, pid, startMs); gcErr == nil {
+			sample.GC = gc
+		}
 	}
 	return sample
 }
