@@ -141,6 +141,7 @@ func (p *Prober) probe(ctx context.Context, pid int32) (Sample, error) {
 				if info, infoErr := run(ctx, jcmdPath, fmt.Sprintf("%d", pid), "VM.info"); infoErr == nil {
 					s.JavaVersion, s.JavaVendor, s.ActiveProcessorCount = ParseJcmdVMInfo(info)
 				}
+				p.supplementGC(ctx, look, run, pid, &s)
 				return s, nil
 			}
 		}
@@ -161,7 +162,31 @@ func (p *Prober) probe(ctx context.Context, pid int32) (Sample, error) {
 	if err != nil {
 		return Sample{}, fmt.Errorf("%w: %v", ErrUnavailable, err)
 	}
+	p.supplementGC(ctx, look, run, pid, &s)
 	return s, nil
+}
+
+// supplementGC uses jinfo only when the live-heap probe did not identify a
+// collector. It never makes a successful heap sample unavailable, and it does
+// not collect jinfo system properties.
+func (p *Prober) supplementGC(
+	ctx context.Context,
+	look func(string) (string, error),
+	run func(context.Context, string, ...string) (string, error),
+	pid int32,
+	sample *Sample,
+) {
+	if sample == nil || sample.GC != nil {
+		return
+	}
+	jinfoPath, err := look("jinfo")
+	if err != nil {
+		return
+	}
+	out, err := run(ctx, jinfoPath, "-flags", fmt.Sprintf("%d", pid))
+	if err == nil {
+		sample.GC = ParseJinfoFlags(out)
+	}
 }
 
 func defaultRunner(ctx context.Context, name string, args ...string) (string, error) {
