@@ -35,7 +35,8 @@ func WriteProcessesCSV(w io.Writer, snap model.Snapshot) error {
 		"involuntary_context_switches", "open_file_descriptors", "cpu_percent", "max_heap_mb", "min_heap_mb", "gc",
 		"heap_used_mb", "heap_committed_mb", "heap_max_mb", "heap_sampled_at_ms", "heap_available", "metaspace_used_mb",
 		"metaspace_committed_mb", "young_gc_count", "young_gc_time_ms", "old_gc_count", "old_gc_time_ms", "java_version",
-		"java_vendor", "active_processor_count", "start_time_ms", "status", "automated",
+		"java_runtime_version", "java_vendor", "java_vm_name", "java_vm_version", "os_name", "os_arch",
+		"active_processor_count", "start_time_ms", "status", "automated",
 	}); err != nil {
 		return err
 	}
@@ -49,7 +50,8 @@ func WriteProcessesCSV(w io.Writer, snap model.Snapshot) error {
 			CPUText(p.CPUPercent), optionalInt64(p.MaxHeapMB), optionalInt64(p.MinHeapMB), GCText(p.GC), optionalInt64(p.HeapUsedMB),
 			optionalInt64(p.HeapCommittedMB), optionalInt64(p.HeapMaxMB), optionalInt64(p.HeapSampledAtMs), fmt.Sprint(p.HeapAvailable),
 			optionalInt64(p.MetaspaceUsedMB), optionalInt64(p.MetaspaceCommittedMB), optionalInt64(p.YoungGCCount), optionalInt64(p.YoungGCTimeMs),
-			optionalInt64(p.OldGCCount), optionalInt64(p.OldGCTimeMs), optionalString(p.JavaVersion), optionalString(p.JavaVendor),
+			optionalInt64(p.OldGCCount), optionalInt64(p.OldGCTimeMs), optionalString(p.JavaVersion), optionalString(p.JavaRuntimeVersion),
+			optionalString(p.JavaVendor), optionalString(p.JavaVMName), optionalString(p.JavaVMVersion), optionalString(p.OSName), optionalString(p.OSArch),
 			optionalInt64(p.ActiveProcessorCount), fmt.Sprint(p.StartTimeMs), p.Status, fmt.Sprint(p.Automated),
 		}
 		if err := c.Write(row); err != nil {
@@ -204,7 +206,12 @@ func WriteProcessesDetailedPlain(w io.Writer, snap model.Snapshot) {
 		writeProcessMetric(w, "old_gc_count", optionalInt64Value(p.OldGCCount))
 		writeProcessMetric(w, "old_gc_time_ms", optionalInt64Value(p.OldGCTimeMs))
 		writeProcessMetric(w, "java_version", optionalValue(p.JavaVersion))
+		writeProcessMetric(w, "java_runtime_version", optionalValue(p.JavaRuntimeVersion))
 		writeProcessMetric(w, "java_vendor", optionalValue(p.JavaVendor))
+		writeProcessMetric(w, "java_vm_name", optionalValue(p.JavaVMName))
+		writeProcessMetric(w, "java_vm_version", optionalValue(p.JavaVMVersion))
+		writeProcessMetric(w, "os_name", optionalValue(p.OSName))
+		writeProcessMetric(w, "os_arch", optionalValue(p.OSArch))
 		writeProcessMetric(w, "active_processor_count", optionalInt64Value(p.ActiveProcessorCount))
 		writeProcessMetric(w, "start_time_ms", fmt.Sprint(p.StartTimeMs))
 		writeProcessMetric(w, "status", textOrNA(p.Status))

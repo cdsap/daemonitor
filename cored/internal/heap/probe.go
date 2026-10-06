@@ -83,8 +83,9 @@ type Prober struct {
 	// Runner runs a command; defaults to exec.CommandContext.
 	Runner func(ctx context.Context, name string, args ...string) (stdout string, err error)
 
-	mu    sync.Mutex
-	cache map[cacheKey]cacheEntry
+	mu      sync.Mutex
+	cache   map[cacheKey]cacheEntry
+	gcCache map[cacheKey]gcCacheEntry
 }
 
 type cacheKey struct {
@@ -103,23 +104,68 @@ func NewProber() *Prober {
 		CacheTTL: DefaultCacheTTL,
 		LookPath: LookPathWithJavaHome,
 		cache:    make(map[cacheKey]cacheEntry),
+		gcCache:  make(map[cacheKey]gcCacheEntry),
 	}
+}
+
+type gcCacheEntry struct {
+	gc        *string
+	expiresAt time.Time
+}
+
+// GCFor returns the selected collector from a bounded, cached jinfo probe.
+func (p *Prober) GCFor(ctx context.Context, pid int32, startTimeMs int64) (*string, error) {
+	if p == nil {
+		return nil, ErrUnavailable
+	}
+	ttl := p.CacheTTL
+	if ttl <= 0 {
+		ttl = DefaultCacheTTL
+	}
+	key := cacheKey{pid: pid, startTimeMs: startTimeMs}
+	now := time.Now()
+	p.mu.Lock()
+	if e, ok := p.gcCache[key]; ok && now.Before(e.expiresAt) {
+		gc := e.gc
+		p.mu.Unlock()
+		return gc, nil
+	}
+	p.mu.Unlock()
+
+	gc, err := p.probeGC(ctx, pid)
+	if err != nil {
+		p.mu.Lock()
+		delete(p.gcCache, key)
+		p.mu.Unlock()
+		return nil, err
+	}
+	p.mu.Lock()
+	if p.gcCache == nil {
+		p.gcCache = make(map[cacheKey]gcCacheEntry)
+	}
+	p.gcCache[key] = gcCacheEntry{gc: gc, expiresAt: now.Add(ttl)}
+	p.mu.Unlock()
+	return gc, nil
 }
 
 // LookPathWithJavaHome prefers JAVA_HOME/bin tools, then PATH.
 func LookPathWithJavaHome(name string) (string, error) {
-	jcmd, jstat := FindJavaHomeTools()
-	switch name {
-	case "jcmd":
-		if jcmd != "" {
-			return jcmd, nil
-		}
-	case "jstat":
-		if jstat != "" {
-			return jstat, nil
-		}
+	if path := findJavaHomeTool(name); path != "" {
+		return path, nil
 	}
 	return exec.LookPath(name)
+}
+
+func findJavaHomeTool(name string) string {
+	home := os.Getenv("JAVA_HOME")
+	if home == "" {
+		return ""
+	}
+	path := filepath.Join(home, "bin", name)
+	if _, err := os.Stat(path); err != nil {
+		return ""
+	}
+	return path
 }
 
 // SampleFor returns a cached or fresh live-heap sample for pid.
@@ -167,6 +213,42 @@ func (p *Prober) EvictMissing(live map[int32]struct{}) {
 			delete(p.cache, k)
 		}
 	}
+	for k := range p.gcCache {
+		if _, ok := live[k.pid]; !ok {
+			delete(p.gcCache, k)
+		}
+	}
+}
+
+func (p *Prober) probeGC(ctx context.Context, pid int32) (*string, error) {
+	timeout := p.Timeout
+	if timeout <= 0 {
+		timeout = defaultProbeBudget
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	look := p.LookPath
+	if look == nil {
+		look = exec.LookPath
+	}
+	run := p.Runner
+	if run == nil {
+		run = defaultRunner
+	}
+	jinfoPath, err := look("jinfo")
+	if err != nil {
+		return nil, fmt.Errorf("%w: jinfo not on PATH", ErrUnavailable)
+	}
+	out, err := run(ctx, jinfoPath, "-flags", fmt.Sprintf("%d", pid))
+	if err != nil {
+		return nil, fmt.Errorf("%w: jinfo: %v", ErrUnavailable, err)
+	}
+	gc, err := ParseJinfoFlagsGC(out)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrUnavailable, err)
+	}
+	return gc, nil
 }
 
 func (p *Prober) probe(ctx context.Context, pid int32) (Sample, error) {
@@ -198,11 +280,14 @@ func (p *Prober) probe(ctx context.Context, pid int32) (Sample, error) {
 			if perr == nil {
 				s.Diagnostics = diagnostics
 				if info, infoErr := run(ctx, jcmdPath, fmt.Sprintf("%d", pid), "VM.info"); infoErr == nil {
-					s.JavaVersion, s.JavaVendor, s.ActiveProcessorCount = ParseJcmdVMInfo(info)
+					// Processor count remains sourced from jcmd; JVM identity is
+					// intentionally sourced only from the sysprops allowlist below.
+					_, _, s.ActiveProcessorCount = ParseJcmdVMInfo(info)
 				} else {
 					s.Diagnostics = append(s.Diagnostics, diagnostic("jcmd", "VM.info", infoErr))
 				}
 				p.supplementGC(ctx, look, run, pid, &s)
+				p.collectAllowlistedSysprops(ctx, look, run, pid, &s)
 				return s, nil
 			}
 			diagnostics = append(diagnostics, diagnostic("jcmd", "GC.heap_info", perr))
@@ -230,7 +315,33 @@ func (p *Prober) probe(ctx context.Context, pid int32) (Sample, error) {
 	}
 	s.Diagnostics = diagnostics
 	p.supplementGC(ctx, look, run, pid, &s)
+	p.collectAllowlistedSysprops(ctx, look, run, pid, &s)
 	return s, nil
+}
+
+// collectAllowlistedSysprops obtains only the JVM properties explicitly
+// needed by the process model. Attach failure leaves those values unavailable;
+// it never turns the raw property output into a model field or error message.
+func (p *Prober) collectAllowlistedSysprops(
+	ctx context.Context,
+	look func(string) (string, error),
+	run func(context.Context, string, ...string) (string, error),
+	pid int32,
+	sample *Sample,
+) {
+	if sample == nil {
+		return
+	}
+	jinfoPath, err := look("jinfo")
+	if err != nil {
+		return
+	}
+	out, err := run(ctx, jinfoPath, "-sysprops", fmt.Sprintf("%d", pid))
+	if err != nil {
+		return
+	}
+	sample.JavaVersion, sample.JavaRuntimeVersion, sample.JavaVendor,
+		sample.JavaVMName, sample.JavaVMVersion, sample.OSName, sample.OSArch = ParseJinfoSysprops(out)
 }
 
 // supplementGC uses jinfo only when the live-heap probe did not identify a
@@ -327,17 +438,7 @@ func stringsTrim(s string) string {
 
 // FindJavaHomeTools returns jcmd/jstat under JAVA_HOME/bin when set.
 func FindJavaHomeTools() (jcmd, jstat string) {
-	home := os.Getenv("JAVA_HOME")
-	if home == "" {
-		return "", ""
-	}
-	jcmd = filepath.Join(home, "bin", "jcmd")
-	jstat = filepath.Join(home, "bin", "jstat")
-	if _, err := os.Stat(jcmd); err != nil {
-		jcmd = ""
-	}
-	if _, err := os.Stat(jstat); err != nil {
-		jstat = ""
-	}
+	jcmd = findJavaHomeTool("jcmd")
+	jstat = findJavaHomeTool("jstat")
 	return jcmd, jstat
 }

@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 var jinfoGCFlag = regexp.MustCompile(`(?:^|\s)-XX:\+Use([[:alnum:]]+)GC(?:\s|$)`)
@@ -24,7 +25,112 @@ type Sample struct {
 	JavaVersion          *string
 	JavaVendor           *string
 	ActiveProcessorCount *int64
+	JavaRuntimeVersion   *string
+	JavaVMName           *string
+	JavaVMVersion        *string
+	OSName               *string
+	OSArch               *string
 	Diagnostics          []Diagnostic
+}
+
+// ParseJinfoSysprops extracts only the explicitly allowlisted diagnostic
+// properties from `jinfo -sysprops`. The complete property map is never
+// retained, logged, or returned.
+func ParseJinfoSysprops(out string) (version, runtimeVersion, vendor, vmName, vmVersion, osName, osArch *string) {
+	allowlisted := map[string]**string{
+		"java.version":         &version,
+		"java.runtime.version": &runtimeVersion,
+		"java.vendor":          &vendor,
+		"java.vm.name":         &vmName,
+		"java.vm.version":      &vmVersion,
+		"os.name":              &osName,
+		"os.arch":              &osArch,
+	}
+	for _, line := range strings.Split(out, "\n") {
+		key, value, ok := parseSyspropLine(line)
+		if !ok {
+			continue
+		}
+		target, ok := allowlisted[key]
+		if !ok {
+			continue
+		}
+		decoded, ok := decodeSyspropValue(value)
+		if ok {
+			*target = ptrString(decoded)
+		}
+	}
+	return
+}
+
+func parseSyspropLine(line string) (key, value string, ok bool) {
+	line = strings.TrimSpace(line)
+	if line == "" || strings.HasPrefix(line, "#") {
+		return "", "", false
+	}
+	separator := -1
+	escaped := false
+	for i, r := range line {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if r == '\\' {
+			escaped = true
+			continue
+		}
+		if r == '=' {
+			separator = i
+			break
+		}
+	}
+	if separator < 0 {
+		return "", "", false
+	}
+	key = strings.TrimSpace(line[:separator])
+	value = strings.TrimSpace(line[separator+1:])
+	return key, value, key != ""
+}
+
+func decodeSyspropValue(value string) (string, bool) {
+	var b strings.Builder
+	for i := 0; i < len(value); i++ {
+		if value[i] != '\\' {
+			b.WriteByte(value[i])
+			continue
+		}
+		if i+1 >= len(value) {
+			return "", false
+		}
+		i++
+		switch value[i] {
+		case 't':
+			b.WriteByte('\t')
+		case 'n':
+			b.WriteByte('\n')
+		case 'r':
+			b.WriteByte('\r')
+		case 'f':
+			b.WriteByte('\f')
+		case 'u':
+			if i+4 >= len(value) {
+				return "", false
+			}
+			n, err := strconv.ParseUint(value[i+1:i+5], 16, 16)
+			if err != nil {
+				return "", false
+			}
+			b.WriteRune(rune(n))
+			i += 4
+		default:
+			b.WriteByte(value[i])
+		}
+	}
+	decoded := strings.TrimSpace(b.String())
+	if decoded == "" || !utf8.ValidString(decoded) || strings.ContainsAny(decoded, "\r\n") {
+		return "", false
+	}
+	return decoded, true
 }
 
 // ParseJcmdVMInfo extracts optional JVM identity and processor information.
@@ -60,13 +166,25 @@ func ParseJcmdVMInfo(out string) (version, vendor *string, processors *int64) {
 // ParseJinfoFlags extracts the selected garbage collector from `jinfo -flags`.
 // jinfo emits one VM flag per line; all other flags are intentionally ignored.
 func ParseJinfoFlags(out string) (gc *string) {
-	for _, line := range strings.Split(out, "\n") {
-		match := jinfoGCFlag.FindStringSubmatch(strings.TrimSpace(line))
-		if len(match) == 2 {
-			gc = ptrString(match[1])
+	for _, match := range jinfoGCFlag.FindAllStringSubmatch(out, -1) {
+		name, ok := map[string]string{
+			"G1": "G1", "Parallel": "Parallel", "Serial": "Serial",
+			"Shenandoah": "Shenandoah", "Z": "ZGC",
+		}[match[1]]
+		if ok {
+			gc = ptrString(name)
 		}
 	}
 	return gc
+}
+
+// ParseJinfoFlagsGC parses the selected collector from `jinfo -flags` output.
+func ParseJinfoFlagsGC(out string) (*string, error) {
+	gc := ParseJinfoFlags(out)
+	if gc == nil {
+		return nil, fmt.Errorf("jinfo -flags: supported collector flag not found")
+	}
+	return gc, nil
 }
 
 // ParseJcmdHeapInfo parses `jcmd <pid> GC.heap_info` output.

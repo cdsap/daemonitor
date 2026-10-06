@@ -102,6 +102,42 @@ available processors: 8`)
 	}
 }
 
+func TestParseJinfoSyspropsAllowlistAndSanitization(t *testing.T) {
+	version, runtimeVersion, vendor, vmName, vmVersion, osName, osArch := heap.ParseJinfoSysprops(`
+java.version = 21.0.1
+java.runtime.version=21.0.1+12-\u0045TS
+java.vendor = Eclipse\ Adoptium
+java.vm.name = OpenJDK\ 64-Bit\ Server\ VM
+java.vm.version = 21.0.1+12
+os.name = Linux
+os.arch = amd64
+java.home = /private/secret/jdk
+password = credentials
+malformed line without separator
+java.version = 21.0.2
+`)
+	if version == nil || *version != "21.0.2" || runtimeVersion == nil || *runtimeVersion != "21.0.1+12-ETS" || vendor == nil || *vendor != "Eclipse Adoptium" || vmName == nil || *vmName != "OpenJDK 64-Bit Server VM" || vmVersion == nil || *vmVersion != "21.0.1+12" || osName == nil || *osName != "Linux" || osArch == nil || *osArch != "amd64" {
+		t.Fatalf("metadata: version=%v runtime=%v vendor=%v vm=%v/%v os=%v/%v", version, runtimeVersion, vendor, vmName, vmVersion, osName, osArch)
+	}
+}
+
+func TestParseJinfoSyspropsMissingAndMalformedKeysAreUnavailable(t *testing.T) {
+	version, runtimeVersion, vendor, vmName, vmVersion, osName, osArch := heap.ParseJinfoSysprops(`
+java.version =
+java.runtime.version = 21.0.1\nleaked
+java.vendor = Eclipse\
+java.vm.name = OpenJDK
+os.name = Linux
+os.arch = \uZZZZ
+`)
+	if version != nil || runtimeVersion != nil || vendor != nil || vmVersion != nil || osArch != nil {
+		t.Fatalf("malformed values were retained: version=%v runtime=%v vendor=%v vmVersion=%v arch=%v", version, runtimeVersion, vendor, vmVersion, osArch)
+	}
+	if vmName == nil || *vmName != "OpenJDK" || osName == nil || *osName != "Linux" {
+		t.Fatalf("valid values missing: vm=%v os=%v", vmName, osName)
+	}
+}
+
 func TestParseJinfoFlags(t *testing.T) {
 	s := heap.ParseJinfoFlags(`-XX:ActiveProcessorCount=8
 -XX:+UseG1GC
@@ -130,5 +166,38 @@ func TestParseJcmdIgnoresMetaspace(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "no heap") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParseJinfoFlagsGC(t *testing.T) {
+	tests := []struct {
+		name string
+		out  string
+		want string
+	}{
+		{name: "g1", out: "63124:\nNon-default VM flags: -XX:+UseG1GC -XX:MaxGCPauseMillis=100\n", want: "G1"},
+		{name: "parallel", out: "VM Flags:\n-XX:+UseParallelGC -XX:+UseCompressedOops\n", want: "Parallel"},
+		{name: "serial", out: "VM Flags:\n-XX:+UseSerialGC\n", want: "Serial"},
+		{name: "shenandoah", out: "VM Flags:\n-XX:+UseShenandoahGC\n", want: "Shenandoah"},
+		{name: "zgc", out: "VM Flags:\n-XX:+UseZGC\n", want: "ZGC"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := heap.ParseJinfoFlagsGC(tt.out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got == nil || *got != tt.want {
+				t.Fatalf("gc=%v want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseJinfoFlagsGCRejectsUnsupportedOutput(t *testing.T) {
+	for _, out := range []string{"", "VM Flags:\n-XX:+UseEpsilonGC\n", "permission denied"} {
+		if _, err := heap.ParseJinfoFlagsGC(out); err == nil {
+			t.Fatalf("expected unsupported output error for %q", out)
+		}
 	}
 }

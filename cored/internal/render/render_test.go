@@ -51,7 +51,7 @@ func TestWriteProcessesDetailedPlainIncludesExtendedMetrics(t *testing.T) {
 		YoungGCTimeMs: &youngTime, OldGCTimeMs: &oldTime, JavaVersion: &javaVersion, JavaVendor: &javaVendor,
 	}}})
 	out := buf.String()
-	for _, want := range []string{"pid=7", "threads=12", "read_bytes=1024", "write_bytes=2048", "metaspace_used_mb=64", "young_gc_time_ms=7", "old_gc_time_ms=9", "java_version=21", "java_vendor=Temurin"} {
+	for _, want := range []string{"pid=7", "threads=12", "read_bytes=1024", "write_bytes=2048", "metaspace_used_mb=64", "young_gc_time_ms=7", "old_gc_time_ms=9", "java_version=21", "java_runtime_version=n/a", "java_vendor=Temurin", "java_vm_name=n/a", "java_vm_version=n/a", "os_name=n/a", "os_arch=n/a"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("detailed output missing %q: %s", want, out)
 		}
