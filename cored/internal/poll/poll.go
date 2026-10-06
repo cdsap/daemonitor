@@ -135,6 +135,9 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 			ctx, c.Heap, p, pid, kind, startMs, now,
 		)
 		jvmMetrics := collectJVMMetrics(ctx, c.Heap, p, pid, kind, startMs, now)
+		if jvm.GC == nil {
+			jvm.GC = jvmMetrics.GC
+		}
 		out = append(out, model.Process{
 			PID:              pid,
 			ParentPID:        parentPID,

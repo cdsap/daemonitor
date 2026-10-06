@@ -11,6 +11,7 @@ type Sample struct {
 	UsedMB               int64
 	CommittedMB          int64
 	Source               string // "jcmd" | "jstat"
+	GC                   *string
 	MetaspaceUsedMB      *int64
 	MetaspaceCommittedMB *int64
 	YoungGCCount         *int64
@@ -59,8 +60,12 @@ func ParseJcmdVMInfo(out string) (version, vendor *string, processors *int64) {
 func ParseJcmdHeapInfo(out string) (Sample, error) {
 	var metaspaceUsed, metaspaceCommitted *int64
 	var heapUsed, heapCommitted *int64
+	var gc *string
 	for _, line := range strings.Split(out, "\n") {
 		lower := strings.ToLower(line)
+		if strings.Contains(lower, "garbage-first heap") {
+			gc = ptrString("G1")
+		}
 		if strings.Contains(lower, "metaspace") {
 			metaspaceUsed = parseJcmdMetaspace(line, "used")
 			metaspaceCommitted = parseJcmdMetaspace(line, "committed")
@@ -81,10 +86,12 @@ func ParseJcmdHeapInfo(out string) (Sample, error) {
 	if heapUsed == nil || heapCommitted == nil {
 		return Sample{}, fmt.Errorf("jcmd GC.heap_info: no heap used/committed line")
 	}
-	return Sample{UsedMB: *heapUsed, CommittedMB: *heapCommitted, Source: "jcmd", MetaspaceUsedMB: metaspaceUsed, MetaspaceCommittedMB: metaspaceCommitted}, nil
+	return Sample{UsedMB: *heapUsed, CommittedMB: *heapCommitted, Source: "jcmd", GC: gc, MetaspaceUsedMB: metaspaceUsed, MetaspaceCommittedMB: metaspaceCommitted}, nil
 }
 
 func ptrInt64(v int64) *int64 { return &v }
+
+func ptrString(v string) *string { return &v }
 
 // ParseJstatGC parses one sample of `jstat -gc <pid>` (header + data row).
 // Used ≈ S0U+S1U+EU+OU; committed ≈ S0C+S1C+EC+OC (all KB). Missing columns treated as 0.
