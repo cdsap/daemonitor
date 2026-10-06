@@ -10,6 +10,7 @@ import (
 	"github.com/clipperhouse/displaywidth"
 
 	"github.com/cdsap/daemonitor/cored/internal/client"
+	"github.com/cdsap/daemonitor/cored/internal/logs"
 	"github.com/cdsap/daemonitor/cored/internal/model"
 	"github.com/cdsap/daemonitor/cored/internal/render"
 )
@@ -364,6 +365,42 @@ func TestDetailsIgnoreBuildsForReplacedPID(t *testing.T) {
 	m = next.(Model)
 	if !m.detailLoading || len(m.detailBuilds.Builds) != 0 {
 		t.Fatalf("stale details result applied: loading=%v builds=%v", m.detailLoading, m.detailBuilds.Builds)
+	}
+}
+
+func TestDetailsWideCommanderPanesAndLogTail(t *testing.T) {
+	p := model.Process{PID: 9, Type: "GRADLE_DAEMON", Name: "gradle", StartTimeMs: 100}
+	m := NewModel(Config{Now: fixedNow, NoColor: true})
+	m.width, m.height, m.detailsOpen, m.detailProcess = 160, 30, true, &p
+	m.detailLog = &logs.DaemonLog{PID: 9, GradleVersion: "8.0", Path: "/tmp/daemon.log"}
+	m.detailTail = &logs.Tail{PID: 9, Lines: []string{"old line", "newest Gradle line"}}
+	body := m.View().Content
+	for _, want := range []string{"ATTRIBUTES", "RESOURCE / BUILDS", "GRADLE LOG", "newest Gradle line"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("wide commander view missing %q: %s", want, body)
+		}
+	}
+	for _, line := range strings.Split(body, "\n") {
+		if displayLen(line) > m.width {
+			t.Fatalf("wide line exceeds width (%d): %q", m.width, line)
+		}
+	}
+}
+
+func TestDetailsHideGradleOnlyPanelsForNonDaemons(t *testing.T) {
+	for _, processType := range []string{"KOTLIN_DAEMON", "TEST_WORKER"} {
+		p := model.Process{PID: 9, Type: processType, StartTimeMs: 100}
+		m := NewModel(Config{Now: fixedNow, NoColor: true})
+		m.width, m.height, m.detailsOpen, m.detailProcess = 100, 30, true, &p
+		m.detailBuilds = client.BuildsPayload{Builds: []client.BuildRecord{{FinalStatus: "SUCCESS"}}}
+		m.detailTail = &logs.Tail{PID: 9, Lines: []string{"should be hidden"}}
+		body := m.View().Content
+		if strings.Contains(body, "RECENT BUILDS") || strings.Contains(body, "GRADLE LOG") || strings.Contains(body, "should be hidden") {
+			t.Fatalf("%s rendered Gradle-only panels: %s", processType, body)
+		}
+		if !strings.Contains(body, "RESOURCE TRENDS") || !strings.Contains(body, "ATTRIBUTES") {
+			t.Fatalf("%s omitted shared commander regions: %s", processType, body)
+		}
 	}
 }
 

@@ -788,7 +788,6 @@ func killNotice(msg killFinishedMsg) (string, bool) {
 }
 
 func (m Model) renderDetails() string {
-	var b strings.Builder
 	p := m.detailProcess
 	if p == nil {
 		return "No process selected.\nPress esc to return."
@@ -797,142 +796,236 @@ func (m Model) renderDetails() string {
 	if now == 0 {
 		now = m.now().UnixMilli()
 	}
-	heading := fmt.Sprintf("PROCESS DETAILS  pid=%d", p.PID)
-	if !m.noColor {
-		heading = detailHeadingStyle(m.noColor).Render(heading)
+	header := detailHeader(*p, now, m.detailIsEnded(), m.detailIsStale(), m.width, m.noColor)
+	attributes := detailAttributes(*p, m.width, now)
+	resource := detailResources(m, *p)
+	gradle := p.Type == "GRADLE_DAEMON"
+	builds := []string(nil)
+	if gradle {
+		builds = detailBuilds(m, m.width)
 	}
-	fmt.Fprintf(&b, "%s\n\n", heading)
-	writeDetailField(&b, m.width, "Type", render.TypeDisplay(p.Type))
-	writeDetailField(&b, m.width, "PID", fmt.Sprintf("%d", p.PID))
-	writeDetailField(&b, m.width, "Name", na(p.Name))
-	writeDetailField(&b, m.width, "Project", render.ProjectName(*p))
-	if p.WorkingDirectory != nil {
-		writeDetailField(&b, m.width, "Working dir", *p.WorkingDirectory)
+	log := []string(nil)
+	if gradle {
+		log = detailLog(m, m.width)
+	}
+
+	var b strings.Builder
+	b.WriteString(header)
+	b.WriteString("\n")
+	if m.width >= 140 {
+		available := max(1, m.height-5)
+		attrWidth := max(28, m.width/4)
+		resourceWidth := max(28, m.width/4)
+		logWidth := m.width - attrWidth - resourceWidth - 6
+		if len(log) == 0 {
+			resourceWidth += logWidth
+			logWidth = 0
+		}
+		panes := [][]string{detailPanel("ATTRIBUTES", attributes, attrWidth, available)}
+		activity := append([]string{}, resource...)
+		activity = append(activity, builds...)
+		panes = append(panes, detailPanel("RESOURCE / BUILDS", activity, resourceWidth, available))
+		if logWidth > 0 {
+			panes = append(panes, detailPanel("Recent log lines: / GRADLE LOG", log, logWidth, available))
+		}
+		b.WriteString(joinDetailPanes(panes, m.width))
 	} else {
-		writeDetailField(&b, m.width, "Working dir", "n/a")
+		sections := [][]string{detailPanel("ATTRIBUTES", attributes, m.width, 0), detailPanel("RESOURCE TRENDS", resource, m.width, 0)}
+		if len(builds) > 0 {
+			sections = append(sections, detailPanel("Recent builds: / RECENT BUILDS", builds, m.width, 0))
+		}
+		if len(log) > 0 {
+			sections = append(sections, detailPanel("Recent log lines: / GRADLE LOG", log, m.width, 0))
+		}
+		for _, section := range sections {
+			for _, line := range section {
+				b.WriteString(line)
+				b.WriteByte('\n')
+			}
+		}
 	}
-	writeDetailField(&b, m.width, "RSS", render.RSSText(p.RSSMemoryMB))
-	writeDetailField(&b, m.width, "Virtual memory", optionalInt64Text(p.VirtualMemoryMB, "MB"))
-	writeDetailField(&b, m.width, "Swap memory", optionalInt64Text(p.SwapMemoryMB, "MB"))
-	writeDetailField(&b, m.width, "Threads", optionalInt64Text(p.ThreadCount, ""))
-	writeDetailField(&b, m.width, "Disk read", optionalInt64Text(p.ReadBytes, "bytes"))
-	writeDetailField(&b, m.width, "Disk write", optionalInt64Text(p.WriteBytes, "bytes"))
-	writeDetailField(&b, m.width, "Read operations", optionalInt64Text(p.ReadOperations, ""))
-	writeDetailField(&b, m.width, "Write operations", optionalInt64Text(p.WriteOperations, ""))
-	writeDetailField(&b, m.width, "Minor page faults", optionalInt64Text(p.MinorPageFaults, ""))
-	writeDetailField(&b, m.width, "Major page faults", optionalInt64Text(p.MajorPageFaults, ""))
-	writeDetailField(&b, m.width, "Voluntary switches", optionalInt64Text(p.VoluntaryContextSwitches, ""))
-	writeDetailField(&b, m.width, "Involuntary switches", optionalInt64Text(p.InvoluntaryContextSwitches, ""))
-	writeDetailField(&b, m.width, "Open file descriptors", optionalInt64Text(p.OpenFileDescriptors, ""))
-	writeDetailField(&b, m.width, "CPU", render.CPUText(p.CPUPercent))
-	writeDetailField(&b, m.width, "Xmx", render.HeapLimitText(p.MaxHeapMB))
-	writeDetailField(&b, m.width, "Xms", optionalInt64Text(p.MinHeapMB, "MB"))
-	writeDetailField(&b, m.width, "GC", render.GCText(p.GC))
-	writeDetailField(&b, m.width, "Heap used", render.HeapText(p.HeapUsedMB))
-	writeDetailField(&b, m.width, "Heap committed", render.HeapText(p.HeapCommittedMB))
-	writeDetailField(&b, m.width, "Heap max", render.HeapText(p.HeapMaxMB))
-	writeDetailField(&b, m.width, "Heap %", render.HeapPercentText(p.HeapUsedMB, p.HeapMaxMB))
-	writeDetailField(&b, m.width, "Heap sampled", optionalInt64Text(p.HeapSampledAtMs, ""))
-	writeDetailField(&b, m.width, "Heap available", fmt.Sprint(p.HeapAvailable))
-	writeDetailField(&b, m.width, "Metaspace used", optionalInt64Text(p.MetaspaceUsedMB, "MB"))
-	writeDetailField(&b, m.width, "Metaspace committed", optionalInt64Text(p.MetaspaceCommittedMB, "MB"))
-	writeDetailField(&b, m.width, "Young GC count", optionalInt64Text(p.YoungGCCount, ""))
-	writeDetailField(&b, m.width, "Young GC time", optionalInt64Text(p.YoungGCTimeMs, "ms"))
-	writeDetailField(&b, m.width, "Old GC count", optionalInt64Text(p.OldGCCount, ""))
-	writeDetailField(&b, m.width, "Old GC time", optionalInt64Text(p.OldGCTimeMs, "ms"))
-	writeDetailField(&b, m.width, "Java version", optionalStringText(p.JavaVersion))
-	writeDetailField(&b, m.width, "Java runtime", optionalStringText(p.JavaRuntimeVersion))
-	writeDetailField(&b, m.width, "Java vendor", optionalStringText(p.JavaVendor))
-	writeDetailField(&b, m.width, "Java VM", optionalStringText(p.JavaVMName))
-	writeDetailField(&b, m.width, "Java VM version", optionalStringText(p.JavaVMVersion))
-	writeDetailField(&b, m.width, "OS", optionalStringText(p.OSName))
-	writeDetailField(&b, m.width, "OS arch", optionalStringText(p.OSArch))
-	writeDetailField(&b, m.width, "Active processors", optionalInt64Text(p.ActiveProcessorCount, ""))
-	writeDetailField(&b, m.width, "Status", na(p.Status))
-	writeDetailField(&b, m.width, "Automated", fmt.Sprint(p.Automated))
-	writeDetailField(&b, m.width, "Start", formatStart(p.StartTimeMs))
-	writeDetailField(&b, m.width, "Uptime", render.Uptime(p.StartTimeMs, now))
-	if m.detailLog != nil {
-		writeDetailField(&b, m.width, "Gradle", na(m.detailLog.GradleVersion))
-		writeDetailField(&b, m.width, "Daemon log", na(m.detailLog.Path))
-	} else if m.detailLoading {
-		writeDetailField(&b, m.width, "Gradle", "…")
-		writeDetailField(&b, m.width, "Daemon log", "…")
-	} else {
-		writeDetailField(&b, m.width, "Gradle", "n/a")
-		writeDetailField(&b, m.width, "Daemon log", "n/a")
+	b.WriteByte('\n')
+	b.WriteString("esc back   q quit")
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func (m Model) detailIsEnded() bool {
+	status := strings.ToLower(m.detailProcess.Status)
+	if strings.Contains(status, "end") || strings.Contains(status, "terminated") || strings.Contains(status, "stopped") || strings.Contains(status, "exited") || strings.Contains(status, "dead") {
+		return true
 	}
-	b.WriteString("\nRecent activity:\n")
-	memory := analysis.Analyze(m.detailHistory, int32(p.PID), p.StartTimeMs)
-	b.WriteString("MEMORY TREND\n")
-	b.WriteString(memoryTrendLine("RSS", memory.RSS, m.width) + "\n")
+	if len(m.processes) == 0 {
+		return false
+	}
+	for _, p := range m.processes {
+		if p.PID == m.detailProcess.PID && p.StartTimeMs == m.detailProcess.StartTimeMs {
+			return false
+		}
+	}
+	return true
+}
+
+func (m Model) detailIsStale() bool {
+	return m.sampledAt > 0 && m.detailProcess.SampledAtMs > 0 && m.sampledAt > m.detailProcess.SampledAtMs
+}
+
+func detailHeader(p model.Process, now int64, ended, stale bool, width int, noColor bool) string {
+	state := na(p.Status)
+	if ended {
+		state = "ENDED"
+	}
+	if stale {
+		state += " · snapshot stale"
+	}
+	line := fmt.Sprintf("GRADLE COMMANDER CENTER / PROCESS DETAILS  ·  %s  ·  pid %d  ·  %s  ·  %s  ·  RSS %s  ·  CPU %s  ·  GC %s  ·  uptime %s", render.TypeDisplay(p.Type), p.PID, na(p.Name), state, render.RSSText(p.RSSMemoryMB), render.CPUText(p.CPUPercent), render.GCText(p.GC), render.Uptime(p.StartTimeMs, now))
+	if project := render.ProjectName(p); project != "—" {
+		line += "  ·  " + project
+	}
+	line = truncateWidth(line, max(1, width))
+	if noColor {
+		return line
+	}
+	return detailHeadingStyle(noColor).Render(line)
+}
+
+func detailAttributes(p model.Process, width int, now int64) []string {
+	lines := []string{"Identity", fmt.Sprintf("  Type       %s", render.TypeDisplay(p.Type)), fmt.Sprintf("  PID        %d", p.PID), "  Name       " + na(p.Name), "  Project    " + render.ProjectName(p), "  Work dir   " + optionalStringText(p.WorkingDirectory), "  Status     " + na(p.Status), "  Start      " + formatStart(p.StartTimeMs), "  Uptime     " + render.Uptime(p.StartTimeMs, now), "", "JVM / memory", "  RSS        " + render.RSSText(p.RSSMemoryMB), "  CPU        " + render.CPUText(p.CPUPercent), "  GC         " + render.GCText(p.GC), "  Xmx        " + render.HeapLimitText(p.MaxHeapMB), "  Xms        " + optionalInt64Text(p.MinHeapMB, "MB"), "  Heap used  " + render.HeapText(p.HeapUsedMB), "  Heap cmt   " + render.HeapText(p.HeapCommittedMB), "  Heap max   " + render.HeapText(p.HeapMaxMB), "  Heap %     " + render.HeapPercentText(p.HeapUsedMB, p.HeapMaxMB), "  Metaspace used " + optionalInt64Text(p.MetaspaceUsedMB, "MB"), "", "Diagnostics", "  Threads    " + optionalInt64Text(p.ThreadCount, ""), "  VM         " + optionalStringText(p.JavaVMName), "  Java       " + optionalStringText(p.JavaVersion), "  OS         " + optionalStringText(p.OSName) + " / " + optionalStringText(p.OSArch), "  Processors " + optionalInt64Text(p.ActiveProcessorCount, ""), "  GC young   " + optionalInt64Text(p.YoungGCCount, "") + " / " + optionalInt64Text(p.YoungGCTimeMs, "ms"), "  GC old     " + optionalInt64Text(p.OldGCCount, "") + " / " + optionalInt64Text(p.OldGCTimeMs, "ms"), "  VM version " + optionalStringText(p.JavaVMVersion), "  Runtime    " + optionalStringText(p.JavaRuntimeVersion), "  Vendor     " + optionalStringText(p.JavaVendor), "  Open files " + optionalInt64Text(p.OpenFileDescriptors, "")}
+	lines = append(lines,
+		"  Virtual memory "+optionalInt64Text(p.VirtualMemoryMB, "MB"),
+		"  Swap memory "+optionalInt64Text(p.SwapMemoryMB, "MB"),
+		"  Disk read  "+optionalInt64Text(p.ReadBytes, "bytes"),
+		"  Disk write "+optionalInt64Text(p.WriteBytes, "bytes"),
+		"  Young GC time "+optionalInt64Text(p.YoungGCTimeMs, "ms"),
+		"  Java version "+optionalStringText(p.JavaVersion),
+	)
+	for i := range lines {
+		lines[i] = truncateWidth(lines[i], max(1, width-2))
+	}
+	return lines
+}
+
+func detailResources(m Model, p model.Process) []string {
+	memory := analysis.Analyze(m.detailHistory, p.PID, p.StartTimeMs)
+	lines := []string{"MEMORY TREND / RSS / heap history", memoryTrendLine("RSS", memory.RSS, m.width)}
 	if memory.Heap.Available {
-		b.WriteString(memoryTrendLine("Heap", memory.Heap, m.width) + "\n")
+		lines = append(lines, memoryTrendLine("Heap", memory.Heap, m.width))
 	} else {
-		b.WriteString(truncateWidth("  Heap  n/a (insufficient valid heap samples)", m.width) + "\n")
+		lines = append(lines, "  Heap  n/a (insufficient valid heap samples)")
 	}
-	b.WriteString(truncateWidth("  Assessment: "+memoryAssessmentText(memory.Assessment), m.width) + "\n")
-	retentions := analysis.AnalyzeBuildRetention(m.detailHistory, analysisBuilds(m.detailBuilds.Builds), int32(p.PID), p.StartTimeMs)
-	if len(retentions) > 0 {
-		b.WriteString("  Build retention:\n")
-		for i, retention := range retentions {
-			if i == 3 {
-				break
-			}
-			line := fmt.Sprintf("    %s  %s → %s → %s  retained %s", na(retention.BuildID), render.RSSText(retention.BeforeMB), render.RSSText(retention.PeakMB), render.RSSText(retention.AfterMB), signedMemory(retention.RetainedMB))
-			b.WriteString(truncateWidth(line, m.width) + "\n")
+	lines = append(lines, "  Assessment: "+memoryAssessmentText(memory.Assessment))
+	retentions := analysis.AnalyzeBuildRetention(m.detailHistory, analysisBuilds(m.detailBuilds.Builds), p.PID, p.StartTimeMs)
+	for i, retention := range retentions {
+		if i == 3 {
+			break
 		}
+		lines = append(lines, fmt.Sprintf("  Retention %s → %s (%s)", render.RSSText(retention.BeforeMB), render.RSSText(retention.AfterMB), signedMemory(retention.RetainedMB)))
 	}
-	trend := rssTrend(m.detailHistory, int32(p.PID))
-	if trend == "" {
-		b.WriteString("  Trend: n/a\n")
+	if trend := rssTrend(m.detailHistory, p.PID); trend != "" {
+		lines = append(lines, "  RSS trend: "+trend)
 	} else {
-		b.WriteString("  RSS trend: " + trend + "\n")
+		lines = append(lines, "  RSS trend: n/a")
 	}
-	b.WriteString("\nRecent builds:\n")
+	return lines
+}
+
+func detailBuilds(m Model, width int) []string {
 	if m.detailLoading {
-		b.WriteString("  Loading…\n")
-	} else if m.detailError != "" && len(m.detailBuilds.Builds) == 0 {
-		b.WriteString("  " + truncateWidth("Unavailable: "+m.detailError, m.width-2) + "\n")
-	} else if len(m.detailBuilds.Builds) == 0 {
-		b.WriteString("  No build history for this daemon.\n")
-	} else {
-		for i, build := range m.detailBuilds.Builds {
-			if i == 3 {
-				break
-			}
-			summaryWidth := m.width - 2
-			if m.width >= 80 {
-				summaryWidth = m.width
-			}
-			b.WriteString("  " + truncateWidth(buildSummary(build), summaryWidth) + "\n")
+		return []string{"Loading…"}
+	}
+	if m.detailError != "" && len(m.detailBuilds.Builds) == 0 {
+		return []string{truncateWidth("Unavailable: "+m.detailError, max(1, width-2))}
+	}
+	if len(m.detailBuilds.Builds) == 0 {
+		return []string{"No build history for this daemon."}
+	}
+	lines := make([]string, 0, 4)
+	for i, build := range m.detailBuilds.Builds {
+		if i == 3 {
+			break
+		}
+		for _, field := range buildSummaryLines(build) {
+			lines = append(lines, truncateWidth(field, max(1, width-2)))
 		}
 	}
-	if m.detailTail != nil && len(m.detailTail.Events) > 0 {
-		event := m.detailTail.Events[len(m.detailTail.Events)-1]
-		b.WriteString("  Last log event: " + string(event.Kind) + "\n")
+	return lines
+}
+
+func buildSummaryLines(build client.BuildRecord) []string {
+	duration := "-"
+	if build.DurationSeconds != nil {
+		duration = fmt.Sprintf("%.1fs", math.Round(*build.DurationSeconds*10)/10)
 	}
-	b.WriteString("\nRecent log lines:\n")
+	return []string{na(build.FinalStatus), "project=" + na(build.ProjectPath), "duration=" + duration, "start=" + formatStart(build.StartTimeMs), "source=" + na(build.InferredSource), "agent=" + na(build.Agent)}
+}
+
+func detailLog(m Model, width int) []string {
 	if m.detailLoading {
-		b.WriteString("  Loading…\n")
-	} else if m.detailError != "" && m.detailTail == nil {
-		b.WriteString("  n/a (" + m.detailError + ")\n")
-	} else if m.detailTail == nil || len(m.detailTail.Lines) == 0 {
-		b.WriteString("  n/a\n")
-	} else {
-		lines := m.detailTail.Lines
-		maxLines := m.height - 20
-		if maxLines < 3 {
-			maxLines = 3
-		}
-		if len(lines) > maxLines {
-			lines = lines[len(lines)-maxLines:]
-		}
-		for _, line := range lines {
-			b.WriteString("  " + truncateWidth(line, m.width-2) + "\n")
+		return []string{"Loading…"}
+	}
+	if m.detailError != "" && m.detailTail == nil {
+		return []string{"Unavailable: " + m.detailError}
+	}
+	if m.detailTail == nil {
+		return []string{"No matching Gradle daemon log is available."}
+	}
+	if len(m.detailTail.Lines) == 0 {
+		return []string{"Gradle log is available but empty."}
+	}
+	lines := m.detailTail.Lines
+	maxLines := m.height - 7
+	if maxLines < 3 {
+		maxLines = 3
+	}
+	if len(lines) > maxLines {
+		lines = lines[len(lines)-maxLines:]
+	}
+	result := make([]string, 0, len(lines)+1)
+	for _, line := range lines {
+		result = append(result, truncateWidth(line, max(1, width-2)))
+	}
+	return result
+}
+
+func detailPanel(title string, content []string, width, height int) []string {
+	if width < 1 {
+		return nil
+	}
+	inner := max(1, width-4)
+	lines := []string{"┌" + truncateWidth("─ "+title+" ", inner) + strings.Repeat("─", max(0, inner-displaywidth.String(truncateWidth("─ "+title+" ", inner)))) + "┐"}
+	if height > 0 && len(content) > height-2 {
+		content = content[:max(0, height-2)]
+	}
+	for _, line := range content {
+		lines = append(lines, "│ "+truncateWidth(line, inner)+strings.Repeat(" ", max(0, inner-displaywidth.String(truncateWidth(line, inner))))+" │")
+	}
+	for len(lines) < max(2, height) {
+		lines = append(lines, "│ "+strings.Repeat(" ", inner)+" │")
+	}
+	lines = append(lines, "└"+strings.Repeat("─", inner+2)+"┘")
+	return lines
+}
+
+func joinDetailPanes(panes [][]string, width int) string {
+	maxLines := 0
+	for _, pane := range panes {
+		if len(pane) > maxLines {
+			maxLines = len(pane)
 		}
 	}
-	b.WriteString("\nesc back   q quit")
+	var b strings.Builder
+	for row := 0; row < maxLines; row++ {
+		parts := make([]string, 0, len(panes))
+		for _, pane := range panes {
+			if row < len(pane) {
+				parts = append(parts, pane[row])
+			}
+		}
+		line := strings.Join(parts, " ")
+		b.WriteString(truncateWidth(line, width))
+		if row+1 < maxLines {
+			b.WriteByte('\n')
+		}
+	}
 	return b.String()
 }
 
