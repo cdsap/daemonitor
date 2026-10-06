@@ -173,6 +173,11 @@ func TestRowOrientedExports(t *testing.T) {
 	if !strings.Contains(buf.String(), "thread_count") || !strings.Contains(buf.String(), "read_bytes") || !strings.Contains(buf.String(), "write_bytes") || !strings.Contains(buf.String(), ",4,10,20,") {
 		t.Fatalf("extended process metrics missing from CSV: %s", buf.String())
 	}
+	for _, column := range []string{"java_runtime_version", "java_vm_name", "java_vm_version", "os_name", "os_arch"} {
+		if !strings.Contains(buf.String(), column) {
+			t.Fatalf("JVM metadata column missing from CSV: %s", buf.String())
+		}
+	}
 
 	buf.Reset()
 	if err := WriteJSONLine(&buf, map[string]string{"kind": "snapshot"}); err != nil {

@@ -52,7 +52,12 @@ class GoCoreSnapshotParserTest {
                   "young_gc_count": 8,
                   "young_gc_time_ms": 120,
                   "java_version": "21.0.8",
+                  "java_runtime_version": "21.0.8+9-LTS",
                   "java_vendor": "Eclipse Adoptium",
+                  "java_vm_name": "OpenJDK 64-Bit Server VM",
+                  "java_vm_version": "21.0.8+9-LTS",
+                  "os_name": "Linux",
+                  "os_arch": "amd64",
                   "active_processor_count": 8
                 },
                 {
@@ -94,6 +99,14 @@ class GoCoreSnapshotParserTest {
         assertEquals(2048L, daemon.maxHeapMb)
         assertEquals(512L, daemon.minHeapMb)
         assertEquals("G1", daemon.gc)
+        assertEquals("21.0.8", daemon.javaVersion)
+        assertEquals("21.0.8+9-LTS", daemon.javaRuntimeVersion)
+        assertEquals("Eclipse Adoptium", daemon.javaVendor)
+        assertEquals("OpenJDK 64-Bit Server VM", daemon.javaVmName)
+        assertEquals("21.0.8+9-LTS", daemon.javaVmVersion)
+        assertEquals("Linux", daemon.osName)
+        assertEquals("amd64", daemon.osArch)
+        assertEquals(8L, daemon.activeProcessorCount)
         assertEquals("/tmp/daemon", daemon.workingDirectory)
         assertNull(daemon.projectPath)
         val live = assertNotNull(daemon.liveHeap)

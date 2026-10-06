@@ -57,6 +57,14 @@ class LiveMonitorScreenUiTest {
         maxHeapMb = maxHeapMb,
         minHeapMb = 256,
         gc = "G1",
+        javaVersion = "21.0.8",
+        javaRuntimeVersion = "21.0.8+9-LTS",
+        javaVendor = "Eclipse Adoptium",
+        javaVmName = "OpenJDK 64-Bit Server VM",
+        javaVmVersion = "21.0.8+9-LTS",
+        osName = "Linux",
+        osArch = "amd64",
+        activeProcessorCount = 8,
         startTimeMs = 1_700_000_000_000,
         status = "RUNNING",
         automated = false,
@@ -153,6 +161,28 @@ class LiveMonitorScreenUiTest {
             LiveMetricLabels.liveHeapUsedDetail(wrapper.liveHeap, wrapper.type),
             useUnmergedTree = true,
         ).assertExists()
+    }
+
+    @Test
+    fun `process details shows JVM and operating system metadata`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val process = sampleProcess()
+        val state = LiveUiState(
+            processes = listOf(process),
+            summary = LiveSummary(activeProcessCount = 1, totalRssMb = 1024, highestMemoryPid = process.pid, activeProjectCount = 1),
+            detail = DetailState.Selected(process),
+            isLoading = false,
+            isEmpty = false,
+        )
+
+        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
+
+        onNodeWithTag("process-detail-scroll").performTouchInput { swipeUp() }
+        onNodeWithText("Java runtime").assertExists()
+        onNodeWithText("Java VM").assertExists()
+        onNodeWithText("Java VM version").assertExists()
+        onNodeWithText("OS").assertExists()
+        onNodeWithText("OS arch").assertExists()
     }
 
     @Test

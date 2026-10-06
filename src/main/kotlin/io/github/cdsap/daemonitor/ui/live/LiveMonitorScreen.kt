@@ -292,6 +292,11 @@ private fun ProcessDetails(p: GradleProcess, ended: Boolean, nowMs: Long) {
 
         DetailSection("JVM")
         DetailRow("Java", listOfNotNull(p.javaVersion, p.javaVendor).joinToString(" · ").ifBlank { "unavailable" })
+        DetailRow("Java runtime", p.javaRuntimeVersion ?: "unavailable")
+        DetailRow("Java VM", p.javaVmName ?: "unavailable")
+        DetailRow("Java VM version", p.javaVmVersion ?: "unavailable")
+        DetailRow("OS", p.osName ?: "unavailable")
+        DetailRow("OS arch", p.osArch ?: "unavailable")
         DetailRow("GC", p.gc ?: "unavailable")
         DetailRow("Metaspace used", p.metaspaceUsedMb.metric("MB"))
         DetailRow("Metaspace committed", p.metaspaceCommittedMb.metric("MB"))
