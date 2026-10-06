@@ -2,9 +2,12 @@ package heap
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 )
+
+var jinfoCollectorFlag = regexp.MustCompile(`-XX:\+Use([A-Za-z0-9]+)GC(?:\s|$)`)
 
 // Sample is live heap usage in megabytes (floor division from KB tool output).
 type Sample struct {
@@ -51,6 +54,20 @@ func ParseJcmdVMInfo(out string) (version, vendor *string, processors *int64) {
 		}
 	}
 	return
+}
+
+// ParseJinfoFlagsGC parses the selected collector from `jinfo -flags` output.
+func ParseJinfoFlagsGC(out string) (*string, error) {
+	for _, match := range jinfoCollectorFlag.FindAllStringSubmatch(out, -1) {
+		name, ok := map[string]string{
+			"G1": "G1", "Parallel": "Parallel", "Serial": "Serial",
+			"Shenandoah": "Shenandoah", "Z": "ZGC",
+		}[match[1]]
+		if ok {
+			return ptrString(name), nil
+		}
+	}
+	return nil, fmt.Errorf("jinfo -flags: supported collector flag not found")
 }
 
 // ParseJcmdHeapInfo parses `jcmd <pid> GC.heap_info` output.
