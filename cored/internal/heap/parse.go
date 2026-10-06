@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // Sample is live heap usage in megabytes (floor division from KB tool output).
@@ -21,6 +22,111 @@ type Sample struct {
 	JavaVersion          *string
 	JavaVendor           *string
 	ActiveProcessorCount *int64
+	JavaRuntimeVersion   *string
+	JavaVMName           *string
+	JavaVMVersion        *string
+	OSName               *string
+	OSArch               *string
+}
+
+// ParseJinfoSysprops extracts only the explicitly allowlisted diagnostic
+// properties from `jinfo -sysprops`. The complete property map is never
+// retained, logged, or returned.
+func ParseJinfoSysprops(out string) (version, runtimeVersion, vendor, vmName, vmVersion, osName, osArch *string) {
+	allowlisted := map[string]**string{
+		"java.version":         &version,
+		"java.runtime.version": &runtimeVersion,
+		"java.vendor":          &vendor,
+		"java.vm.name":         &vmName,
+		"java.vm.version":      &vmVersion,
+		"os.name":              &osName,
+		"os.arch":              &osArch,
+	}
+	for _, line := range strings.Split(out, "\n") {
+		key, value, ok := parseSyspropLine(line)
+		if !ok {
+			continue
+		}
+		target, ok := allowlisted[key]
+		if !ok {
+			continue
+		}
+		decoded, ok := decodeSyspropValue(value)
+		if ok {
+			*target = ptrString(decoded)
+		}
+	}
+	return
+}
+
+func parseSyspropLine(line string) (key, value string, ok bool) {
+	line = strings.TrimSpace(line)
+	if line == "" || strings.HasPrefix(line, "#") {
+		return "", "", false
+	}
+	separator := -1
+	escaped := false
+	for i, r := range line {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if r == '\\' {
+			escaped = true
+			continue
+		}
+		if r == '=' {
+			separator = i
+			break
+		}
+	}
+	if separator < 0 {
+		return "", "", false
+	}
+	key = strings.TrimSpace(line[:separator])
+	value = strings.TrimSpace(line[separator+1:])
+	return key, value, key != ""
+}
+
+func decodeSyspropValue(value string) (string, bool) {
+	var b strings.Builder
+	for i := 0; i < len(value); i++ {
+		if value[i] != '\\' {
+			b.WriteByte(value[i])
+			continue
+		}
+		if i+1 >= len(value) {
+			return "", false
+		}
+		i++
+		switch value[i] {
+		case 't':
+			b.WriteByte('\t')
+		case 'n':
+			b.WriteByte('\n')
+		case 'r':
+			b.WriteByte('\r')
+		case 'f':
+			b.WriteByte('\f')
+		case 'u':
+			if i+4 >= len(value) {
+				return "", false
+			}
+			n, err := strconv.ParseUint(value[i+1:i+5], 16, 16)
+			if err != nil {
+				return "", false
+			}
+			b.WriteRune(rune(n))
+			i += 4
+		default:
+			b.WriteByte(value[i])
+		}
+	}
+	decoded := strings.TrimSpace(b.String())
+	if decoded == "" || !utf8.ValidString(decoded) || strings.ContainsAny(decoded, "\r\n") {
+		return "", false
+	}
+	return decoded, true
 }
 
 // ParseJcmdVMInfo extracts optional JVM identity and processor information.

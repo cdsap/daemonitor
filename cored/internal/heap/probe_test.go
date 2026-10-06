@@ -37,6 +37,55 @@ func TestProberPrefersJcmdThenFallsBackToJstat(t *testing.T) {
 	}
 }
 
+func TestProberRetainsOnlyAllowlistedJinfoMetadata(t *testing.T) {
+	p := heap.NewProber()
+	p.LookPath = func(name string) (string, error) {
+		if name == "jcmd" || name == "jinfo" {
+			return "/fake/" + name, nil
+		}
+		return "", errors.New("missing")
+	}
+	p.Runner = func(ctx context.Context, name string, args ...string) (string, error) {
+		if strings.Contains(name, "jcmd") {
+			return jcmdHeapInfoFixture, nil
+		}
+		return "java.version=21\njava.vendor=Temurin\nos.name=Linux\njava.home=/secret\n", nil
+	}
+	s, err := p.SampleFor(context.Background(), 42, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.JavaVersion == nil || *s.JavaVersion != "21" || s.JavaVendor == nil || *s.JavaVendor != "Temurin" || s.OSName == nil || *s.OSName != "Linux" {
+		t.Fatalf("metadata=%+v", s)
+	}
+	if s.JavaRuntimeVersion != nil || s.JavaVMName != nil || s.JavaVMVersion != nil || s.OSArch != nil {
+		t.Fatalf("unexpected metadata=%+v", s)
+	}
+}
+
+func TestProberLeavesJinfoMetadataUnavailableWhenAttachFails(t *testing.T) {
+	p := heap.NewProber()
+	p.LookPath = func(name string) (string, error) {
+		if name == "jstat" || name == "jinfo" {
+			return "/fake/" + name, nil
+		}
+		return "", errors.New("missing")
+	}
+	p.Runner = func(ctx context.Context, name string, args ...string) (string, error) {
+		if strings.Contains(name, "jstat") {
+			return jstatGCFixture, nil
+		}
+		return "", errors.New("attach failed")
+	}
+	s, err := p.SampleFor(context.Background(), 42, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.JavaVersion != nil || s.JavaVendor != nil || s.OSName != nil || s.OSArch != nil {
+		t.Fatalf("metadata should be unavailable after attach failure: %+v", s)
+	}
+}
+
 func TestProberCacheTTL(t *testing.T) {
 	p := heap.NewProber()
 	p.CacheTTL = time.Hour

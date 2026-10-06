@@ -41,7 +41,12 @@ type Process struct {
 	OldGCCount           *int64  `json:"old_gc_count"`
 	OldGCTimeMs          *int64  `json:"old_gc_time_ms"`
 	JavaVersion          *string `json:"java_version"`
+	JavaRuntimeVersion   *string `json:"java_runtime_version"`
 	JavaVendor           *string `json:"java_vendor"`
+	JavaVMName           *string `json:"java_vm_name"`
+	JavaVMVersion        *string `json:"java_vm_version"`
+	OSName               *string `json:"os_name"`
+	OSArch               *string `json:"os_arch"`
 	ActiveProcessorCount *int64  `json:"active_processor_count"`
 	StartTimeMs          int64   `json:"start_time_ms"`
 	Status               string  `json:"status"`
