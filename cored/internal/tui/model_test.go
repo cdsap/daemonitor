@@ -320,6 +320,39 @@ func TestDetailsShowScopedBuildFieldsAndFitNarrowWidth(t *testing.T) {
 	}
 }
 
+func TestDetailsRendersCautiousMemoryGrowthAnalysis(t *testing.T) {
+	p := model.Process{PID: 9, Type: "GRADLE_DAEMON", StartTimeMs: 100}
+	m := NewModel(Config{Now: fixedNow, NoColor: true})
+	m.width, m.height, m.detailsOpen, m.detailProcess = 80, 30, true, &p
+	for i, rss := range []int64{100, 180, 260, 340, 420, 500} {
+		m.detailHistory = append(m.detailHistory, model.Process{PID: 9, StartTimeMs: 100, SampledAtMs: int64(i+1) * 30_000, RSSMemoryMB: rss})
+	}
+	body := m.View().Content
+	for _, want := range []string{"MEMORY TREND", "RSS", "180 MB → 500 MB", "+320 MB", "⚠ Sustained memory growth detected", "Heap  n/a"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("memory analysis missing %q: %s", want, body)
+		}
+	}
+	for _, line := range strings.Split(body, "\n") {
+		if displayLen(line) > m.width {
+			t.Fatalf("line exceeds width (%d): %q", m.width, line)
+		}
+	}
+}
+
+func TestDetailsMemoryAnalysisDoesNotMixProcessIncarnations(t *testing.T) {
+	p := model.Process{PID: 9, Type: "GRADLE_DAEMON", StartTimeMs: 200}
+	m := NewModel(Config{Now: fixedNow, NoColor: true})
+	m.width, m.height, m.detailsOpen, m.detailProcess = 80, 30, true, &p
+	for i, rss := range []int64{100, 200, 300, 400, 500, 600} {
+		m.detailHistory = append(m.detailHistory, model.Process{PID: 9, StartTimeMs: 100, SampledAtMs: int64(i+1) * 30_000, RSSMemoryMB: rss})
+	}
+	body := m.View().Content
+	if !strings.Contains(body, "Assessment: INSUFFICIENT_DATA") {
+		t.Fatalf("mixed incarnation was analyzed: %s", body)
+	}
+}
+
 func TestDetailsIgnoreBuildsForReplacedPID(t *testing.T) {
 	p := model.Process{PID: 9, Type: "GRADLE_DAEMON", StartTimeMs: 200}
 	m := NewModel(Config{Now: fixedNow, NoColor: true})
