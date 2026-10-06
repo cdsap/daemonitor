@@ -13,6 +13,7 @@ import io.github.cdsap.daemonitor.infrastructure.update.updateServiceForDistribu
 import io.github.cdsap.daemonitor.mcp.DaemonitorMcpServer
 import io.github.cdsap.daemonitor.persistence.BuildRepository
 import io.github.cdsap.daemonitor.persistence.ProcessSampleRepository
+import io.github.cdsap.daemonitor.persistence.RetentionRepository
 import io.github.cdsap.daemonitor.platform.AppDirectories
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
@@ -46,6 +47,7 @@ class AppContainer(
     )
 
     val database: WatcherDatabase = core.database
+    val retentionRepository: RetentionRepository = core.retentionRepository
     val settingsStore: SettingsStore = core.settingsStore
     val settingsService: SettingsService = core.settingsService
     val buildAggregator: BuildAggregator = core.buildAggregator

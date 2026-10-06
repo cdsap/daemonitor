@@ -7,6 +7,7 @@ import io.github.cdsap.daemonitor.collect.DaemonLogWatcher
 import io.github.cdsap.daemonitor.collect.ProcessCollector
 import io.github.cdsap.daemonitor.config.MonitoringConfig
 import io.github.cdsap.daemonitor.domain.BuildAggregator
+import io.github.cdsap.daemonitor.persistence.RetentionRepository
 import io.github.cdsap.daemonitor.platform.AppDirectories
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
@@ -25,6 +26,7 @@ class CoreContainer(
     val processSource: ProcessSource = processSource ?: ProcessCollector()
     val daemonLogSource: DaemonLogSource = logSource ?: DaemonLogWatcher()
     val database = WatcherDatabase.open(databasePath)
+    val retentionRepository: RetentionRepository = database
     val settingsStore = SettingsStore(settingsPath)
     val settingsService = SettingsService(settingsStore, database, clock)
     val buildAggregator = BuildAggregator(

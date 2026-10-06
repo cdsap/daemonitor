@@ -75,7 +75,7 @@ internal object HeadlessLauncher {
         )
 
         return try {
-            container.settingsService.purgeNow(retentionDays)
+            container.retentionRepository.purgeOlderThan(System.currentTimeMillis(), retentionDays)
             Runtime.getRuntime().addShutdownHook(shutdownHook)
             var lastResult = WatcherRuntime.PollResult(emptyList(), emptyList(), false)
             var pollError: String? = null
