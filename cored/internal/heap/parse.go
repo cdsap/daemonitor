@@ -2,9 +2,12 @@ package heap
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 )
+
+var jinfoGCFlag = regexp.MustCompile(`(?:^|\s)-XX:\+Use([[:alnum:]]+)GC(?:\s|$)`)
 
 // Sample is live heap usage in megabytes (floor division from KB tool output).
 type Sample struct {
@@ -51,6 +54,18 @@ func ParseJcmdVMInfo(out string) (version, vendor *string, processors *int64) {
 		}
 	}
 	return
+}
+
+// ParseJinfoFlags extracts the selected garbage collector from `jinfo -flags`.
+// jinfo emits one VM flag per line; all other flags are intentionally ignored.
+func ParseJinfoFlags(out string) (gc *string) {
+	for _, line := range strings.Split(out, "\n") {
+		match := jinfoGCFlag.FindStringSubmatch(strings.TrimSpace(line))
+		if len(match) == 2 {
+			gc = ptrString(match[1])
+		}
+	}
+	return gc
 }
 
 // ParseJcmdHeapInfo parses `jcmd <pid> GC.heap_info` output.

@@ -102,6 +102,26 @@ available processors: 8`)
 	}
 }
 
+func TestParseJinfoFlags(t *testing.T) {
+	s := heap.ParseJinfoFlags(`-XX:ActiveProcessorCount=8
+-XX:+UseG1GC
+-XX:MaxHeapSize=4294967296
+`)
+	if s == nil || *s != "G1" {
+		t.Fatalf("gc=%v", s)
+	}
+}
+
+func TestParseJinfoFlagsIgnoresPropertiesAndDisabledFlags(t *testing.T) {
+	s := heap.ParseJinfoFlags(`-Dfile.encoding=UTF-8
+-XX:-UseG1GC
+-XX:+UseParallelGCX
+`)
+	if s != nil {
+		t.Fatalf("gc=%v", *s)
+	}
+}
+
 func TestParseJcmdIgnoresMetaspace(t *testing.T) {
 	// Only metaspace lines — should fail (no garbage-first / heap committed+used pair we accept).
 	_, err := heap.ParseJcmdHeapInfo("Metaspace       used 80K, committed 320K, reserved 1114112K\n")
