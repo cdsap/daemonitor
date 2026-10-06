@@ -131,10 +131,8 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 		}
 
 		jvm := ParseJVMArgs(cmdline)
-		usedMB, committedMB, maxMB, heapSampledAt, heapAvail := liveHeapFields(
-			ctx, c.Heap, p, pid, kind, startMs, now,
-		)
-		jvmMetrics := collectJVMMetrics(ctx, c.Heap, p, pid, kind, startMs, now)
+		jvmMetrics, probeFailure := collectJVMMetrics(ctx, c.Heap, p, pid, kind, startMs)
+		usedMB, committedMB, maxMB, heapSampledAt, heapAvail := liveHeapFieldsFromSample(now, jvmMetrics, probeFailure)
 		if jvm.GC == nil {
 			jvm.GC = jvmMetrics.GC
 		}
@@ -170,6 +168,7 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 			JavaVendor: jvmMetrics.JavaVendor, JavaVMName: jvmMetrics.JavaVMName, JavaVMVersion: jvmMetrics.JavaVMVersion,
 			OSName: jvmMetrics.OSName, OSArch: jvmMetrics.OSArch,
 			ActiveProcessorCount: jvmMetrics.ActiveProcessorCount,
+			HeapProbeDiagnostics: probeDiagnostics(jvmMetrics.Diagnostics, probeFailure),
 			StartTimeMs:          startMs,
 			Status:               status,
 			Automated:            IsNonInteractive(cmdline),
@@ -229,51 +228,42 @@ func collectOSMetrics(ctx context.Context, p *process.Process) osMetrics {
 	return m
 }
 
-func collectJVMMetrics(ctx context.Context, prober *heap.Prober, proc *process.Process, pid int32, kind string, startMs, now int64) heap.Sample {
-	if !ShouldProbeLiveHeap(kind) || int(pid) == os.Getpid() || !sameUID(ctx, proc) || prober == nil {
-		return heap.Sample{}
-	}
-	sample, err := prober.SampleFor(ctx, pid, startMs)
-	if err != nil {
-		sample = heap.Sample{}
-	}
-	if sample.GC == nil {
-		if gc, gcErr := prober.GCFor(ctx, pid, startMs); gcErr == nil {
-			sample.GC = gc
-		}
-	}
-	return sample
-}
-
-func liveHeapFields(
-	ctx context.Context,
-	prober *heap.Prober,
-	proc *process.Process,
-	pid int32,
-	kind string,
-	startMs, now int64,
-) (used, committed, max, sampledAt *int64, available bool) {
-	sampled := now
-	if !ShouldProbeLiveHeap(kind) {
-		return nil, nil, nil, &sampled, false
-	}
-	// Self-attach via jcmd can deadlock HotSpot; skip our own PID.
-	if int(pid) == os.Getpid() {
-		return nil, nil, nil, &sampled, false
+func collectJVMMetrics(ctx context.Context, prober *heap.Prober, proc *process.Process, pid int32, kind string, startMs int64) (heap.Sample, string) {
+	if !ShouldProbeLiveHeap(kind) || int(pid) == os.Getpid() || prober == nil {
+		return heap.Sample{}, ""
 	}
 	if !sameUID(ctx, proc) {
-		return nil, nil, nil, &sampled, false
-	}
-	if prober == nil {
-		return nil, nil, nil, &sampled, false
+		return heap.Sample{Diagnostics: []heap.Diagnostic{{Tool: "attach", Operation: "identity", Category: heap.FailurePermissionDenied}}}, heap.FailurePermissionDenied
 	}
 	sample, err := prober.SampleFor(ctx, pid, startMs)
 	if err != nil {
+		return heap.Sample{Diagnostics: heap.FailureDiagnostics(err)}, heap.FailureCategory(err)
+	}
+	return sample, ""
+}
+
+func liveHeapFieldsFromSample(now int64, sample heap.Sample, probeFailure string) (used, committed, max, sampledAt *int64, available bool) {
+	sampled := now
+	if probeFailure != "" {
 		return nil, nil, nil, &sampled, false
 	}
 	u := sample.UsedMB
 	c := sample.CommittedMB
 	return &u, &c, nil, &sampled, true
+}
+
+func probeDiagnostics(diagnostics []heap.Diagnostic, terminalFailure string) []model.ProbeDiagnostic {
+	if terminalFailure != "" {
+		diagnostics = append(diagnostics, heap.Diagnostic{Tool: "probe", Operation: "live_heap", Category: terminalFailure})
+	}
+	if len(diagnostics) == 0 {
+		return nil
+	}
+	out := make([]model.ProbeDiagnostic, 0, len(diagnostics))
+	for _, d := range diagnostics {
+		out = append(out, model.ProbeDiagnostic{Tool: d.Tool, Operation: d.Operation, Category: d.Category})
+	}
+	return out
 }
 
 func sameUID(ctx context.Context, proc *process.Process) bool {

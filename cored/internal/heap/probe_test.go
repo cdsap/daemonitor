@@ -94,6 +94,56 @@ func TestProberDoesNotRequireJinfoForHeapSample(t *testing.T) {
 	}
 }
 
+func TestProberFailureCategoriesAreStableAndSanitized(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		category string
+	}{
+		{name: "timeout", err: context.DeadlineExceeded, category: heap.FailureTimeout},
+		{name: "permission", err: errors.New("attach denied"), category: heap.FailurePermissionDenied},
+		{name: "stale pid", err: errors.New("Could not find process 42"), category: heap.FailureStalePID},
+		{name: "unsupported jdk", err: errors.New("unsupported option"), category: heap.FailureUnsupportedJDK},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := heap.NewProber()
+			p.LookPath = func(name string) (string, error) { return "/fake/" + name, nil }
+			p.Runner = func(context.Context, string, ...string) (string, error) { return "", tt.err }
+			_, err := p.SampleFor(context.Background(), 42, 1)
+			if err == nil || heap.FailureCategory(err) != tt.category {
+				t.Fatalf("error=%v category=%q", err, heap.FailureCategory(err))
+			}
+			diagnostics := heap.FailureDiagnostics(err)
+			if len(diagnostics) == 0 || diagnostics[len(diagnostics)-1].Category != tt.category {
+				t.Fatalf("diagnostics=%+v", diagnostics)
+			}
+			if strings.Contains(err.Error(), "42") || strings.Contains(err.Error(), "attach denied") {
+				t.Fatalf("probe error leaked target/output: %v", err)
+			}
+		})
+	}
+
+	t.Run("parse error", func(t *testing.T) {
+		p := heap.NewProber()
+		p.LookPath = func(name string) (string, error) { return "/fake/" + name, nil }
+		p.Runner = func(context.Context, string, ...string) (string, error) { return "not a heap dump", nil }
+		_, err := p.SampleFor(context.Background(), 42, 1)
+		if heap.FailureCategory(err) != heap.FailureParseError {
+			t.Fatalf("category=%q error=%v", heap.FailureCategory(err), err)
+		}
+	})
+
+	t.Run("missing tool", func(t *testing.T) {
+		p := heap.NewProber()
+		p.LookPath = func(string) (string, error) { return "", errors.New("executable file not found") }
+		_, err := p.SampleFor(context.Background(), 42, 1)
+		if heap.FailureCategory(err) != heap.FailureMissingTool {
+			t.Fatalf("category=%q error=%v", heap.FailureCategory(err), err)
+		}
+	})
+}
+
 func TestProberRetainsOnlyAllowlistedJinfoMetadata(t *testing.T) {
 	p := heap.NewProber()
 	p.LookPath = func(name string) (string, error) {

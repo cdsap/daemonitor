@@ -30,6 +30,7 @@ type Sample struct {
 	JavaVMVersion        *string
 	OSName               *string
 	OSArch               *string
+	Diagnostics          []Diagnostic
 }
 
 // ParseJinfoSysprops extracts only the explicitly allowlisted diagnostic
