@@ -19,6 +19,12 @@ const jcmdHeapInfoFixture = `63124:
   class space    used 5K, committed 128K, reserved 1048576K
 `
 
+const jcmdParallelHeapInfoFixture = `63124:
+ PSYoungGen      total 76288K, used 49152K [0x0000000710000000, 0x0000000760000000)
+ ParOldGen       total 175104K, used 0K [0x0000000660000000, 0x0000000710000000)
+ Metaspace       used 80K, committed 320K, reserved 1114112K
+`
+
 func TestParseJstatGC(t *testing.T) {
 	s, err := heap.ParseJstatGC(jstatGCFixture)
 	if err != nil {
@@ -65,6 +71,22 @@ func TestParseJcmdHeapInfo(t *testing.T) {
 	}
 	if s.MetaspaceUsedMB == nil || *s.MetaspaceUsedMB != 0 || s.MetaspaceCommittedMB == nil || *s.MetaspaceCommittedMB != 0 {
 		t.Fatalf("metaspace metrics: used=%v committed=%v", s.MetaspaceUsedMB, s.MetaspaceCommittedMB)
+	}
+}
+
+func TestParseJcmdParallelHeapInfo(t *testing.T) {
+	s, err := heap.ParseJcmdHeapInfo(jcmdParallelHeapInfoFixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.GC == nil || *s.GC != "Parallel" {
+		t.Fatalf("gc: %v", s.GC)
+	}
+	if s.UsedMB != 48 {
+		t.Fatalf("used MB: got %d want 48", s.UsedMB)
+	}
+	if s.CommittedMB != 245 {
+		t.Fatalf("committed MB: got %d want 245", s.CommittedMB)
 	}
 }
 

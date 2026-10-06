@@ -61,10 +61,35 @@ func ParseJcmdHeapInfo(out string) (Sample, error) {
 	var metaspaceUsed, metaspaceCommitted *int64
 	var heapUsed, heapCommitted *int64
 	var gc *string
+	var generationUsedKB, generationTotalKB float64
 	for _, line := range strings.Split(out, "\n") {
 		lower := strings.ToLower(line)
 		if strings.Contains(lower, "garbage-first heap") {
 			gc = ptrString("G1")
+		}
+		if strings.Contains(lower, "psyounggen") || strings.Contains(lower, "paroldgen") {
+			gc = ptrString("Parallel")
+			if total, ok := findKBToken(line, "total"); ok {
+				generationTotalKB += total
+			}
+			if used, ok := findKBToken(line, "used"); ok {
+				generationUsedKB += used
+			}
+		}
+		if strings.Contains(lower, "def new generation") || strings.Contains(lower, "tenured generation") {
+			gc = ptrString("Serial")
+			if total, ok := findKBToken(line, "total"); ok {
+				generationTotalKB += total
+			}
+			if used, ok := findKBToken(line, "used"); ok {
+				generationUsedKB += used
+			}
+		}
+		if strings.Contains(lower, "shenandoah") {
+			gc = ptrString("Shenandoah")
+		}
+		if strings.Contains(lower, "zheap") {
+			gc = ptrString("ZGC")
 		}
 		if strings.Contains(lower, "metaspace") {
 			metaspaceUsed = parseJcmdMetaspace(line, "used")
@@ -82,6 +107,9 @@ func ParseJcmdHeapInfo(out string) (Sample, error) {
 			continue
 		}
 		heapUsed, heapCommitted = ptrInt64(kbToMB(usedKB)), ptrInt64(kbToMB(committedKB))
+	}
+	if generationTotalKB > 0 {
+		heapUsed, heapCommitted = ptrInt64(kbToMB(generationUsedKB)), ptrInt64(kbToMB(generationTotalKB))
 	}
 	if heapUsed == nil || heapCommitted == nil {
 		return Sample{}, fmt.Errorf("jcmd GC.heap_info: no heap used/committed line")
