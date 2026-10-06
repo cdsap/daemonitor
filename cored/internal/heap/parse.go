@@ -59,13 +59,25 @@ func ParseJcmdVMInfo(out string) (version, vendor *string, processors *int64) {
 // ParseJinfoFlags extracts the selected garbage collector from `jinfo -flags`.
 // jinfo emits one VM flag per line; all other flags are intentionally ignored.
 func ParseJinfoFlags(out string) (gc *string) {
-	for _, line := range strings.Split(out, "\n") {
-		match := jinfoGCFlag.FindStringSubmatch(strings.TrimSpace(line))
-		if len(match) == 2 {
-			gc = ptrString(match[1])
+	for _, match := range jinfoGCFlag.FindAllStringSubmatch(out, -1) {
+		name, ok := map[string]string{
+			"G1": "G1", "Parallel": "Parallel", "Serial": "Serial",
+			"Shenandoah": "Shenandoah", "Z": "ZGC",
+		}[match[1]]
+		if ok {
+			gc = ptrString(name)
 		}
 	}
 	return gc
+}
+
+// ParseJinfoFlagsGC parses the selected collector from `jinfo -flags` output.
+func ParseJinfoFlagsGC(out string) (*string, error) {
+	gc := ParseJinfoFlags(out)
+	if gc == nil {
+		return nil, fmt.Errorf("jinfo -flags: supported collector flag not found")
+	}
+	return gc, nil
 }
 
 // ParseJcmdHeapInfo parses `jcmd <pid> GC.heap_info` output.

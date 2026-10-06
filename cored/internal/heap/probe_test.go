@@ -158,6 +158,65 @@ func TestProberUnavailableOnEmptyParse(t *testing.T) {
 	}
 }
 
+func TestProberGCFlagsUsesBoundedCachedAttachProbe(t *testing.T) {
+	p := heap.NewProber()
+	p.CacheTTL = time.Hour
+	p.LookPath = func(name string) (string, error) {
+		if name == "jinfo" {
+			return "/fake/jinfo", nil
+		}
+		return "", errors.New("not found")
+	}
+	calls := 0
+	p.Runner = func(ctx context.Context, name string, args ...string) (string, error) {
+		calls++
+		if name != "/fake/jinfo" || len(args) != 2 || args[0] != "-flags" || args[1] != "42" {
+			t.Fatalf("unexpected jinfo command: %s %v", name, args)
+		}
+		return "VM Flags: -XX:+UseG1GC\n", nil
+	}
+
+	got, err := p.GCFor(context.Background(), 42, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || *got != "G1" {
+		t.Fatalf("gc=%v", got)
+	}
+	if _, err := p.GCFor(context.Background(), 42, 1000); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("expected cached probe, got %d calls", calls)
+	}
+}
+
+func TestProberGCFlagsReturnsUnavailableWhenJinfoIsMissing(t *testing.T) {
+	p := heap.NewProber()
+	p.LookPath = func(name string) (string, error) {
+		if name == "jinfo" {
+			return "", errors.New("permission denied")
+		}
+		return "", errors.New("not found")
+	}
+	if _, err := p.GCFor(context.Background(), 42, 1000); err == nil || !errors.Is(err, heap.ErrUnavailable) {
+		t.Fatalf("want unavailable jinfo error, got %v", err)
+	}
+}
+
+func TestProberGCFlagsHonorsTimeout(t *testing.T) {
+	p := heap.NewProber()
+	p.Timeout = 10 * time.Millisecond
+	p.LookPath = func(string) (string, error) { return "/fake/jinfo", nil }
+	p.Runner = func(ctx context.Context, name string, args ...string) (string, error) {
+		<-ctx.Done()
+		return "", ctx.Err()
+	}
+	if _, err := p.GCFor(context.Background(), 42, 1000); err == nil || !errors.Is(err, heap.ErrUnavailable) {
+		t.Fatalf("want unavailable timeout error, got %v", err)
+	}
+}
+
 func TestParseJstatZeroUsedAndCommitted(t *testing.T) {
 	out := "S0C S1C S0U S1U EC EU OC OU\n0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0\n"
 	_, err := heap.ParseJstatGC(out)
