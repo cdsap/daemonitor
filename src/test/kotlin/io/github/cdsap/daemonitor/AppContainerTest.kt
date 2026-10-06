@@ -10,6 +10,7 @@ import io.github.cdsap.daemonitor.collect.ProcessCollector
 import io.github.cdsap.daemonitor.distribution.DistributionChannel
 import io.github.cdsap.daemonitor.domain.BuildAggregator
 import io.github.cdsap.daemonitor.mcp.DaemonitorMcpServer
+import io.github.cdsap.daemonitor.persistence.RetentionRepository
 import io.github.cdsap.daemonitor.persistence.Settings
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
@@ -32,6 +33,7 @@ class AppContainerTest {
             assertIs<ProcessCollector>(container.processSource)
             assertIs<DaemonLogWatcher>(container.daemonLogSource)
             assertIs<WatcherDatabase>(container.database)
+            assertIs<RetentionRepository>(container.retentionRepository)
             assertIs<SettingsStore>(container.settingsStore)
             assertIs<BuildAggregator>(container.buildAggregator)
             assertIs<WatcherRuntime>(container.runtime)
