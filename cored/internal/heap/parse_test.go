@@ -102,6 +102,42 @@ available processors: 8`)
 	}
 }
 
+func TestParseJinfoSyspropsAllowlistAndSanitization(t *testing.T) {
+	version, runtimeVersion, vendor, vmName, vmVersion, osName, osArch := heap.ParseJinfoSysprops(`
+java.version = 21.0.1
+java.runtime.version=21.0.1+12-\u0045TS
+java.vendor = Eclipse\ Adoptium
+java.vm.name = OpenJDK\ 64-Bit\ Server\ VM
+java.vm.version = 21.0.1+12
+os.name = Linux
+os.arch = amd64
+java.home = /private/secret/jdk
+password = credentials
+malformed line without separator
+java.version = 21.0.2
+`)
+	if version == nil || *version != "21.0.2" || runtimeVersion == nil || *runtimeVersion != "21.0.1+12-ETS" || vendor == nil || *vendor != "Eclipse Adoptium" || vmName == nil || *vmName != "OpenJDK 64-Bit Server VM" || vmVersion == nil || *vmVersion != "21.0.1+12" || osName == nil || *osName != "Linux" || osArch == nil || *osArch != "amd64" {
+		t.Fatalf("metadata: version=%v runtime=%v vendor=%v vm=%v/%v os=%v/%v", version, runtimeVersion, vendor, vmName, vmVersion, osName, osArch)
+	}
+}
+
+func TestParseJinfoSyspropsMissingAndMalformedKeysAreUnavailable(t *testing.T) {
+	version, runtimeVersion, vendor, vmName, vmVersion, osName, osArch := heap.ParseJinfoSysprops(`
+java.version =
+java.runtime.version = 21.0.1\nleaked
+java.vendor = Eclipse\
+java.vm.name = OpenJDK
+os.name = Linux
+os.arch = \uZZZZ
+`)
+	if version != nil || runtimeVersion != nil || vendor != nil || vmVersion != nil || osArch != nil {
+		t.Fatalf("malformed values were retained: version=%v runtime=%v vendor=%v vmVersion=%v arch=%v", version, runtimeVersion, vendor, vmVersion, osArch)
+	}
+	if vmName == nil || *vmName != "OpenJDK" || osName == nil || *osName != "Linux" {
+		t.Fatalf("valid values missing: vm=%v os=%v", vmName, osName)
+	}
+}
+
 func TestParseJinfoFlags(t *testing.T) {
 	s := heap.ParseJinfoFlags(`-XX:ActiveProcessorCount=8
 -XX:+UseG1GC

@@ -221,9 +221,12 @@ func (p *Prober) probe(ctx context.Context, pid int32) (Sample, error) {
 		if err == nil {
 			if s, perr := ParseJcmdHeapInfo(out); perr == nil {
 				if info, infoErr := run(ctx, jcmdPath, fmt.Sprintf("%d", pid), "VM.info"); infoErr == nil {
-					s.JavaVersion, s.JavaVendor, s.ActiveProcessorCount = ParseJcmdVMInfo(info)
+					// Processor count remains sourced from jcmd; JVM identity is
+					// intentionally sourced only from the sysprops allowlist below.
+					_, _, s.ActiveProcessorCount = ParseJcmdVMInfo(info)
 				}
 				p.supplementGC(ctx, look, run, pid, &s)
+				p.collectAllowlistedSysprops(ctx, look, run, pid, &s)
 				return s, nil
 			}
 		}
@@ -245,7 +248,33 @@ func (p *Prober) probe(ctx context.Context, pid int32) (Sample, error) {
 		return Sample{}, fmt.Errorf("%w: %v", ErrUnavailable, err)
 	}
 	p.supplementGC(ctx, look, run, pid, &s)
+	p.collectAllowlistedSysprops(ctx, look, run, pid, &s)
 	return s, nil
+}
+
+// collectAllowlistedSysprops obtains only the JVM properties explicitly
+// needed by the process model. Attach failure leaves those values unavailable;
+// it never turns the raw property output into a model field or error message.
+func (p *Prober) collectAllowlistedSysprops(
+	ctx context.Context,
+	look func(string) (string, error),
+	run func(context.Context, string, ...string) (string, error),
+	pid int32,
+	sample *Sample,
+) {
+	if sample == nil {
+		return
+	}
+	jinfoPath, err := look("jinfo")
+	if err != nil {
+		return
+	}
+	out, err := run(ctx, jinfoPath, "-sysprops", fmt.Sprintf("%d", pid))
+	if err != nil {
+		return
+	}
+	sample.JavaVersion, sample.JavaRuntimeVersion, sample.JavaVendor,
+		sample.JavaVMName, sample.JavaVMVersion, sample.OSName, sample.OSArch = ParseJinfoSysprops(out)
 }
 
 // supplementGC uses jinfo only when the live-heap probe did not identify a

@@ -66,7 +66,7 @@ func TestProberUsesJinfoOnlyToSupplementUnknownGC(t *testing.T) {
 	if s.GC == nil || *s.GC != "G1" {
 		t.Fatalf("gc=%v", s.GC)
 	}
-	if len(calls) != 3 || !strings.Contains(calls[2], "-flags 42") {
+	if len(calls) != 4 || !strings.Contains(calls[2], "-flags 42") || !strings.Contains(calls[3], "-sysprops 42") {
 		t.Fatalf("calls=%v", calls)
 	}
 }
@@ -83,7 +83,7 @@ func TestProberDoesNotRequireJinfoForHeapSample(t *testing.T) {
 		if strings.Contains(name, "jinfo") {
 			return "", errors.New("attach denied")
 		}
-		return "pid:\nheap total 262144K, committed 262144K, used 36447K\n", nil
+		return jcmdHeapInfoFixture, nil
 	}
 	s, err := p.SampleFor(context.Background(), 42, 1000)
 	if err != nil {
@@ -91,6 +91,58 @@ func TestProberDoesNotRequireJinfoForHeapSample(t *testing.T) {
 	}
 	if s.UsedMB != 35 || s.CommittedMB != 256 {
 		t.Fatalf("sample=%+v", s)
+	}
+}
+
+func TestProberRetainsOnlyAllowlistedJinfoMetadata(t *testing.T) {
+	p := heap.NewProber()
+	p.LookPath = func(name string) (string, error) {
+		if name == "jcmd" || name == "jinfo" {
+			return "/fake/" + name, nil
+		}
+		return "", errors.New("missing")
+	}
+	p.Runner = func(ctx context.Context, name string, args ...string) (string, error) {
+		if strings.Contains(name, "jcmd") {
+			return jcmdHeapInfoFixture, nil
+		}
+		return "java.version=21\njava.vendor=Temurin\nos.name=Linux\njava.home=/secret\n", nil
+	}
+	s, err := p.SampleFor(context.Background(), 42, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.JavaVersion == nil || *s.JavaVersion != "21" || s.JavaVendor == nil || *s.JavaVendor != "Temurin" || s.OSName == nil || *s.OSName != "Linux" {
+		t.Fatalf("metadata=%+v", s)
+	}
+	if s.JavaRuntimeVersion != nil || s.JavaVMName != nil || s.JavaVMVersion != nil || s.OSArch != nil {
+		t.Fatalf("unexpected metadata=%+v", s)
+	}
+}
+
+func TestProberLeavesJinfoMetadataUnavailableWhenAttachFails(t *testing.T) {
+	p := heap.NewProber()
+	p.LookPath = func(name string) (string, error) {
+		if name == "jstat" || name == "jinfo" {
+			return "/fake/" + name, nil
+		}
+		return "", errors.New("missing")
+	}
+	p.Runner = func(ctx context.Context, name string, args ...string) (string, error) {
+		if strings.Contains(name, "jstat") {
+			return jstatGCFixture, nil
+		}
+		return "", errors.New("attach failed")
+	}
+	s, err := p.SampleFor(context.Background(), 42, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.UsedMB != 34 || s.CommittedMB != 256 {
+		t.Fatalf("sample=%+v", s)
+	}
+	if s.JavaVersion != nil || s.JavaVendor != nil || s.OSName != nil || s.OSArch != nil {
+		t.Fatalf("metadata should be unavailable after attach failure: %+v", s)
 	}
 }
 
