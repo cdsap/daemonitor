@@ -58,6 +58,22 @@ func detailHeadingStyle(noColor bool) lipgloss.Style {
 	return s.Foreground(lipgloss.Color(colorCyan))
 }
 
+func activePaneStyle(noColor bool) lipgloss.Style {
+	s := lipgloss.NewStyle().Bold(true)
+	if noColor {
+		return lipgloss.NewStyle()
+	}
+	return s.Foreground(lipgloss.Color("15")).Background(lipgloss.Color("4"))
+}
+
+func activePaneBorderStyle(noColor bool) lipgloss.Style {
+	s := lipgloss.NewStyle().Bold(true)
+	if noColor {
+		return lipgloss.NewStyle()
+	}
+	return s.Foreground(lipgloss.Color(colorCyan))
+}
+
 func statusStyle(status string, noColor bool) lipgloss.Style {
 	s := lipgloss.NewStyle().Bold(true)
 	if noColor {

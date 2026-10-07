@@ -463,6 +463,15 @@ func TestDetailsWideLayoutSplitsResourceAndBuildPanes(t *testing.T) {
 	}
 }
 
+func TestDetailsActivePaneUsesColorWhenEnabled(t *testing.T) {
+	p := model.Process{PID: 9, Type: "GRADLE_DAEMON", Name: "gradle", StartTimeMs: 100}
+	m := NewModel(Config{Now: fixedNow})
+	m.width, m.height, m.detailsOpen, m.detailProcess = 160, 30, true, &p
+	if !strings.Contains(m.View().Content, "\x1b[") {
+		t.Fatalf("active pane did not emit terminal styling when color is enabled")
+	}
+}
+
 func TestDetailsRefreshKeyReloadsOpenProcess(t *testing.T) {
 	p := model.Process{PID: 9, Type: "GRADLE_DAEMON", StartTimeMs: 100}
 	m := NewModel(Config{Now: fixedNow, NoColor: true, Client: client.New("/tmp/missing-daemonitor.sock")})
