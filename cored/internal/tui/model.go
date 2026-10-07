@@ -9,8 +9,8 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	terminalansi "github.com/charmbracelet/x/ansi"
 	"github.com/clipperhouse/displaywidth"
-	"github.com/rivo/uniseg"
 
 	"github.com/cdsap/daemonitor/cored/internal/analysis"
 	"github.com/cdsap/daemonitor/cored/internal/client"
@@ -1148,7 +1148,7 @@ func detailPanel(title string, content []string, width, height, offset int, acti
 		titleText = activePaneStyle(noColor).Render(titleText)
 	}
 	frame := activePaneBorderStyle(noColor)
-	remaining := strings.Repeat(horizontal, max(0, inner-displaywidth.String(titleText)))
+	remaining := strings.Repeat(horizontal, max(0, inner-terminalansi.StringWidth(titleText)))
 	top := topLeft + titleText + remaining + topRight
 	if active {
 		top = frame.Render(topLeft) + titleText + frame.Render(remaining+topRight)
@@ -1195,7 +1195,7 @@ func detailPanelLine(line string, inner, row, total, viewport int, vertical stri
 		border := activePaneBorderStyle(noColor)
 		left, right = border.Render(left), border.Render(right)
 	}
-	return left + " " + text + strings.Repeat(" ", max(0, textWidth-displaywidth.String(text))) + " " + scroll + right
+	return left + " " + text + strings.Repeat(" ", max(0, textWidth-terminalansi.StringWidth(text))) + " " + scroll + right
 }
 
 func joinVerticalPanes(panes [][]string) []string {
@@ -1591,26 +1591,10 @@ func truncateWidth(s string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	if displaywidth.String(s) <= width {
+	if terminalansi.StringWidth(s) <= width {
 		return s
 	}
-	if width == 1 {
-		return "…"
-	}
-	var b strings.Builder
-	remaining := width - 1
-	gr := uniseg.NewGraphemes(s)
-	for gr.Next() {
-		g := gr.Str()
-		w := displaywidth.String(g)
-		if w > remaining {
-			break
-		}
-		b.WriteString(g)
-		remaining -= w
-	}
-	b.WriteString("…")
-	return b.String()
+	return terminalansi.Truncate(s, width, "…")
 }
 
 func padRight(s string, width int) string {

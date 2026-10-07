@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,8 @@ import (
 	"github.com/cdsap/daemonitor/cored/internal/model"
 	"github.com/cdsap/daemonitor/cored/internal/render"
 )
+
+var ansiEscape = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 func TestSortByRSSDescending(t *testing.T) {
 	m := NewModel(Config{Now: fixedNow})
@@ -469,6 +472,29 @@ func TestDetailsActivePaneUsesColorWhenEnabled(t *testing.T) {
 	m.width, m.height, m.detailsOpen, m.detailProcess = 160, 30, true, &p
 	if !strings.Contains(m.View().Content, "\x1b[") {
 		t.Fatalf("active pane did not emit terminal styling when color is enabled")
+	}
+}
+
+func TestDetailsColoredBuildsPaneKeepsTerminalWidth(t *testing.T) {
+	p := model.Process{PID: 9, Type: "GRADLE_DAEMON", Name: "gradle", StartTimeMs: 100}
+	m := NewModel(Config{Now: fixedNow})
+	m.width, m.height, m.detailsOpen, m.detailProcess = 160, 30, true, &p
+	m.detailBuilds = client.BuildsPayload{Builds: []client.BuildRecord{{FinalStatus: "SUCCESS", ProjectPath: "/project"}}}
+	m.detailTail = &logs.Tail{PID: 9, Lines: []string{"daemon log"}}
+	next, _ := m.handleKey(tea.KeyPressMsg{Text: "tab"})
+	m = next.(Model)
+	next, _ = m.handleKey(tea.KeyPressMsg{Text: "tab"})
+	m = next.(Model)
+	if m.detailPane != detailPaneBuilds {
+		t.Fatalf("expected builds pane to be active, got %d", m.detailPane)
+	}
+	for _, line := range strings.Split(m.View().Content, "\n") {
+		if strings.Contains(line, "RECENT BUILDS") && strings.Contains(line, "…") {
+			t.Fatalf("active builds pane was truncated: %q", line)
+		}
+		if got := displayLen(ansiEscape.ReplaceAllString(line, "")); got > m.width {
+			t.Fatalf("colored builds pane line exceeds width %d: %d: %q", m.width, got, line)
+		}
 	}
 }
 
