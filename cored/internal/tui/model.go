@@ -116,6 +116,7 @@ type Model struct {
 	detailBuilds  client.BuildsPayload
 	detailLoading bool
 	detailError   string
+	detailScroll  int
 
 	pendingKill *killRequest
 	killing     bool
@@ -352,9 +353,28 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.detailBuilds = client.BuildsPayload{}
 			m.detailError = ""
 			m.detailLoading = false
+			m.detailScroll = 0
 			return m, nil
 		case "ctrl+c":
 			return m, tea.Quit
+		case "up", "k":
+			m.detailScroll = max(0, m.detailScroll-1)
+		case "down", "j":
+			m.detailScroll++
+		case "pgup", "ctrl+u":
+			m.detailScroll = max(0, m.detailScroll-max(1, m.height-8))
+		case "pgdown", "ctrl+d":
+			m.detailScroll += max(1, m.height-8)
+		case "home", "g":
+			m.detailScroll = 0
+		case "end", "G":
+			m.detailScroll = int(^uint(0) >> 1)
+		case "r":
+			if m.detailProcess != nil && !m.detailLoading {
+				m.detailLoading = true
+				m.detailError = ""
+				return m, m.fetchDetails(int64(m.detailProcess.PID), m.detailProcess.StartTimeMs)
+			}
 		}
 		return m, nil
 	}
@@ -426,6 +446,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.detailHistory = nil
 			m.detailBuilds = client.BuildsPayload{}
 			m.detailError = ""
+			m.detailScroll = 0
 			return m, m.fetchDetails(int64(p.PID), p.StartTimeMs)
 		}
 	case "?":
@@ -798,7 +819,6 @@ func (m Model) renderDetails() string {
 	}
 	header := detailHeader(*p, now, m.detailIsEnded(), m.detailIsStale(), m.width, m.noColor)
 	attributes := detailAttributes(*p, m.width, now)
-	resource := detailResources(m, *p)
 	gradle := p.Type == "GRADLE_DAEMON"
 	builds := []string(nil)
 	if gradle {
@@ -821,31 +841,50 @@ func (m Model) renderDetails() string {
 			resourceWidth += logWidth
 			logWidth = 0
 		}
-		panes := [][]string{detailPanel("ATTRIBUTES", attributes, attrWidth, available)}
+		resource := detailResources(m, *p, resourceWidth)
+		panes := [][]string{detailPanel("ATTRIBUTES", attributes, attrWidth, available, m.detailScroll)}
 		activity := append([]string{}, resource...)
 		activity = append(activity, builds...)
-		panes = append(panes, detailPanel("RESOURCE / BUILDS", activity, resourceWidth, available))
+		panes = append(panes, detailPanel("RESOURCE / BUILDS", activity, resourceWidth, available, m.detailScroll))
 		if logWidth > 0 {
-			panes = append(panes, detailPanel("Recent log lines: / GRADLE LOG", log, logWidth, available))
+			panes = append(panes, detailPanel("Recent log lines: / GRADLE LOG", log, logWidth, available, m.detailScroll))
+		}
+		b.WriteString(joinDetailPanes(panes, m.width))
+	} else if m.width >= 120 {
+		available := max(1, m.height-5)
+		attrWidth := max(34, m.width/3)
+		activityWidth := m.width - attrWidth - 3
+		resource := detailResources(m, *p, activityWidth)
+		activity := append([]string{}, resource...)
+		activity = append(activity, builds...)
+		activity = append(activity, log...)
+		panes := [][]string{
+			detailPanel("ATTRIBUTES", attributes, attrWidth, available, m.detailScroll),
+			detailPanel("RESOURCE / BUILDS / LOG", activity, activityWidth, available, m.detailScroll),
 		}
 		b.WriteString(joinDetailPanes(panes, m.width))
 	} else {
-		sections := [][]string{detailPanel("ATTRIBUTES", attributes, m.width, 0), detailPanel("RESOURCE TRENDS", resource, m.width, 0)}
+		resource := detailResources(m, *p, m.width)
+		content := []string{"ATTRIBUTES"}
+		content = append(content, attributes...)
+		content = append(content, "", "RESOURCE TRENDS")
+		content = append(content, resource...)
 		if len(builds) > 0 {
-			sections = append(sections, detailPanel("Recent builds: / RECENT BUILDS", builds, m.width, 0))
+			content = append(content, "", "Recent builds: / RECENT BUILDS")
+			content = append(content, builds...)
 		}
 		if len(log) > 0 {
-			sections = append(sections, detailPanel("Recent log lines: / GRADLE LOG", log, m.width, 0))
+			content = append(content, "", "Recent log lines: / GRADLE LOG")
+			content = append(content, log...)
 		}
-		for _, section := range sections {
-			for _, line := range section {
-				b.WriteString(line)
-				b.WriteByte('\n')
-			}
+		section := detailPanel("PROCESS DETAILS", content, m.width, max(1, m.height-5), m.detailScroll)
+		for _, line := range section {
+			b.WriteString(line)
+			b.WriteByte('\n')
 		}
 	}
 	b.WriteByte('\n')
-	b.WriteString("esc back   q quit")
+	b.WriteString(truncateWidth("↑/↓ or j/k scroll   pgup/pgdn page   g/G top/bottom   r refresh   esc back   q quit", m.width))
 	return strings.TrimRight(b.String(), "\n")
 }
 
@@ -889,14 +928,13 @@ func detailHeader(p model.Process, now int64, ended, stale bool, width int, noCo
 }
 
 func detailAttributes(p model.Process, width int, now int64) []string {
-	lines := []string{"Identity", fmt.Sprintf("  Type       %s", render.TypeDisplay(p.Type)), fmt.Sprintf("  PID        %d", p.PID), "  Name       " + na(p.Name), "  Project    " + render.ProjectName(p), "  Work dir   " + optionalStringText(p.WorkingDirectory), "  Status     " + na(p.Status), "  Start      " + formatStart(p.StartTimeMs), "  Uptime     " + render.Uptime(p.StartTimeMs, now), "", "JVM / memory", "  RSS        " + render.RSSText(p.RSSMemoryMB), "  CPU        " + render.CPUText(p.CPUPercent), "  GC         " + render.GCText(p.GC), "  Xmx        " + render.HeapLimitText(p.MaxHeapMB), "  Xms        " + optionalInt64Text(p.MinHeapMB, "MB"), "  Heap used  " + render.HeapText(p.HeapUsedMB), "  Heap cmt   " + render.HeapText(p.HeapCommittedMB), "  Heap max   " + render.HeapText(p.HeapMaxMB), "  Heap %     " + render.HeapPercentText(p.HeapUsedMB, p.HeapMaxMB), "  Metaspace used " + optionalInt64Text(p.MetaspaceUsedMB, "MB"), "", "Diagnostics", "  Threads    " + optionalInt64Text(p.ThreadCount, ""), "  VM         " + optionalStringText(p.JavaVMName), "  Java       " + optionalStringText(p.JavaVersion), "  OS         " + optionalStringText(p.OSName) + " / " + optionalStringText(p.OSArch), "  Processors " + optionalInt64Text(p.ActiveProcessorCount, ""), "  GC young   " + optionalInt64Text(p.YoungGCCount, "") + " / " + optionalInt64Text(p.YoungGCTimeMs, "ms"), "  GC old     " + optionalInt64Text(p.OldGCCount, "") + " / " + optionalInt64Text(p.OldGCTimeMs, "ms"), "  VM version " + optionalStringText(p.JavaVMVersion), "  Runtime    " + optionalStringText(p.JavaRuntimeVersion), "  Vendor     " + optionalStringText(p.JavaVendor), "  Open files " + optionalInt64Text(p.OpenFileDescriptors, "")}
+	lines := []string{"Identity", fmt.Sprintf("  Type       %s", render.TypeDisplay(p.Type)), fmt.Sprintf("  PID        %d", p.PID), "  Name       " + na(p.Name), "  Project    " + render.ProjectName(p), "  Work dir   " + optionalStringText(p.WorkingDirectory), "  Status     " + na(p.Status), "  Start      " + formatStart(p.StartTimeMs), "  Uptime     " + render.Uptime(p.StartTimeMs, now), "", "JVM / memory", "  RSS        " + render.RSSText(p.RSSMemoryMB), "  CPU        " + render.CPUText(p.CPUPercent), "  GC         " + render.GCText(p.GC), "  Xmx        " + render.HeapLimitText(p.MaxHeapMB), "  Xms        " + optionalInt64Text(p.MinHeapMB, "MB"), "  Heap used  " + render.HeapText(p.HeapUsedMB), "  Heap cmt   " + render.HeapText(p.HeapCommittedMB), "  Heap max   " + render.HeapText(p.HeapMaxMB), "  Heap %     " + render.HeapPercentText(p.HeapUsedMB, p.HeapMaxMB), "  Metaspace used " + optionalInt64Text(p.MetaspaceUsedMB, "MB"), "", "Diagnostics", "  Threads    " + optionalInt64Text(p.ThreadCount, ""), "  VM         " + optionalStringText(p.JavaVMName), "  Java version " + optionalStringText(p.JavaVersion), "  OS         " + optionalStringText(p.OSName) + " / " + optionalStringText(p.OSArch), "  Processors " + optionalInt64Text(p.ActiveProcessorCount, ""), "  GC young   " + optionalInt64Text(p.YoungGCCount, "") + " / " + optionalInt64Text(p.YoungGCTimeMs, "ms"), "  GC old     " + optionalInt64Text(p.OldGCCount, "") + " / " + optionalInt64Text(p.OldGCTimeMs, "ms"), "  VM version " + optionalStringText(p.JavaVMVersion), "  Runtime    " + optionalStringText(p.JavaRuntimeVersion), "  Vendor     " + optionalStringText(p.JavaVendor), "  Open files " + optionalInt64Text(p.OpenFileDescriptors, "")}
 	lines = append(lines,
 		"  Virtual memory "+optionalInt64Text(p.VirtualMemoryMB, "MB"),
 		"  Swap memory "+optionalInt64Text(p.SwapMemoryMB, "MB"),
 		"  Disk read  "+optionalInt64Text(p.ReadBytes, "bytes"),
 		"  Disk write "+optionalInt64Text(p.WriteBytes, "bytes"),
 		"  Young GC time "+optionalInt64Text(p.YoungGCTimeMs, "ms"),
-		"  Java version "+optionalStringText(p.JavaVersion),
 	)
 	for i := range lines {
 		lines[i] = truncateWidth(lines[i], max(1, width-2))
@@ -904,11 +942,11 @@ func detailAttributes(p model.Process, width int, now int64) []string {
 	return lines
 }
 
-func detailResources(m Model, p model.Process) []string {
+func detailResources(m Model, p model.Process, width int) []string {
 	memory := analysis.Analyze(m.detailHistory, p.PID, p.StartTimeMs)
-	lines := []string{"MEMORY TREND / RSS / heap history", memoryTrendLine("RSS", memory.RSS, m.width)}
+	lines := []string{"MEMORY TREND / RSS / heap history", memoryTrendLine("RSS", memory.RSS, width)}
 	if memory.Heap.Available {
-		lines = append(lines, memoryTrendLine("Heap", memory.Heap, m.width))
+		lines = append(lines, memoryTrendLine("Heap", memory.Heap, width))
 	} else {
 		lines = append(lines, "  Heap  n/a (insufficient valid heap samples)")
 	}
@@ -972,13 +1010,6 @@ func detailLog(m Model, width int) []string {
 		return []string{"Gradle log is available but empty."}
 	}
 	lines := m.detailTail.Lines
-	maxLines := m.height - 7
-	if maxLines < 3 {
-		maxLines = 3
-	}
-	if len(lines) > maxLines {
-		lines = lines[len(lines)-maxLines:]
-	}
 	result := make([]string, 0, len(lines)+1)
 	for _, line := range lines {
 		result = append(result, truncateWidth(line, max(1, width-2)))
@@ -986,23 +1017,54 @@ func detailLog(m Model, width int) []string {
 	return result
 }
 
-func detailPanel(title string, content []string, width, height int) []string {
+func detailPanel(title string, content []string, width, height, offset int) []string {
 	if width < 1 {
 		return nil
 	}
 	inner := max(1, width-4)
-	lines := []string{"┌" + truncateWidth("─ "+title+" ", inner) + strings.Repeat("─", max(0, inner-displaywidth.String(truncateWidth("─ "+title+" ", inner)))) + "┐"}
-	if height > 0 && len(content) > height-2 {
-		content = content[:max(0, height-2)]
+	viewport := max(1, height-2)
+	if height <= 0 {
+		viewport = len(content)
 	}
-	for _, line := range content {
-		lines = append(lines, "│ "+truncateWidth(line, inner)+strings.Repeat(" ", max(0, inner-displaywidth.String(truncateWidth(line, inner))))+" │")
+	maxOffset := max(0, len(content)-viewport)
+	offset = min(max(0, offset), maxOffset)
+	end := min(len(content), offset+viewport)
+	visible := content[offset:end]
+	lines := []string{"┌" + truncateWidth("─ "+title+" ", inner) + strings.Repeat("─", max(0, inner-displaywidth.String(truncateWidth("─ "+title+" ", inner)))) + "┐"}
+	for i, line := range visible {
+		lines = append(lines, detailPanelLine(line, inner, offset+i, len(content), viewport))
 	}
 	for len(lines) < max(2, height) {
-		lines = append(lines, "│ "+strings.Repeat(" ", inner)+" │")
+		lines = append(lines, detailPanelLine("", inner, offset+len(lines)-1, len(content), viewport))
 	}
 	lines = append(lines, "└"+strings.Repeat("─", inner+2)+"┘")
 	return lines
+}
+
+func detailPanelLine(line string, inner, row, total, viewport int) string {
+	textWidth := inner
+	scroll := " "
+	if total > viewport {
+		textWidth = max(1, inner-2)
+		thumbSize := max(1, viewport*viewport/total)
+		maxStart := viewport - thumbSize
+		maxOffset := total - viewport
+		offset := row
+		if offset > maxOffset {
+			offset = maxOffset
+		}
+		thumbStart := 0
+		if maxOffset > 0 {
+			thumbStart = offset * maxStart / maxOffset
+		}
+		if row >= thumbStart && row < thumbStart+thumbSize {
+			scroll = "█"
+		} else {
+			scroll = "░"
+		}
+	}
+	text := truncateWidth(line, textWidth)
+	return "│ " + text + strings.Repeat(" ", max(0, textWidth-displaywidth.String(text))) + " " + scroll + " │"
 }
 
 func joinDetailPanes(panes [][]string, width int) string {

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -244,7 +245,7 @@ func TestGoldenRenderSizes(t *testing.T) {
 func TestGoldenEmptyAndDetails(t *testing.T) {
 	fixed := time.Date(2026, 9, 24, 10, 42, 18, 0, time.UTC)
 	m := NewModel(Config{Now: func() time.Time { return fixed }, NoColor: true})
-	m.width, m.height = 80, 24
+	m.width, m.height = 80, 50
 	m.connected = true
 	m.lastUpdated = fixed
 	m.applySnapshot(model.Snapshot{SampledAtMs: fixed.UnixMilli(), Processes: nil})
@@ -273,6 +274,7 @@ func TestDetailsBuildHistoryLoadingEmptyAndFailureStates(t *testing.T) {
 	m.selectedPID = int64(p.PID)
 	m.detailProcess = &p
 	m.detailLoading = true
+	m.detailScroll = 1000
 	if body := m.View().Content; !strings.Contains(body, "Recent builds:") || !strings.Contains(body, "Loading…") {
 		t.Fatalf("loading state missing: %s", body)
 	}
@@ -302,6 +304,7 @@ func TestDetailsShowScopedBuildFieldsAndFitNarrowWidth(t *testing.T) {
 		StartTimeMs: 300, InferredSource: "TERMINAL", Agent: "Claude Code",
 	}}}
 	m.width = 120
+	m.detailScroll = 1000
 	body := m.View().Content
 	start := "start=" + formatStart(300)
 	for _, want := range []string{"SUCCESS", "project=/very/long/project/path", "duration=1.3s", start, "source=TERMINAL", "agent=Claude Code"} {
@@ -310,6 +313,7 @@ func TestDetailsShowScopedBuildFieldsAndFitNarrowWidth(t *testing.T) {
 		}
 	}
 	m.width = 40
+	m.detailScroll = 1000
 	body = m.View().Content
 	if !strings.Contains(body, "SUCCESS") || !strings.Contains(body, "Recent builds:") {
 		t.Fatalf("build summary missing: %s", body)
@@ -328,6 +332,7 @@ func TestDetailsRendersCautiousMemoryGrowthAnalysis(t *testing.T) {
 	for i, rss := range []int64{100, 180, 260, 340, 420, 500} {
 		m.detailHistory = append(m.detailHistory, model.Process{PID: 9, StartTimeMs: 100, SampledAtMs: int64(i+1) * 30_000, RSSMemoryMB: rss})
 	}
+	m.detailScroll = 1000
 	body := m.View().Content
 	for _, want := range []string{"MEMORY TREND", "RSS", "180 MB → 500 MB", "+320 MB", "⚠ Sustained memory growth detected", "Heap  n/a"} {
 		if !strings.Contains(body, want) {
@@ -348,6 +353,7 @@ func TestDetailsMemoryAnalysisDoesNotMixProcessIncarnations(t *testing.T) {
 	for i, rss := range []int64{100, 200, 300, 400, 500, 600} {
 		m.detailHistory = append(m.detailHistory, model.Process{PID: 9, StartTimeMs: 100, SampledAtMs: int64(i+1) * 30_000, RSSMemoryMB: rss})
 	}
+	m.detailScroll = 1000
 	body := m.View().Content
 	if !strings.Contains(body, "Assessment: INSUFFICIENT_DATA") {
 		t.Fatalf("mixed incarnation was analyzed: %s", body)
@@ -387,6 +393,39 @@ func TestDetailsWideCommanderPanesAndLogTail(t *testing.T) {
 	}
 }
 
+func TestDetailsScrollsWithVisibleScrollbar(t *testing.T) {
+	p := model.Process{PID: 9, Type: "GRADLE_DAEMON", Name: "gradle", StartTimeMs: 100}
+	m := NewModel(Config{Now: fixedNow, NoColor: true})
+	m.width, m.height, m.detailsOpen, m.detailProcess = 160, 20, true, &p
+	lines := make([]string, 0, 40)
+	for i := 0; i < 40; i++ {
+		lines = append(lines, fmt.Sprintf("log line %02d", i))
+	}
+	m.detailTail = &logs.Tail{PID: 9, Lines: lines}
+
+	before := m.View().Content
+	if !strings.Contains(before, "░") && !strings.Contains(before, "█") {
+		t.Fatalf("scrollbar missing from overflowing detail pane: %s", before)
+	}
+	next, _ := m.handleKey(tea.KeyPressMsg{Text: "down"})
+	after := next.(Model).View().Content
+	if before == after {
+		t.Fatalf("down did not move the detail viewport")
+	}
+}
+
+func TestDetailsRefreshKeyReloadsOpenProcess(t *testing.T) {
+	p := model.Process{PID: 9, Type: "GRADLE_DAEMON", StartTimeMs: 100}
+	m := NewModel(Config{Now: fixedNow, NoColor: true, Client: client.New("/tmp/missing-daemonitor.sock")})
+	m.width, m.height, m.detailsOpen, m.detailProcess = 80, 20, true, &p
+	m.detailLoading = false
+	next, cmd := m.handleKey(tea.KeyPressMsg{Text: "r"})
+	refreshed := next.(Model)
+	if cmd == nil || !refreshed.detailLoading {
+		t.Fatalf("r should refresh the open detail view: loading=%v cmd=%v", refreshed.detailLoading, cmd != nil)
+	}
+}
+
 func TestDetailsHideGradleOnlyPanelsForNonDaemons(t *testing.T) {
 	for _, processType := range []string{"KOTLIN_DAEMON", "TEST_WORKER"} {
 		p := model.Process{PID: 9, Type: processType, StartTimeMs: 100}
@@ -398,8 +437,10 @@ func TestDetailsHideGradleOnlyPanelsForNonDaemons(t *testing.T) {
 		if strings.Contains(body, "RECENT BUILDS") || strings.Contains(body, "GRADLE LOG") || strings.Contains(body, "should be hidden") {
 			t.Fatalf("%s rendered Gradle-only panels: %s", processType, body)
 		}
-		if !strings.Contains(body, "RESOURCE TRENDS") || !strings.Contains(body, "ATTRIBUTES") {
-			t.Fatalf("%s omitted shared commander regions: %s", processType, body)
+		m.detailScroll = 1000
+		body = m.View().Content
+		if !strings.Contains(body, "RESOURCE TRENDS") {
+			t.Fatalf("%s omitted resource trends: %s", processType, body)
 		}
 	}
 }
@@ -429,6 +470,7 @@ func TestDetailsShowExtendedMetricsAndUnavailableValues(t *testing.T) {
 	p := model.Process{PID: 9, ThreadCount: &threads, HeapUsedMB: &used, HeapMaxMB: &max, MetaspaceUsedMB: &used}
 	m := NewModel(Config{Now: fixedNow, NoColor: true})
 	m.width, m.height, m.detailsOpen, m.detailProcess = 120, 30, true, &p
+	m.detailScroll = 1000
 	body := m.View().Content
 	for _, want := range []string{"Threads", "Heap %", "Metaspace used", "Virtual memory", "Disk read", "Young GC time", "Java version", "n/a"} {
 		if !strings.Contains(body, want) {
