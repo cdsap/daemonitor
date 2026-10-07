@@ -909,19 +909,19 @@ func (m Model) renderDetails() string {
 			logWidth = 0
 		}
 		resource := detailResources(m, *p, resourceWidth)
-		middle := detailPanel("RESOURCE TRENDS", resource, resourceWidth, available, m.detailPaneOffset(detailPaneResources), m.detailPane == detailPaneResources)
+		middle := detailPanel("RESOURCE TRENDS", resource, resourceWidth, available, m.detailPaneOffset(detailPaneResources), m.detailPane == detailPaneResources, m.noColor)
 		if gradle {
 			heights := splitDetailHeight(available, 2)
 			resourceHeight, buildHeight := heights[0], heights[1]
 			middle = joinVerticalPanes([][]string{
-				detailPanel("RESOURCE TRENDS", resource, resourceWidth, resourceHeight, m.detailPaneOffset(detailPaneResources), m.detailPane == detailPaneResources),
-				detailPanel("RECENT BUILDS", builds, resourceWidth, buildHeight, m.detailPaneOffset(detailPaneBuilds), m.detailPane == detailPaneBuilds),
+				detailPanel("RESOURCE TRENDS", resource, resourceWidth, resourceHeight, m.detailPaneOffset(detailPaneResources), m.detailPane == detailPaneResources, m.noColor),
+				detailPanel("RECENT BUILDS", builds, resourceWidth, buildHeight, m.detailPaneOffset(detailPaneBuilds), m.detailPane == detailPaneBuilds, m.noColor),
 			})
 		}
-		panes := [][]string{detailPanel("ATTRIBUTES", attributes, attrWidth, available, m.detailPaneOffset(detailPaneAttributes), m.detailPane == detailPaneAttributes)}
+		panes := [][]string{detailPanel("ATTRIBUTES", attributes, attrWidth, available, m.detailPaneOffset(detailPaneAttributes), m.detailPane == detailPaneAttributes, m.noColor)}
 		panes = append(panes, middle)
 		if logWidth > 0 {
-			panes = append(panes, detailPanel("GRADLE LOG", log, logWidth, available, m.detailPaneOffset(detailPaneLog), m.detailPane == detailPaneLog))
+			panes = append(panes, detailPanel("GRADLE LOG", log, logWidth, available, m.detailPaneOffset(detailPaneLog), m.detailPane == detailPaneLog, m.noColor))
 		}
 		b.WriteString(joinDetailPanes(panes, m.width))
 	} else if m.width >= 120 {
@@ -929,18 +929,18 @@ func (m Model) renderDetails() string {
 		attrWidth := max(34, m.width/3)
 		activityWidth := m.width - attrWidth - 1
 		resource := detailResources(m, *p, activityWidth)
-		stack := [][]string{detailPanel("RESOURCE TRENDS", resource, activityWidth, available, m.detailPaneOffset(detailPaneResources), m.detailPane == detailPaneResources)}
+		stack := [][]string{detailPanel("RESOURCE TRENDS", resource, activityWidth, available, m.detailPaneOffset(detailPaneResources), m.detailPane == detailPaneResources, m.noColor)}
 		if gradle {
 			heights := splitDetailHeight(available, 3)
 			resourceHeight, buildHeight, logHeight := heights[0], heights[1], heights[2]
 			stack = [][]string{
-				detailPanel("RESOURCE TRENDS", resource, activityWidth, resourceHeight, m.detailPaneOffset(detailPaneResources), m.detailPane == detailPaneResources),
-				detailPanel("RECENT BUILDS", builds, activityWidth, buildHeight, m.detailPaneOffset(detailPaneBuilds), m.detailPane == detailPaneBuilds),
-				detailPanel("GRADLE LOG", log, activityWidth, max(1, logHeight), m.detailPaneOffset(detailPaneLog), m.detailPane == detailPaneLog),
+				detailPanel("RESOURCE TRENDS", resource, activityWidth, resourceHeight, m.detailPaneOffset(detailPaneResources), m.detailPane == detailPaneResources, m.noColor),
+				detailPanel("RECENT BUILDS", builds, activityWidth, buildHeight, m.detailPaneOffset(detailPaneBuilds), m.detailPane == detailPaneBuilds, m.noColor),
+				detailPanel("GRADLE LOG", log, activityWidth, max(1, logHeight), m.detailPaneOffset(detailPaneLog), m.detailPane == detailPaneLog, m.noColor),
 			}
 		}
 		panes := [][]string{
-			detailPanel("ATTRIBUTES", attributes, attrWidth, available, m.detailPaneOffset(detailPaneAttributes), m.detailPane == detailPaneAttributes),
+			detailPanel("ATTRIBUTES", attributes, attrWidth, available, m.detailPaneOffset(detailPaneAttributes), m.detailPane == detailPaneAttributes, m.noColor),
 			joinVerticalPanes(stack),
 		}
 		b.WriteString(joinDetailPanes(panes, m.width))
@@ -958,7 +958,7 @@ func (m Model) renderDetails() string {
 			content = append(content, "", "Recent log lines: / GRADLE LOG")
 			content = append(content, log...)
 		}
-		section := detailPanel("PROCESS DETAILS", content, m.width, max(1, m.height-5), m.detailPaneOffset(detailPaneAttributes), true)
+		section := detailPanel("PROCESS DETAILS", content, m.width, max(1, m.height-5), m.detailPaneOffset(detailPaneAttributes), true, m.noColor)
 		for _, line := range section {
 			b.WriteString(line)
 			b.WriteByte('\n')
@@ -1126,7 +1126,7 @@ func splitDetailHeight(total, panes int) []int {
 	return heights
 }
 
-func detailPanel(title string, content []string, width, height, offset int, active bool) []string {
+func detailPanel(title string, content []string, width, height, offset int, active, noColor bool) []string {
 	if width < 1 {
 		return nil
 	}
@@ -1143,19 +1143,32 @@ func detailPanel(title string, content []string, width, height, offset int, acti
 	if active {
 		topLeft, topRight, bottomLeft, bottomRight, horizontal, vertical = "╔", "╗", "╚", "╝", "═", "║"
 	}
-	titleLine := truncateWidth(horizontal+" "+title+" ", inner)
-	lines := []string{topLeft + titleLine + strings.Repeat(horizontal, max(0, inner-displaywidth.String(titleLine))) + topRight}
+	titleText := truncateWidth(horizontal+" "+title+" ", inner)
+	if active {
+		titleText = activePaneStyle(noColor).Render(titleText)
+	}
+	frame := activePaneBorderStyle(noColor)
+	remaining := strings.Repeat(horizontal, max(0, inner-displaywidth.String(titleText)))
+	top := topLeft + titleText + remaining + topRight
+	if active {
+		top = frame.Render(topLeft) + titleText + frame.Render(remaining+topRight)
+	}
+	lines := []string{top}
 	for i, line := range visible {
-		lines = append(lines, detailPanelLine(line, inner, offset+i, len(content), viewport, vertical))
+		lines = append(lines, detailPanelLine(line, inner, offset+i, len(content), viewport, vertical, active, noColor))
 	}
 	for len(lines) < max(1, height-1) {
-		lines = append(lines, detailPanelLine("", inner, offset+len(lines)-1, len(content), viewport, vertical))
+		lines = append(lines, detailPanelLine("", inner, offset+len(lines)-1, len(content), viewport, vertical, active, noColor))
 	}
-	lines = append(lines, bottomLeft+strings.Repeat(horizontal, inner)+bottomRight)
+	bottom := bottomLeft + strings.Repeat(horizontal, inner) + bottomRight
+	if active {
+		bottom = frame.Render(bottom)
+	}
+	lines = append(lines, bottom)
 	return lines
 }
 
-func detailPanelLine(line string, inner, row, total, viewport int, vertical string) string {
+func detailPanelLine(line string, inner, row, total, viewport int, vertical string, active, noColor bool) string {
 	textWidth := max(1, inner-3)
 	scroll := " "
 	if total > viewport {
@@ -1177,7 +1190,12 @@ func detailPanelLine(line string, inner, row, total, viewport int, vertical stri
 		}
 	}
 	text := truncateWidth(line, textWidth)
-	return vertical + " " + text + strings.Repeat(" ", max(0, textWidth-displaywidth.String(text))) + " " + scroll + vertical
+	left, right := vertical, vertical
+	if active {
+		border := activePaneBorderStyle(noColor)
+		left, right = border.Render(left), border.Render(right)
+	}
+	return left + " " + text + strings.Repeat(" ", max(0, textWidth-displaywidth.String(text))) + " " + scroll + right
 }
 
 func joinVerticalPanes(panes [][]string) []string {
