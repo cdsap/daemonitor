@@ -84,6 +84,15 @@ type Config struct {
 	Terminate TerminateFunc
 }
 
+type detailPaneKind int
+
+const (
+	detailPaneAttributes detailPaneKind = iota
+	detailPaneResources
+	detailPaneBuilds
+	detailPaneLog
+)
+
 // Model is Bubble Tea presentation state for the process monitor.
 type Model struct {
 	client       *client.Client
@@ -109,14 +118,17 @@ type Model struct {
 	lastError   string
 	sampledAt   int64
 
-	detailProcess *model.Process
-	detailLog     *logs.DaemonLog
-	detailTail    *logs.Tail
-	detailHistory []model.Process
-	detailBuilds  client.BuildsPayload
-	detailLoading bool
-	detailError   string
-	detailScroll  int
+	detailProcess      *model.Process
+	detailLog          *logs.DaemonLog
+	detailTail         *logs.Tail
+	detailHistory      []model.Process
+	detailBuilds       client.BuildsPayload
+	detailLoading      bool
+	detailError        string
+	detailScroll       int
+	detailPane         detailPaneKind
+	detailPaneScroll   [4]int
+	detailPaneScrolled [4]bool
 
 	pendingKill *killRequest
 	killing     bool
@@ -354,21 +366,28 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.detailError = ""
 			m.detailLoading = false
 			m.detailScroll = 0
+			m.detailPane = detailPaneAttributes
+			m.detailPaneScroll = [4]int{}
+			m.detailPaneScrolled = [4]bool{}
 			return m, nil
 		case "ctrl+c":
 			return m, tea.Quit
 		case "up", "k":
-			m.detailScroll = max(0, m.detailScroll-1)
+			m.setDetailScroll(m.detailScroll - 1)
 		case "down", "j":
-			m.detailScroll++
+			m.setDetailScroll(m.detailScroll + 1)
 		case "pgup", "ctrl+u":
-			m.detailScroll = max(0, m.detailScroll-max(1, m.height-8))
+			m.setDetailScroll(m.detailScroll - max(1, m.height-8))
 		case "pgdown", "ctrl+d":
-			m.detailScroll += max(1, m.height-8)
+			m.setDetailScroll(m.detailScroll + max(1, m.height-8))
 		case "home", "g":
-			m.detailScroll = 0
+			m.setDetailScroll(0)
 		case "end", "G":
-			m.detailScroll = int(^uint(0) >> 1)
+			m.setDetailScroll(int(^uint(0) >> 1))
+		case "tab", "right", "l":
+			m.selectDetailPane(1)
+		case "shift+tab", "left", "h":
+			m.selectDetailPane(-1)
 		case "r":
 			if m.detailProcess != nil && !m.detailLoading {
 				m.detailLoading = true
@@ -447,12 +466,60 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.detailBuilds = client.BuildsPayload{}
 			m.detailError = ""
 			m.detailScroll = 0
+			m.detailPane = detailPaneAttributes
+			m.detailPaneScroll = [4]int{}
+			m.detailPaneScrolled = [4]bool{}
 			return m, m.fetchDetails(int64(p.PID), p.StartTimeMs)
 		}
 	case "?":
 		m.helpOpen = !m.helpOpen
 	}
 	return m, nil
+}
+
+func (m *Model) setDetailScroll(offset int) {
+	m.detailScroll = max(0, offset)
+	m.detailPaneScroll[m.detailPane] = m.detailScroll
+	m.detailPaneScrolled[m.detailPane] = true
+}
+
+func (m Model) detailPaneOffset(pane detailPaneKind) int {
+	if m.detailPaneScrolled[pane] {
+		return m.detailPaneScroll[pane]
+	}
+	// Keep direct model construction in tests and integrations compatible with
+	// the original single-viewport state.
+	return m.detailScroll
+}
+
+func (m Model) detailPaneCount() int {
+	if m.width >= 120 && m.detailProcess != nil && m.detailProcess.Type == "GRADLE_DAEMON" {
+		return 4
+	}
+	if m.width >= 120 {
+		return 2
+	}
+	return 1
+}
+
+func (m *Model) selectDetailPane(delta int) {
+	count := m.detailPaneCount()
+	if count <= 1 {
+		return
+	}
+	next := int(m.detailPane) + delta
+	if next < 0 {
+		next = count - 1
+	}
+	if next >= count {
+		next = 0
+	}
+	m.detailPane = detailPaneKind(next)
+	if m.detailPaneScrolled[m.detailPane] {
+		m.detailScroll = m.detailPaneScroll[m.detailPane]
+	} else {
+		m.detailScroll = 0
+	}
 }
 
 func (m *Model) applySnapshot(snap model.Snapshot) {
@@ -838,16 +905,23 @@ func (m Model) renderDetails() string {
 		resourceWidth := max(28, m.width/4)
 		logWidth := m.width - attrWidth - resourceWidth - 2
 		if len(log) == 0 {
-			resourceWidth += logWidth
+			resourceWidth += logWidth + 1
 			logWidth = 0
 		}
 		resource := detailResources(m, *p, resourceWidth)
-		panes := [][]string{detailPanel("ATTRIBUTES", attributes, attrWidth, available, m.detailScroll)}
-		activity := append([]string{}, resource...)
-		activity = append(activity, builds...)
-		panes = append(panes, detailPanel("RESOURCE / BUILDS", activity, resourceWidth, available, m.detailScroll))
+		middle := detailPanel("RESOURCE TRENDS", resource, resourceWidth, available, m.detailPaneOffset(detailPaneResources), m.detailPane == detailPaneResources)
+		if gradle {
+			heights := splitDetailHeight(available, 2)
+			resourceHeight, buildHeight := heights[0], heights[1]
+			middle = joinVerticalPanes([][]string{
+				detailPanel("RESOURCE TRENDS", resource, resourceWidth, resourceHeight, m.detailPaneOffset(detailPaneResources), m.detailPane == detailPaneResources),
+				detailPanel("RECENT BUILDS", builds, resourceWidth, buildHeight, m.detailPaneOffset(detailPaneBuilds), m.detailPane == detailPaneBuilds),
+			})
+		}
+		panes := [][]string{detailPanel("ATTRIBUTES", attributes, attrWidth, available, m.detailPaneOffset(detailPaneAttributes), m.detailPane == detailPaneAttributes)}
+		panes = append(panes, middle)
 		if logWidth > 0 {
-			panes = append(panes, detailPanel("Recent log lines: / GRADLE LOG", log, logWidth, available, m.detailScroll))
+			panes = append(panes, detailPanel("GRADLE LOG", log, logWidth, available, m.detailPaneOffset(detailPaneLog), m.detailPane == detailPaneLog))
 		}
 		b.WriteString(joinDetailPanes(panes, m.width))
 	} else if m.width >= 120 {
@@ -855,12 +929,19 @@ func (m Model) renderDetails() string {
 		attrWidth := max(34, m.width/3)
 		activityWidth := m.width - attrWidth - 1
 		resource := detailResources(m, *p, activityWidth)
-		activity := append([]string{}, resource...)
-		activity = append(activity, builds...)
-		activity = append(activity, log...)
+		stack := [][]string{detailPanel("RESOURCE TRENDS", resource, activityWidth, available, m.detailPaneOffset(detailPaneResources), m.detailPane == detailPaneResources)}
+		if gradle {
+			heights := splitDetailHeight(available, 3)
+			resourceHeight, buildHeight, logHeight := heights[0], heights[1], heights[2]
+			stack = [][]string{
+				detailPanel("RESOURCE TRENDS", resource, activityWidth, resourceHeight, m.detailPaneOffset(detailPaneResources), m.detailPane == detailPaneResources),
+				detailPanel("RECENT BUILDS", builds, activityWidth, buildHeight, m.detailPaneOffset(detailPaneBuilds), m.detailPane == detailPaneBuilds),
+				detailPanel("GRADLE LOG", log, activityWidth, max(1, logHeight), m.detailPaneOffset(detailPaneLog), m.detailPane == detailPaneLog),
+			}
+		}
 		panes := [][]string{
-			detailPanel("ATTRIBUTES", attributes, attrWidth, available, m.detailScroll),
-			detailPanel("RESOURCE / BUILDS / LOG", activity, activityWidth, available, m.detailScroll),
+			detailPanel("ATTRIBUTES", attributes, attrWidth, available, m.detailPaneOffset(detailPaneAttributes), m.detailPane == detailPaneAttributes),
+			joinVerticalPanes(stack),
 		}
 		b.WriteString(joinDetailPanes(panes, m.width))
 	} else {
@@ -877,15 +958,29 @@ func (m Model) renderDetails() string {
 			content = append(content, "", "Recent log lines: / GRADLE LOG")
 			content = append(content, log...)
 		}
-		section := detailPanel("PROCESS DETAILS", content, m.width, max(1, m.height-5), m.detailScroll)
+		section := detailPanel("PROCESS DETAILS", content, m.width, max(1, m.height-5), m.detailPaneOffset(detailPaneAttributes), true)
 		for _, line := range section {
 			b.WriteString(line)
 			b.WriteByte('\n')
 		}
 	}
 	b.WriteByte('\n')
-	b.WriteString(truncateWidth("↑/↓ or j/k scroll   pgup/pgdn page   g/G top/bottom   r refresh   esc back   q quit", m.width))
+	focus := detailPaneName(m.detailPane)
+	b.WriteString(truncateWidth(fmt.Sprintf("tab/←→ focus %s   ↑/↓ or j/k scroll   pgup/pgdn page   g/G top/bottom   r refresh   esc back   q quit", focus), m.width))
 	return strings.TrimRight(b.String(), "\n")
+}
+
+func detailPaneName(pane detailPaneKind) string {
+	switch pane {
+	case detailPaneResources:
+		return "resources"
+	case detailPaneBuilds:
+		return "builds"
+	case detailPaneLog:
+		return "log"
+	default:
+		return "attributes"
+	}
 }
 
 func (m Model) detailIsEnded() bool {
@@ -1017,7 +1112,21 @@ func detailLog(m Model, width int) []string {
 	return result
 }
 
-func detailPanel(title string, content []string, width, height, offset int) []string {
+func splitDetailHeight(total, panes int) []int {
+	if panes <= 1 {
+		return []int{total}
+	}
+	heights := make([]int, panes)
+	remaining := total
+	for i := range heights {
+		remainingPanes := panes - i
+		heights[i] = max(1, remaining/remainingPanes)
+		remaining -= heights[i]
+	}
+	return heights
+}
+
+func detailPanel(title string, content []string, width, height, offset int, active bool) []string {
 	if width < 1 {
 		return nil
 	}
@@ -1030,18 +1139,23 @@ func detailPanel(title string, content []string, width, height, offset int) []st
 	offset = min(max(0, offset), maxOffset)
 	end := min(len(content), offset+viewport)
 	visible := content[offset:end]
-	lines := []string{"┌" + truncateWidth("─ "+title+" ", inner) + strings.Repeat("─", max(0, inner-displaywidth.String(truncateWidth("─ "+title+" ", inner)))) + "┐"}
+	topLeft, topRight, bottomLeft, bottomRight, horizontal, vertical := "┌", "┐", "└", "┘", "─", "│"
+	if active {
+		topLeft, topRight, bottomLeft, bottomRight, horizontal, vertical = "╔", "╗", "╚", "╝", "═", "║"
+	}
+	titleLine := truncateWidth(horizontal+" "+title+" ", inner)
+	lines := []string{topLeft + titleLine + strings.Repeat(horizontal, max(0, inner-displaywidth.String(titleLine))) + topRight}
 	for i, line := range visible {
-		lines = append(lines, detailPanelLine(line, inner, offset+i, len(content), viewport))
+		lines = append(lines, detailPanelLine(line, inner, offset+i, len(content), viewport, vertical))
 	}
-	for len(lines) < max(2, height) {
-		lines = append(lines, detailPanelLine("", inner, offset+len(lines)-1, len(content), viewport))
+	for len(lines) < max(1, height-1) {
+		lines = append(lines, detailPanelLine("", inner, offset+len(lines)-1, len(content), viewport, vertical))
 	}
-	lines = append(lines, "└"+strings.Repeat("─", inner)+"┘")
+	lines = append(lines, bottomLeft+strings.Repeat(horizontal, inner)+bottomRight)
 	return lines
 }
 
-func detailPanelLine(line string, inner, row, total, viewport int) string {
+func detailPanelLine(line string, inner, row, total, viewport int, vertical string) string {
 	textWidth := max(1, inner-3)
 	scroll := " "
 	if total > viewport {
@@ -1063,7 +1177,15 @@ func detailPanelLine(line string, inner, row, total, viewport int) string {
 		}
 	}
 	text := truncateWidth(line, textWidth)
-	return "│ " + text + strings.Repeat(" ", max(0, textWidth-displaywidth.String(text))) + " " + scroll + "│"
+	return vertical + " " + text + strings.Repeat(" ", max(0, textWidth-displaywidth.String(text))) + " " + scroll + vertical
+}
+
+func joinVerticalPanes(panes [][]string) []string {
+	var lines []string
+	for _, pane := range panes {
+		lines = append(lines, pane...)
+	}
+	return lines
 }
 
 func joinDetailPanes(panes [][]string, width int) string {

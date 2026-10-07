@@ -304,6 +304,7 @@ func TestDetailsShowScopedBuildFieldsAndFitNarrowWidth(t *testing.T) {
 		StartTimeMs: 300, InferredSource: "TERMINAL", Agent: "Claude Code",
 	}}}
 	m.width = 120
+	m.height = 40
 	m.detailScroll = 1000
 	body := m.View().Content
 	start := "start=" + formatStart(300)
@@ -381,7 +382,7 @@ func TestDetailsWideCommanderPanesAndLogTail(t *testing.T) {
 	m.detailLog = &logs.DaemonLog{PID: 9, GradleVersion: "8.0", Path: "/tmp/daemon.log"}
 	m.detailTail = &logs.Tail{PID: 9, Lines: []string{"old line", "newest Gradle line"}}
 	body := m.View().Content
-	for _, want := range []string{"ATTRIBUTES", "RESOURCE / BUILDS", "GRADLE LOG", "newest Gradle line"} {
+	for _, want := range []string{"ATTRIBUTES", "RESOURCE TRENDS", "RECENT BUILDS", "GRADLE LOG", "newest Gradle line"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("wide commander view missing %q: %s", want, body)
 		}
@@ -425,6 +426,40 @@ func TestDetailsPanesKeepStableColumnAlignment(t *testing.T) {
 				t.Fatalf("width=%d detail row has unstable width %d: %q", width, displayLen(line), line)
 			}
 		}
+	}
+}
+
+func TestDetailsWideLayoutSplitsResourceAndBuildPanes(t *testing.T) {
+	p := model.Process{PID: 9, Type: "GRADLE_DAEMON", Name: "gradle", StartTimeMs: 100}
+	m := NewModel(Config{Now: fixedNow, NoColor: true})
+	m.width, m.height, m.detailsOpen, m.detailProcess = 160, 30, true, &p
+	m.detailBuilds = client.BuildsPayload{Builds: []client.BuildRecord{{FinalStatus: "SUCCESS", ProjectPath: "/project"}}}
+	m.detailTail = &logs.Tail{PID: 9, Lines: []string{"daemon log"}}
+	body := m.View().Content
+	if strings.Count(body, "RESOURCE TRENDS") != 1 || strings.Count(body, "RECENT BUILDS") != 1 {
+		t.Fatalf("resource/build sections were not split into separate panes: %s", body)
+	}
+	if !strings.Contains(body, "╔") {
+		t.Fatalf("active pane cursor missing: %s", body)
+	}
+	next, _ := m.handleKey(tea.KeyPressMsg{Text: "tab"})
+	focused := next.(Model)
+	if focused.detailPane != detailPaneResources {
+		t.Fatalf("tab did not move the active detail pane")
+	}
+	next, _ = focused.handleKey(tea.KeyPressMsg{Text: "down"})
+	focused = next.(Model)
+	next, _ = focused.handleKey(tea.KeyPressMsg{Text: "tab"})
+	focused = next.(Model)
+	if focused.detailPane != detailPaneBuilds {
+		t.Fatalf("second tab did not focus the builds pane")
+	}
+	next, _ = focused.handleKey(tea.KeyPressMsg{Text: "down"})
+	focused = next.(Model)
+	next, _ = focused.handleKey(tea.KeyPressMsg{Text: "shift+tab"})
+	focused = next.(Model)
+	if focused.detailPane != detailPaneResources || focused.detailScroll != 1 {
+		t.Fatalf("pane-local scroll position was not restored: pane=%d offset=%d", focused.detailPane, focused.detailScroll)
 	}
 }
 
