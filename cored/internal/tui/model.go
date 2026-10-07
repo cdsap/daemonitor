@@ -836,7 +836,7 @@ func (m Model) renderDetails() string {
 		available := max(1, m.height-5)
 		attrWidth := max(28, m.width/4)
 		resourceWidth := max(28, m.width/4)
-		logWidth := m.width - attrWidth - resourceWidth - 6
+		logWidth := m.width - attrWidth - resourceWidth - 2
 		if len(log) == 0 {
 			resourceWidth += logWidth
 			logWidth = 0
@@ -853,7 +853,7 @@ func (m Model) renderDetails() string {
 	} else if m.width >= 120 {
 		available := max(1, m.height-5)
 		attrWidth := max(34, m.width/3)
-		activityWidth := m.width - attrWidth - 3
+		activityWidth := m.width - attrWidth - 1
 		resource := detailResources(m, *p, activityWidth)
 		activity := append([]string{}, resource...)
 		activity = append(activity, builds...)
@@ -1021,7 +1021,7 @@ func detailPanel(title string, content []string, width, height, offset int) []st
 	if width < 1 {
 		return nil
 	}
-	inner := max(1, width-4)
+	inner := max(1, width-2)
 	viewport := max(1, height-2)
 	if height <= 0 {
 		viewport = len(content)
@@ -1037,15 +1037,14 @@ func detailPanel(title string, content []string, width, height, offset int) []st
 	for len(lines) < max(2, height) {
 		lines = append(lines, detailPanelLine("", inner, offset+len(lines)-1, len(content), viewport))
 	}
-	lines = append(lines, "└"+strings.Repeat("─", inner+2)+"┘")
+	lines = append(lines, "└"+strings.Repeat("─", inner)+"┘")
 	return lines
 }
 
 func detailPanelLine(line string, inner, row, total, viewport int) string {
-	textWidth := inner
+	textWidth := max(1, inner-3)
 	scroll := " "
 	if total > viewport {
-		textWidth = max(1, inner-2)
 		thumbSize := max(1, viewport*viewport/total)
 		maxStart := viewport - thumbSize
 		maxOffset := total - viewport
@@ -1064,7 +1063,7 @@ func detailPanelLine(line string, inner, row, total, viewport int) string {
 		}
 	}
 	text := truncateWidth(line, textWidth)
-	return "│ " + text + strings.Repeat(" ", max(0, textWidth-displaywidth.String(text))) + " " + scroll + " │"
+	return "│ " + text + strings.Repeat(" ", max(0, textWidth-displaywidth.String(text))) + " " + scroll + "│"
 }
 
 func joinDetailPanes(panes [][]string, width int) string {

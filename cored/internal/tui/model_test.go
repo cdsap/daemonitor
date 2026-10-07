@@ -414,6 +414,20 @@ func TestDetailsScrollsWithVisibleScrollbar(t *testing.T) {
 	}
 }
 
+func TestDetailsPanesKeepStableColumnAlignment(t *testing.T) {
+	p := model.Process{PID: 9, Type: "GRADLE_DAEMON", Name: "gradle", StartTimeMs: 100}
+	for _, width := range []int{120, 160} {
+		m := NewModel(Config{Now: fixedNow, NoColor: true})
+		m.width, m.height, m.detailsOpen, m.detailProcess = width, 24, true, &p
+		m.detailTail = &logs.Tail{PID: 9, Lines: []string{"first log line", "second log line"}}
+		for _, line := range strings.Split(m.View().Content, "\n") {
+			if strings.Contains(line, "│") && displayLen(line) != width {
+				t.Fatalf("width=%d detail row has unstable width %d: %q", width, displayLen(line), line)
+			}
+		}
+	}
+}
+
 func TestDetailsRefreshKeyReloadsOpenProcess(t *testing.T) {
 	p := model.Process{PID: 9, Type: "GRADLE_DAEMON", StartTimeMs: 100}
 	m := NewModel(Config{Now: fixedNow, NoColor: true, Client: client.New("/tmp/missing-daemonitor.sock")})
