@@ -28,7 +28,7 @@ class CoreContainer(
     val database = WatcherDatabase.open(databasePath)
     val retentionRepository: RetentionRepository = database
     val settingsStore = SettingsStore(settingsPath)
-    val settingsService = SettingsService(settingsStore, database, clock)
+    val settingsService: SettingsService = SettingsService(settingsStore, retentionRepository, clock)
     val buildAggregator = BuildAggregator(
         sampleProvider = database,
         ambientEnvNames = ambientEnvNames,

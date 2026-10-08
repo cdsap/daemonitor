@@ -58,6 +58,18 @@ class SettingsServiceTest {
     }
 
     @Test
+    fun `purgeNow uses configured retention and service clock by default`() {
+        val store = FakeSettingsRepository(Settings(retentionDays = 30))
+        val retention = FakeRetentionRepository()
+        val now = 100L * 24 * 60 * 60 * 1000
+        val service = SettingsService(store, retention, clock = { now })
+
+        service.purgeNow()
+
+        assertEquals(listOf(now to 30L), retention.purges)
+    }
+
+    @Test
     fun `updateAppearance persists preference`() {
         val store = FakeSettingsRepository()
         val service = SettingsService(store, FakeRetentionRepository())
