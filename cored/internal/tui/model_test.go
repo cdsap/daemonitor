@@ -185,6 +185,26 @@ func TestErrorKeepsLastSnapshot(t *testing.T) {
 	}
 }
 
+func TestSnapshotLoadedMessageUpdatesConnectionState(t *testing.T) {
+	m := NewModel(Config{Now: fixedNow})
+	m.loading = true
+	m.inFlight = true
+	m.lastError = "previous failure"
+
+	next, _ := m.Update(snapshotLoadedMsg{snap: model.Snapshot{
+		SampledAtMs: 2,
+		Processes:   []model.Process{{PID: 7, RSSMemoryMB: 11}},
+	}})
+	m = next.(Model)
+
+	if !m.connected || m.loading || m.inFlight || m.lastError != "" {
+		t.Fatalf("snapshot state not settled: connected=%v loading=%v inFlight=%v error=%q", m.connected, m.loading, m.inFlight, m.lastError)
+	}
+	if got := m.processes[0].PID; got != 7 {
+		t.Fatalf("snapshot PID=%d want 7", got)
+	}
+}
+
 func TestAdaptiveColumns(t *testing.T) {
 	if n := len(columnsForWidth(120).ids); n < 11 {
 		t.Fatalf("wide columns=%d", n)
