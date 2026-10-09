@@ -161,7 +161,7 @@ fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit, onClearSelec
                 }
                 Spacer(Modifier.width(Space.lg))
                 Column(modifier = Modifier.weight(1f).fillMaxSize()) {
-                    DetailCard(state.detail, nowMs, modifier = Modifier.weight(1f).fillMaxWidth())
+                    DetailCard(state.detail, state.processes, nowMs, modifier = Modifier.weight(1f).fillMaxWidth())
                     Spacer(Modifier.padding(Space.xs))
                     LogCard(state.tailState, modifier = Modifier.weight(1f).fillMaxWidth())
                 }
@@ -253,19 +253,34 @@ private fun ProcessRow(
 }
 
 @Composable
-private fun DetailCard(detail: DetailState, nowMs: Long, modifier: Modifier = Modifier) {
+private fun DetailCard(
+    detail: DetailState,
+    processes: List<GradleProcess>,
+    nowMs: Long,
+    modifier: Modifier = Modifier,
+) {
     SectionCard("Process detail", modifier) {
         when (detail) {
             is DetailState.NoSelection ->
                 Text("Select a process to see details.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
-            is DetailState.Selected -> ProcessDetails(detail.process, ended = false, nowMs = nowMs)
-            is DetailState.Ended -> ProcessDetails(detail.lastKnown, ended = true, nowMs = nowMs)
+            is DetailState.Selected -> ProcessDetails(
+                detail.process,
+                children = processes.filter { it.parentPid == detail.process.pid },
+                ended = false,
+                nowMs = nowMs,
+            )
+            is DetailState.Ended -> ProcessDetails(detail.lastKnown, children = emptyList(), ended = true, nowMs = nowMs)
         }
     }
 }
 
 @Composable
-private fun ProcessDetails(p: GradleProcess, ended: Boolean, nowMs: Long) {
+private fun ProcessDetails(
+    p: GradleProcess,
+    children: List<GradleProcess>,
+    ended: Boolean,
+    nowMs: Long,
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -281,6 +296,12 @@ private fun ProcessDetails(p: GradleProcess, ended: Boolean, nowMs: Long) {
             Text("PID ${p.pid} · ${p.type.displayLabel()}", fontWeight = FontWeight.SemiBold)
         }
         Spacer(Modifier.padding(Space.xs))
+        if (children.isNotEmpty()) {
+            DetailSection("CHILD PROCESSES")
+            Column(modifier = Modifier.testTag("child-processes")) {
+                children.forEach { child -> ChildProcessRow(child) }
+            }
+        }
         DetailSection("Memory")
         DetailRow("RSS", "${p.rssMemoryMb} MB")
         DetailRow("Virtual memory", p.virtualMemoryMb.metric("MB"))
@@ -340,6 +361,44 @@ private fun ProcessDetails(p: GradleProcess, ended: Boolean, nowMs: Long) {
         Spacer(Modifier.padding(Space.xs))
         Text("Command line", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(p.commandLine, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
+private fun ChildProcessRow(child: GradleProcess) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp),
+    ) {
+        Text(
+            "${child.type.displayLabel()} · PID ${child.pid}",
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+        )
+        Text(
+            "RSS ${child.rssMemoryMb} MB · CPU ${LiveMetricLabels.cpuCompact(child.cpuPercent)} · ${child.status.ifBlank { "—" }}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+        )
+        Text(
+            "${if (child.projectPath != null) "Project" else "Work dir"} ${child.projectPath ?: child.workingDirectory ?: "—"}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+        )
+        Text(
+            "Heap ${LiveMetricLabels.liveHeapUsedCompact(child.liveHeap)} · GC ${child.gc ?: "—"}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+        )
     }
 }
 

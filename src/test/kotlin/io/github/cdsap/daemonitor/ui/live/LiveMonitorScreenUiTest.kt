@@ -39,24 +39,29 @@ class LiveMonitorScreenUiTest {
 
     private fun sampleProcess(
         pid: Long = 4321,
+        parentPid: Long = 1,
         type: ProcessType = ProcessType.GRADLE_DAEMON,
         commandLine: String = "java org.gradle.launcher.daemon.bootstrap.GradleDaemon 9.5",
         maxHeapMb: Long? = 4096,
         cpuPercent: Double? = 12.0,
         rssMemoryMb: Long = 1024,
+        workingDirectory: String? = "/Users/dev/my-app",
+        projectPath: String? = workingDirectory,
+        gc: String? = "G1",
+        status: String = "RUNNING",
         liveHeap: LiveJvmHeap? = null,
     ) = GradleProcess(
         pid = pid,
-        parentPid = 1,
+        parentPid = parentPid,
         type = type,
         commandLine = commandLine,
-        workingDirectory = "/Users/dev/my-app",
-        projectPath = "/Users/dev/my-app",
+        workingDirectory = workingDirectory,
+        projectPath = projectPath,
         cpuPercent = cpuPercent,
         rssMemoryMb = rssMemoryMb,
         maxHeapMb = maxHeapMb,
         minHeapMb = 256,
-        gc = "G1",
+        gc = gc,
         youngGcTimeSeconds = 1.234,
         fullGcTimeSeconds = 2.345,
         concurrentGcTimeSeconds = 3.456,
@@ -70,7 +75,7 @@ class LiveMonitorScreenUiTest {
         osArch = "amd64",
         activeProcessorCount = 8,
         startTimeMs = 1_700_000_000_000,
-        status = "RUNNING",
+        status = status,
         automated = false,
         liveHeap = liveHeap,
     )
@@ -191,6 +196,136 @@ class LiveMonitorScreenUiTest {
         onNodeWithText("1.234 s").assertExists()
         onNodeWithText("GCT").assertExists()
         onNodeWithText("7.035 s").assertExists()
+    }
+
+    @Test
+    fun `process details shows current child process snapshot`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val parent = sampleProcess(pid = 100)
+        val child = sampleProcess(
+            pid = 200,
+            parentPid = parent.pid,
+            type = ProcessType.GRADLE_WORKER,
+            projectPath = "/Users/dev/child-project",
+            workingDirectory = "/Users/dev/child-project",
+            rssMemoryMb = 256,
+            cpuPercent = 7.0,
+            liveHeap = LiveJvmHeap(
+                usedMb = 64,
+                committedMb = 128,
+                maxMb = 512,
+                sampledAtMs = 2_000,
+                available = true,
+            ),
+        )
+        val childWithMissingValues = sampleProcess(
+            pid = 201,
+            parentPid = parent.pid,
+            cpuPercent = null,
+            maxHeapMb = null,
+            workingDirectory = null,
+            projectPath = null,
+            gc = null,
+            status = "",
+        )
+        val state = LiveUiState(
+            processes = listOf(parent, child, childWithMissingValues),
+            summary = LiveSummary(activeProcessCount = 3, totalRssMb = 2304, highestMemoryPid = parent.pid, activeProjectCount = 2),
+            detail = DetailState.Selected(parent),
+            isLoading = false,
+            isEmpty = false,
+        )
+
+        setContent {
+            WatcherTheme {
+                Box(Modifier.size(width = 900.dp, height = 600.dp)) {
+                    LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+                }
+            }
+        }
+
+        onNodeWithTag("child-processes").assertExists()
+        onNodeWithText("Gradle worker · PID 200").assertExists()
+        onNodeWithText("RSS 256 MB · CPU 7% · RUNNING").assertExists()
+        onNodeWithText("Project /Users/dev/child-project").assertExists()
+        onNodeWithText("Heap 64 MB · GC G1").assertExists()
+        onNodeWithText("RSS 1024 MB · CPU … · —").assertExists()
+        onNodeWithText("Work dir —").assertExists()
+        onNodeWithText("Heap n/a · GC —").assertExists()
+    }
+
+    @Test
+    fun `leaf process details omit child process pane`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val process = sampleProcess(pid = 100)
+        val state = LiveUiState(
+            processes = listOf(process),
+            summary = LiveSummary(activeProcessCount = 1, totalRssMb = 1024, highestMemoryPid = process.pid, activeProjectCount = 1),
+            detail = DetailState.Selected(process),
+            isLoading = false,
+            isEmpty = false,
+        )
+
+        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
+
+        onNodeWithTag("child-processes").assertDoesNotExist()
+        onNodeWithText("CHILD PROCESSES").assertDoesNotExist()
+    }
+
+    @Test
+    fun `child process pane refreshes with the current snapshot`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val parent = sampleProcess(pid = 100)
+        val firstChild = sampleProcess(pid = 200, parentPid = parent.pid, rssMemoryMb = 256)
+        val secondChild = sampleProcess(pid = 300, parentPid = parent.pid, rssMemoryMb = 384)
+        var state by mutableStateOf(
+            LiveUiState(
+                processes = listOf(parent, firstChild),
+                summary = LiveSummary(activeProcessCount = 2, totalRssMb = 1280, highestMemoryPid = parent.pid, activeProjectCount = 1),
+                detail = DetailState.Selected(parent),
+                isLoading = false,
+                isEmpty = false,
+            ),
+        )
+
+        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
+        onNodeWithText("Gradle daemon · PID 200").assertExists()
+
+        state = state.copy(
+            processes = listOf(parent, secondChild),
+            summary = state.summary.copy(totalRssMb = 1408),
+            detail = DetailState.Selected(parent),
+        )
+        waitForIdle()
+
+        onNodeWithText("Gradle daemon · PID 200").assertDoesNotExist()
+        onNodeWithText("Gradle daemon · PID 300").assertExists()
+        onNodeWithText("RSS 384 MB · CPU 12% · RUNNING").assertExists()
+    }
+
+    @Test
+    fun `child process pane remains usable in a narrow layout`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val parent = sampleProcess(pid = 100)
+        val child = sampleProcess(pid = 200, parentPid = parent.pid, rssMemoryMb = 256)
+        val state = LiveUiState(
+            processes = listOf(parent, child),
+            summary = LiveSummary(activeProcessCount = 2, totalRssMb = 1280, highestMemoryPid = parent.pid, activeProjectCount = 1),
+            detail = DetailState.Selected(parent),
+            isLoading = false,
+            isEmpty = false,
+        )
+
+        setContent {
+            WatcherTheme {
+                Box(Modifier.size(width = 500.dp, height = 600.dp)) {
+                    LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+                }
+            }
+        }
+
+        onNodeWithTag("child-processes").assertExists()
+        onNodeWithText("Gradle daemon · PID 200").assertExists()
     }
 
     @Test
