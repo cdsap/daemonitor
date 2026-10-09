@@ -2,6 +2,7 @@ package io.github.cdsap.daemonitor.collect
 
 import io.github.cdsap.daemonitor.application.DaemonLog
 import io.github.cdsap.daemonitor.application.DaemonLogLine
+import io.github.cdsap.daemonitor.application.DaemonLogParser
 import io.github.cdsap.daemonitor.application.DaemonLogSource
 import io.github.cdsap.daemonitor.config.MonitoringConfig
 import io.github.cdsap.daemonitor.domain.Redactor
