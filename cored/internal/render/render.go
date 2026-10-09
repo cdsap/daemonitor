@@ -148,7 +148,8 @@ func WriteProcessesPlain(w io.Writer, snap model.Snapshot) {
 		fmt.Fprintln(w, "No Gradle-related processes are currently running.")
 		return
 	}
-	fmt.Fprintf(w, "%-16s %-8s %7s %8s %7s %8s %8s  %-24s %s\n",
+	// TYPE is wide enough for the longest TypeDisplay label ("Unknown Gradle worker").
+	fmt.Fprintf(w, "%-21s %-8s %7s %8s %7s %8s %8s  %-24s %s\n",
 		"TYPE", "GC", "PID", "RSS", "CPU", "XMX", "UPTIME", "PROJECT", "SIGNALS")
 	now := snap.SampledAtMs
 	if now == 0 {
@@ -159,11 +160,11 @@ func WriteProcessesPlain(w io.Writer, snap model.Snapshot) {
 		if signals == "" {
 			signals = "-"
 		}
-		fmt.Fprintf(w, "%-16s %-8s %7d %8s %7s %8s %8s  %-24s %s\n",
+		fmt.Fprintf(w, "%-21s %-8s %7d %8s %7s %8s %8s  %-24s %s\n",
 			TypeDisplay(p.Type),
 			GCText(p.GC),
 			p.PID,
-			fmt.Sprintf("%dMB", p.RSSMemoryMB),
+			RSSText(p.RSSMemoryMB),
 			CPUText(p.CPUPercent),
 			HeapLimitText(p.MaxHeapMB),
 			Uptime(p.StartTimeMs, now),
