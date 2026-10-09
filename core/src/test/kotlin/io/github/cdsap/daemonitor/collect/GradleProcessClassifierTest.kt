@@ -39,9 +39,21 @@ class GradleProcessClassifierTest {
     }
 
     @Test
-    fun `classifies gradle worker`() {
+    fun `classifies gradle test worker by process name`() {
         val cl = "java worker.org.gradle.process.internal.worker.GradleWorkerMain 'Gradle Test Executor 3'"
+        assertEquals(ProcessType.TEST_WORKER, GradleProcessClassifier.classify(cl))
+    }
+
+    @Test
+    fun `classifies generic gradle worker by process name`() {
+        val cl = "java worker.org.gradle.process.internal.worker.GradleWorkerMain 'Gradle Worker Daemon 11'"
         assertEquals(ProcessType.GRADLE_WORKER, GradleProcessClassifier.classify(cl))
+    }
+
+    @Test
+    fun `falls back to unknown gradle worker for an unrecognized process name`() {
+        val cl = "java worker.org.gradle.process.internal.worker.GradleWorkerMain 'Custom Worker 1'"
+        assertEquals(ProcessType.UNKNOWN_GRADLE_WORKER, GradleProcessClassifier.classify(cl))
     }
 
     @Test

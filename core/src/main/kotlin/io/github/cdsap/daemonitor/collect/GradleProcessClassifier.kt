@@ -18,8 +18,7 @@ object GradleProcessClassifier {
             cl.contains("org.jetbrains.kotlin.daemon") ||
                 cl.contains("KotlinCompileDaemon") -> ProcessType.KOTLIN_DAEMON
 
-            cl.contains("worker.org.gradle.process.internal.worker.GradleWorkerMain") ||
-                cl.contains("org.gradle.process.internal.worker.GradleWorkerMain") -> ProcessType.GRADLE_WORKER
+            isGradleWorker(cl) -> classifyGradleWorker(cl)
 
             // The wrapper JVM is usually launched as `java -jar …/gradle/wrapper/gradle-wrapper.jar`
             // with `-Dorg.gradle.appname=gradlew` — so neither the GradleWrapperMain class nor a
@@ -39,6 +38,16 @@ object GradleProcessClassifier {
 
     private fun containsGradlewInvocation(cl: String): Boolean =
         Regex("""(^|[\s/])gradlew(\s|$)""").containsMatchIn(cl)
+
+    private fun isGradleWorker(cl: String): Boolean =
+        cl.contains("worker.org.gradle.process.internal.worker.GradleWorkerMain") ||
+            cl.contains("org.gradle.process.internal.worker.GradleWorkerMain")
+
+    private fun classifyGradleWorker(cl: String): ProcessType = when {
+        cl.contains("Gradle Test Executor") -> ProcessType.TEST_WORKER
+        cl.contains("Gradle Worker Daemon") -> ProcessType.GRADLE_WORKER
+        else -> ProcessType.UNKNOWN_GRADLE_WORKER
+    }
 
     private fun isJava(cl: String): Boolean =
         Regex("""(^|[\s/])java(\s|$)""").containsMatchIn(cl)

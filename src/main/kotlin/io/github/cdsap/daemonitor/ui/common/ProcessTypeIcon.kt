@@ -45,7 +45,9 @@ fun ProcessTypeIcon(type: ProcessType, modifier: Modifier = Modifier, size: Dp =
         ProcessType.GRADLE_DAEMON -> Emoji("🐘", size, tagged)
         ProcessType.GRADLE_WRAPPER -> WrapperGlyph(size, tagged)
         ProcessType.KOTLIN_DAEMON -> KotlinLogo(tagged.size(size))
+        ProcessType.TEST_WORKER -> Emoji("🧪", size, tagged)
         ProcessType.GRADLE_WORKER -> Emoji("⚙️", size, tagged)
+        ProcessType.UNKNOWN_GRADLE_WORKER -> Emoji("⚙️", size, tagged)
         ProcessType.JAVA_GRADLE_RELATED -> Emoji("☕", size, tagged)
     }
 }

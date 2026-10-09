@@ -15,12 +15,14 @@ import (
 )
 
 var (
-	gradleDaemon  = regexp.MustCompile(`org\.gradle\.launcher\.daemon\.bootstrap\.GradleDaemon|GradleDaemon`)
-	kotlinDaemon  = regexp.MustCompile(`org\.jetbrains\.kotlin\.daemon|KotlinCompileDaemon`)
-	gradleWorker  = regexp.MustCompile(`worker\.org\.gradle\.process\.internal\.worker\.GradleWorkerMain|org\.gradle\.process\.internal\.worker\.GradleWorkerMain`)
-	wrapper       = regexp.MustCompile(`org\.gradle\.wrapper\.GradleWrapperMain|gradle-wrapper\.jar|org\.gradle\.appname=gradlew|(^|[\s/])gradlew(\s|$)`)
-	javaBin       = regexp.MustCompile(`(^|[\s/])java(\s|$)`)
-	gradleRuntime = regexp.MustCompile(`(-Dorg\.gradle\.|org\.gradle\.(launcher|process|tooling|internal|api|workers)\.|GradleWorkerMain)`)
+	gradleDaemon       = regexp.MustCompile(`org\.gradle\.launcher\.daemon\.bootstrap\.GradleDaemon|GradleDaemon`)
+	kotlinDaemon       = regexp.MustCompile(`org\.jetbrains\.kotlin\.daemon|KotlinCompileDaemon`)
+	gradleWorker       = regexp.MustCompile(`worker\.org\.gradle\.process\.internal\.worker\.GradleWorkerMain|org\.gradle\.process\.internal\.worker\.GradleWorkerMain`)
+	gradleTestExecutor = regexp.MustCompile(`Gradle Test Executor`)
+	gradleWorkerDaemon = regexp.MustCompile(`Gradle Worker Daemon`)
+	wrapper            = regexp.MustCompile(`org\.gradle\.wrapper\.GradleWrapperMain|gradle-wrapper\.jar|org\.gradle\.appname=gradlew|(^|[\s/])gradlew(\s|$)`)
+	javaBin            = regexp.MustCompile(`(^|[\s/])java(\s|$)`)
+	gradleRuntime      = regexp.MustCompile(`(-Dorg\.gradle\.|org\.gradle\.(launcher|process|tooling|internal|api|workers)\.|GradleWorkerMain)`)
 )
 
 type priorCPU struct {
@@ -289,7 +291,14 @@ func Classify(commandLine string) string {
 	case kotlinDaemon.MatchString(commandLine):
 		return "KOTLIN_DAEMON"
 	case gradleWorker.MatchString(commandLine):
-		return "GRADLE_WORKER"
+		switch {
+		case gradleTestExecutor.MatchString(commandLine):
+			return "TEST_WORKER"
+		case gradleWorkerDaemon.MatchString(commandLine):
+			return "GRADLE_WORKER"
+		default:
+			return "UNKNOWN_GRADLE_WORKER"
+		}
 	case wrapper.MatchString(commandLine):
 		return "GRADLE_WRAPPER"
 	case javaBin.MatchString(commandLine) && gradleRuntime.MatchString(commandLine):

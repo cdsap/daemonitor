@@ -50,7 +50,9 @@ object LiveMetricLabels {
 
     private fun unprobedTypePhrase(type: ProcessType): String = when (type) {
         ProcessType.GRADLE_WRAPPER -> "wrappers"
+        ProcessType.TEST_WORKER -> "Gradle test workers"
         ProcessType.GRADLE_WORKER -> "Gradle workers"
+        ProcessType.UNKNOWN_GRADLE_WORKER -> "unknown Gradle workers"
         ProcessType.JAVA_GRADLE_RELATED -> "non-daemon JVMs"
         ProcessType.GRADLE_DAEMON, ProcessType.KOTLIN_DAEMON -> "daemons"
     }
