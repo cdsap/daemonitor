@@ -40,10 +40,14 @@ class PollMonitoringTest {
         val monitoring = PollMonitoring(
             processSource = processSource,
             logSource = logSource,
-            builds = builds,
             samples = samples,
-            aggregator = BuildAggregator(),
-            mode = MonitoringMode.Local,
+            buildProcessingMode = MonitoringMode.Local.buildProcessingMode(
+                builds = builds,
+                logSource = logSource,
+                aggregator = BuildAggregator(),
+                retentionDays = { RetentionPolicy.DEFAULT.defaultDays },
+                clock = { 5_000 },
+            ),
             clock = { 5_000 },
         )
 
@@ -247,12 +251,16 @@ class PollMonitoringTest {
         val monitoring = PollMonitoring(
             processSource = FakeProcessSource(listOf(gradleDaemon(pid = 42))),
             logSource = logSource,
-            builds = builds,
             samples = RecordingSampleWriter(),
-            aggregator = BuildAggregator(),
-            mode = MonitoringMode.RemoteBuilds(object : BuildSource {
+            buildProcessingMode = MonitoringMode.RemoteBuilds(object : BuildSource {
                 override fun recentBuilds(limit: Int) = listOf(remote)
-            }),
+            }).buildProcessingMode(
+                builds = builds,
+                logSource = logSource,
+                aggregator = BuildAggregator(),
+                retentionDays = { RetentionPolicy.DEFAULT.defaultDays },
+                clock = { 5_000 },
+            ),
             clock = { 5_000 },
         )
 
@@ -271,13 +279,18 @@ class PollMonitoringTest {
     fun `shared core db skips sample persistence and remote build import`() {
         val samples = RecordingSampleWriter()
         val builds = RecordingBuildWriter()
+        val logSource = FakeDaemonLogSource(emptyList())
         val monitoring = PollMonitoring(
             processSource = FakeProcessSource(listOf(gradleDaemon(pid = 7))),
-            logSource = FakeDaemonLogSource(emptyList()),
-            builds = builds,
+            logSource = logSource,
             samples = samples,
-            aggregator = BuildAggregator(),
-            mode = MonitoringMode.SharedCoreOwnedPersistence,
+            buildProcessingMode = MonitoringMode.SharedCoreOwnedPersistence.buildProcessingMode(
+                builds = builds,
+                logSource = logSource,
+                aggregator = BuildAggregator(),
+                retentionDays = { RetentionPolicy.DEFAULT.defaultDays },
+                clock = { 5_000 },
+            ),
             clock = { 5_000 },
         )
 
