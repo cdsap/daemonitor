@@ -591,6 +591,18 @@ func TestFormatRowIncludesGarbageCollector(t *testing.T) {
 	}
 }
 
+func TestFormatRowIncludesGCTimeColumns(t *testing.T) {
+	young, total := 1.234, 7.035
+	row := formatRow(model.Process{YoungGCTimeSeconds: &young, TotalGCTimeSeconds: &total}, columnSet{ids: []columnID{colYoungGCTime, colTotalGCTime}}, fixedNow().UnixMilli())
+	if !strings.Contains(row, "1.234 s") || !strings.Contains(row, "7.035 s") {
+		t.Fatalf("row=%q missing GC times", row)
+	}
+	row = formatRow(model.Process{}, columnSet{ids: []columnID{colYoungGCTime, colTotalGCTime}}, fixedNow().UnixMilli())
+	if !strings.Contains(row, "—") {
+		t.Fatalf("row=%q missing unavailable GC time", row)
+	}
+}
+
 func TestFormatRowIncludesProcessSignals(t *testing.T) {
 	p := model.Process{PID: 9, RSSMemoryMB: render.MemoryCritMB, Automated: true}
 	row := formatRow(p, columnSet{ids: []columnID{colType, colPID, colRSS, colProject}}, fixedNow().UnixMilli())

@@ -9,7 +9,7 @@ import (
 
 const jstatGCFixture = `
     S0C         S1C         S0U         S1U          EC           EU           OC           OU          MC         MU       CCSC      CCSU     YGC     YGCT     FGC    FGCT     CGC    CGCT       GCT   
-        0.0         0.0         0.0         0.0      24576.0          0.0     237568.0      34932.2      256.0       67.7     128.0       3.2      0     0.000     0     0.000     0     0.000     0.000
+        0.0         0.0         0.0         0.0      24576.0          0.0     237568.0      34932.2      256.0       67.7     128.0       3.2      8     1.234     2     2.345     3     3.456     7.035
 `
 
 const jcmdHeapInfoFixture = `63124:
@@ -40,11 +40,17 @@ func TestParseJstatGC(t *testing.T) {
 	if s.Source != "jstat" {
 		t.Fatalf("source: %q", s.Source)
 	}
-	if s.YoungGCCount == nil || *s.YoungGCCount != 0 || s.YoungGCTimeMs == nil || *s.YoungGCTimeMs != 0 {
+	if s.YoungGCCount == nil || *s.YoungGCCount != 8 || s.YoungGCTimeMs == nil || *s.YoungGCTimeMs != 1234 {
 		t.Fatalf("young GC metrics: count=%v time=%v", s.YoungGCCount, s.YoungGCTimeMs)
 	}
-	if s.OldGCCount == nil || *s.OldGCCount != 0 || s.OldGCTimeMs == nil || *s.OldGCTimeMs != 0 {
+	if s.OldGCCount == nil || *s.OldGCCount != 2 || s.OldGCTimeMs == nil || *s.OldGCTimeMs != 2345 {
 		t.Fatalf("old GC metrics: count=%v time=%v", s.OldGCCount, s.OldGCTimeMs)
+	}
+	if s.YoungGCTimeSeconds == nil || *s.YoungGCTimeSeconds != 1.234 ||
+		s.FullGCTimeSeconds == nil || *s.FullGCTimeSeconds != 2.345 ||
+		s.ConcurrentGCTimeSeconds == nil || *s.ConcurrentGCTimeSeconds != 3.456 ||
+		s.TotalGCTimeSeconds == nil || *s.TotalGCTimeSeconds != 7.035 {
+		t.Fatalf("GC time metrics: young=%v full=%v concurrent=%v total=%v", s.YoungGCTimeSeconds, s.FullGCTimeSeconds, s.ConcurrentGCTimeSeconds, s.TotalGCTimeSeconds)
 	}
 	if s.MetaspaceUsedMB == nil || *s.MetaspaceUsedMB != 0 || s.MetaspaceCommittedMB == nil || *s.MetaspaceCommittedMB != 0 {
 		t.Fatalf("metaspace metrics: used=%v committed=%v", s.MetaspaceUsedMB, s.MetaspaceCommittedMB)

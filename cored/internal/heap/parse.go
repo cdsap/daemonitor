@@ -20,17 +20,22 @@ type Sample struct {
 	MetaspaceCommittedMB *int64
 	YoungGCCount         *int64
 	YoungGCTimeMs        *int64
-	OldGCCount           *int64
-	OldGCTimeMs          *int64
-	JavaVersion          *string
-	JavaVendor           *string
-	ActiveProcessorCount *int64
-	JavaRuntimeVersion   *string
-	JavaVMName           *string
-	JavaVMVersion        *string
-	OSName               *string
-	OSArch               *string
-	Diagnostics          []Diagnostic
+	// jstat reports cumulative GC times in seconds.
+	YoungGCTimeSeconds      *float64
+	FullGCTimeSeconds       *float64
+	ConcurrentGCTimeSeconds *float64
+	TotalGCTimeSeconds      *float64
+	OldGCCount              *int64
+	OldGCTimeMs             *int64
+	JavaVersion             *string
+	JavaVendor              *string
+	ActiveProcessorCount    *int64
+	JavaRuntimeVersion      *string
+	JavaVMName              *string
+	JavaVMVersion           *string
+	OSName                  *string
+	OSArch                  *string
+	Diagnostics             []Diagnostic
 }
 
 // ParseJinfoSysprops extracts only the explicitly allowlisted diagnostic
@@ -311,11 +316,24 @@ func ParseJstatGC(out string) (Sample, error) {
 	}
 	var youngCount, oldCount *int64
 	var youngTime, oldTime *int64
+	var youngTimeSeconds, fullTimeSeconds, concurrentTimeSeconds, totalTimeSeconds *float64
 	if v, ok := getInt("YGC"); ok {
 		youngCount = &v
 	}
 	if v, ok := getMillis("YGCT"); ok {
 		youngTime = &v
+	}
+	if v, ok := getValue("YGCT", idx, values); ok {
+		youngTimeSeconds = &v
+	}
+	if v, ok := getValue("FGCT", idx, values); ok {
+		fullTimeSeconds = &v
+	}
+	if v, ok := getValue("CGCT", idx, values); ok {
+		concurrentTimeSeconds = &v
+	}
+	if v, ok := getValue("GCT", idx, values); ok {
+		totalTimeSeconds = &v
 	}
 	if v, ok := getInt("FGC"); ok {
 		oldCount = &v
@@ -336,6 +354,8 @@ func ParseJstatGC(out string) (Sample, error) {
 		Source:          "jstat",
 		MetaspaceUsedMB: metaspaceUsed, MetaspaceCommittedMB: metaspaceCommitted,
 		YoungGCCount: youngCount, YoungGCTimeMs: youngTime,
+		YoungGCTimeSeconds: youngTimeSeconds, FullGCTimeSeconds: fullTimeSeconds,
+		ConcurrentGCTimeSeconds: concurrentTimeSeconds, TotalGCTimeSeconds: totalTimeSeconds,
 		OldGCCount: oldCount, OldGCTimeMs: oldTime,
 	}, nil
 }

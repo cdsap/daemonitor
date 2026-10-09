@@ -168,7 +168,11 @@ func detailAttributes(p model.Process, width int, now int64) []string {
 		"  Swap memory "+optionalInt64Text(p.SwapMemoryMB, "MB"),
 		"  Disk read  "+optionalInt64Text(p.ReadBytes, "bytes"),
 		"  Disk write "+optionalInt64Text(p.WriteBytes, "bytes"),
-		"  Young GC time "+optionalInt64Text(p.YoungGCTimeMs, "ms"),
+		"  Young GC time "+optionalInt64Text(p.YoungGCTimeMs, "ms")+
+			" · YGCT "+render.GCTimeText(p.YoungGCTimeSeconds)+
+			" · FGCT "+render.GCTimeText(p.FullGCTimeSeconds)+
+			" · CGCT "+render.GCTimeText(p.ConcurrentGCTimeSeconds)+
+			" · GCT "+render.GCTimeText(p.TotalGCTimeSeconds),
 	)
 	for i := range lines {
 		lines[i] = truncateWidth(lines[i], max(1, width-2))

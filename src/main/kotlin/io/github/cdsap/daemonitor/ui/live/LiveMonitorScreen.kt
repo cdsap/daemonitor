@@ -46,6 +46,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import java.util.Locale
 import io.github.cdsap.daemonitor.domain.LiveMetricLabels
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.ui.common.LocalAccentColors
@@ -74,6 +75,10 @@ private val COLS = listOf(
     Col("PID", 0.55f, end = true),
     Col("RSS", 0.75f, end = true),
     Col("Heap used", 0.85f, end = true),
+    Col("YGCT (s)", 0.8f, end = true),
+    Col("FGCT (s)", 0.8f, end = true),
+    Col("CGCT (s)", 0.8f, end = true),
+    Col("GCT (s)", 0.8f, end = true),
     Col("CPU", 0.55f, end = true),
     Col("Uptime", 0.85f, end = true),
     Col("Flags", 1.4f),
@@ -232,9 +237,13 @@ private fun ProcessRow(
         Cell(p.pid.toString(), COLS[2])
         Cell("${p.rssMemoryMb} MB", COLS[3])
         Cell(LiveMetricLabels.liveHeapUsedCompact(p.liveHeap), COLS[4], muted = p.liveHeap?.available != true)
-        Cell(LiveMetricLabels.cpuCompact(p.cpuPercent), COLS[5], muted = p.cpuPercent == null)
-        Cell(formatUptime(p.startTimeMs, nowMs), COLS[6])
-        Row(modifier = Modifier.weight(COLS[7].weight), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
+        Cell(p.youngGcTimeSeconds.gcTimeCompact(), COLS[5], muted = p.youngGcTimeSeconds == null)
+        Cell(p.fullGcTimeSeconds.gcTimeCompact(), COLS[6], muted = p.fullGcTimeSeconds == null)
+        Cell(p.concurrentGcTimeSeconds.gcTimeCompact(), COLS[7], muted = p.concurrentGcTimeSeconds == null)
+        Cell(p.totalGcTimeSeconds.gcTimeCompact(), COLS[8], muted = p.totalGcTimeSeconds == null)
+        Cell(LiveMetricLabels.cpuCompact(p.cpuPercent), COLS[9], muted = p.cpuPercent == null)
+        Cell(formatUptime(p.startTimeMs, nowMs), COLS[10])
+        Row(modifier = Modifier.weight(COLS[11].weight), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
             Badges.memoryBadge(p.rssMemoryMb)?.let { MemoryBadge(it) }
             if (concurrent) ConcurrentBadge()
             if (p.automated) AutomatedBadge()
@@ -304,6 +313,10 @@ private fun ProcessDetails(p: GradleProcess, ended: Boolean, nowMs: Long) {
         DetailSection("GC")
         DetailRow("Young GC", p.youngGcCount.metric("collections"))
         DetailRow("Young GC time", p.youngGcTimeMs.metric("ms"))
+        DetailRow("YGCT", p.youngGcTimeSeconds.gcTimeDetail())
+        DetailRow("FGCT", p.fullGcTimeSeconds.gcTimeDetail())
+        DetailRow("CGCT", p.concurrentGcTimeSeconds.gcTimeDetail())
+        DetailRow("GCT", p.totalGcTimeSeconds.gcTimeDetail())
         DetailRow("Old GC", p.oldGcCount.metric("collections"))
         DetailRow("Old GC time", p.oldGcTimeMs.metric("ms"))
 
@@ -342,6 +355,10 @@ private fun DetailSection(label: String) {
 }
 
 private fun Long?.metric(unit: String = ""): String = this?.let { if (unit.isBlank()) it.toString() else "$it $unit" } ?: "unavailable"
+
+private fun Double?.gcTimeDetail(): String = this?.let { String.format(Locale.ROOT, "%.3f s", it) } ?: "—"
+
+private fun Double?.gcTimeCompact(): String = this?.let { String.format(Locale.ROOT, "%.3f", it) } ?: "—"
 
 private fun Long?.metricBytes(): String = this?.let {
     when {

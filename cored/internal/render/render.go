@@ -34,7 +34,7 @@ func WriteProcessesCSV(w io.Writer, snap model.Snapshot) error {
 		"read_operations", "write_operations", "minor_page_faults", "major_page_faults", "voluntary_context_switches",
 		"involuntary_context_switches", "open_file_descriptors", "cpu_percent", "max_heap_mb", "min_heap_mb", "gc",
 		"heap_used_mb", "heap_committed_mb", "heap_max_mb", "heap_sampled_at_ms", "heap_available", "metaspace_used_mb",
-		"metaspace_committed_mb", "young_gc_count", "young_gc_time_ms", "old_gc_count", "old_gc_time_ms", "java_version",
+		"metaspace_committed_mb", "young_gc_count", "young_gc_time_ms", "young_gc_time_seconds", "full_gc_time_seconds", "concurrent_gc_time_seconds", "total_gc_time_seconds", "old_gc_count", "old_gc_time_ms", "java_version",
 		"java_runtime_version", "java_vendor", "java_vm_name", "java_vm_version", "os_name", "os_arch",
 		"active_processor_count", "start_time_ms", "status", "automated",
 	}); err != nil {
@@ -50,7 +50,7 @@ func WriteProcessesCSV(w io.Writer, snap model.Snapshot) error {
 			CPUText(p.CPUPercent), optionalInt64(p.MaxHeapMB), optionalInt64(p.MinHeapMB), GCText(p.GC), optionalInt64(p.HeapUsedMB),
 			optionalInt64(p.HeapCommittedMB), optionalInt64(p.HeapMaxMB), optionalInt64(p.HeapSampledAtMs), fmt.Sprint(p.HeapAvailable),
 			optionalInt64(p.MetaspaceUsedMB), optionalInt64(p.MetaspaceCommittedMB), optionalInt64(p.YoungGCCount), optionalInt64(p.YoungGCTimeMs),
-			optionalInt64(p.OldGCCount), optionalInt64(p.OldGCTimeMs), optionalString(p.JavaVersion), optionalString(p.JavaRuntimeVersion),
+			optionalFloat64(p.YoungGCTimeSeconds), optionalFloat64(p.FullGCTimeSeconds), optionalFloat64(p.ConcurrentGCTimeSeconds), optionalFloat64(p.TotalGCTimeSeconds), optionalInt64(p.OldGCCount), optionalInt64(p.OldGCTimeMs), optionalString(p.JavaVersion), optionalString(p.JavaRuntimeVersion),
 			optionalString(p.JavaVendor), optionalString(p.JavaVMName), optionalString(p.JavaVMVersion), optionalString(p.OSName), optionalString(p.OSArch),
 			optionalInt64(p.ActiveProcessorCount), fmt.Sprint(p.StartTimeMs), p.Status, fmt.Sprint(p.Automated),
 		}
@@ -116,6 +116,22 @@ func optionalInt64(v *int64) string {
 		return ""
 	}
 	return fmt.Sprint(*v)
+}
+
+func optionalFloat64(v *float64) string {
+	if v == nil {
+		return ""
+	}
+	return fmt.Sprintf("%.3f", *v)
+}
+
+// GCTimeText formats cumulative jstat GC time in seconds. Three decimals match
+// jstat's precision while keeping the unit visible; unavailable values stay —.
+func GCTimeText(v *float64) string {
+	if v == nil {
+		return "—"
+	}
+	return fmt.Sprintf("%.3f s", *v)
 }
 
 func optionalString(v *string) string {
@@ -203,6 +219,10 @@ func WriteProcessesDetailedPlain(w io.Writer, snap model.Snapshot) {
 		writeProcessMetric(w, "metaspace_committed_mb", optionalInt64Value(p.MetaspaceCommittedMB))
 		writeProcessMetric(w, "young_gc_count", optionalInt64Value(p.YoungGCCount))
 		writeProcessMetric(w, "young_gc_time_ms", optionalInt64Value(p.YoungGCTimeMs))
+		writeProcessMetric(w, "young_gc_time_seconds", optionalFloat64Value(p.YoungGCTimeSeconds))
+		writeProcessMetric(w, "full_gc_time_seconds", optionalFloat64Value(p.FullGCTimeSeconds))
+		writeProcessMetric(w, "concurrent_gc_time_seconds", optionalFloat64Value(p.ConcurrentGCTimeSeconds))
+		writeProcessMetric(w, "total_gc_time_seconds", optionalFloat64Value(p.TotalGCTimeSeconds))
 		writeProcessMetric(w, "old_gc_count", optionalInt64Value(p.OldGCCount))
 		writeProcessMetric(w, "old_gc_time_ms", optionalInt64Value(p.OldGCTimeMs))
 		writeProcessMetric(w, "java_version", optionalValue(p.JavaVersion))
@@ -228,6 +248,13 @@ func optionalInt64Value(v *int64) string {
 		return "n/a"
 	}
 	return fmt.Sprint(*v)
+}
+
+func optionalFloat64Value(v *float64) string {
+	if v == nil {
+		return "—"
+	}
+	return fmt.Sprintf("%.3f s", *v)
 }
 
 func optionalValue(v *string) string {

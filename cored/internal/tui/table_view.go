@@ -154,6 +154,10 @@ const (
 	colHeapUsed
 	colHeapCmt
 	colXmx
+	colYoungGCTime
+	colFullGCTime
+	colConcurrentGCTime
+	colTotalGCTime
 	colCPU
 	colUptime
 	colProject
@@ -165,8 +169,10 @@ type columnSet struct {
 
 func columnsForWidth(width int) columnSet {
 	switch {
+	case width >= 140:
+		return columnSet{ids: []columnID{colType, colGC, colPID, colRSS, colThreads, colHeapPercent, colMetaspace, colHeapUsed, colHeapCmt, colXmx, colYoungGCTime, colFullGCTime, colConcurrentGCTime, colTotalGCTime, colCPU, colUptime, colProject}}
 	case width >= 110:
-		return columnSet{ids: []columnID{colType, colGC, colPID, colRSS, colThreads, colHeapPercent, colMetaspace, colHeapUsed, colHeapCmt, colXmx, colCPU, colUptime, colProject}}
+		return columnSet{ids: []columnID{colType, colGC, colPID, colRSS, colXmx, colYoungGCTime, colFullGCTime, colConcurrentGCTime, colTotalGCTime, colCPU, colUptime, colProject}}
 	case width >= 80:
 		return columnSet{ids: []columnID{colType, colGC, colPID, colRSS, colXmx, colCPU, colUptime, colProject}}
 	default:
@@ -232,6 +238,14 @@ func columnLabel(id columnID) string {
 		return "CMT"
 	case colXmx:
 		return "XMX"
+	case colYoungGCTime:
+		return "YGCT(s)"
+	case colFullGCTime:
+		return "FGCT(s)"
+	case colConcurrentGCTime:
+		return "CGCT(s)"
+	case colTotalGCTime:
+		return "GCT(s)"
 	case colCPU:
 		return "CPU"
 	case colUptime:
@@ -259,7 +273,7 @@ func columnWidth(id columnID) int {
 		return 7
 	case colMetaspace:
 		return 8
-	case colHeapUsed, colHeapCmt, colXmx:
+	case colHeapUsed, colHeapCmt, colXmx, colYoungGCTime, colFullGCTime, colConcurrentGCTime, colTotalGCTime:
 		return 8
 	case colCPU:
 		return 7
@@ -274,7 +288,7 @@ func columnWidth(id columnID) int {
 
 func padColumn(s string, id columnID) string {
 	w := columnWidth(id)
-	if id == colPID || id == colRSS || id == colThreads || id == colHeapPercent || id == colMetaspace || id == colCPU || id == colXmx || id == colHeapUsed || id == colHeapCmt || id == colUptime {
+	if id == colPID || id == colRSS || id == colThreads || id == colHeapPercent || id == colMetaspace || id == colCPU || id == colXmx || id == colHeapUsed || id == colHeapCmt || id == colYoungGCTime || id == colFullGCTime || id == colConcurrentGCTime || id == colTotalGCTime || id == colUptime {
 		return padLeft(truncateWidth(s, w), w)
 	}
 	return padRight(truncateWidth(s, w), w)
@@ -309,6 +323,14 @@ func formatRowStyled(p model.Process, cols columnSet, nowMs int64, noColor, sele
 			cell = render.HeapText(p.HeapCommittedMB)
 		case colXmx:
 			cell = render.HeapLimitText(p.MaxHeapMB)
+		case colYoungGCTime:
+			cell = render.GCTimeText(p.YoungGCTimeSeconds)
+		case colFullGCTime:
+			cell = render.GCTimeText(p.FullGCTimeSeconds)
+		case colConcurrentGCTime:
+			cell = render.GCTimeText(p.ConcurrentGCTimeSeconds)
+		case colTotalGCTime:
+			cell = render.GCTimeText(p.TotalGCTimeSeconds)
 		case colCPU:
 			cell = render.CPUText(p.CPUPercent)
 		case colUptime:

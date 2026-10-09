@@ -29,30 +29,35 @@ type Process struct {
 	GC                         *string  `json:"gc"`
 	// Live heap from jcmd/jstat (Gradle/Kotlin daemons only). Null used/committed when
 	// unavailable — never coerced to zero. Distinct from MaxHeapMB (-Xmx).
-	HeapUsedMB           *int64            `json:"heap_used_mb"`
-	HeapCommittedMB      *int64            `json:"heap_committed_mb"`
-	HeapMaxMB            *int64            `json:"heap_max_mb"`
-	HeapSampledAtMs      *int64            `json:"heap_sampled_at_ms"`
-	HeapAvailable        bool              `json:"heap_available"`
-	MetaspaceUsedMB      *int64            `json:"metaspace_used_mb"`
-	MetaspaceCommittedMB *int64            `json:"metaspace_committed_mb"`
-	YoungGCCount         *int64            `json:"young_gc_count"`
-	YoungGCTimeMs        *int64            `json:"young_gc_time_ms"`
-	OldGCCount           *int64            `json:"old_gc_count"`
-	OldGCTimeMs          *int64            `json:"old_gc_time_ms"`
-	JavaVersion          *string           `json:"java_version"`
-	JavaRuntimeVersion   *string           `json:"java_runtime_version"`
-	JavaVendor           *string           `json:"java_vendor"`
-	JavaVMName           *string           `json:"java_vm_name"`
-	JavaVMVersion        *string           `json:"java_vm_version"`
-	OSName               *string           `json:"os_name"`
-	OSArch               *string           `json:"os_arch"`
-	ActiveProcessorCount *int64            `json:"active_processor_count"`
-	HeapProbeDiagnostics []ProbeDiagnostic `json:"heap_probe_diagnostics,omitempty"`
-	StartTimeMs          int64             `json:"start_time_ms"`
-	Status               string            `json:"status"`
-	Automated            bool              `json:"automated"`
-	SampledAtMs          int64             `json:"sampled_at_ms"`
+	HeapUsedMB           *int64 `json:"heap_used_mb"`
+	HeapCommittedMB      *int64 `json:"heap_committed_mb"`
+	HeapMaxMB            *int64 `json:"heap_max_mb"`
+	HeapSampledAtMs      *int64 `json:"heap_sampled_at_ms"`
+	HeapAvailable        bool   `json:"heap_available"`
+	MetaspaceUsedMB      *int64 `json:"metaspace_used_mb"`
+	MetaspaceCommittedMB *int64 `json:"metaspace_committed_mb"`
+	YoungGCCount         *int64 `json:"young_gc_count"`
+	YoungGCTimeMs        *int64 `json:"young_gc_time_ms"`
+	// Cumulative jstat -gc times, in seconds; null means unavailable.
+	YoungGCTimeSeconds      *float64          `json:"young_gc_time_seconds"`
+	FullGCTimeSeconds       *float64          `json:"full_gc_time_seconds"`
+	ConcurrentGCTimeSeconds *float64          `json:"concurrent_gc_time_seconds"`
+	TotalGCTimeSeconds      *float64          `json:"total_gc_time_seconds"`
+	OldGCCount              *int64            `json:"old_gc_count"`
+	OldGCTimeMs             *int64            `json:"old_gc_time_ms"`
+	JavaVersion             *string           `json:"java_version"`
+	JavaRuntimeVersion      *string           `json:"java_runtime_version"`
+	JavaVendor              *string           `json:"java_vendor"`
+	JavaVMName              *string           `json:"java_vm_name"`
+	JavaVMVersion           *string           `json:"java_vm_version"`
+	OSName                  *string           `json:"os_name"`
+	OSArch                  *string           `json:"os_arch"`
+	ActiveProcessorCount    *int64            `json:"active_processor_count"`
+	HeapProbeDiagnostics    []ProbeDiagnostic `json:"heap_probe_diagnostics,omitempty"`
+	StartTimeMs             int64             `json:"start_time_ms"`
+	Status                  string            `json:"status"`
+	Automated               bool              `json:"automated"`
+	SampledAtMs             int64             `json:"sampled_at_ms"`
 }
 
 // ProbeDiagnostic is a safe, stable summary of a failed JVM tool attempt.

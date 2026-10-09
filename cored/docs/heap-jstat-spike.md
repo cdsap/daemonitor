@@ -21,6 +21,11 @@ CLI: `cored/cmd/daemonitor-heapprobe`.
 
 Policy: probe `GRADLE_DAEMON` / `KOTLIN_DAEMON` only (wrappers/workers stay `n/a`).
 
+`jstat -gc` cumulative GC times are seconds: `YGCT` (young), `FGCT` (full),
+`CGCT` (concurrent), and `GCT` (total). They are exposed as nullable
+`*_gc_time_seconds` snapshot fields and formatted to three decimal places with an
+`s` suffix; unavailable values are rendered as `—`.
+
 ## Run
 
 ```bash
