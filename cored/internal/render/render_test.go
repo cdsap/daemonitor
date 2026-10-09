@@ -10,6 +10,28 @@ import (
 	"github.com/cdsap/daemonitor/cored/internal/model"
 )
 
+func TestWriteProcessesPlainKeepsColumnsAlignedForLongTypes(t *testing.T) {
+	var buf bytes.Buffer
+	WriteProcessesPlain(&buf, model.Snapshot{
+		SampledAtMs: 100,
+		Processes: []model.Process{
+			{PID: 4242, Type: "GRADLE_DAEMON", RSSMemoryMB: 613},
+			{PID: 4243, Type: "UNKNOWN_GRADLE_WORKER", RSSMemoryMB: 1045},
+		},
+	})
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	header, short, long := lines[1], lines[2], lines[3]
+	pidEnd := strings.Index(header, "PID") + len("PID")
+	for _, row := range []string{short, long} {
+		if got := strings.Index(row, "424") + len("4242"); got != pidEnd {
+			t.Fatalf("PID ends at %d, header at %d:\n%s\n%s", got, pidEnd, header, row)
+		}
+	}
+	if !strings.Contains(short, "613 MB") || !strings.Contains(long, "1.0 GB") {
+		t.Fatalf("RSS should use the same units as XMX:\n%s\n%s", short, long)
+	}
+}
+
 func TestWriteProcessesPlainNoANSI(t *testing.T) {
 	cpu := 12.5
 	xmx := int64(2048)

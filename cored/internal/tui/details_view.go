@@ -105,7 +105,15 @@ func (m Model) renderDetails() string {
 	}
 	b.WriteByte('\n')
 	focus := detailPaneName(m.detailPane)
-	b.WriteString(truncateWidth(fmt.Sprintf("tab/←→ focus %s   ↑/↓ or j/k scroll   pgup/pgdn page   g/G top/bottom   r refresh   esc back   q quit", focus), m.width))
+	b.WriteString(fitSegments([]string{
+		"tab/←→ focus " + focus,
+		"esc back",
+		"q quit",
+		"↑/↓ or j/k scroll",
+		"pgup/pgdn page",
+		"g/G top/bottom",
+		"r refresh",
+	}, "   ", m.width))
 	return strings.TrimRight(b.String(), "\n")
 }
 
@@ -150,11 +158,22 @@ func detailHeader(p model.Process, now int64, ended, stale bool, width int, noCo
 	if stale {
 		state += " · snapshot stale"
 	}
-	line := fmt.Sprintf("GRADLE COMMANDER CENTER / PROCESS DETAILS  ·  %s  ·  pid %d  ·  %s  ·  %s  ·  RSS %s  ·  CPU %s  ·  GC %s  ·  uptime %s", render.TypeDisplay(p.Type), p.PID, na(p.Name), state, render.RSSText(p.RSSMemoryMB), render.CPUText(p.CPUPercent), render.GCText(p.GC), render.Uptime(p.StartTimeMs, now))
-	if project := render.ProjectName(p); project != "—" {
-		line += "  ·  " + project
+	// Ordered by importance: trailing segments are dropped first on narrow terminals.
+	segments := []string{
+		fmt.Sprintf("%s  ·  pid %d", render.TypeDisplay(p.Type), p.PID),
+		state,
+		"RSS " + render.RSSText(p.RSSMemoryMB),
+		"CPU " + render.CPUText(p.CPUPercent),
 	}
-	line = truncateWidth(line, max(1, width))
+	if project := render.ProjectName(p); project != "—" {
+		segments = append(segments, project)
+	}
+	segments = append(segments, "GC "+render.GCText(p.GC), "uptime "+render.Uptime(p.StartTimeMs, now), na(p.Name))
+	title := "GRADLE COMMANDER CENTER / PROCESS DETAILS"
+	line := fitSegments(append([]string{title}, segments...), "  ·  ", max(1, width))
+	if !strings.Contains(line, "pid ") {
+		line = fitSegments(append([]string{"PROCESS DETAILS"}, segments...), "  ·  ", max(1, width))
+	}
 	if noColor {
 		return line
 	}
@@ -162,18 +181,56 @@ func detailHeader(p model.Process, now int64, ended, stale bool, width int, noCo
 }
 
 func detailAttributes(p model.Process, width int, now int64) []string {
-	lines := []string{"Identity", fmt.Sprintf("  Type       %s", render.TypeDisplay(p.Type)), fmt.Sprintf("  PID        %d", p.PID), "  Name       " + na(p.Name), "  Project    " + render.ProjectName(p), "  Work dir   " + optionalStringText(p.WorkingDirectory), "  Status     " + na(p.Status), "  Start      " + formatStart(p.StartTimeMs), "  Uptime     " + render.Uptime(p.StartTimeMs, now), "", "JVM / memory", "  RSS        " + render.RSSText(p.RSSMemoryMB), "  CPU        " + render.CPUText(p.CPUPercent), "  GC         " + render.GCText(p.GC), "  Xmx        " + render.HeapLimitText(p.MaxHeapMB), "  Xms        " + optionalInt64Text(p.MinHeapMB, "MB"), "  Heap used  " + render.HeapText(p.HeapUsedMB), "  Heap cmt   " + render.HeapText(p.HeapCommittedMB), "  Heap max   " + render.HeapText(p.HeapMaxMB), "  Heap %     " + render.HeapPercentText(p.HeapUsedMB, p.HeapMaxMB), "  Metaspace used " + optionalInt64Text(p.MetaspaceUsedMB, "MB"), "", "Diagnostics", "  Threads    " + optionalInt64Text(p.ThreadCount, ""), "  VM         " + optionalStringText(p.JavaVMName), "  Java version " + optionalStringText(p.JavaVersion), "  OS         " + optionalStringText(p.OSName) + " / " + optionalStringText(p.OSArch), "  Processors " + optionalInt64Text(p.ActiveProcessorCount, ""), "  GC young   " + optionalInt64Text(p.YoungGCCount, "") + " / " + optionalInt64Text(p.YoungGCTimeMs, "ms"), "  GC old     " + optionalInt64Text(p.OldGCCount, "") + " / " + optionalInt64Text(p.OldGCTimeMs, "ms"), "  VM version " + optionalStringText(p.JavaVMVersion), "  Runtime    " + optionalStringText(p.JavaRuntimeVersion), "  Vendor     " + optionalStringText(p.JavaVendor), "  Open files " + optionalInt64Text(p.OpenFileDescriptors, "")}
-	lines = append(lines,
-		"  Virtual memory "+optionalInt64Text(p.VirtualMemoryMB, "MB"),
-		"  Swap memory "+optionalInt64Text(p.SwapMemoryMB, "MB"),
-		"  Disk read  "+optionalInt64Text(p.ReadBytes, "bytes"),
-		"  Disk write "+optionalInt64Text(p.WriteBytes, "bytes"),
-		"  Young GC time "+optionalInt64Text(p.YoungGCTimeMs, "ms")+
-			" · YGCT "+render.GCTimeText(p.YoungGCTimeSeconds)+
-			" · FGCT "+render.GCTimeText(p.FullGCTimeSeconds)+
-			" · CGCT "+render.GCTimeText(p.ConcurrentGCTimeSeconds)+
-			" · GCT "+render.GCTimeText(p.TotalGCTimeSeconds),
-	)
+	// Wide enough for the longest label ("Metaspace used", "Virtual memory").
+	const labelWidth = 14
+	field := func(label, value string) string {
+		return fmt.Sprintf("  %-*s %s", labelWidth, label, value)
+	}
+	lines := []string{
+		"Identity",
+		field("Type", render.TypeDisplay(p.Type)),
+		field("PID", fmt.Sprintf("%d", p.PID)),
+		field("Name", na(p.Name)),
+		field("Project", render.ProjectName(p)),
+		field("Work dir", optionalStringText(p.WorkingDirectory)),
+		field("Status", na(p.Status)),
+		field("Start", formatStart(p.StartTimeMs)),
+		field("Uptime", render.Uptime(p.StartTimeMs, now)),
+		"",
+		"JVM / memory",
+		field("RSS", render.RSSText(p.RSSMemoryMB)),
+		field("CPU", render.CPUText(p.CPUPercent)),
+		field("GC", render.GCText(p.GC)),
+		field("Xmx", render.HeapLimitText(p.MaxHeapMB)),
+		field("Xms", optionalInt64Text(p.MinHeapMB, "MB")),
+		field("Heap used", render.HeapText(p.HeapUsedMB)),
+		field("Heap cmt", render.HeapText(p.HeapCommittedMB)),
+		field("Heap max", render.HeapText(p.HeapMaxMB)),
+		field("Heap %", render.HeapPercentText(p.HeapUsedMB, p.HeapMaxMB)),
+		field("Metaspace used", optionalInt64Text(p.MetaspaceUsedMB, "MB")),
+		"",
+		"Diagnostics",
+		field("Threads", optionalInt64Text(p.ThreadCount, "")),
+		field("VM", optionalStringText(p.JavaVMName)),
+		field("Java version", optionalStringText(p.JavaVersion)),
+		field("OS", optionalStringText(p.OSName)+" / "+optionalStringText(p.OSArch)),
+		field("Processors", optionalInt64Text(p.ActiveProcessorCount, "")),
+		field("GC young", optionalInt64Text(p.YoungGCCount, "")+" / "+optionalInt64Text(p.YoungGCTimeMs, "ms")),
+		field("GC old", optionalInt64Text(p.OldGCCount, "")+" / "+optionalInt64Text(p.OldGCTimeMs, "ms")),
+		field("VM version", optionalStringText(p.JavaVMVersion)),
+		field("Runtime", optionalStringText(p.JavaRuntimeVersion)),
+		field("Vendor", optionalStringText(p.JavaVendor)),
+		field("Open files", optionalInt64Text(p.OpenFileDescriptors, "")),
+		field("Virtual memory", optionalInt64Text(p.VirtualMemoryMB, "MB")),
+		field("Swap memory", optionalInt64Text(p.SwapMemoryMB, "MB")),
+		field("Disk read", optionalInt64Text(p.ReadBytes, "bytes")),
+		field("Disk write", optionalInt64Text(p.WriteBytes, "bytes")),
+		field("Young GC time", optionalInt64Text(p.YoungGCTimeMs, "ms")),
+		field("GC time (s)", "young "+render.GCTimeText(p.YoungGCTimeSeconds)+
+			" · full "+render.GCTimeText(p.FullGCTimeSeconds)+
+			" · conc "+render.GCTimeText(p.ConcurrentGCTimeSeconds)+
+			" · total "+render.GCTimeText(p.TotalGCTimeSeconds)),
+	}
 	for i := range lines {
 		lines[i] = truncateWidth(lines[i], max(1, width-2))
 	}
@@ -209,7 +266,7 @@ func detailBuilds(m Model, width int) []string {
 		return []string{"Loading…"}
 	}
 	if m.detailError != "" && len(m.detailBuilds.Builds) == 0 {
-		return []string{truncateWidth("Unavailable: "+m.detailError, max(1, width-2))}
+		return []string{truncateWidth("Unavailable: "+oneLine(m.detailError), max(1, width-2))}
 	}
 	if len(m.detailBuilds.Builds) == 0 {
 		return []string{"No build history for this daemon."}
@@ -239,7 +296,7 @@ func detailLog(m Model, width int) []string {
 		return []string{"Loading…"}
 	}
 	if m.detailError != "" && m.detailTail == nil {
-		return []string{"Unavailable: " + m.detailError}
+		return []string{"Unavailable: " + oneLine(m.detailError)}
 	}
 	if m.detailTail == nil {
 		return []string{"No matching Gradle daemon log is available."}
