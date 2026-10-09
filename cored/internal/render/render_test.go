@@ -40,6 +40,23 @@ func TestWriteProcessesPlainNoANSI(t *testing.T) {
 	}
 }
 
+func TestTypeDisplayForGradleWorkerKinds(t *testing.T) {
+	for _, tc := range []struct {
+		kind string
+		want string
+	}{
+		{kind: "TEST_WORKER", want: "Gradle test worker"},
+		{kind: "GRADLE_WORKER", want: "Gradle worker"},
+		{kind: "UNKNOWN_GRADLE_WORKER", want: "Unknown Gradle worker"},
+	} {
+		t.Run(tc.kind, func(t *testing.T) {
+			if got := TypeDisplay(tc.kind); got != tc.want {
+				t.Fatalf("TypeDisplay(%q)=%q want %q", tc.kind, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestWriteProcessesDetailedPlainIncludesExtendedMetrics(t *testing.T) {
 	threads, readBytes, writeBytes := int64(12), int64(1024), int64(2048)
 	metaspace, youngTime, oldTime := int64(64), int64(7), int64(9)
