@@ -2,29 +2,45 @@ package io.github.cdsap.daemonitor.application
 
 import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.domain.BuildAggregator
-import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 
 /**
- * Application polling use case: collect processes and daemon logs through ports, persist samples
- * and builds through repositories, and correlate builds with [BuildAggregator].
+ * Application polling use case: collect processes and daemon logs through ports, persist samples,
+ * and delegate build processing to the mode selected by the composition root.
  *
- * The [mode] determines whether this runtime aggregates local daemon logs, imports builds from an
- * external core, or leaves both sample and build persistence to a shared core.
+ * [buildProcessingMode] owns the local aggregation, remote import, or shared-core behavior.
  */
 class PollMonitoring(
     private val processSource: ProcessSource,
     private val logSource: DaemonLogSource,
-    private val builds: BuildWriter,
     private val samples: ProcessSampleWriter,
-    private val aggregator: BuildAggregator,
-    private val mode: MonitoringMode = MonitoringMode.Local,
-    private val retentionDays: () -> Long = { RetentionPolicy.DEFAULT.defaultDays },
+    private val buildProcessingMode: BuildProcessingMode,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
-    private var knownDaemonPids = emptySet<Long>()
-    private var lastRemoteBuildFingerprint = emptyMap<String, String>()
+    /** Compatibility constructor for direct application-layer callers. */
+    constructor(
+        processSource: ProcessSource,
+        logSource: DaemonLogSource,
+        builds: BuildWriter,
+        samples: ProcessSampleWriter,
+        aggregator: BuildAggregator,
+        mode: MonitoringMode = MonitoringMode.Local,
+        retentionDays: () -> Long = { RetentionPolicy.DEFAULT.defaultDays },
+        clock: () -> Long = System::currentTimeMillis,
+    ) : this(
+        processSource = processSource,
+        logSource = logSource,
+        samples = samples,
+        buildProcessingMode = mode.buildProcessingMode(
+            builds = builds,
+            logSource = logSource,
+            aggregator = aggregator,
+            retentionDays = retentionDays,
+            clock = clock,
+        ),
+        clock = clock,
+    )
 
     data class PollResult(
         val processes: List<GradleProcess>,
@@ -35,19 +51,15 @@ class PollMonitoring(
     fun pollOnce(): PollResult {
         val now = clock()
         val processes = processSource.currentProcesses()
-        if (mode != MonitoringMode.SharedCoreOwnedPersistence) {
+        if (buildProcessingMode.persistsSamples) {
             processes.forEach { samples.save(it, now) }
         }
 
         val logs = logSource.discover()
-        val buildsChanged = when (val monitoringMode = mode) {
-            MonitoringMode.Local -> processForBuilds(logs, activeDaemonPids = processes.activeDaemonPids())
-            is MonitoringMode.RemoteBuilds -> syncRemoteBuilds(monitoringMode.source)
-            MonitoringMode.SharedCoreOwnedPersistence -> {
-                // Core owns builds in the shared DB; still discover logs for the UI tail panel.
-                false
-            }
-        }
+        val buildsChanged = buildProcessingMode.process(
+            logs = logs,
+            activeDaemonPids = processes.activeDaemonPids(),
+        )
         return PollResult(
             processes = processes,
             daemonLogs = logs,
@@ -55,72 +67,15 @@ class PollMonitoring(
         )
     }
 
+    internal fun processForBuilds(logs: List<DaemonLog>, activeDaemonPids: Set<Long>): Boolean =
+        buildProcessingMode.process(logs, activeDaemonPids)
+
     fun tailFor(logs: List<DaemonLog>, pid: Long): DaemonLogTailResult {
         val log = logs.firstOrNull { it.pid == pid } ?: return DaemonLogTailResult.NoLog
         return runCatching { DaemonLogTailResult.Lines(logSource.tailFor(log)) }
             .getOrElse { error ->
                 DaemonLogTailResult.Error(error::class.simpleName ?: "UnknownError")
             }
-    }
-
-    internal fun processForBuilds(logs: List<DaemonLog>, activeDaemonPids: Set<Long>): Boolean {
-        var inserted = false
-
-        // Only read tails for daemons we are tracking (live now, or known from a prior poll).
-        // Discover may return hundreds of historical daemon-*.out.log paths under ~/.gradle;
-        // reading all of them every cycle is too expensive for local IO and catastrophic for
-        // GoCoreDaemonLogSource (HTTP tail per path — issue #221).
-        val pidsToRead = activeDaemonPids + knownDaemonPids
-
-        for (log in logs) {
-            if (log.pid in pidsToRead) {
-                val lines = logSource.readNewLines(log)
-                if (lines.isNotEmpty()) {
-                    lines.flatMap { aggregator.onLogLine(log.pid, it.text, it.event) }.forEach { build ->
-                        if (saveIfWithinRetention(build)) inserted = true
-                    }
-                }
-            }
-            if (log.pid !in activeDaemonPids) {
-                aggregator.onDaemonGone(log.pid)?.let { build ->
-                    if (saveIfWithinRetention(build)) inserted = true
-                }
-            }
-        }
-
-        (knownDaemonPids - activeDaemonPids).forEach { gonePid ->
-            aggregator.onDaemonGone(gonePid)?.let { build ->
-                if (saveIfWithinRetention(build)) inserted = true
-            }
-        }
-        knownDaemonPids = activeDaemonPids
-        return inserted
-    }
-
-    /**
-     * Import confirmed builds from an external core. Skips [processForBuilds] so dual-run does not
-     * HTTP-tail daemon logs solely to re-aggregate on the JVM.
-     */
-    internal fun syncRemoteBuilds(source: BuildSource): Boolean {
-        val fingerprint = linkedMapOf<String, String>()
-        for (build in source.recentBuilds()) {
-            if (!saveIfWithinRetention(build)) continue
-            fingerprint[build.buildId] = build.finalStatus.name
-        }
-        val changed = fingerprint != lastRemoteBuildFingerprint
-        lastRemoteBuildFingerprint = fingerprint
-        return changed
-    }
-
-    /**
-     * Daemon-log replay can re-emit builds with their original timestamps. Skip anything outside
-     * the configured retention window so purge is not undone by the next poll.
-     */
-    private fun saveIfWithinRetention(build: Build): Boolean {
-        val cutoff = RetentionPolicy.DEFAULT.cutoffEpochMs(clock(), retentionDays())
-        if (build.startTimeMs < cutoff) return false
-        builds.save(build)
-        return true
     }
 
     private fun List<GradleProcess>.activeDaemonPids(): Set<Long> =
