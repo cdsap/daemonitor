@@ -454,7 +454,7 @@ func (m *Model) refreshDisplayRows() {
 	} else {
 		m.displayRows = make([]displayRow, 0, len(m.processes))
 		for _, p := range m.processes {
-			m.displayRows = append(m.displayRows, displayRow{process: p})
+			m.displayRows = append(m.displayRows, displayRow{process: p, target: p})
 		}
 	}
 }
