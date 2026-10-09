@@ -35,9 +35,9 @@ func TestClassifyParityWithKotlin(t *testing.T) {
 			want: "KOTLIN_DAEMON",
 		},
 		{
-			name: "test worker",
+			name: "gradle worker",
 			in:   "java worker.org.gradle.process.internal.worker.GradleWorkerMain 'Gradle Test Executor 3'",
-			want: "TEST_WORKER",
+			want: "GRADLE_WORKER",
 		},
 		{
 			name: "java with gradle runtime marker",
@@ -100,7 +100,7 @@ func TestShouldProbeLiveHeap(t *testing.T) {
 	if !poll.ShouldProbeLiveHeap("GRADLE_DAEMON") || !poll.ShouldProbeLiveHeap("KOTLIN_DAEMON") {
 		t.Fatal("daemons must be probed")
 	}
-	for _, kind := range []string{"GRADLE_WRAPPER", "TEST_WORKER", "JAVA_GRADLE_RELATED", ""} {
+	for _, kind := range []string{"GRADLE_WRAPPER", "GRADLE_WORKER", "JAVA_GRADLE_RELATED", ""} {
 		if poll.ShouldProbeLiveHeap(kind) {
 			t.Fatalf("%s must stay unprobed", kind)
 		}

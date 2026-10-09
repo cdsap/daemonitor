@@ -531,7 +531,7 @@ func TestDetailsRefreshKeyReloadsOpenProcess(t *testing.T) {
 }
 
 func TestDetailsHideGradleOnlyPanelsForNonDaemons(t *testing.T) {
-	for _, processType := range []string{"KOTLIN_DAEMON", "TEST_WORKER"} {
+	for _, processType := range []string{"KOTLIN_DAEMON", "GRADLE_WORKER"} {
 		p := model.Process{PID: 9, Type: processType, StartTimeMs: 100}
 		m := NewModel(Config{Now: fixedNow, NoColor: true})
 		m.width, m.height, m.detailsOpen, m.detailProcess = 100, 30, true, &p

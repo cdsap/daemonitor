@@ -138,7 +138,7 @@ internal object SampleUi {
         val processes = listOf(
             daemon,
             process(4914, ProcessType.GRADLE_WRAPPER, "checkout-service", 612, 220, 14.0, now - 4 * 60 * 1_000, "java org.gradle.wrapper.GradleWrapperMain test", automated = true),
-            process(4930, ProcessType.TEST_WORKER, "checkout-service", 768, 410, 71.0, now - 75 * 1_000, "java -Xmx1024m GradleWorkerMain 'Test Executor 2'"),
+            process(4930, ProcessType.GRADLE_WORKER, "checkout-service", 768, 410, 71.0, now - 75 * 1_000, "java -Xmx1024m GradleWorkerMain 'Test Executor 2'"),
             process(5077, ProcessType.KOTLIN_DAEMON, "design-system", 544, 300, 9.0, now - 11 * 60 * 1_000, "java -Xmx1536m org.jetbrains.kotlin.daemon.KotlinCompileDaemon"),
         )
         val endMs = 1_700_000_060_000L

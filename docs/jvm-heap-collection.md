@@ -18,7 +18,7 @@ JSON `null` + `heapAvailable: false`). They are never coerced to zero.
 Live heap is **intentionally not probed** for:
 
 - Gradle wrappers
-- Test workers
+- Gradle workers
 - Other non-daemon Gradle-related JVMs (`JAVA_GRADLE_RELATED`)
 
 Those rows keep RSS and configured `-Xmx` (when present) but show heap used/committed as `n/a` /
@@ -77,7 +77,7 @@ CGO-free: cored shells to external JDK tools (no embedded JVM).
 - **PID exit / attach failure / timeout / missing tools:** drop the cached sample for that identity
   and mark heap unavailable for that sample; RSS and `-Xmx` collection continue unchanged.
 - Each probe attempt is bounded (~750ms). Self-attach / self-PID is skipped.
-- Only Gradle and Kotlin **daemon** processes are probed; wrappers, test workers, and other
+- Only Gradle and Kotlin **daemon** processes are probed; wrappers, Gradle workers, and other
   non-daemon related JVMs stay unavailable by design (see When live heap stays unavailable).
 - Probes run on the existing IO poll path; they do not block the UI thread.
 

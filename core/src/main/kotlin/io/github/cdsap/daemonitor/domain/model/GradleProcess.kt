@@ -5,7 +5,7 @@ enum class ProcessType {
     GRADLE_DAEMON,
     GRADLE_WRAPPER,
     KOTLIN_DAEMON,
-    TEST_WORKER,
+    GRADLE_WORKER,
     JAVA_GRADLE_RELATED,
 }
 

@@ -19,7 +19,7 @@ object GradleProcessClassifier {
                 cl.contains("KotlinCompileDaemon") -> ProcessType.KOTLIN_DAEMON
 
             cl.contains("worker.org.gradle.process.internal.worker.GradleWorkerMain") ||
-                cl.contains("org.gradle.process.internal.worker.GradleWorkerMain") -> ProcessType.TEST_WORKER
+                cl.contains("org.gradle.process.internal.worker.GradleWorkerMain") -> ProcessType.GRADLE_WORKER
 
             // The wrapper JVM is usually launched as `java -jar …/gradle/wrapper/gradle-wrapper.jar`
             // with `-Dorg.gradle.appname=gradlew` — so neither the GradleWrapperMain class nor a

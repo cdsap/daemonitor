@@ -324,8 +324,8 @@ func TypeDisplay(t string) string {
 		return "Gradle wrapper"
 	case "KOTLIN_DAEMON":
 		return "Kotlin daemon"
-	case "TEST_WORKER":
-		return "Test worker"
+	case "GRADLE_WORKER":
+		return "Gradle worker"
 	case "JAVA_GRADLE_RELATED":
 		return "Java (Gradle)"
 	default:

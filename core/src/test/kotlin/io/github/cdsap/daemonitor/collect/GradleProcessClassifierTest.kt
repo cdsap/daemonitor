@@ -39,9 +39,9 @@ class GradleProcessClassifierTest {
     }
 
     @Test
-    fun `classifies test worker`() {
+    fun `classifies gradle worker`() {
         val cl = "java worker.org.gradle.process.internal.worker.GradleWorkerMain 'Gradle Test Executor 3'"
-        assertEquals(ProcessType.TEST_WORKER, GradleProcessClassifier.classify(cl))
+        assertEquals(ProcessType.GRADLE_WORKER, GradleProcessClassifier.classify(cl))
     }
 
     @Test

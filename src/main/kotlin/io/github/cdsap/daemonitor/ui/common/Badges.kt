@@ -29,7 +29,7 @@ object Badges {
      * PIDs belonging to a project that genuinely has multiple concurrent builds.
      *
      * A single build fans out into several processes sharing one working directory (a `gradlew`
-     * wrapper, the daemon, test workers, the launcher JVM) — so counting raw processes per cwd
+     * wrapper, the daemon, Gradle workers, the launcher JVM) — so counting raw processes per cwd
      * over-reports massively (it tags every process of every multi-process build). Instead we count
      * *build entry points*: a project has concurrent builds only when 2+ Gradle **wrapper**
      * invocations target it (each build invocation is one wrapper). Live-only: concurrency is a
