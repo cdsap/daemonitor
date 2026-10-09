@@ -98,6 +98,9 @@ type Model struct {
 	width       int
 	height      int
 	processes   []model.Process
+	hierarchy   processHierarchy
+	groupedView bool
+	displayRows []displayRow
 	selectedPID int64
 	offset      int
 	sortField   SortField
@@ -161,6 +164,7 @@ func NewModel(cfg Config) Model {
 		sortField:    SortRSS,
 		sortOrder:    SortDesc,
 		loading:      true,
+		hierarchy:    newProcessHierarchy(),
 	}
 }
 
@@ -306,7 +310,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "x":
 		if idx := m.selectedIndex(); idx >= 0 && !m.killing {
-			m.pendingKill = &killRequest{targets: []model.Process{m.processes[idx]}}
+			m.pendingKill = &killRequest{targets: []model.Process{m.displayRows[idx].target}}
 		}
 	case "X":
 		if len(m.processes) > 0 && !m.killing {
@@ -336,6 +340,18 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.ensureSelectionVisible()
 	case "space":
 		m.paused = !m.paused
+	case "v":
+		m.groupedView = !m.groupedView
+		m.refreshDisplayRows()
+		m.ensureSelectionVisible()
+	case "left", "h":
+		m.collapseSelectedGroup()
+	case "right", "l":
+		m.expandSelectedGroup()
+	case "E":
+		m.setAllGroups(true)
+	case "C":
+		m.setAllGroups(false)
 	case "r":
 		if !m.inFlight {
 			m.inFlight = true
@@ -343,7 +359,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case "enter":
 		if idx := m.selectedIndex(); idx >= 0 {
-			p := m.processes[idx]
+			p := m.displayRows[idx].target
 			m.detailsOpen = true
 			cp := p
 			m.detailProcess = &cp
@@ -415,6 +431,10 @@ func (m *Model) applySnapshot(snap model.Snapshot) {
 	m.sampledAt = snap.SampledAtMs
 	m.lastUpdated = m.now()
 	m.sortProcesses()
+	// Keep ancestry history warm even while the user is in flat mode. A later
+	// switch to grouped mode must not lose relationships observed in between.
+	m.hierarchy.observe(m.processes)
+	m.refreshDisplayRows()
 	if len(m.processes) == 0 {
 		m.selectedPID = 0
 		m.offset = 0
@@ -426,6 +446,17 @@ func (m *Model) applySnapshot(snap model.Snapshot) {
 		m.selectedPID = int64(m.processes[0].PID)
 	}
 	m.ensureSelectionVisible()
+}
+
+func (m *Model) refreshDisplayRows() {
+	if m.groupedView {
+		m.displayRows = m.hierarchy.rows(m.processes, true)
+	} else {
+		m.displayRows = make([]displayRow, 0, len(m.processes))
+		for _, p := range m.processes {
+			m.displayRows = append(m.displayRows, displayRow{process: p, target: p})
+		}
+	}
 }
 
 func (m *Model) sortProcesses() {
@@ -528,8 +559,8 @@ func (m *Model) cycleSortField() {
 }
 
 func (m *Model) selectedIndex() int {
-	for i, p := range m.processes {
-		if int64(p.PID) == m.selectedPID {
+	for i, row := range m.displayRows {
+		if int64(row.process.PID) == m.selectedPID {
 			return i
 		}
 	}
@@ -537,7 +568,7 @@ func (m *Model) selectedIndex() int {
 }
 
 func (m *Model) moveSelection(delta int) {
-	if len(m.processes) == 0 {
+	if len(m.displayRows) == 0 {
 		return
 	}
 	idx := m.selectedIndex()
@@ -549,17 +580,47 @@ func (m *Model) moveSelection(delta int) {
 	if idx < 0 {
 		idx = 0
 	}
-	if idx >= len(m.processes) {
-		idx = len(m.processes) - 1
+	if idx >= len(m.displayRows) {
+		idx = len(m.displayRows) - 1
 	}
 	m.selectIndex(idx)
 }
 
 func (m *Model) selectIndex(idx int) {
-	if idx < 0 || idx >= len(m.processes) {
+	if idx < 0 || idx >= len(m.displayRows) {
 		return
 	}
-	m.selectedPID = int64(m.processes[idx].PID)
+	m.selectedPID = int64(m.displayRows[idx].process.PID)
+	m.ensureSelectionVisible()
+}
+
+func (m *Model) collapseSelectedGroup() {
+	idx := m.selectedIndex()
+	if idx < 0 || idx >= len(m.displayRows) || !m.displayRows[idx].groupRoot {
+		return
+	}
+	m.hierarchy.setExpanded(identity(m.displayRows[idx].process), false)
+	m.refreshDisplayRows()
+	m.ensureSelectionVisible()
+}
+
+func (m *Model) expandSelectedGroup() {
+	idx := m.selectedIndex()
+	if idx < 0 || idx >= len(m.displayRows) || !m.displayRows[idx].groupRoot {
+		return
+	}
+	m.hierarchy.setExpanded(identity(m.displayRows[idx].process), true)
+	m.refreshDisplayRows()
+	m.ensureSelectionVisible()
+}
+
+func (m *Model) setAllGroups(expanded bool) {
+	for _, p := range m.processes {
+		if p.Type == "GRADLE_DAEMON" {
+			m.hierarchy.setExpanded(identity(p), expanded)
+		}
+	}
+	m.refreshDisplayRows()
 	m.ensureSelectionVisible()
 }
 

@@ -35,8 +35,12 @@ func (m Model) renderTable() string {
 	}
 
 	totalRSS := int64(0)
-	for _, p := range m.processes {
-		totalRSS += p.RSSMemoryMB
+	for _, row := range m.displayRows {
+		if row.groupRoot {
+			totalRSS += row.process.RSSMemoryMB
+		} else if !row.child {
+			totalRSS += row.process.RSSMemoryMB
+		}
 	}
 
 	right := padLeft("Updated "+updated, min(20, m.width))
@@ -49,8 +53,15 @@ func (m Model) renderTable() string {
 	fmt.Fprintf(&b, "%s%s\n", left, right)
 	line2 := fmt.Sprintf("%d processes   %s RSS   %s   Refresh %s",
 		len(m.processes), render.RSSText(totalRSS), status, m.pollInterval)
+	if m.groupedView {
+		line2 += "   Grouped by parent"
+	}
 	if !m.noColor {
-		line2 = fmt.Sprintf("%d processes   %s   RSS   %s   Refresh %s", len(m.processes), rssStyle(model.Process{RSSMemoryMB: totalRSS}, m.noColor).Render(render.RSSText(totalRSS)), statusStyle(status, m.noColor).Render(status), m.pollInterval)
+		mode := ""
+		if m.groupedView {
+			mode = "   Grouped by parent"
+		}
+		line2 = fmt.Sprintf("%d processes   %s   RSS   %s   Refresh %s%s", len(m.processes), rssStyle(model.Process{RSSMemoryMB: totalRSS}, m.noColor).Render(render.RSSText(totalRSS)), statusStyle(status, m.noColor).Render(status), m.pollInterval, mode)
 	}
 	if m.sortField != SortRSS || m.sortOrder != SortDesc {
 		line2 += fmt.Sprintf("   Sort %s %s", m.sortField, m.sortOrder)
@@ -80,17 +91,31 @@ func (m Model) renderTable() string {
 		b.WriteString(truncateWidth(header, m.width) + "\n")
 		visible := m.tableRows()
 		end := m.offset + visible
-		if end > len(m.processes) {
-			end = len(m.processes)
+		if end > len(m.displayRows) {
+			end = len(m.displayRows)
 		}
 		for i := m.offset; i < end; i++ {
-			p := m.processes[i]
+			entry := m.displayRows[i]
+			p := entry.process
 			prefix := "  "
 			selected := int64(p.PID) == m.selectedPID
 			if selected {
 				prefix = "> "
 			}
+			if entry.groupRoot {
+				if m.hierarchy.expanded[identity(p)] {
+					prefix = "▼ "
+				} else {
+					prefix = "▶ "
+				}
+			}
+			if entry.child {
+				prefix = "  └─"
+			}
 			row := prefix + formatRowStyled(p, cols, now, m.noColor, selected)
+			if entry.groupRoot {
+				row += fmt.Sprintf("  (%d children; includes daemon)", entry.children)
+			}
 			row = truncateWidth(row, m.width)
 			if selected && !m.noColor {
 				row = selectedStyle(m.noColor).Render(row)
@@ -103,9 +128,9 @@ func (m Model) renderTable() string {
 	if status := m.killStatusLine(); status != "" {
 		b.WriteString(status + "\n")
 	}
-	footer := "↑/↓ or j/k select   s sort   space pause   r refresh   enter details   x kill   X kill all   ? help   q quit"
+	footer := "↑/↓ or j/k select   v flat/grouped   h/l collapse/expand   E/C all   s sort   space pause   r refresh   enter details   x kill   X kill all   ? help   q quit"
 	if m.helpOpen {
-		footer = "Keys: q quit · arrows/jk move · g/G home/end · s/S sort · space pause · r refresh · enter details · x kill selected · X kill all · esc close details"
+		footer = "Keys: q quit · arrows/jk move · g/G home/end · v flat/grouped · h/l collapse/expand · E/C all · s/S sort · space pause · r refresh · enter details · x kill selected · X kill all"
 	}
 	footer = truncateWidth(footer, m.width)
 	if m.pendingKill != nil {
