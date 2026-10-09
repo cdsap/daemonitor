@@ -5,11 +5,35 @@ import (
 	"strings"
 
 	terminalansi "github.com/charmbracelet/x/ansi"
-	"github.com/clipperhouse/displaywidth"
 
 	"github.com/cdsap/daemonitor/cored/internal/model"
 	"github.com/cdsap/daemonitor/cored/internal/render"
 )
+
+const (
+	// rowPrefix is the selection gutter ("> " or "  ") in front of every row.
+	rowPrefix = "  "
+	// treeMarkerWidth is the extra gutter used for ▼/▶/├/└ in grouped view.
+	treeMarkerWidth = 2
+)
+
+// footerVariants are tried longest-first; the first that fits the width wins.
+var footerVariants = []string{
+	"↑/↓ or j/k select   v flat/grouped   h/l collapse/expand   E/C all   s sort   space pause   r refresh   enter details   x kill   X kill all   ? help   q quit",
+	"j/k move  v group  h/l fold  s sort  space pause  r refresh  enter details  x kill  ? help  q quit",
+	"j/k move  v group  s sort  enter details  x kill  ? help  q quit",
+	"j/k move  enter details  ? help  q quit",
+	"? help  q quit",
+}
+
+var helpLines = []string{
+	"Move      ↑/↓ or j/k  ·  g/G first/last  ·  enter details  ·  esc back",
+	"View      v flat/grouped  ·  h/l collapse/expand group  ·  E/C expand/collapse all",
+	"Sort      s next column  ·  S reverse direction",
+	"Refresh   space pause/resume  ·  r refresh now",
+	"Process   x kill selected  ·  X kill all listed (y confirms)",
+	"          ? close help  ·  q quit",
+}
 
 func (m Model) renderTable() string {
 	var b strings.Builder
@@ -44,33 +68,27 @@ func (m Model) renderTable() string {
 	}
 
 	right := padLeft("Updated "+updated, min(20, m.width))
-	leftWidth := max(0, m.width-displaywidth.String(right))
+	leftWidth := max(0, m.width-terminalansi.StringWidth(right))
 	left := padRight("DAEMONITOR", leftWidth)
 	if !m.noColor {
-		pad := max(0, leftWidth-displaywidth.String("DAEMONITOR"))
+		pad := max(0, leftWidth-terminalansi.StringWidth("DAEMONITOR"))
 		left = titleStyle(m.noColor).Render("DAEMONITOR") + strings.Repeat(" ", pad)
 	}
 	fmt.Fprintf(&b, "%s%s\n", left, right)
-	line2 := fmt.Sprintf("%d processes   %s RSS   %s   Refresh %s",
-		len(m.processes), render.RSSText(totalRSS), status, m.pollInterval)
-	if m.groupedView {
-		line2 += "   Grouped by parent"
-	}
+	rssText, statusText := render.RSSText(totalRSS), status
 	if !m.noColor {
-		mode := ""
-		if m.groupedView {
-			mode = "   Grouped by parent"
-		}
-		line2 = fmt.Sprintf("%d processes   %s   RSS   %s   Refresh %s%s", len(m.processes), rssStyle(model.Process{RSSMemoryMB: totalRSS}, m.noColor).Render(render.RSSText(totalRSS)), statusStyle(status, m.noColor).Render(status), m.pollInterval, mode)
+		rssText = rssStyle(model.Process{RSSMemoryMB: totalRSS}, m.noColor).Render(rssText)
+		statusText = statusStyle(status, m.noColor).Render(status)
 	}
-	if m.sortField != SortRSS || m.sortOrder != SortDesc {
-		line2 += fmt.Sprintf("   Sort %s %s", m.sortField, m.sortOrder)
-	} else {
-		line2 += fmt.Sprintf("   Sort %s %s", m.sortField, m.sortOrder)
+	// Ordered by importance: trailing segments are dropped first on narrow terminals.
+	segments := []string{fmt.Sprintf("%d processes", len(m.processes)), rssText + " RSS", statusText}
+	if m.groupedView {
+		segments = append(segments, "Grouped by parent")
 	}
-	b.WriteString(truncateWidth(line2, m.width) + "\n")
+	segments = append(segments, fmt.Sprintf("Sort %s %s", m.sortField, m.sortOrder), fmt.Sprintf("Refresh %s", m.pollInterval))
+	b.WriteString(fitSegments(segments, "   ", m.width) + "\n")
 	if m.lastError != "" {
-		errLine := "Last refresh failed: " + m.lastError
+		errLine := "Last refresh failed: " + oneLine(m.lastError)
 		if !m.noColor {
 			errLine = errorStyle(m.noColor).Render(errLine)
 		}
@@ -83,12 +101,16 @@ func (m Model) renderTable() string {
 	} else if len(m.processes) == 0 && !m.connected {
 		b.WriteString("Waiting for daemonitor-cored…\n")
 	} else {
-		cols := columnsForWidth(m.width)
-		header := headerLine(cols, m.sortField)
+		gutter := len(rowPrefix)
+		if m.groupedView {
+			gutter += treeMarkerWidth
+		}
+		cols := columnsFor(m.width, gutter)
+		header := truncateWidth(strings.Repeat(" ", gutter)+headerLine(cols, m.sortField, m.sortOrder), m.width)
 		if !m.noColor {
 			header = headerStyle(m.noColor).Render(header)
 		}
-		b.WriteString(truncateWidth(header, m.width) + "\n")
+		b.WriteString(header + "\n")
 		visible := m.tableRows()
 		end := m.offset + visible
 		if end > len(m.displayRows) {
@@ -97,28 +119,22 @@ func (m Model) renderTable() string {
 		for i := m.offset; i < end; i++ {
 			entry := m.displayRows[i]
 			p := entry.process
-			prefix := "  "
+			prefix := rowPrefix
 			selected := int64(p.PID) == m.selectedPID
 			if selected {
 				prefix = "> "
 			}
+			if m.groupedView {
+				prefix += m.treeMarker(i)
+			}
+			rowCols, suffix := cols, ""
 			if entry.groupRoot {
-				if m.hierarchy.expanded[identity(p)] {
-					prefix = "▼ "
-				} else {
-					prefix = "▶ "
-				}
+				suffix = groupSummary(entry.children, cols.width(colProject))
+				rowCols = cols.reserve(terminalansi.StringWidth(suffix))
 			}
-			if entry.child {
-				prefix = "  └─"
-			}
-			row := prefix + formatRowStyled(p, cols, now, m.noColor, selected)
-			if entry.groupRoot {
-				row += fmt.Sprintf("  (%d children; includes daemon)", entry.children)
-			}
-			row = truncateWidth(row, m.width)
+			row := truncateWidth(prefix+formatRowStyled(p, rowCols, now, m.noColor, selected)+suffix, m.width)
 			if selected && !m.noColor {
-				row = selectedStyle(m.noColor).Render(row)
+				row = selectedStyle(m.noColor).Render(padRight(row, m.width))
 			}
 			b.WriteString(row + "\n")
 		}
@@ -128,11 +144,21 @@ func (m Model) renderTable() string {
 	if status := m.killStatusLine(); status != "" {
 		b.WriteString(status + "\n")
 	}
-	footer := "↑/↓ or j/k select   v flat/grouped   h/l collapse/expand   E/C all   s sort   space pause   r refresh   enter details   x kill   X kill all   ? help   q quit"
-	if m.helpOpen {
-		footer = "Keys: q quit · arrows/jk move · g/G home/end · v flat/grouped · h/l collapse/expand · E/C all · s/S sort · space pause · r refresh · enter details · x kill selected · X kill all"
+	footer := footerVariants[len(footerVariants)-1]
+	for _, variant := range footerVariants {
+		if terminalansi.StringWidth(variant) <= m.width {
+			footer = variant
+			break
+		}
 	}
 	footer = truncateWidth(footer, m.width)
+	if m.helpOpen {
+		lines := make([]string, len(helpLines))
+		for i, line := range helpLines {
+			lines[i] = truncateWidth(line, m.width)
+		}
+		footer = strings.Join(lines, "\n")
+	}
 	if m.pendingKill != nil {
 		footer = truncateWidth(killPrompt(*m.pendingKill), m.width)
 		if !m.noColor {
@@ -143,6 +169,39 @@ func (m Model) renderTable() string {
 	return b.String()
 }
 
+// groupSummary returns the longest group-root note that still leaves PROJECT
+// readable; the ▼/▶ marker already signals the group when no note fits.
+func groupSummary(children, projectWidth int) string {
+	const projectRoom = 16
+	for _, text := range []string{
+		fmt.Sprintf("  (%d children; includes daemon)", children),
+		fmt.Sprintf("  +%d children", children),
+	} {
+		if projectWidth-terminalansi.StringWidth(text) >= projectRoom {
+			return text
+		}
+	}
+	return ""
+}
+
+// treeMarker draws the grouped-view hierarchy gutter for display row i.
+func (m Model) treeMarker(i int) string {
+	entry := m.displayRows[i]
+	switch {
+	case entry.groupRoot:
+		if m.hierarchy.expanded[identity(entry.target)] {
+			return "▼ "
+		}
+		return "▶ "
+	case entry.child:
+		if i+1 < len(m.displayRows) && m.displayRows[i+1].child {
+			return "├ "
+		}
+		return "└ "
+	}
+	return "  "
+}
+
 func (m Model) killStatusLine() string {
 	if m.killing {
 		return truncateWidth("Sending termination signal…", m.width)
@@ -150,7 +209,7 @@ func (m Model) killStatusLine() string {
 	if m.notice == "" {
 		return ""
 	}
-	line := truncateWidth(m.notice, m.width)
+	line := truncateWidth(oneLine(m.notice), m.width)
 	if m.noticeError && !m.noColor {
 		return errorStyle(m.noColor).Render(line)
 	}
@@ -188,33 +247,112 @@ const (
 	colProject
 )
 
+const (
+	defaultProjectCols = 24
+	minProjectCols     = 8
+)
+
+// columnLayouts are tried widest-first; the first whose fixed columns plus a
+// minimal PROJECT column fit the terminal is used.
+var columnLayouts = [][]columnID{
+	{colType, colGC, colPID, colRSS, colThreads, colHeapPercent, colMetaspace, colHeapUsed, colHeapCmt, colXmx, colYoungGCTime, colFullGCTime, colConcurrentGCTime, colTotalGCTime, colCPU, colUptime, colProject},
+	{colType, colGC, colPID, colRSS, colXmx, colYoungGCTime, colFullGCTime, colConcurrentGCTime, colTotalGCTime, colCPU, colUptime, colProject},
+	{colType, colGC, colPID, colRSS, colXmx, colCPU, colUptime, colProject},
+	{colType, colGC, colPID, colRSS, colCPU, colProject},
+}
+
 type columnSet struct {
 	ids []columnID
+	// projectWidth is the PROJECT cell width; zero means defaultProjectCols.
+	projectWidth int
 }
 
 func columnsForWidth(width int) columnSet {
-	switch {
-	case width >= 140:
-		return columnSet{ids: []columnID{colType, colGC, colPID, colRSS, colThreads, colHeapPercent, colMetaspace, colHeapUsed, colHeapCmt, colXmx, colYoungGCTime, colFullGCTime, colConcurrentGCTime, colTotalGCTime, colCPU, colUptime, colProject}}
-	case width >= 110:
-		return columnSet{ids: []columnID{colType, colGC, colPID, colRSS, colXmx, colYoungGCTime, colFullGCTime, colConcurrentGCTime, colTotalGCTime, colCPU, colUptime, colProject}}
-	case width >= 80:
-		return columnSet{ids: []columnID{colType, colGC, colPID, colRSS, colXmx, colCPU, colUptime, colProject}}
-	default:
-		return columnSet{ids: []columnID{colType, colGC, colPID, colRSS, colCPU, colProject}}
-	}
+	return columnsFor(width, len(rowPrefix))
 }
 
-func headerLine(cols columnSet, sort SortField) string {
+// columnsFor picks the widest layout that fits width after a row gutter and
+// gives PROJECT whatever space remains.
+func columnsFor(width, gutter int) columnSet {
+	for i, ids := range columnLayouts {
+		cols := columnSet{ids: ids}
+		fixed := gutter + cols.fixedWidth()
+		if fixed+minProjectCols <= width || i == len(columnLayouts)-1 {
+			cols.projectWidth = max(minProjectCols, width-fixed)
+			return cols
+		}
+	}
+	return columnSet{}
+}
+
+// fixedWidth is the width of every column except PROJECT, including gaps.
+func (c columnSet) fixedWidth() int {
+	total := 0
+	for i, id := range c.ids {
+		if i > 0 {
+			total += len(columnGap(id))
+		}
+		if id != colProject {
+			total += columnWidth(id)
+		}
+	}
+	return total
+}
+
+func (c columnSet) width(id columnID) int {
+	if id == colProject {
+		if c.projectWidth > 0 {
+			return c.projectWidth
+		}
+		return defaultProjectCols
+	}
+	return columnWidth(id)
+}
+
+// reserve shrinks PROJECT so n trailing cells fit after the row.
+func (c columnSet) reserve(n int) columnSet {
+	c.projectWidth = max(minProjectCols, c.width(colProject)-n)
+	return c
+}
+
+// columnGap separates a column from the one before it. The left-aligned
+// PROJECT text gets extra room so it does not run into right-aligned UPTIME or CPU.
+func columnGap(id columnID) string {
+	if id == colProject {
+		return "  "
+	}
+	return " "
+}
+
+func joinColumns(ids []columnID, cells []string) string {
+	var b strings.Builder
+	for i, cell := range cells {
+		if i > 0 {
+			b.WriteString(columnGap(ids[i]))
+		}
+		b.WriteString(cell)
+	}
+	return b.String()
+}
+
+func headerLine(cols columnSet, sort SortField, order SortOrder) string {
+	arrow := "▼"
+	if order == SortAsc {
+		arrow = "▲"
+	}
 	parts := make([]string, 0, len(cols.ids))
 	for _, id := range cols.ids {
 		label := columnLabel(id)
 		if sortMatches(id, sort) {
-			label = label + "*"
+			if rightAligned(id) {
+				label = arrow + label
+			} else {
+				label = label + arrow
+			}
 		}
-		parts = append(parts, padColumn(label, id))
+		parts = append(parts, padColumn(label, id, cols.width(id)))
 	}
-	return strings.Join(parts, " ")
+	return joinColumns(cols.ids, parts)
 }
 
 func sortMatches(id columnID, sort SortField) bool {
@@ -305,18 +443,34 @@ func columnWidth(id columnID) int {
 	case colUptime:
 		return 8
 	case colProject:
-		return 24
+		return defaultProjectCols
 	default:
 		return 8
 	}
 }
 
-func padColumn(s string, id columnID) string {
-	w := columnWidth(id)
-	if id == colPID || id == colRSS || id == colThreads || id == colHeapPercent || id == colMetaspace || id == colCPU || id == colXmx || id == colHeapUsed || id == colHeapCmt || id == colYoungGCTime || id == colFullGCTime || id == colConcurrentGCTime || id == colTotalGCTime || id == colUptime {
+func rightAligned(id columnID) bool {
+	return id != colType && id != colGC && id != colProject
+}
+
+func padColumn(s string, id columnID, w int) string {
+	if rightAligned(id) {
 		return padLeft(truncateWidth(s, w), w)
 	}
 	return padRight(truncateWidth(s, w), w)
+}
+
+// tableTypeLabel shortens type names that do not fit the TYPE column; the
+// details view still shows the full render.TypeDisplay label.
+func tableTypeLabel(t string) string {
+	switch t {
+	case "TEST_WORKER":
+		return "Test worker"
+	case "UNKNOWN_GRADLE_WORKER":
+		return "Unknown worker"
+	default:
+		return render.TypeDisplay(t)
+	}
 }
 
 func formatRow(p model.Process, cols columnSet, nowMs int64) string {
@@ -324,12 +478,14 @@ func formatRow(p model.Process, cols columnSet, nowMs int64) string {
 }
 
 func formatRowStyled(p model.Process, cols columnSet, nowMs int64, noColor, selected bool) string {
+	signals := render.ProcessSignals(p)
+	badges := strings.Join(signals, " ")
 	parts := make([]string, 0, len(cols.ids))
 	for _, id := range cols.ids {
 		var cell string
 		switch id {
 		case colType:
-			cell = render.TypeDisplay(p.Type)
+			cell = tableTypeLabel(p.Type)
 		case colGC:
 			cell = render.GCText(p.GC)
 		case colPID:
@@ -363,7 +519,12 @@ func formatRowStyled(p model.Process, cols columnSet, nowMs int64, noColor, sele
 		case colProject:
 			cell = render.ProjectName(p)
 		}
-		padded := padColumn(cell, id)
+		width := cols.width(id)
+		if id == colProject && badges != "" {
+			// Badges share the PROJECT cell so the row stays within the terminal.
+			width = max(minProjectCols, width-terminalansi.StringWidth(badges)-2)
+		}
+		padded := padColumn(cell, id, width)
 		if !noColor && !selected {
 			switch id {
 			case colRSS:
@@ -376,12 +537,12 @@ func formatRowStyled(p model.Process, cols columnSet, nowMs int64, noColor, sele
 		}
 		parts = append(parts, padded)
 	}
-	row := strings.Join(parts, " ")
-	if signals := render.ProcessSignals(p); len(signals) > 0 {
+	row := joinColumns(cols.ids, parts)
+	if len(signals) > 0 {
 		// Keep badges outside the fixed-width table cells. Prefixing a badge
 		// shifts every cell to the right while the header remains unchanged.
 		if noColor || selected {
-			row += "  " + strings.Join(signals, " ")
+			row += "  " + badges
 		} else {
 			styled := make([]string, 0, len(signals))
 			for _, signal := range signals {
@@ -393,6 +554,29 @@ func formatRowStyled(p model.Process, cols columnSet, nowMs int64, noColor, sele
 	return row
 }
 
+// fitSegments joins as many leading segments as fit within width.
+func fitSegments(segments []string, sep string, width int) string {
+	line := ""
+	for i, segment := range segments {
+		next := segment
+		if i > 0 {
+			next = line + sep + segment
+		}
+		if i > 0 && terminalansi.StringWidth(next) > width {
+			break
+		}
+		line = next
+	}
+	return truncateWidth(line, width)
+}
+
+// oneLine collapses whitespace, including newlines from server error bodies.
+func oneLine(s string) string {
+	return strings.Join(strings.Fields(s), " ")
+}
+
+// truncateWidth fits s into width terminal cells. Styled strings are measured
+// without their ANSI escapes and are never cut inside an escape sequence.
 func truncateWidth(s string, width int) string {
 	if width <= 0 {
 		return ""
@@ -404,7 +588,7 @@ func truncateWidth(s string, width int) string {
 }
 
 func padRight(s string, width int) string {
-	w := displaywidth.String(s)
+	w := terminalansi.StringWidth(s)
 	if w >= width {
 		return truncateWidth(s, width)
 	}
@@ -412,7 +596,7 @@ func padRight(s string, width int) string {
 }
 
 func padLeft(s string, width int) string {
-	w := displaywidth.String(s)
+	w := terminalansi.StringWidth(s)
 	if w >= width {
 		return truncateWidth(s, width)
 	}

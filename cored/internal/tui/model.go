@@ -323,8 +323,8 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "home", "g":
 		m.selectIndex(0)
 	case "end", "G":
-		if len(m.processes) > 0 {
-			m.selectIndex(len(m.processes) - 1)
+		if len(m.displayRows) > 0 {
+			m.selectIndex(len(m.displayRows) - 1)
 		}
 	case "s":
 		m.cycleSortField()
@@ -625,10 +625,13 @@ func (m *Model) setAllGroups(expanded bool) {
 }
 
 func (m *Model) tableRows() int {
-	// header(2) + blank + col header(1) + footer(2) + optional help/error
-	reserved := 8
-	if m.helpOpen {
-		reserved += 6
+	// title, summary, blank, column header, blank, footer (or help block)
+	reserved := 6
+	if m.helpOpen && m.pendingKill == nil {
+		reserved += len(helpLines) - 1
+	}
+	if m.lastError != "" {
+		reserved++
 	}
 	if m.notice != "" || m.killing {
 		reserved++
