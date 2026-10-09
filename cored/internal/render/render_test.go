@@ -81,7 +81,8 @@ func TestWriteJSONStableSchema(t *testing.T) {
 
 func TestStructuredProcessExportsIncludeExtendedMetrics(t *testing.T) {
 	threads := int64(12)
-	snap := model.Snapshot{Processes: []model.Process{{PID: 7, ThreadCount: &threads}}}
+	young, total := 1.234, 7.035
+	snap := model.Snapshot{Processes: []model.Process{{PID: 7, ThreadCount: &threads, YoungGCTimeSeconds: &young, TotalGCTimeSeconds: &total}}}
 	for name, write := range map[string]func(*bytes.Buffer) error{
 		"json":  func(buf *bytes.Buffer) error { return WriteJSON(buf, snap) },
 		"jsonl": func(buf *bytes.Buffer) error { return WriteJSONLine(buf, snap) },
@@ -98,6 +99,12 @@ func TestStructuredProcessExportsIncludeExtendedMetrics(t *testing.T) {
 		}
 		if got := decoded.Processes[0]["thread_count"]; got != float64(12) {
 			t.Fatalf("%s thread_count=%v", name, got)
+		}
+		if got := decoded.Processes[0]["young_gc_time_seconds"]; got != young {
+			t.Fatalf("%s young_gc_time_seconds=%v", name, got)
+		}
+		if got := decoded.Processes[0]["total_gc_time_seconds"]; got != total {
+			t.Fatalf("%s total_gc_time_seconds=%v", name, got)
 		}
 	}
 }
@@ -117,6 +124,16 @@ func TestHeapTextFormatsLiveAndUnavailableValues(t *testing.T) {
 	}
 	if got := HeapText(nil); got != "n/a" {
 		t.Fatalf("unavailable heap=%q want n/a", got)
+	}
+}
+
+func TestGCTimeTextFormatsSecondsAndUnavailableValues(t *testing.T) {
+	value := 1.23456
+	if got := GCTimeText(&value); got != "1.235 s" {
+		t.Fatalf("GC time=%q want 1.235 s", got)
+	}
+	if got := GCTimeText(nil); got != "—" {
+		t.Fatalf("unavailable GC time=%q want —", got)
 	}
 }
 

@@ -163,6 +163,8 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 			HeapAvailable:              heapAvail,
 			MetaspaceUsedMB:            jvmMetrics.MetaspaceUsedMB, MetaspaceCommittedMB: jvmMetrics.MetaspaceCommittedMB,
 			YoungGCCount: jvmMetrics.YoungGCCount, YoungGCTimeMs: jvmMetrics.YoungGCTimeMs,
+			YoungGCTimeSeconds: jvmMetrics.YoungGCTimeSeconds, FullGCTimeSeconds: jvmMetrics.FullGCTimeSeconds,
+			ConcurrentGCTimeSeconds: jvmMetrics.ConcurrentGCTimeSeconds, TotalGCTimeSeconds: jvmMetrics.TotalGCTimeSeconds,
 			OldGCCount: jvmMetrics.OldGCCount, OldGCTimeMs: jvmMetrics.OldGCTimeMs,
 			JavaVersion: jvmMetrics.JavaVersion, JavaRuntimeVersion: jvmMetrics.JavaRuntimeVersion,
 			JavaVendor: jvmMetrics.JavaVendor, JavaVMName: jvmMetrics.JavaVMName, JavaVMVersion: jvmMetrics.JavaVMVersion,

@@ -57,6 +57,10 @@ class LiveMonitorScreenUiTest {
         maxHeapMb = maxHeapMb,
         minHeapMb = 256,
         gc = "G1",
+        youngGcTimeSeconds = 1.234,
+        fullGcTimeSeconds = 2.345,
+        concurrentGcTimeSeconds = 3.456,
+        totalGcTimeSeconds = 7.035,
         javaVersion = "21.0.8",
         javaRuntimeVersion = "21.0.8+9-LTS",
         javaVendor = "Eclipse Adoptium",
@@ -183,6 +187,10 @@ class LiveMonitorScreenUiTest {
         onNodeWithText("Java VM version").assertExists()
         onNodeWithText("OS").assertExists()
         onNodeWithText("OS arch").assertExists()
+        onNodeWithText("YGCT").assertExists()
+        onNodeWithText("1.234 s").assertExists()
+        onNodeWithText("GCT").assertExists()
+        onNodeWithText("7.035 s").assertExists()
     }
 
     @Test

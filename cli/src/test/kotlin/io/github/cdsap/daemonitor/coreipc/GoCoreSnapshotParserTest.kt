@@ -51,6 +51,10 @@ class GoCoreSnapshotParserTest {
                   "metaspace_used_mb": 72,
                   "young_gc_count": 8,
                   "young_gc_time_ms": 120,
+                  "young_gc_time_seconds": 1.234,
+                  "full_gc_time_seconds": 2.345,
+                  "concurrent_gc_time_seconds": 3.456,
+                  "total_gc_time_seconds": 7.035,
                   "java_version": "21.0.8",
                   "java_runtime_version": "21.0.8+9-LTS",
                   "java_vendor": "Eclipse Adoptium",
@@ -127,6 +131,10 @@ class GoCoreSnapshotParserTest {
         assertEquals(72L, daemon.metaspaceUsedMb)
         assertEquals(8L, daemon.youngGcCount)
         assertEquals(120L, daemon.youngGcTimeMs)
+        assertEquals(1.234, daemon.youngGcTimeSeconds)
+        assertEquals(2.345, daemon.fullGcTimeSeconds)
+        assertEquals(3.456, daemon.concurrentGcTimeSeconds)
+        assertEquals(7.035, daemon.totalGcTimeSeconds)
         assertEquals("21.0.8", daemon.javaVersion)
         assertEquals("Eclipse Adoptium", daemon.javaVendor)
         assertEquals(8L, daemon.activeProcessorCount)

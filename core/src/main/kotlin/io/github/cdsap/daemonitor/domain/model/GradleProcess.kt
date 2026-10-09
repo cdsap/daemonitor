@@ -105,6 +105,11 @@ data class GradleProcess(
     val metaspaceCommittedMb: Long? = null,
     val youngGcCount: Long? = null,
     val youngGcTimeMs: Long? = null,
+    /** Cumulative `jstat -gc` times in seconds; null means unavailable. */
+    val youngGcTimeSeconds: Double? = null,
+    val fullGcTimeSeconds: Double? = null,
+    val concurrentGcTimeSeconds: Double? = null,
+    val totalGcTimeSeconds: Double? = null,
     val oldGcCount: Long? = null,
     val oldGcTimeMs: Long? = null,
     val javaVersion: String? = null,
