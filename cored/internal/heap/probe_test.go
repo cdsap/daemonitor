@@ -94,6 +94,39 @@ func TestProberDoesNotRequireJinfoForHeapSample(t *testing.T) {
 	}
 }
 
+func TestProberSupplementsJcmdHeapSampleWithJstatGCTimes(t *testing.T) {
+	p := heap.NewProber()
+	p.LookPath = func(name string) (string, error) {
+		switch name {
+		case "jcmd", "jstat":
+			return "/fake/" + name, nil
+		default:
+			return "", errors.New("missing")
+		}
+	}
+	p.Runner = func(ctx context.Context, name string, args ...string) (string, error) {
+		switch {
+		case strings.Contains(name, "jcmd"):
+			return jcmdHeapInfoFixture, nil
+		case strings.Contains(name, "jstat"):
+			return jstatGCFixture, nil
+		default:
+			return "", errors.New("unexpected command")
+		}
+	}
+
+	s, err := p.SampleFor(context.Background(), 42, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Source != "jcmd" || s.YoungGCTimeSeconds == nil || *s.YoungGCTimeSeconds != 1.234 ||
+		s.FullGCTimeSeconds == nil || *s.FullGCTimeSeconds != 2.345 ||
+		s.ConcurrentGCTimeSeconds == nil || *s.ConcurrentGCTimeSeconds != 3.456 ||
+		s.TotalGCTimeSeconds == nil || *s.TotalGCTimeSeconds != 7.035 {
+		t.Fatalf("sample=%+v", s)
+	}
+}
+
 func TestProberFailureCategoriesAreStableAndSanitized(t *testing.T) {
 	tests := []struct {
 		name     string

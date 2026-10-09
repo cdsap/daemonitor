@@ -287,6 +287,7 @@ func (p *Prober) probe(ctx context.Context, pid int32) (Sample, error) {
 					s.Diagnostics = append(s.Diagnostics, diagnostic("jcmd", "VM.info", infoErr))
 				}
 				p.supplementGC(ctx, look, run, pid, &s)
+				p.supplementGCTimes(ctx, look, run, pid, &s)
 				p.collectAllowlistedSysprops(ctx, look, run, pid, &s)
 				return s, nil
 			}
@@ -368,6 +369,44 @@ func (p *Prober) supplementGC(
 	} else {
 		sample.Diagnostics = append(sample.Diagnostics, diagnostic("jinfo", "-flags", err))
 	}
+}
+
+// supplementGCTimes reads cumulative GC counters from jstat even when jcmd
+// supplied the heap sample. jcmd GC.heap_info does not expose YGCT, FGCT,
+// CGCT, or GCT.
+func (p *Prober) supplementGCTimes(
+	ctx context.Context,
+	look func(string) (string, error),
+	run func(context.Context, string, ...string) (string, error),
+	pid int32,
+	sample *Sample,
+) {
+	if sample == nil {
+		return
+	}
+	jstatPath, err := look("jstat")
+	if err != nil {
+		sample.Diagnostics = append(sample.Diagnostics, diagnostic("jstat", "-gc", err))
+		return
+	}
+	out, err := run(ctx, jstatPath, "-gc", fmt.Sprintf("%d", pid))
+	if err != nil {
+		sample.Diagnostics = append(sample.Diagnostics, diagnostic("jstat", "-gc", err))
+		return
+	}
+	jstatSample, err := ParseJstatGC(out)
+	if err != nil {
+		sample.Diagnostics = append(sample.Diagnostics, diagnostic("jstat", "-gc", err))
+		return
+	}
+	sample.YoungGCCount = jstatSample.YoungGCCount
+	sample.YoungGCTimeMs = jstatSample.YoungGCTimeMs
+	sample.YoungGCTimeSeconds = jstatSample.YoungGCTimeSeconds
+	sample.FullGCTimeSeconds = jstatSample.FullGCTimeSeconds
+	sample.ConcurrentGCTimeSeconds = jstatSample.ConcurrentGCTimeSeconds
+	sample.TotalGCTimeSeconds = jstatSample.TotalGCTimeSeconds
+	sample.OldGCCount = jstatSample.OldGCCount
+	sample.OldGCTimeMs = jstatSample.OldGCTimeMs
 }
 
 func diagnostic(tool, operation string, err error) Diagnostic {
