@@ -22,7 +22,7 @@ class JvmHeapCollectionDocTest {
             "unavailable",
             "## When live heap stays unavailable",
             "wrappers",
-            "test workers",
+            "Gradle workers",
             "## Live CPU first sample",
             "sampling",
             "## Overhead",

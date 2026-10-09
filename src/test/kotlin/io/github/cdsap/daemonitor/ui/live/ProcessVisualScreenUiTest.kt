@@ -21,7 +21,7 @@ class ProcessVisualScreenUiTest {
     fun `visual screen renders rss and heap timeline series`() = runVisualUiTest {
         val processes = listOf(
             process(pid = 100, type = ProcessType.GRADLE_DAEMON, project = "checkout", rss = 1024, heap = 4096, used = 700, cpu = 24.0),
-            process(pid = 101, type = ProcessType.TEST_WORKER, project = "checkout", rss = 512, heap = null, used = null, cpu = 64.0),
+            process(pid = 101, type = ProcessType.GRADLE_WORKER, project = "checkout", rss = 512, heap = null, used = null, cpu = 64.0),
         )
 
         setContent {
@@ -42,7 +42,7 @@ class ProcessVisualScreenUiTest {
         onAllNodesWithText("Gradle daemon · checkout · PID 100 · RSS").onFirst().assertExists()
         onAllNodesWithText("Gradle daemon · checkout · PID 100 · Heap used").onFirst().assertExists()
         onAllNodesWithText("Gradle daemon · checkout · PID 100 · Heap limit").onFirst().assertExists()
-        onAllNodesWithText("Test worker · checkout · PID 101 · RSS").onFirst().assertExists()
+        onAllNodesWithText("Gradle worker · checkout · PID 101 · RSS").onFirst().assertExists()
         onNodeWithText("SELECTED HEAP USED").assertExists()
         onNodeWithText("SELECTED HEAP LIMIT").assertExists()
     }

@@ -17,7 +17,7 @@ import (
 var (
 	gradleDaemon  = regexp.MustCompile(`org\.gradle\.launcher\.daemon\.bootstrap\.GradleDaemon|GradleDaemon`)
 	kotlinDaemon  = regexp.MustCompile(`org\.jetbrains\.kotlin\.daemon|KotlinCompileDaemon`)
-	testWorker    = regexp.MustCompile(`worker\.org\.gradle\.process\.internal\.worker\.GradleWorkerMain|org\.gradle\.process\.internal\.worker\.GradleWorkerMain`)
+	gradleWorker  = regexp.MustCompile(`worker\.org\.gradle\.process\.internal\.worker\.GradleWorkerMain|org\.gradle\.process\.internal\.worker\.GradleWorkerMain`)
 	wrapper       = regexp.MustCompile(`org\.gradle\.wrapper\.GradleWrapperMain|gradle-wrapper\.jar|org\.gradle\.appname=gradlew|(^|[\s/])gradlew(\s|$)`)
 	javaBin       = regexp.MustCompile(`(^|[\s/])java(\s|$)`)
 	gradleRuntime = regexp.MustCompile(`(-Dorg\.gradle\.|org\.gradle\.(launcher|process|tooling|internal|api|workers)\.|GradleWorkerMain)`)
@@ -286,8 +286,8 @@ func Classify(commandLine string) string {
 		return "GRADLE_DAEMON"
 	case kotlinDaemon.MatchString(commandLine):
 		return "KOTLIN_DAEMON"
-	case testWorker.MatchString(commandLine):
-		return "TEST_WORKER"
+	case gradleWorker.MatchString(commandLine):
+		return "GRADLE_WORKER"
 	case wrapper.MatchString(commandLine):
 		return "GRADLE_WRAPPER"
 	case javaBin.MatchString(commandLine) && gradleRuntime.MatchString(commandLine):

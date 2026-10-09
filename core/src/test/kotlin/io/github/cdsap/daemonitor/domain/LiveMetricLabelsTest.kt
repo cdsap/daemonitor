@@ -52,12 +52,12 @@ class LiveMetricLabelsTest {
                 .contains("wrappers"),
         )
         assertTrue(
-            LiveMetricLabels.liveHeapUsedDetail(null, ProcessType.TEST_WORKER)
-                .contains("test workers"),
+            LiveMetricLabels.liveHeapUsedDetail(null, ProcessType.GRADLE_WORKER)
+                .contains("Gradle workers"),
         )
         assertTrue(LiveMetricLabels.isLiveHeapProbedType(ProcessType.GRADLE_DAEMON))
         assertTrue(LiveMetricLabels.isLiveHeapProbedType(ProcessType.KOTLIN_DAEMON))
         assertFalse(LiveMetricLabels.isLiveHeapProbedType(ProcessType.GRADLE_WRAPPER))
-        assertFalse(LiveMetricLabels.isLiveHeapProbedType(ProcessType.TEST_WORKER))
+        assertFalse(LiveMetricLabels.isLiveHeapProbedType(ProcessType.GRADLE_WORKER))
     }
 }

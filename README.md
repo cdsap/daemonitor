@@ -7,7 +7,7 @@
 > Activity Monitor for your Gradle daemons — what's building now, and what built recently.
 
 Daemonitor watches the Gradle-related JVMs on your machine: daemons, wrappers, Kotlin daemons, and
-test workers. Use the **desktop app** for a full Activity Monitor UI, or the **CLI** for the same
+Gradle workers. Use the **desktop app** for a full Activity Monitor UI, or the **CLI** for the same
 live view in a terminal (including over SSH).
 
 Everything stays local. Command lines and logs are redacted before storage. The only outbound
@@ -81,13 +81,13 @@ Specification: [`docs/specs/daemonitor-native-cli-tui-spec.md`](docs/specs/daemo
 
 ![Daemonitor Live monitor showing active Gradle processes, metrics, status badges, process details, MCP status, and the headless toolbar action](docs/images/live-monitor.png)
 
-- Gradle-related JVMs by type (daemon, wrapper, Kotlin daemon, test worker, other)
+- Gradle-related JVMs by type (daemon, wrapper, Kotlin daemon, Gradle worker, other)
 - RSS, live heap (when Attach/JMX works), CPU, and uptime
 - Summary tiles, memory-pressure badges, and a detail panel with log tail
 - Switch to terminal collection from the toolbar when you want a lighter footprint
 
 First-poll CPU shows `…` / `sampling…` until a delta exists; `0%` means idle after that. Live heap
-stays `n/a` for wrappers and test workers (daemons only). More detail:
+stays `n/a` for wrappers and Gradle workers (daemons only). More detail:
 [JVM heap collection](docs/jvm-heap-collection.md).
 
 ### CLI (terminal)

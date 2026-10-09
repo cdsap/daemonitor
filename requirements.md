@@ -64,7 +64,7 @@ Each process row should include:
   * Gradle daemon.
   * Gradle wrapper process.
   * Kotlin daemon.
-  * Test worker.
+  * Gradle worker.
   * Java process likely related to Gradle.
 * Command line.
 * Working directory, when available.
@@ -140,7 +140,7 @@ Process detection should look for:
 * `GradleDaemon`
 * `org.gradle.launcher.daemon`
 * Kotlin daemon processes.
-* Gradle test worker JVMs.
+* Gradle worker JVMs.
 * Java processes with Gradle-related classpaths or arguments.
 
 For each detected process, the collector should capture:
@@ -326,7 +326,7 @@ The app should visually highlight suspicious or useful events:
 * Process running longer than expected.
 * Repeated builds from the same AI agent.
 * Kotlin daemon using unexpectedly high memory.
-* Test worker near memory limit.
+* Gradle worker near memory limit.
 
 First version can use UI badges instead of system notifications.
 

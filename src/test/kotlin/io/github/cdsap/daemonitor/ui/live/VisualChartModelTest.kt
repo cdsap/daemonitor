@@ -49,7 +49,7 @@ class VisualChartModelTest {
     fun `timeline chart includes rss used and limit series`() {
         val processes = listOf(
             process(pid = 1, type = ProcessType.GRADLE_DAEMON, rss = 60, heapLimit = 512, heapUsed = 80),
-            process(pid = 2, type = ProcessType.TEST_WORKER, rss = 40, heapLimit = null, heapUsed = null),
+            process(pid = 2, type = ProcessType.GRADLE_WORKER, rss = 40, heapLimit = null, heapUsed = null),
         )
         val chart = VisualChartModel.timelineChart(
             samples = listOf(

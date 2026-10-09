@@ -6,7 +6,7 @@ Status as of the `feat/go-core-build-aggregator` slice.
 
 Go `poll.Classify` mirrors `GradleProcessClassifier` fixtures from
 `core/src/test/kotlin/.../GradleProcessClassifierTest.kt` (daemon, wrapper shell + jar form,
-Kotlin daemon, test worker, JAVA_GRADLE_RELATED, cache-path false positive, unrelated).
+Kotlin daemon, Gradle worker, JAVA_GRADLE_RELATED, cache-path false positive, unrelated).
 
 Covered by `cored/internal/poll/poll_test.go`.
 
