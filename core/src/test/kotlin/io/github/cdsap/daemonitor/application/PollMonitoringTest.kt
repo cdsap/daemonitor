@@ -2,7 +2,9 @@ package io.github.cdsap.daemonitor.application
 
 import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.domain.BuildAggregator
+import io.github.cdsap.daemonitor.domain.BuildCorrelator
 import io.github.cdsap.daemonitor.domain.model.Build
+import io.github.cdsap.daemonitor.domain.model.BuildEvent
 import io.github.cdsap.daemonitor.domain.model.BuildStart
 import io.github.cdsap.daemonitor.domain.model.BusyMark
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
@@ -18,6 +20,28 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class PollMonitoringTest {
+
+    @Test
+    fun `pollOnce accepts a lightweight build correlator`() {
+        val process = gradleDaemon(pid = 42)
+        val log = DaemonLog(pid = 42, gradleVersion = "8.14.3", path = Path.of("/tmp/daemon-42.out.log"))
+        val correlator = RecordingBuildCorrelator()
+        val logSource = FakeDaemonLogSource(
+            logs = listOf(log),
+            linesByPid = mapOf(42L to listOf(DaemonLogLine("line", null))),
+        )
+        val monitoring = PollMonitoring(
+            processSource = FakeProcessSource(listOf(process)),
+            logSource = logSource,
+            builds = RecordingBuildWriter(),
+            samples = RecordingSampleWriter(),
+            aggregator = correlator,
+        )
+
+        monitoring.pollOnce()
+
+        assertEquals(listOf(42L to "line"), correlator.logLines)
+    }
 
     @Test
     fun `pollOnce persists samples and builds through repository ports only`() {
@@ -367,5 +391,18 @@ class PollMonitoringTest {
         override fun save(sample: GradleProcess, timestampMs: Long) {
             saved += sample to timestampMs
         }
+    }
+
+    private class RecordingBuildCorrelator : BuildCorrelator {
+        val logLines = mutableListOf<Pair<Long, String>>()
+
+        override fun onEvents(daemonPid: Long, events: List<BuildEvent>): List<Build> = emptyList()
+
+        override fun onLogLine(daemonPid: Long, line: String, event: BuildEvent?): List<Build> {
+            logLines += daemonPid to line
+            return emptyList()
+        }
+
+        override fun onDaemonGone(daemonPid: Long): Build? = null
     }
 }
