@@ -34,7 +34,7 @@ Grab the installer for your OS from
 | Linux | `.deb` | `.tar.gz` standalone image |
 
 Asset names include the CPU architecture (`x64` or `arm64`), for example
-`Daemonitor-1.2.1-macos-arm64.dmg`. No project-local Gradle setup is required.
+`Daemonitor-1.2.2-macos-arm64.dmg`. No project-local Gradle setup is required.
 
 On Linux, prefer the `.deb` for installs and the `.tar.gz` for writable standalone updates. See
 [Linux Update Distribution](docs/linux-update-distribution.md).
@@ -94,8 +94,8 @@ stays `n/a` for wrappers and Gradle workers (daemons only). More detail:
 
 ![Daemonitor CLI showing a live terminal table of Gradle-related processes with RSS, heap, CPU, and uptime](docs/images/cli-monitor.png)
 
-Native full-screen TUI (`top`-style): selection, sort, pause, resize, process details, recent build/log
-context, and a compact RSS trend — useful on
+Native full-screen TUI (`top`-style): selection, sorting, pause, resize, grouped process hierarchy,
+process details, recent build/log context, and a compact RSS trend — useful on
 build machines and over SSH:
 
 ```bash
@@ -103,8 +103,10 @@ daemonitor-cli
 ssh -t build-machine daemonitor-cli
 ```
 
-Keys: `↑/↓` or `j/k` select · `s`/`S` sort · `space` pause · `r` refresh · `enter` details ·
-`x` kill selected · `X` kill all listed (confirm with `y`) · `q` quit.
+Keys: `↑/↓` or `j/k` select · `v` grouped/flat · `h/l` fold/expand · `E/C` expand/collapse all ·
+`s`/`S` sort · `space` pause · `r` refresh · `enter` details · `x` kill selected · `X` kill all
+listed (confirm with `y`) · `q` quit. Grouped rows aggregate a daemon's descendants while keeping
+the individual worker rows visible, so process ownership and total resource use are clear at a glance.
 Live heap shows `n/a` until the Go core exposes it; RSS / Xmx / CPU remain available.
 
 Desktop apps also accept `--headless` for a similar terminal mode (JVM path).
@@ -255,4 +257,4 @@ Review `docs/images/` before committing (synthetic samples only).
 **Privacy:** Local-only storage, redacted command lines/logs, owner-only database. Outbound traffic
 is limited to GitHub Releases checks and downloads you approve.
 
-**Status:** Early (v1.2.1). See `requirements.md` for the original spec.
+**Status:** Early (v1.2.2). See `requirements.md` for the original spec.
