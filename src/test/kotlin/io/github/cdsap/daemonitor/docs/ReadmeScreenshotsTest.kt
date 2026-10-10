@@ -28,6 +28,13 @@ class ReadmeScreenshotsTest {
             assertEquals(760, image.height)
             assertTrue(readme.contains("![$altText]($relativePath)"), "$relativePath should be embedded with meaningful alt text")
         }
+
+        val tui = Path.of("docs/images/cli-monitor.png")
+        assertTrue(Files.isRegularFile(tui), "docs/images/cli-monitor.png should be checked in")
+        val tuiImage: BufferedImage = assertNotNull(ImageIO.read(tui.toFile()), "TUI screenshot should be readable")
+        assertEquals(860, tuiImage.width)
+        assertEquals(466, tuiImage.height)
+        assertTrue(readme.contains("![Daemonitor CLI showing a live terminal table of Gradle-related processes with RSS, heap, CPU, and uptime](docs/images/cli-monitor.png)"))
     }
 
     @Test

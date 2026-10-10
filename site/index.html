@@ -282,10 +282,13 @@
             <p>
               The standalone CLI is a native Go binary with a Bubble Tea TUI. It starts its sibling
               <code>daemonitor-cored</code> automatically when needed and does not require Java or a JDK.
-              The desktop app remains a separate packaged JVM application.
+              The desktop app remains a separate packaged JVM application. Press <code>v</code> to group
+              descendant workers under their daemon, then use <code>h</code>/<code>l</code> to fold or expand
+              a group while keeping the individual process rows available.
             </p>
             <ul>
               <li>Live process table with RSS, heap, CPU, and uptime</li>
+              <li>Grouped daemon hierarchy with fold/expand controls</li>
               <li>Shares the desktop app’s local database and retention settings</li>
               <li>Install with Homebrew, or grab the release zip</li>
             </ul>
