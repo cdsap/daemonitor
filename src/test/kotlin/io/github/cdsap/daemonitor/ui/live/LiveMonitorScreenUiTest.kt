@@ -525,4 +525,37 @@ class LiveMonitorScreenUiTest {
         assertEquals(6227L, selectedPid)
         onNodeWithText("PID 6227 · Gradle daemon").assertExists()
     }
+
+    @Test
+    fun `grouped mode shows daemon aggregate and nested child rows`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val daemon = sampleProcess(pid = 100, rssMemoryMb = 1_000)
+        val worker = sampleProcess(
+            pid = 200,
+            parentPid = daemon.pid,
+            type = ProcessType.GRADLE_WORKER,
+            rssMemoryMb = 250,
+        )
+        val state = LiveUiState(
+            processes = listOf(daemon, worker),
+            summary = LiveSummary(activeProcessCount = 2, totalRssMb = 1_250, highestMemoryPid = daemon.pid, activeProjectCount = 1),
+            isLoading = false,
+            isEmpty = false,
+        )
+
+        setContent {
+            WatcherTheme {
+                Box(Modifier.size(width = 900.dp, height = 600.dp)) {
+                    LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+                }
+            }
+        }
+
+        onNodeWithText("Grouped").performClick()
+        waitForIdle()
+
+        onNodeWithText("▾", useUnmergedTree = true).assertExists()
+        onNodeWithText("Gradle worker", useUnmergedTree = true).assertExists()
+        onNodeWithText("PID").assertExists()
+    }
 }
