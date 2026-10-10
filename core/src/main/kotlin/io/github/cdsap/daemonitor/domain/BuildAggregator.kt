@@ -26,7 +26,7 @@ class BuildAggregator(
      *  fingerprinting so an ambient agent session is not mis-attributed to every build it spawns. */
     private val ambientEnvNames: Set<String> = emptySet(),
     private val logSnippetLimit: LogSnippetLimit = DEFAULT_LOG_SNIPPET_LIMIT,
-) {
+) : BuildCorrelator {
     /** Bounds for in-window build log excerpts retained until a build is emitted. */
     data class LogSnippetLimit(val lines: Int, val chars: Int)
 
@@ -35,12 +35,12 @@ class BuildAggregator(
     }
     private val daemons = mutableMapOf<Long, DaemonState>()
 
-    fun onEvents(daemonPid: Long, events: List<BuildEvent>): List<Build> {
+    override fun onEvents(daemonPid: Long, events: List<BuildEvent>): List<Build> {
         return events.flatMap { processLogLine(daemonPid, line = null, event = it) }
     }
 
     /** Correlate one redacted log line with its event while preserving window boundaries. */
-    fun onLogLine(daemonPid: Long, line: String, event: BuildEvent?): List<Build> =
+    override fun onLogLine(daemonPid: Long, line: String, event: BuildEvent?): List<Build> =
         processLogLine(daemonPid, line, event)
 
     private fun processLogLine(daemonPid: Long, line: String?, event: BuildEvent?): List<Build> {
@@ -111,7 +111,7 @@ class BuildAggregator(
     }
 
     /** Daemon PID disappeared: emit a qualified open build instead of leaving it stuck forever. */
-    fun onDaemonGone(daemonPid: Long): Build? {
+    override fun onDaemonGone(daemonPid: Long): Build? {
         val state = daemons.remove(daemonPid) ?: return null
         val w = state.window ?: return null
         if (!w.qualified) return null

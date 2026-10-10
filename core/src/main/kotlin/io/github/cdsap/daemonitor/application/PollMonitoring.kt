@@ -1,7 +1,7 @@
 package io.github.cdsap.daemonitor.application
 
 import io.github.cdsap.daemonitor.config.RetentionPolicy
-import io.github.cdsap.daemonitor.domain.BuildAggregator
+import io.github.cdsap.daemonitor.domain.BuildCorrelator
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 
@@ -24,7 +24,7 @@ class PollMonitoring(
         logSource: DaemonLogSource,
         builds: BuildWriter,
         samples: ProcessSampleWriter,
-        aggregator: BuildAggregator,
+        aggregator: BuildCorrelator,
         mode: MonitoringMode = MonitoringMode.Local,
         retentionDays: () -> Long = { RetentionPolicy.DEFAULT.defaultDays },
         clock: () -> Long = System::currentTimeMillis,
