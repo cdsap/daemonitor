@@ -1,7 +1,7 @@
 package io.github.cdsap.daemonitor.application
 
 import io.github.cdsap.daemonitor.config.RetentionPolicy
-import io.github.cdsap.daemonitor.domain.BuildAggregator
+import io.github.cdsap.daemonitor.domain.BuildCorrelator
 import io.github.cdsap.daemonitor.domain.model.Build
 
 /**
@@ -37,7 +37,7 @@ interface BuildProcessingMode {
 internal fun MonitoringMode.buildProcessingMode(
     builds: BuildWriter,
     logSource: DaemonLogSource,
-    aggregator: BuildAggregator,
+    aggregator: BuildCorrelator,
     retentionDays: () -> Long,
     clock: () -> Long,
 ): BuildProcessingMode = when (this) {
@@ -60,7 +60,7 @@ internal fun MonitoringMode.buildProcessingMode(
 private class LocalBuildProcessingMode(
     private val logSource: DaemonLogSource,
     private val builds: BuildWriter,
-    private val aggregator: BuildAggregator,
+    private val aggregator: BuildCorrelator,
     private val retentionDays: () -> Long,
     private val clock: () -> Long,
 ) : BuildProcessingMode {
