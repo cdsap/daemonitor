@@ -25,7 +25,11 @@ import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -85,7 +89,9 @@ private val COLS = listOf(
 )
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit, onClearSelection: () -> Unit) {
+    var groupedView by remember { mutableStateOf(false) }
     val selectedPid = when (val d = state.detail) {
         is DetailState.Selected -> d.process.pid
         is DetailState.Ended -> d.lastKnown.pid
@@ -103,21 +109,31 @@ fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit, onClearSelec
     }
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        SummaryHeader(state, onSelectPeakMemoryPid = onSelect)
+        SummaryHeader(
+            state,
+            groupedView = groupedView,
+            onGroupedViewChange = { groupedView = it },
+            onSelectPeakMemoryPid = onSelect,
+        )
         if (state.isLoading) {
             EmptyState("Scanning for Gradle processes...", modifier = Modifier.weight(1f))
         } else if (state.isEmpty) {
             EmptyState("No Gradle processes are running right now.", modifier = Modifier.weight(1f))
         } else {
             val concurrent = Badges.concurrentSameProjectPids(state.processes)
+            val displayRows = if (groupedView) {
+                groupedLiveProcessRows(state.processes)
+            } else {
+                state.processes.map { LiveProcessRow(it) }
+            }
             val listFocus = remember { FocusRequester() }
             // Request once when the table appears — not on every poll, which would steal focus.
             LaunchedEffect(Unit) { listFocus.requestFocus() }
             fun moveSelection(delta: Int) {
-                val currentIndex = selectedPid?.let { pid -> state.processes.indexOfFirst { it.pid == pid } }
+                val currentIndex = selectedPid?.let { pid -> displayRows.indexOfFirst { it.targetPid == pid } }
                     ?.takeIf { it >= 0 }
-                val next = cycleIndex(state.processes.size, currentIndex, delta) ?: return
-                onSelect(state.processes[next].pid)
+                val next = cycleIndex(displayRows.size, currentIndex, delta) ?: return
+                onSelect(displayRows[next].targetPid)
             }
             Row(modifier = Modifier.weight(1f).padding(Space.lg)) {
                 Surface(
@@ -143,11 +159,11 @@ fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit, onClearSelec
                     ) {
                         TableHeader(COLS)
                         LazyColumn(modifier = Modifier.fillMaxSize()) {
-                            items(state.processes, key = { it.pid }) { p ->
+                            items(displayRows, key = { it.targetPid }) { row ->
                                 ProcessRow(
-                                    p,
-                                    p.pid == selectedPid,
-                                    p.pid in concurrent,
+                                    row,
+                                    row.targetPid == selectedPid,
+                                    row.process.pid in concurrent,
                                     nowMs,
                                     state::isPermissionDegraded,
                                 ) { pid ->
@@ -172,7 +188,13 @@ fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit, onClearSelec
 }
 
 @Composable
-private fun SummaryHeader(state: LiveUiState, onSelectPeakMemoryPid: (Long) -> Unit) {
+@OptIn(ExperimentalMaterial3Api::class)
+private fun SummaryHeader(
+    state: LiveUiState,
+    groupedView: Boolean,
+    onGroupedViewChange: (Boolean) -> Unit,
+    onSelectPeakMemoryPid: (Long) -> Unit,
+) {
     Column {
         ScreenHeader("Process monitor") {
             val degraded = state.pollError != null
@@ -186,6 +208,17 @@ private fun SummaryHeader(state: LiveUiState, onSelectPeakMemoryPid: (Long) -> U
                     style = MaterialTheme.typography.labelSmall,
                     color = statusColor,
                 )
+                SingleChoiceSegmentedButtonRow {
+                    listOf("Flat" to false, "Grouped" to true).forEachIndexed { index, (label, grouped) ->
+                        SegmentedButton(
+                            selected = groupedView == grouped,
+                            onClick = { onGroupedViewChange(grouped) },
+                            shape = SegmentedButtonDefaults.itemShape(index, 2),
+                            icon = {},
+                            label = { Text(label) },
+                        )
+                    }
+                }
             }
         }
         Row(
@@ -210,13 +243,14 @@ private fun SummaryHeader(state: LiveUiState, onSelectPeakMemoryPid: (Long) -> U
 
 @Composable
 private fun ProcessRow(
-    p: GradleProcess,
+    row: LiveProcessRow,
     selected: Boolean,
     concurrent: Boolean,
     nowMs: Long,
     isDegraded: (GradleProcess) -> Boolean,
     onSelect: (Long) -> Unit,
 ) {
+    val p = row.process
     val bg = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f) else MaterialTheme.colorScheme.surface
     Row(
         modifier = Modifier
@@ -229,6 +263,10 @@ private fun ProcessRow(
     ) {
         CellSlot(COLS[0]) {
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
+                if (row.depth > 0 || row.isGroupRoot) {
+                    Text(if (row.isGroupRoot) "▾" else "└", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (row.depth > 0) Spacer(Modifier.width((row.depth * 12).dp))
                 ProcessTypeIcon(p.type, size = 16.dp)
                 Text(p.type.displayLabel(), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             }
