@@ -115,17 +115,18 @@ type Model struct {
 	lastError   string
 	sampledAt   int64
 
-	detailProcess      *model.Process
-	detailLog          *logs.DaemonLog
-	detailTail         *logs.Tail
-	detailHistory      []model.Process
-	detailBuilds       client.BuildsPayload
-	detailLoading      bool
-	detailError        string
-	detailScroll       int
-	detailPane         detailPaneKind
-	detailPaneScroll   [4]int
-	detailPaneScrolled [4]bool
+	detailProcess              *model.Process
+	detailLog                  *logs.DaemonLog
+	detailTail                 *logs.Tail
+	detailHistory              []model.Process
+	detailBuilds               client.BuildsPayload
+	detailLoading              bool
+	detailError                string
+	detailScroll               int
+	detailPane                 detailPaneKind
+	detailPaneScroll           [4]int
+	detailPaneScrolled         [4]bool
+	detailPaneHorizontalScroll [4]int
 
 	pendingKill *killRequest
 	killing     bool
@@ -276,6 +277,10 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.setDetailScroll(0)
 		case "end", "G":
 			m.setDetailScroll(int(^uint(0) >> 1))
+		case "shift+left", "ctrl+left":
+			m.setDetailHorizontalScroll(m.detailPaneHorizontalScroll[m.detailPane] - 8)
+		case "shift+right", "ctrl+right":
+			m.setDetailHorizontalScroll(m.detailPaneHorizontalScroll[m.detailPane] + 8)
 		case "tab", "right", "l":
 			m.selectDetailPane(1)
 		case "shift+tab", "left", "h":
@@ -373,6 +378,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.detailPane = detailPaneAttributes
 			m.detailPaneScroll = [4]int{}
 			m.detailPaneScrolled = [4]bool{}
+			m.detailPaneHorizontalScroll = [4]int{}
 			return m, m.fetchDetails(int64(p.PID), p.StartTimeMs)
 		}
 	case "?":
@@ -385,6 +391,13 @@ func (m *Model) setDetailScroll(offset int) {
 	m.detailScroll = max(0, offset)
 	m.detailPaneScroll[m.detailPane] = m.detailScroll
 	m.detailPaneScrolled[m.detailPane] = true
+}
+
+func (m *Model) setDetailHorizontalScroll(offset int) {
+	if m.detailPane != detailPaneLog {
+		return
+	}
+	m.detailPaneHorizontalScroll[m.detailPane] = max(0, offset)
 }
 
 func (m Model) detailPaneOffset(pane detailPaneKind) int {

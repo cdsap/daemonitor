@@ -48,19 +48,19 @@ func (m Model) renderDetails() string {
 			logWidth = 0
 		}
 		resource := detailResources(m, *p, resourceWidth)
-		middle := detailPanel("RESOURCE TRENDS", resource, resourceWidth, available, m.detailPaneOffset(detailPaneResources), m.detailPane == detailPaneResources, m.noColor)
+		middle := detailPanel("RESOURCE TRENDS", resource, resourceWidth, available, m.detailPaneOffset(detailPaneResources), 0, m.detailPane == detailPaneResources, m.noColor)
 		if gradle {
 			heights := splitDetailHeight(available, 2)
 			resourceHeight, buildHeight := heights[0], heights[1]
 			middle = joinVerticalPanes([][]string{
-				detailPanel("RESOURCE TRENDS", resource, resourceWidth, resourceHeight, m.detailPaneOffset(detailPaneResources), m.detailPane == detailPaneResources, m.noColor),
-				detailPanel("RECENT BUILDS", builds, resourceWidth, buildHeight, m.detailPaneOffset(detailPaneBuilds), m.detailPane == detailPaneBuilds, m.noColor),
+				detailPanel("RESOURCE TRENDS", resource, resourceWidth, resourceHeight, m.detailPaneOffset(detailPaneResources), 0, m.detailPane == detailPaneResources, m.noColor),
+				detailPanel("RECENT BUILDS", builds, resourceWidth, buildHeight, m.detailPaneOffset(detailPaneBuilds), 0, m.detailPane == detailPaneBuilds, m.noColor),
 			})
 		}
-		panes := [][]string{detailPanel("ATTRIBUTES", attributes, attrWidth, available, m.detailPaneOffset(detailPaneAttributes), m.detailPane == detailPaneAttributes, m.noColor)}
+		panes := [][]string{detailPanel("ATTRIBUTES", attributes, attrWidth, available, m.detailPaneOffset(detailPaneAttributes), 0, m.detailPane == detailPaneAttributes, m.noColor)}
 		panes = append(panes, middle)
 		if logWidth > 0 {
-			panes = append(panes, detailPanel("GRADLE LOG", log, logWidth, available, m.detailPaneOffset(detailPaneLog), m.detailPane == detailPaneLog, m.noColor))
+			panes = append(panes, detailPanel("GRADLE LOG", log, logWidth, available, m.detailPaneOffset(detailPaneLog), m.detailPaneHorizontalScroll[detailPaneLog], m.detailPane == detailPaneLog, m.noColor))
 		}
 		b.WriteString(joinDetailPanes(panes, m.width))
 	} else if m.width >= 120 {
@@ -68,18 +68,18 @@ func (m Model) renderDetails() string {
 		attrWidth := max(34, m.width/3)
 		activityWidth := m.width - attrWidth - 1
 		resource := detailResources(m, *p, activityWidth)
-		stack := [][]string{detailPanel("RESOURCE TRENDS", resource, activityWidth, available, m.detailPaneOffset(detailPaneResources), m.detailPane == detailPaneResources, m.noColor)}
+		stack := [][]string{detailPanel("RESOURCE TRENDS", resource, activityWidth, available, m.detailPaneOffset(detailPaneResources), 0, m.detailPane == detailPaneResources, m.noColor)}
 		if gradle {
 			heights := splitDetailHeight(available, 3)
 			resourceHeight, buildHeight, logHeight := heights[0], heights[1], heights[2]
 			stack = [][]string{
-				detailPanel("RESOURCE TRENDS", resource, activityWidth, resourceHeight, m.detailPaneOffset(detailPaneResources), m.detailPane == detailPaneResources, m.noColor),
-				detailPanel("RECENT BUILDS", builds, activityWidth, buildHeight, m.detailPaneOffset(detailPaneBuilds), m.detailPane == detailPaneBuilds, m.noColor),
-				detailPanel("GRADLE LOG", log, activityWidth, max(1, logHeight), m.detailPaneOffset(detailPaneLog), m.detailPane == detailPaneLog, m.noColor),
+				detailPanel("RESOURCE TRENDS", resource, activityWidth, resourceHeight, m.detailPaneOffset(detailPaneResources), 0, m.detailPane == detailPaneResources, m.noColor),
+				detailPanel("RECENT BUILDS", builds, activityWidth, buildHeight, m.detailPaneOffset(detailPaneBuilds), 0, m.detailPane == detailPaneBuilds, m.noColor),
+				detailPanel("GRADLE LOG", log, activityWidth, max(1, logHeight), m.detailPaneOffset(detailPaneLog), m.detailPaneHorizontalScroll[detailPaneLog], m.detailPane == detailPaneLog, m.noColor),
 			}
 		}
 		panes := [][]string{
-			detailPanel("ATTRIBUTES", attributes, attrWidth, available, m.detailPaneOffset(detailPaneAttributes), m.detailPane == detailPaneAttributes, m.noColor),
+			detailPanel("ATTRIBUTES", attributes, attrWidth, available, m.detailPaneOffset(detailPaneAttributes), 0, m.detailPane == detailPaneAttributes, m.noColor),
 			joinVerticalPanes(stack),
 		}
 		b.WriteString(joinDetailPanes(panes, m.width))
@@ -97,7 +97,7 @@ func (m Model) renderDetails() string {
 			content = append(content, "", "Recent log lines: / GRADLE LOG")
 			content = append(content, log...)
 		}
-		section := detailPanel("PROCESS DETAILS", content, m.width, max(1, m.height-5), m.detailPaneOffset(detailPaneAttributes), true, m.noColor)
+		section := detailPanel("PROCESS DETAILS", content, m.width, max(1, m.height-5), m.detailPaneOffset(detailPaneAttributes), 0, true, m.noColor)
 		for _, line := range section {
 			b.WriteString(line)
 			b.WriteByte('\n')
@@ -110,6 +110,7 @@ func (m Model) renderDetails() string {
 		"esc back",
 		"q quit",
 		"↑/↓ or j/k scroll",
+		"shift+←→ horizontal log scroll",
 		"pgup/pgdn page",
 		"g/G top/bottom",
 		"r refresh",
@@ -307,7 +308,7 @@ func detailLog(m Model, width int) []string {
 	lines := m.detailTail.Lines
 	result := make([]string, 0, len(lines)+1)
 	for _, line := range lines {
-		result = append(result, truncateWidth(line, max(1, width-2)))
+		result = append(result, line)
 	}
 	return result
 }
@@ -326,7 +327,7 @@ func splitDetailHeight(total, panes int) []int {
 	return heights
 }
 
-func detailPanel(title string, content []string, width, height, offset int, active, noColor bool) []string {
+func detailPanel(title string, content []string, width, height, offset, horizontalOffset int, active, noColor bool) []string {
 	if width < 1 {
 		return nil
 	}
@@ -337,6 +338,11 @@ func detailPanel(title string, content []string, width, height, offset int, acti
 	}
 	maxOffset := max(0, len(content)-viewport)
 	offset = min(max(0, offset), maxOffset)
+	maxHorizontalOffset := 0
+	for _, line := range content {
+		maxHorizontalOffset = max(maxHorizontalOffset, terminalansi.StringWidth(line)-max(1, inner-3))
+	}
+	horizontalOffset = min(max(0, horizontalOffset), maxHorizontalOffset)
 	end := min(len(content), offset+viewport)
 	visible := content[offset:end]
 	topLeft, topRight, bottomLeft, bottomRight, horizontal, vertical := "┌", "┐", "└", "┘", "─", "│"
@@ -355,10 +361,10 @@ func detailPanel(title string, content []string, width, height, offset int, acti
 	}
 	lines := []string{top}
 	for i, line := range visible {
-		lines = append(lines, detailPanelLine(line, inner, offset+i, len(content), viewport, vertical, active, noColor))
+		lines = append(lines, detailPanelLine(line, inner, offset+i, len(content), viewport, horizontalOffset, vertical, active, noColor))
 	}
 	for len(lines) < max(1, height-1) {
-		lines = append(lines, detailPanelLine("", inner, offset+len(lines)-1, len(content), viewport, vertical, active, noColor))
+		lines = append(lines, detailPanelLine("", inner, offset+len(lines)-1, len(content), viewport, horizontalOffset, vertical, active, noColor))
 	}
 	bottom := bottomLeft + strings.Repeat(horizontal, inner) + bottomRight
 	if active {
@@ -368,7 +374,7 @@ func detailPanel(title string, content []string, width, height, offset int, acti
 	return lines
 }
 
-func detailPanelLine(line string, inner, row, total, viewport int, vertical string, active, noColor bool) string {
+func detailPanelLine(line string, inner, row, total, viewport, horizontalOffset int, vertical string, active, noColor bool) string {
 	textWidth := max(1, inner-3)
 	scroll := " "
 	if total > viewport {
@@ -389,7 +395,7 @@ func detailPanelLine(line string, inner, row, total, viewport int, vertical stri
 			scroll = "░"
 		}
 	}
-	text := truncateWidth(line, textWidth)
+	text := terminalansi.Cut(line, horizontalOffset, horizontalOffset+textWidth)
 	left, right := vertical, vertical
 	if active {
 		border := activePaneBorderStyle(noColor)
