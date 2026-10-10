@@ -438,6 +438,39 @@ func TestDetailsScrollsWithVisibleScrollbar(t *testing.T) {
 	}
 }
 
+func TestFocusedGradleLogScrollsHorizontally(t *testing.T) {
+	p := model.Process{PID: 9, Type: "GRADLE_DAEMON", Name: "gradle", StartTimeMs: 100}
+	m := NewModel(Config{Now: fixedNow, NoColor: true})
+	m.width, m.height, m.detailsOpen, m.detailProcess = 120, 20, true, &p
+	m.detailTail = &logs.Tail{PID: 9, Lines: []string{"prefix that keeps the useful part beyond the visible pane and continues with the task name and arguments that need horizontal scrolling"}}
+
+	next, _ := m.handleKey(tea.KeyPressMsg{Text: "tab"})
+	m = next.(Model)
+	next, _ = m.handleKey(tea.KeyPressMsg{Text: "shift+right"})
+	scrolled := next.(Model)
+
+	if scrolled.detailPane != detailPaneResources {
+		t.Fatalf("tab did not move focus to resources before reaching log: %d", scrolled.detailPane)
+	}
+	next, _ = scrolled.handleKey(tea.KeyPressMsg{Text: "tab"})
+	scrolled = next.(Model)
+	next, _ = scrolled.handleKey(tea.KeyPressMsg{Text: "tab"})
+	scrolled = next.(Model)
+	if scrolled.detailPane != detailPaneLog {
+		t.Fatalf("expected log pane focus, got %d", scrolled.detailPane)
+	}
+
+	before := scrolled.View().Content
+	next, _ = scrolled.handleKey(tea.KeyPressMsg{Text: "shift+right"})
+	scrolled = next.(Model)
+	if scrolled.detailPaneHorizontalScroll[detailPaneLog] == 0 {
+		t.Fatal("horizontal scroll did not advance for the focused Gradle log")
+	}
+	if before == scrolled.View().Content {
+		t.Fatal("horizontal scroll did not change the rendered log")
+	}
+}
+
 func TestDetailsPanesKeepStableColumnAlignment(t *testing.T) {
 	p := model.Process{PID: 9, Type: "GRADLE_DAEMON", Name: "gradle", StartTimeMs: 100}
 	for _, width := range []int{120, 160} {
