@@ -309,6 +309,7 @@ internal fun extractUpdatePayload(
 private fun restoreMacAppExecutables(app: Path) {
     listOf(
         app.resolve("Contents/MacOS/Daemonitor"),
+        app.resolve("Contents/runtime/Contents/Home/bin/java"),
         app.resolve("Contents/app/resources/daemonitor-cored"),
     ).filter(Files::isRegularFile).forEach { executable ->
         executable.toFile().setExecutable(true, false)

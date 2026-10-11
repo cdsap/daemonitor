@@ -87,6 +87,7 @@ class DesktopUpdateInstallerTest {
         val app = assertNotNull(staged).payloadPath
 
         assertTrue(Files.isExecutable(app.resolve("Contents/MacOS/Daemonitor")))
+        assertTrue(Files.isExecutable(app.resolve("Contents/runtime/Contents/Home/bin/java")))
         assertTrue(Files.isExecutable(app.resolve("Contents/app/resources/daemonitor-cored")))
     }
 
@@ -361,6 +362,9 @@ class DesktopUpdateInstallerTest {
             zip.closeEntry()
             zip.putNextEntry(ZipEntry("Daemonitor.app/Contents/MacOS/Daemonitor"))
             zip.write("launcher".toByteArray())
+            zip.closeEntry()
+            zip.putNextEntry(ZipEntry("Daemonitor.app/Contents/runtime/Contents/Home/bin/java"))
+            zip.write("java".toByteArray())
             zip.closeEntry()
             zip.putNextEntry(ZipEntry("Daemonitor.app/Contents/app/resources/daemonitor-cored"))
             zip.write("cored".toByteArray())
