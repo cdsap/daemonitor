@@ -16,15 +16,17 @@ import java.nio.file.Path
  * [PollMonitoring] only invokes [readNewLines] for live / previously known Gradle daemon
  * PIDs, so large `~/.gradle/daemon` discovers do not HTTP-tail every historical log (#221).
  */
-class GoCoreDaemonLogSource(
-    private val socketPath: Path,
-    private val fetch: (Path, String) -> String = ::unixHttpGet,
+class GoCoreDaemonLogSource internal constructor(
+    private val client: GoCoreClient,
 ) : DaemonLogSource {
+    constructor(socketPath: Path, fetch: (Path, String) -> String = ::unixHttpGet) : this(
+        GoCoreClient(socketPath, fetch),
+    )
+
     private val lastTails = mutableMapOf<Long, List<String>>()
 
     override fun discover(): List<DaemonLog> {
-        requireGoCoreSocket(socketPath)
-        val body = fetch(socketPath, "/v1/daemon-logs")
+        val body = client.get("/v1/daemon-logs")
         return GoCoreSnapshotParser.parseDaemonLogs(body)
     }
 
@@ -40,7 +42,7 @@ class GoCoreDaemonLogSource(
     override fun tailFor(log: DaemonLog): List<String> = fetchTailLines(log.pid)
 
     private fun fetchTailLines(pid: Long): List<String> {
-        val body = fetch(socketPath, "/v1/daemon-logs/$pid/tail")
+        val body = client.get("/v1/daemon-logs/$pid/tail")
         return GoCoreSnapshotParser.parseDaemonLogTail(body)
     }
 }
