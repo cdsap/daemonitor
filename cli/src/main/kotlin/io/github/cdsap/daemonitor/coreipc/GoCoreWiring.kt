@@ -26,13 +26,14 @@ fun wireGoCore(
 ): GoCoreWiring {
     if (coreSocket == null) return GoCoreWiring()
     val owns = coreOwnsDatabase(coreSocket, databasePath, defaultDatabase)
+    val client = GoCoreClient(coreSocket)
     return GoCoreWiring(
-        processSource = GoCoreProcessSource(coreSocket),
-        logSource = GoCoreDaemonLogSource(coreSocket),
+        processSource = GoCoreProcessSource(client),
+        logSource = GoCoreDaemonLogSource(client),
         mode = if (owns) {
             MonitoringMode.SharedCoreOwnedPersistence
         } else {
-            MonitoringMode.RemoteBuilds(GoCoreBuildSource(coreSocket))
+            MonitoringMode.RemoteBuilds(GoCoreBuildSource(client))
         },
         banner = if (owns) {
             "Reading live processes/logs from Go core at $coreSocket " +

@@ -11,14 +11,16 @@ import java.nio.file.Path
  * When wired into [io.github.cdsap.daemonitor.application.PollMonitoring], JVM log
  * re-aggregation is skipped and confirmed builds are imported from the Go spike DB.
  */
-class GoCoreBuildSource(
-    private val socketPath: Path,
-    private val fetch: (Path, String) -> String = ::unixHttpGet,
+class GoCoreBuildSource internal constructor(
+    private val client: GoCoreClient,
 ) : BuildSource {
+    constructor(socketPath: Path, fetch: (Path, String) -> String = ::unixHttpGet) : this(
+        GoCoreClient(socketPath, fetch),
+    )
+
     override fun recentBuilds(limit: Int): List<Build> {
-        requireGoCoreSocket(socketPath)
         val capped = limit.coerceIn(1, 500)
-        val body = fetch(socketPath, "/v1/builds?limit=$capped")
+        val body = client.get("/v1/builds?limit=$capped")
         return GoCoreSnapshotParser.parseBuilds(body)
     }
 }
