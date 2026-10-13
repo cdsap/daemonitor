@@ -3,10 +3,10 @@ package io.github.cdsap.daemonitor.mcp
 import io.github.cdsap.daemonitor.AppContainer
 import io.github.cdsap.daemonitor.BuildInfo
 import io.github.cdsap.daemonitor.application.DaemonitorQueryService
+import io.github.cdsap.daemonitor.application.ProcessSampleView
 import io.github.cdsap.daemonitor.domain.Redactor
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
-import io.github.cdsap.daemonitor.persistence.ProcessSample
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.InputStream
@@ -224,7 +224,7 @@ class DaemonitorMcpServer(
         "agentProvider" to jsonStringOrNull(agentProvider),
     )
 
-    private fun ProcessSample.toJson(): JsonObject = jsonObject(
+    private fun ProcessSampleView.toJson(): JsonObject = jsonObject(
         "timestampMs" to JsonNumber(timestampMs),
         "pid" to JsonNumber(pid),
         "parentPid" to JsonNumber(parentPid),
