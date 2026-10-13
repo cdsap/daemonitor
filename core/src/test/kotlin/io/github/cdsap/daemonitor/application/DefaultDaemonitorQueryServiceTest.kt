@@ -54,6 +54,9 @@ class DefaultDaemonitorQueryServiceTest {
         assertEquals("42", result.process)
         assertEquals(listOf("b1"), result.matchedBuilds.map { it.buildId })
         assertEquals(listOf(42L), result.matchedProcessSamples.map { it.pid })
+        assertEquals("java GradleDaemon", result.matchedProcessSamples.single().commandLine)
+        assertEquals(512L, result.matchedProcessSamples.single().rssMemoryMb)
+        assertEquals(2048L, result.matchedProcessSamples.single().maxHeapMb)
     }
 
     @Test
