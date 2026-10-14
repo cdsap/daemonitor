@@ -23,7 +23,7 @@ class GoCoreDaemonLogSource internal constructor(
         GoCoreClient(socketPath, fetch),
     )
 
-    private val lastTails = mutableMapOf<Long, List<String>>()
+    private val tailTracker = GoCoreLogTailTracker()
 
     override fun discover(): List<DaemonLog> {
         val body = client.get("/v1/daemon-logs")
@@ -32,9 +32,7 @@ class GoCoreDaemonLogSource internal constructor(
 
     override fun readNewLines(log: DaemonLog): List<DaemonLogLine> {
         val current = runCatching { fetchTailLines(log.pid) }.getOrElse { return emptyList() }
-        val previous = lastTails[log.pid].orEmpty()
-        lastTails[log.pid] = current
-        return GoCoreLogDelta.newLinesSince(previous, current).map { line ->
+        return tailTracker.newLinesSince(log.pid, current).map { line ->
             DaemonLogLine(text = line, event = DaemonLogParser.parseLine(line))
         }
     }
@@ -44,20 +42,5 @@ class GoCoreDaemonLogSource internal constructor(
     private fun fetchTailLines(pid: Long): List<String> {
         val body = client.get("/v1/daemon-logs/$pid/tail")
         return GoCoreSnapshotParser.parseDaemonLogTail(body)
-    }
-}
-
-internal object GoCoreLogDelta {
-    /** Lines appended since [previous], accounting for a fixed-size ring tail. */
-    fun newLinesSince(previous: List<String>, current: List<String>): List<String> {
-        if (previous.isEmpty()) return current
-        if (current.isEmpty()) return emptyList()
-        val maxOverlap = minOf(previous.size, current.size)
-        for (overlap in maxOverlap downTo 0) {
-            if (previous.takeLast(overlap) == current.take(overlap)) {
-                return current.drop(overlap)
-            }
-        }
-        return current
     }
 }

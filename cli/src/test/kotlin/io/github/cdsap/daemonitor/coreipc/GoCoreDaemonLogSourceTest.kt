@@ -57,26 +57,6 @@ class GoCoreDaemonLogSourceTest {
     }
 
     @Test
-    fun `diffs ring tails for newly appended lines`() {
-        assertEquals(
-            listOf("a", "b"),
-            GoCoreLogDelta.newLinesSince(previous = emptyList(), current = listOf("a", "b")),
-        )
-        assertEquals(
-            emptyList(),
-            GoCoreLogDelta.newLinesSince(previous = listOf("a", "b"), current = listOf("a", "b")),
-        )
-        assertEquals(
-            listOf("c"),
-            GoCoreLogDelta.newLinesSince(previous = listOf("a", "b"), current = listOf("a", "b", "c")),
-        )
-        assertEquals(
-            listOf("d"),
-            GoCoreLogDelta.newLinesSince(previous = listOf("a", "b", "c"), current = listOf("b", "c", "d")),
-        )
-    }
-
-    @Test
     fun `daemon log source discovers and tails through fetch`() {
         val responses = mapOf(
             "/v1/daemon-logs" to """
