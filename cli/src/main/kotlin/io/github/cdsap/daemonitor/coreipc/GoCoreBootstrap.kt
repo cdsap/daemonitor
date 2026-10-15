@@ -61,7 +61,7 @@ fun resolveGoCore(
     val requireCore = preference is GoCorePreference.ExplicitSocket
 
     if (isGoCoreHealthy(socket, fetch)) {
-        return GoCoreResolveResult(wireGoCore(socket, databasePath, defaultDatabase))
+        return GoCoreResolveResult(wireGoCore(socket, databasePath, defaultDatabase, fetch))
     }
 
     val binary = findBinary()
@@ -71,7 +71,7 @@ fun resolveGoCore(
         error.println("Starting daemonitor-cored ($binary)…")
         started = startCore(binary, socket, databasePath)
         if (started && waitForGoCoreHealthy(socket, fetch, waitHealthyMs)) {
-            return GoCoreResolveResult(wireGoCore(socket, databasePath, defaultDatabase), startedCore = true)
+            return GoCoreResolveResult(wireGoCore(socket, databasePath, defaultDatabase, fetch), startedCore = true)
         }
     }
 
@@ -81,7 +81,7 @@ fun resolveGoCore(
                 if (binary == null) " (daemonitor-cored binary not found)" else " (started but health check failed)",
         )
         // Still wire so poll surfaces GoCoreUnavailableException with a clear message.
-        return GoCoreResolveResult(wireGoCore(socket, databasePath, defaultDatabase), startedCore = started)
+        return GoCoreResolveResult(wireGoCore(socket, databasePath, defaultDatabase, fetch), startedCore = started)
     }
 
     error.println(

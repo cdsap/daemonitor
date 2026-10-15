@@ -28,18 +28,24 @@ class GoCoreBootstrapTest {
         val dir = Files.createTempDirectory("cored-healthy")
         val sock = dir.resolve("cored.sock")
         Files.createFile(sock)
+        val paths = mutableListOf<String>()
         val result = resolveGoCore(
             preference = GoCorePreference.PreferGo,
             databasePath = Path("/tmp/watcher.db"),
             defaultDatabase = Path("/tmp/watcher.db"),
             defaultSocket = sock,
-            fetch = { _, _ -> """{"status":"ok","db_path":"/tmp/watcher.db"}""" },
+            fetch = { _, path ->
+                paths += path
+                """{"status":"ok","db_path":"/tmp/watcher.db"}"""
+            },
             findBinary = { error("should not look up binary") },
             startCore = { _, _, _ -> error("should not start") },
         )
-        assertNotNull(result.wiring.processSource)
+        val processSource = assertNotNull(result.wiring.processSource)
+        processSource.currentProcesses()
         assertTrue(result.wiring.banner!!.contains("Go core"))
         assertFalse(result.startedCore)
+        assertTrue(paths.containsAll(listOf("/v1/health", "/v1/processes")))
     }
 
     @Test

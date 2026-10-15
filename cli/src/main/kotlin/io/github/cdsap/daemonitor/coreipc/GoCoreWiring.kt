@@ -23,10 +23,11 @@ fun wireGoCore(
     coreSocket: Path?,
     databasePath: Path,
     defaultDatabase: Path = AppDirectories.system.databasePath,
+    fetch: (Path, String) -> String = ::unixHttpGet,
 ): GoCoreWiring {
     if (coreSocket == null) return GoCoreWiring()
-    val owns = coreOwnsDatabase(coreSocket, databasePath, defaultDatabase)
-    val client = GoCoreClient(coreSocket)
+    val owns = coreOwnsDatabase(coreSocket, databasePath, defaultDatabase, fetch)
+    val client = GoCoreClient(coreSocket, fetch)
     return GoCoreWiring(
         processSource = GoCoreProcessSource(client),
         logSource = GoCoreDaemonLogSource(client),

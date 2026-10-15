@@ -1,8 +1,11 @@
 package io.github.cdsap.daemonitor.coreipc
 
 import io.github.cdsap.daemonitor.application.MonitoringMode
+import java.nio.file.Files
 import kotlin.io.path.Path
+import kotlin.io.path.deleteIfExists
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -25,6 +28,7 @@ class GoCoreWiringTest {
             coreSocket = Path("/tmp/missing-cored.sock"),
             databasePath = db,
             defaultDatabase = db,
+            fetch = { _, _ -> error("health unreachable") },
         )
         assertNotNull(wiring.processSource)
         assertNotNull(wiring.logSource)
@@ -41,11 +45,45 @@ class GoCoreWiringTest {
             coreSocket = Path("/tmp/missing-cored.sock"),
             databasePath = local,
             defaultDatabase = Path("/tmp/Daemonitor/watcher.db"),
+            fetch = { _, _ -> error("health unreachable") },
         )
         assertNotNull(wiring.processSource)
         assertTrue(wiring.mode is MonitoringMode.RemoteBuilds)
         val banner = assertNotNull(wiring.banner)
         assertFalse(banner.contains("shared DB"))
         assertFalse(banner.contains("unavailable on Go path"))
+    }
+
+    @Test
+    fun `supplied transport is used by health and every wired source`() {
+        val socket = Files.createTempFile("go-core-wiring", ".sock")
+        val paths = mutableListOf<String>()
+        try {
+            val wiring = wireGoCore(
+                coreSocket = socket,
+                databasePath = Path("/tmp/app.db"),
+                defaultDatabase = Path("/tmp/Daemonitor/watcher.db"),
+                fetch = { _, path ->
+                    paths += path
+                    when (path) {
+                        "/v1/health" -> """{"status":"ok","db_path":"/tmp/core.db"}"""
+                        "/v1/processes", "/v1/daemon-logs", "/v1/builds?limit=50" -> "{}"
+                        else -> error("unexpected path: $path")
+                    }
+                },
+            )
+
+            assertTrue(wiring.mode is MonitoringMode.RemoteBuilds)
+            wiring.processSource!!.currentProcesses()
+            wiring.logSource!!.discover()
+            wiring.mode.source.recentBuilds(50)
+        } finally {
+            socket.deleteIfExists()
+        }
+
+        assertEquals(
+            listOf("/v1/health", "/v1/processes", "/v1/daemon-logs", "/v1/builds?limit=50"),
+            paths,
+        )
     }
 }
