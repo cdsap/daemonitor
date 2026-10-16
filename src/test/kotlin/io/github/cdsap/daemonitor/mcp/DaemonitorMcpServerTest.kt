@@ -109,6 +109,27 @@ class DaemonitorMcpServerTest {
         assertEquals("GRADLE_DAEMON", samples.single().string("processType"))
         assertEquals(300L, samples.single().long("heapUsedMb"))
         assertEquals(JsonBoolean(true), samples.single().values["heapAvailable"])
+        assertEquals(
+            setOf(
+                "timestampMs",
+                "pid",
+                "parentPid",
+                "processType",
+                "commandLine",
+                "workingDirectory",
+                "projectPath",
+                "cpuPercent",
+                "rssMemoryMb",
+                "maxHeapMb",
+                "heapUsedMb",
+                "heapCommittedMb",
+                "heapMaxMb",
+                "heapSampledAtMs",
+                "heapAvailable",
+                "status",
+            ),
+            samples.single().values.keys,
+        )
     }
 
     @Test
