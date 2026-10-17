@@ -2,5 +2,8 @@ package io.github.cdsap.daemonitor.application
 
 import io.github.cdsap.daemonitor.domain.model.BuildEvent
 
-/** One complete, redacted daemon-log line and the build event parsed from that same line. */
-data class DaemonLogLine(val text: String, val event: BuildEvent?)
+/** One complete, redacted daemon-log line returned by a [DaemonLogSource]. */
+data class DaemonLogLine(val text: String)
+
+/** A redacted line after application-level parsing, immediately before build correlation. */
+data class ParsedDaemonLogLine(val text: String, val event: BuildEvent?)

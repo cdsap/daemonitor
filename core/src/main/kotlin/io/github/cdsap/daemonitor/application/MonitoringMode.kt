@@ -31,7 +31,11 @@ sealed interface MonitoringMode {
 interface BuildProcessingMode {
     val persistsSamples: Boolean
 
-    fun process(logs: List<DaemonLog>, activeDaemonPids: Set<Long>): Boolean
+    fun process(
+        logs: List<DaemonLog>,
+        activeDaemonPids: Set<Long>,
+        readNewLines: (DaemonLog) -> List<ParsedDaemonLogLine>,
+    ): Boolean
 }
 
 internal fun MonitoringMode.buildProcessingMode(
@@ -67,7 +71,11 @@ private class LocalBuildProcessingMode(
     override val persistsSamples = true
     private var knownDaemonPids = emptySet<Long>()
 
-    override fun process(logs: List<DaemonLog>, activeDaemonPids: Set<Long>): Boolean {
+    override fun process(
+        logs: List<DaemonLog>,
+        activeDaemonPids: Set<Long>,
+        readNewLines: (DaemonLog) -> List<ParsedDaemonLogLine>,
+    ): Boolean {
         var inserted = false
         // Only read tails for daemons we are tracking (live now, or known from a prior poll).
         // Discover may return hundreds of historical daemon-*.out.log paths under ~/.gradle;
@@ -77,9 +85,10 @@ private class LocalBuildProcessingMode(
 
         for (log in logs) {
             if (log.pid in pidsToRead) {
-                val lines = logSource.readNewLines(log)
+                val lines = readNewLines(log)
                 if (lines.isNotEmpty()) {
-                    lines.flatMap { aggregator.onLogLine(log.pid, it.text, it.event) }.forEach { build ->
+                    lines.flatMap { line -> aggregator.onLogLine(log.pid, line.text, line.event) }
+                        .forEach { build ->
                         if (saveIfWithinRetention(build)) inserted = true
                     }
                 }
@@ -117,7 +126,11 @@ private class RemoteBuildProcessingMode(
     override val persistsSamples = true
     private var lastRemoteBuildFingerprint = emptyMap<String, String>()
 
-    override fun process(logs: List<DaemonLog>, activeDaemonPids: Set<Long>): Boolean {
+    override fun process(
+        logs: List<DaemonLog>,
+        activeDaemonPids: Set<Long>,
+        readNewLines: (DaemonLog) -> List<ParsedDaemonLogLine>,
+    ): Boolean {
         val fingerprint = linkedMapOf<String, String>()
         for (build in source.recentBuilds()) {
             if (!saveIfWithinRetention(build)) continue
@@ -139,5 +152,9 @@ private class RemoteBuildProcessingMode(
 private object CoreOwnedBuildProcessingMode : BuildProcessingMode {
     override val persistsSamples = false
 
-    override fun process(logs: List<DaemonLog>, activeDaemonPids: Set<Long>) = false
+    override fun process(
+        logs: List<DaemonLog>,
+        activeDaemonPids: Set<Long>,
+        readNewLines: (DaemonLog) -> List<ParsedDaemonLogLine>,
+    ) = false
 }

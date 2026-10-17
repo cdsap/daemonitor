@@ -2,11 +2,9 @@ package io.github.cdsap.daemonitor.collect
 
 import io.github.cdsap.daemonitor.application.DaemonLog
 import io.github.cdsap.daemonitor.application.DaemonLogLine
-import io.github.cdsap.daemonitor.application.DaemonLogParser
 import io.github.cdsap.daemonitor.application.DaemonLogSource
 import io.github.cdsap.daemonitor.config.MonitoringConfig
 import io.github.cdsap.daemonitor.domain.Redactor
-import io.github.cdsap.daemonitor.domain.model.BuildEvent
 import io.github.cdsap.daemonitor.platform.AppDirectories
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
@@ -20,8 +18,8 @@ import kotlin.io.path.name
 
 /**
  * Locates daemon logs, reads new content incrementally (offset-based, cheaper than re-tailing),
- * and parses build events (U3). Redaction (KTD-7) runs on every line before it enters the tail
- * buffer or is parsed, so anything exposed downstream is already scrubbed.
+ * and returns redacted lines. Redaction (KTD-7) runs on every line before it enters the tail
+ * buffer or is exposed to application polling.
  *
  * Implements [DaemonLogSource] so application polling depends on the port, not filesystem details.
  *
@@ -59,19 +57,16 @@ class DaemonLogWatcher(
     }
 
     /**
-     * Read whatever has been appended to [path] since the last call, returning the parsed events.
+     * Read whatever has been appended to [path] since the last call, returning redacted lines.
      * The first read of an existing file starts at a bounded tail and drops an initial partial
      * line. Later reads consume all appended content in bounded chunks. Lines are redacted before
-     * parsing and before being retained for the live tail.
+     * being returned and before being retained for the live tail.
      */
-    fun readNewEvents(path: Path): List<BuildEvent> =
-        readNewLines(path).mapNotNull { it.event }
-
     override fun readNewLines(log: DaemonLog): List<DaemonLogLine> = readNewLines(log.path)
 
     /**
-     * Read newly appended complete lines while retaining their parsed-event association. This lets
-     * downstream build correlation assign each redacted line to the exact busy-to-idle window.
+     * Read newly appended complete redacted lines while retaining the exact busy-to-idle window
+     * boundaries for application-level parsing and correlation.
      */
     fun readNewLines(path: Path): List<DaemonLogLine> {
         if (!path.exists()) return emptyList()
@@ -122,7 +117,7 @@ class DaemonLogWatcher(
             .toList()
 
         retainTail(path, redacted)
-        return redacted.map { DaemonLogLine(it, DaemonLogParser.parseLine(it)) }
+        return redacted.map(::DaemonLogLine)
     }
 
     override fun tailFor(log: DaemonLog): List<String> = tailFor(log.path)
