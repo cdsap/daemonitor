@@ -14,12 +14,38 @@ import io.github.cdsap.daemonitor.domain.model.Outcome
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.domain.model.Source
 import java.nio.file.Path
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class PollMonitoringTest {
+
+    private fun rawLine(event: BuildEvent): DaemonLogLine {
+        val prefix = eventTimestamp(event)?.let { LOG_TIMESTAMP.format(Instant.ofEpochMilli(it).atOffset(ZoneOffset.UTC)) }
+        val text = when (event) {
+            is BusyMark -> "$prefix [INFO] [Daemon] Marking the daemon as busy"
+            is IdleMark -> "$prefix [INFO] [Daemon] Marking the daemon as idle"
+            is BuildStart -> "$prefix [INFO] [Daemon] Daemon is about to start building Build{id=${event.buildId}, currentDir=${event.currentDir}}"
+            is Outcome -> "BUILD ${if (event.success) "SUCCESSFUL" else "FAILED"} in ${event.durationSeconds}s"
+            else -> error("Test fixture does not need ${event::class.simpleName}")
+        }
+        return DaemonLogLine(text)
+    }
+
+    private fun eventTimestamp(event: BuildEvent): Long? = when (event) {
+        is BusyMark -> event.timestampMs
+        is IdleMark -> event.timestampMs
+        is BuildStart -> event.timestampMs
+        else -> null
+    }
+
+    companion object {
+        private val LOG_TIMESTAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSZ")
+    }
 
     @Test
     fun `pollOnce accepts a lightweight build correlator`() {
@@ -28,7 +54,7 @@ class PollMonitoringTest {
         val correlator = RecordingBuildCorrelator()
         val logSource = FakeDaemonLogSource(
             logs = listOf(log),
-            linesByPid = mapOf(42L to listOf(DaemonLogLine("line", null))),
+            linesByPid = mapOf(42L to listOf(DaemonLogLine("line"))),
         )
         val monitoring = PollMonitoring(
             processSource = FakeProcessSource(listOf(process)),
@@ -52,10 +78,10 @@ class PollMonitoringTest {
             logs = listOf(log),
             linesByPid = mapOf(
                 42L to listOf(
-                    DaemonLogLine("busy", BusyMark(1_000)),
-                    DaemonLogLine("start", BuildStart(1_001, "build-1", "/project")),
-                    DaemonLogLine("ok", Outcome(success = true, durationSeconds = 1.0)),
-                    DaemonLogLine("idle", IdleMark(1_003)),
+                    rawLine(BusyMark(1_000)),
+                    rawLine(BuildStart(1_001, "build-1", "/project")),
+                    rawLine(Outcome(success = true, durationSeconds = 1.0)),
+                    rawLine(IdleMark(1_003)),
                 ),
             ),
         )
@@ -97,10 +123,10 @@ class PollMonitoringTest {
             logs = listOf(log),
             linesByPid = mapOf(
                 42L to listOf(
-                    DaemonLogLine("busy", BusyMark(oldStart)),
-                    DaemonLogLine("start", BuildStart(oldStart + 1, "aged-build", "/project")),
-                    DaemonLogLine("ok", Outcome(success = true, durationSeconds = 1.0)),
-                    DaemonLogLine("idle", IdleMark(oldStart + 1_000)),
+                    rawLine(BusyMark(oldStart)),
+                    rawLine(BuildStart(oldStart + 1, "aged-build", "/project")),
+                    rawLine(Outcome(success = true, durationSeconds = 1.0)),
+                    rawLine(IdleMark(oldStart + 1_000)),
                 ),
             ),
         )
@@ -171,15 +197,15 @@ class PollMonitoringTest {
             logs = listOf(live, historical),
             linesByPid = mapOf(
                 42L to listOf(
-                    DaemonLogLine("busy", BusyMark(1_000)),
-                    DaemonLogLine("start", BuildStart(1_001, "build-1", "/project")),
-                    DaemonLogLine("ok", Outcome(success = true, durationSeconds = 1.0)),
-                    DaemonLogLine("idle", IdleMark(1_003)),
+                    rawLine(BusyMark(1_000)),
+                    rawLine(BuildStart(1_001, "build-1", "/project")),
+                    rawLine(Outcome(success = true, durationSeconds = 1.0)),
+                    rawLine(IdleMark(1_003)),
                 ),
                 99L to listOf(
-                    DaemonLogLine("busy", BusyMark(1_000)),
-                    DaemonLogLine("start", BuildStart(1_001, "stale", "/old")),
-                    DaemonLogLine("idle", IdleMark(1_003)),
+                    rawLine(BusyMark(1_000)),
+                    rawLine(BuildStart(1_001, "stale", "/old")),
+                    rawLine(IdleMark(1_003)),
                 ),
             ),
         )
@@ -207,8 +233,8 @@ class PollMonitoringTest {
             logs = listOf(log),
             linesByPid = mapOf(
                 42L to listOf(
-                    DaemonLogLine("busy", BusyMark(1_000)),
-                    DaemonLogLine("start", BuildStart(1_001, "build-1", "/project")),
+                    rawLine(BusyMark(1_000)),
+                    rawLine(BuildStart(1_001, "build-1", "/project")),
                 ),
             ),
         )
@@ -229,8 +255,8 @@ class PollMonitoringTest {
         processSource.processes = emptyList()
         logSource.linesByPid = mapOf(
             42L to listOf(
-                DaemonLogLine("ok", Outcome(success = true, durationSeconds = 1.0)),
-                DaemonLogLine("idle", IdleMark(2_000)),
+                rawLine(Outcome(success = true, durationSeconds = 1.0)),
+                rawLine(IdleMark(2_000)),
             ),
         )
         logSource.readCalls.clear()
@@ -248,9 +274,9 @@ class PollMonitoringTest {
             logs = listOf(log),
             linesByPid = mapOf(
                 42L to listOf(
-                    DaemonLogLine("busy", BusyMark(1_000)),
-                    DaemonLogLine("start", BuildStart(1_001, "ignored", "/project")),
-                    DaemonLogLine("idle", IdleMark(1_003)),
+                    rawLine(BusyMark(1_000)),
+                    rawLine(BuildStart(1_001, "ignored", "/project")),
+                    rawLine(IdleMark(1_003)),
                 ),
             ),
         )

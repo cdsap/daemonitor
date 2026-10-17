@@ -59,6 +59,7 @@ class PollMonitoring(
         val buildsChanged = buildProcessingMode.process(
             logs = logs,
             activeDaemonPids = processes.activeDaemonPids(),
+            readNewLines = ::readAndParseNewLines,
         )
         return PollResult(
             processes = processes,
@@ -68,7 +69,12 @@ class PollMonitoring(
     }
 
     internal fun processForBuilds(logs: List<DaemonLog>, activeDaemonPids: Set<Long>): Boolean =
-        buildProcessingMode.process(logs, activeDaemonPids)
+        buildProcessingMode.process(logs, activeDaemonPids, ::readAndParseNewLines)
+
+    private fun readAndParseNewLines(log: DaemonLog): List<ParsedDaemonLogLine> =
+        logSource.readNewLines(log).map { line ->
+            ParsedDaemonLogLine(text = line.text, event = DaemonLogParser.parseLine(line.text))
+        }
 
     fun tailFor(logs: List<DaemonLog>, pid: Long): DaemonLogTailResult {
         val log = logs.firstOrNull { it.pid == pid } ?: return DaemonLogTailResult.NoLog

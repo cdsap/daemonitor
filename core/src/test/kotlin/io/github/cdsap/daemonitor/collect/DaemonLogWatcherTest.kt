@@ -1,6 +1,6 @@
 package io.github.cdsap.daemonitor.collect
 
-import io.github.cdsap.daemonitor.domain.model.Outcome
+import io.github.cdsap.daemonitor.application.DaemonLogParser
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
@@ -41,11 +41,11 @@ class DaemonLogWatcherTest {
         val watcher = DaemonLogWatcher(gradleUserHome = tmp)
         // First write: a partial outcome line with no trailing newline.
         log.writeText("BUILD SUCCESSFUL i")
-        assertTrue(watcher.readNewEvents(log).isEmpty(), "partial line must not parse yet")
+        assertTrue(watcher.readNewLines(log).isEmpty(), "partial line must not be returned yet")
         // Complete the line.
         Files.writeString(log, "n 5s\n", java.nio.file.StandardOpenOption.APPEND)
-        val events = watcher.readNewEvents(log)
-        assertTrue(events.any { it is Outcome }, "completed line must parse exactly once")
+        val lines = watcher.readNewLines(log)
+        assertTrue(lines.any { DaemonLogParser.parseLine(it.text) != null }, "completed line must be returned")
     }
 
     @Test
@@ -54,11 +54,11 @@ class DaemonLogWatcherTest {
         log.writeText("BUILD SUCCESSFUL in 3s\n")
         val watcher = DaemonLogWatcher(gradleUserHome = tmp)
 
-        val first = watcher.readNewEvents(log)
-        assertTrue(first.any { it is Outcome })
+        val first = watcher.readNewLines(log)
+        assertTrue(first.any { DaemonLogParser.parseLine(it.text) != null })
 
         // No new content → no new events.
-        assertTrue(watcher.readNewEvents(log).isEmpty())
+        assertTrue(watcher.readNewLines(log).isEmpty())
 
         // Append a secret-bearing line; confirm it is redacted in the tail.
         Files.writeString(
@@ -66,7 +66,7 @@ class DaemonLogWatcherTest {
             "2026-06-24T10:00:00.000-0700 [INFO] [Build] running -Ptoken=topsecret\n",
             java.nio.file.StandardOpenOption.APPEND,
         )
-        watcher.readNewEvents(log)
+        watcher.readNewLines(log)
         assertTrue(watcher.tailFor(log).any { it.contains("-Ptoken=***") })
         assertTrue(watcher.tailFor(log).none { it.contains("topsecret") })
     }
@@ -80,9 +80,9 @@ class DaemonLogWatcherTest {
         }
         val watcher = DaemonLogWatcher(gradleUserHome = tmp, initialReadBytes = 64, readChunkBytes = 7)
 
-        val events = watcher.readNewEvents(log)
+        val lines = watcher.readNewLines(log)
 
-        assertTrue(events.any { it is Outcome })
+        assertTrue(lines.any { DaemonLogParser.parseLine(it.text) != null })
         assertEquals(listOf("BUILD SUCCESSFUL in 2s"), watcher.tailFor(log))
     }
 
@@ -92,10 +92,10 @@ class DaemonLogWatcherTest {
         val watcher = DaemonLogWatcher(gradleUserHome = tmp, readChunkBytes = 2)
         log.writeText("message café")
 
-        assertTrue(watcher.readNewEvents(log).isEmpty())
+        assertTrue(watcher.readNewLines(log).isEmpty())
         Files.writeString(log, "\nBUILD SUCCESSFUL in 1s\n", StandardOpenOption.APPEND)
 
-        assertTrue(watcher.readNewEvents(log).any { it is Outcome })
+        assertTrue(watcher.readNewLines(log).any { DaemonLogParser.parseLine(it.text) != null })
         assertEquals(listOf("message café", "BUILD SUCCESSFUL in 1s"), watcher.tailFor(log))
     }
 
@@ -104,13 +104,13 @@ class DaemonLogWatcherTest {
         val log = tmp.resolve("daemon-truncated.out.log")
         val watcher = DaemonLogWatcher(gradleUserHome = tmp, readChunkBytes = 3)
         log.writeText("stale partial line that is substantially longer than its replacement")
-        assertTrue(watcher.readNewEvents(log).isEmpty())
+        assertTrue(watcher.readNewLines(log).isEmpty())
 
         log.writeText("BUILD FAILED in 1s\n")
-        assertTrue(watcher.readNewEvents(log).isEmpty(), "truncation is observed before replacement data")
+        assertTrue(watcher.readNewLines(log).isEmpty(), "truncation is observed before replacement data")
 
-        val events = watcher.readNewEvents(log)
-        assertTrue(events.any { it is Outcome })
+        val lines = watcher.readNewLines(log)
+        assertTrue(lines.any { DaemonLogParser.parseLine(it.text) != null })
         assertEquals(listOf("BUILD FAILED in 1s"), watcher.tailFor(log))
     }
 
@@ -119,11 +119,11 @@ class DaemonLogWatcherTest {
         val log = tmp.resolve("daemon-appended.out.log")
         log.writeText("old line\n")
         val watcher = DaemonLogWatcher(gradleUserHome = tmp, initialReadBytes = 4, readChunkBytes = 2)
-        watcher.readNewEvents(log)
+        watcher.readNewLines(log)
 
         Files.writeString(log, "BUILD SUCCESSFUL in 4s\n", StandardOpenOption.APPEND)
 
-        assertTrue(watcher.readNewEvents(log).any { it is Outcome })
+        assertTrue(watcher.readNewLines(log).any { DaemonLogParser.parseLine(it.text) != null })
     }
 }
 
