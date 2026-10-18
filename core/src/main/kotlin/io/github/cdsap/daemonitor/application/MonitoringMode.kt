@@ -42,6 +42,7 @@ internal fun MonitoringMode.buildProcessingMode(
     builds: BuildWriter,
     logSource: DaemonLogSource,
     aggregator: BuildCorrelator,
+    retentionPolicy: RetentionPolicy,
     retentionDays: () -> Long,
     clock: () -> Long,
 ): BuildProcessingMode = when (this) {
@@ -49,12 +50,14 @@ internal fun MonitoringMode.buildProcessingMode(
         logSource = logSource,
         builds = builds,
         aggregator = aggregator,
+        retentionPolicy = retentionPolicy,
         retentionDays = retentionDays,
         clock = clock,
     )
     is MonitoringMode.RemoteBuilds -> RemoteBuildProcessingMode(
         source = source,
         builds = builds,
+        retentionPolicy = retentionPolicy,
         retentionDays = retentionDays,
         clock = clock,
     )
@@ -65,6 +68,7 @@ private class LocalBuildProcessingMode(
     private val logSource: DaemonLogSource,
     private val builds: BuildWriter,
     private val aggregator: BuildCorrelator,
+    private val retentionPolicy: RetentionPolicy,
     private val retentionDays: () -> Long,
     private val clock: () -> Long,
 ) : BuildProcessingMode {
@@ -110,7 +114,7 @@ private class LocalBuildProcessingMode(
     }
 
     private fun saveIfWithinRetention(build: Build): Boolean {
-        val cutoff = RetentionPolicy.DEFAULT.cutoffEpochMs(clock(), retentionDays())
+        val cutoff = retentionPolicy.cutoffEpochMs(clock(), retentionDays())
         if (build.startTimeMs < cutoff) return false
         builds.save(build)
         return true
@@ -120,6 +124,7 @@ private class LocalBuildProcessingMode(
 private class RemoteBuildProcessingMode(
     private val source: BuildSource,
     private val builds: BuildWriter,
+    private val retentionPolicy: RetentionPolicy,
     private val retentionDays: () -> Long,
     private val clock: () -> Long,
 ) : BuildProcessingMode {
@@ -142,7 +147,7 @@ private class RemoteBuildProcessingMode(
     }
 
     private fun saveIfWithinRetention(build: Build): Boolean {
-        val cutoff = RetentionPolicy.DEFAULT.cutoffEpochMs(clock(), retentionDays())
+        val cutoff = retentionPolicy.cutoffEpochMs(clock(), retentionDays())
         if (build.startTimeMs < cutoff) return false
         builds.save(build)
         return true

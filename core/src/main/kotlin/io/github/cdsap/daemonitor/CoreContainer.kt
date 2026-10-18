@@ -6,6 +6,7 @@ import io.github.cdsap.daemonitor.application.ProcessSource
 import io.github.cdsap.daemonitor.collect.DaemonLogWatcher
 import io.github.cdsap.daemonitor.collect.ProcessCollector
 import io.github.cdsap.daemonitor.config.MonitoringConfig
+import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.domain.BuildAggregator
 import io.github.cdsap.daemonitor.persistence.RetentionRepository
 import io.github.cdsap.daemonitor.platform.AppDirectories
@@ -43,6 +44,7 @@ class CoreContainer(
         builds = database,
         samples = database,
         mode = mode,
+        retentionPolicy = RetentionPolicy.DEFAULT,
         retentionDays = { settingsStore.load().retentionDays },
         clock = clock,
     )

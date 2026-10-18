@@ -26,6 +26,7 @@ class WatcherRuntime(
     samples: ProcessSampleWriter,
     aggregator: BuildAggregator,
     mode: MonitoringMode = MonitoringMode.Local,
+    retentionPolicy: RetentionPolicy = RetentionPolicy.DEFAULT,
     retentionDays: () -> Long = { RetentionPolicy.DEFAULT.defaultDays },
     clock: () -> Long = System::currentTimeMillis,
 ) {
@@ -37,9 +38,11 @@ class WatcherRuntime(
             builds = builds,
             logSource = logSource,
             aggregator = aggregator,
+            retentionPolicy = retentionPolicy,
             retentionDays = retentionDays,
             clock = clock,
         ),
+        retentionPolicy = retentionPolicy,
         clock = clock,
     )
 

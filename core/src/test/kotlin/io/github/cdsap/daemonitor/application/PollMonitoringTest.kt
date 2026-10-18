@@ -62,6 +62,8 @@ class PollMonitoringTest {
             builds = RecordingBuildWriter(),
             samples = RecordingSampleWriter(),
             aggregator = correlator,
+            retentionPolicy = RetentionPolicy.DEFAULT,
+            retentionDays = { RetentionPolicy.DEFAULT.defaultDays },
         )
 
         monitoring.pollOnce()
@@ -91,10 +93,12 @@ class PollMonitoringTest {
             processSource = processSource,
             logSource = logSource,
             samples = samples,
+            retentionPolicy = RetentionPolicy.DEFAULT,
             buildProcessingMode = MonitoringMode.Local.buildProcessingMode(
                 builds = builds,
                 logSource = logSource,
                 aggregator = BuildAggregator(),
+                retentionPolicy = RetentionPolicy.DEFAULT,
                 retentionDays = { RetentionPolicy.DEFAULT.defaultDays },
                 clock = { 5_000 },
             ),
@@ -114,10 +118,10 @@ class PollMonitoringTest {
     }
 
     @Test
-    fun `log replay does not persist builds older than retention`() {
+    fun `custom retention policy skips stale builds`() {
         val day = RetentionPolicy.MILLIS_PER_DAY
         val now = 100L * day
-        val oldStart = now - 8 * day
+        val oldStart = now - 3 * day
         val log = DaemonLog(pid = 42, gradleVersion = "8.14.3", path = Path.of("/tmp/daemon-42.out.log"))
         val logSource = FakeDaemonLogSource(
             logs = listOf(log),
@@ -137,6 +141,12 @@ class PollMonitoringTest {
             builds = builds,
             samples = RecordingSampleWriter(),
             aggregator = BuildAggregator(),
+            retentionPolicy = RetentionPolicy(
+                defaultDays = 7,
+                minDays = 1,
+                maxDays = 2,
+                presets = listOf(1, 2),
+            ),
             retentionDays = { 7 },
             clock = { now },
         )
@@ -160,6 +170,8 @@ class PollMonitoringTest {
             builds = RecordingBuildWriter(),
             samples = RecordingSampleWriter(),
             aggregator = BuildAggregator(),
+            retentionPolicy = RetentionPolicy.DEFAULT,
+            retentionDays = { RetentionPolicy.DEFAULT.defaultDays },
         )
 
         assertEquals(DaemonLogTailResult.Lines(listOf("line-a", "line-b")), monitoring.tailFor(listOf(log), pid = 7))
@@ -180,6 +192,8 @@ class PollMonitoringTest {
             builds = RecordingBuildWriter(),
             samples = RecordingSampleWriter(),
             aggregator = BuildAggregator(),
+            retentionPolicy = RetentionPolicy.DEFAULT,
+            retentionDays = { RetentionPolicy.DEFAULT.defaultDays },
         )
 
         assertEquals(
@@ -216,6 +230,8 @@ class PollMonitoringTest {
             builds = builds,
             samples = RecordingSampleWriter(),
             aggregator = BuildAggregator(),
+            retentionPolicy = RetentionPolicy.DEFAULT,
+            retentionDays = { RetentionPolicy.DEFAULT.defaultDays },
             clock = { 5_000 },
         )
 
@@ -246,6 +262,8 @@ class PollMonitoringTest {
             builds = builds,
             samples = RecordingSampleWriter(),
             aggregator = BuildAggregator(),
+            retentionPolicy = RetentionPolicy.DEFAULT,
+            retentionDays = { RetentionPolicy.DEFAULT.defaultDays },
             clock = { 5_000 },
         )
 
@@ -302,12 +320,14 @@ class PollMonitoringTest {
             processSource = FakeProcessSource(listOf(gradleDaemon(pid = 42))),
             logSource = logSource,
             samples = RecordingSampleWriter(),
+            retentionPolicy = RetentionPolicy.DEFAULT,
             buildProcessingMode = MonitoringMode.RemoteBuilds(object : BuildSource {
                 override fun recentBuilds(limit: Int) = listOf(remote)
             }).buildProcessingMode(
                 builds = builds,
                 logSource = logSource,
                 aggregator = BuildAggregator(),
+                retentionPolicy = RetentionPolicy.DEFAULT,
                 retentionDays = { RetentionPolicy.DEFAULT.defaultDays },
                 clock = { 5_000 },
             ),
@@ -334,10 +354,12 @@ class PollMonitoringTest {
             processSource = FakeProcessSource(listOf(gradleDaemon(pid = 7))),
             logSource = logSource,
             samples = samples,
+            retentionPolicy = RetentionPolicy.DEFAULT,
             buildProcessingMode = MonitoringMode.SharedCoreOwnedPersistence.buildProcessingMode(
                 builds = builds,
                 logSource = logSource,
                 aggregator = BuildAggregator(),
+                retentionPolicy = RetentionPolicy.DEFAULT,
                 retentionDays = { RetentionPolicy.DEFAULT.defaultDays },
                 clock = { 5_000 },
             ),
