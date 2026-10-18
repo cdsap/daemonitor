@@ -16,6 +16,7 @@ class PollMonitoring(
     private val logSource: DaemonLogSource,
     private val samples: ProcessSampleWriter,
     private val buildProcessingMode: BuildProcessingMode,
+    private val retentionPolicy: RetentionPolicy,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
     /** Compatibility constructor for direct application-layer callers. */
@@ -26,7 +27,8 @@ class PollMonitoring(
         samples: ProcessSampleWriter,
         aggregator: BuildCorrelator,
         mode: MonitoringMode = MonitoringMode.Local,
-        retentionDays: () -> Long = { RetentionPolicy.DEFAULT.defaultDays },
+        retentionPolicy: RetentionPolicy,
+        retentionDays: () -> Long = { retentionPolicy.defaultDays },
         clock: () -> Long = System::currentTimeMillis,
     ) : this(
         processSource = processSource,
@@ -36,9 +38,11 @@ class PollMonitoring(
             builds = builds,
             logSource = logSource,
             aggregator = aggregator,
+            retentionPolicy = retentionPolicy,
             retentionDays = retentionDays,
             clock = clock,
         ),
+        retentionPolicy = retentionPolicy,
         clock = clock,
     )
 
