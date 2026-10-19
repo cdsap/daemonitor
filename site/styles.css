@@ -506,6 +506,16 @@ code {
   color: var(--color-ink-2);
 }
 
+.plain-list {
+  margin: var(--space-sm) 0 0;
+  padding-left: 1.2rem;
+  color: var(--color-ink);
+}
+
+.plain-list li + li {
+  margin-top: var(--space-2xs);
+}
+
 .privacy-layout,
 .download-layout {
   display: grid;

@@ -159,13 +159,22 @@
             <h3>CLI</h3>
             <p>
               Bubble Tea TUI over SSH or on headless machines. Native Go binary; starts
-              <code>daemonitor-cored</code> when needed. No JDK required.
+              <code>daemonitor-cored</code> when needed and does not require a JDK. The desktop
+              app remains a separate packaged JVM application. Press <code>v</code> to group
+              descendant workers under their daemon; <code>h</code>/<code>l</code> fold or expand
+              a group while keeping individual process rows available.
             </p>
+            <ul class="plain-list">
+              <li>Live process table with RSS, heap, CPU, and uptime</li>
+              <li>Grouped daemon hierarchy with fold/expand controls</li>
+              <li>Shares the desktop app’s local database and retention settings</li>
+              <li>Install with Homebrew, or grab the release zip</li>
+            </ul>
             <pre class="install-snippet" tabindex="0"><code>brew tap cdsap/tap
 brew install daemonitor-cli
 daemonitor-cli</code></pre>
             <p class="feature-footnote">
-              Flag reference: <a href="cli.html">CLI options</a>.
+              No JDK required. Flag reference: <a href="cli.html">CLI options</a>.
             </p>
             <figure class="cli-shot">
               <img
@@ -173,7 +182,7 @@ daemonitor-cli</code></pre>
                 src="assets/cli-monitor.png"
                 width="860"
                 height="466"
-                alt="Daemonitor native CLI showing Gradle and Kotlin process rows"
+                alt="Daemonitor CLI terminal showing Gradle and Kotlin process rows"
                 loading="lazy"
               >
             </figure>
