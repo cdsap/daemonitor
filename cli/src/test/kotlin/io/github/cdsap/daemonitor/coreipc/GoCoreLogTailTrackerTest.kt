@@ -1,5 +1,6 @@
 package io.github.cdsap.daemonitor.coreipc
 
+import io.github.cdsap.daemonitor.application.DaemonLogLine
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -9,7 +10,7 @@ class GoCoreLogTailTrackerTest {
         val tracker = GoCoreLogTailTracker()
 
         assertEquals(
-            listOf("a", "b"),
+            listOf(DaemonLogLine("a"), DaemonLogLine("b")),
             tracker.newLinesSince(pid = 42, current = listOf("a", "b")),
         )
     }
@@ -20,7 +21,7 @@ class GoCoreLogTailTrackerTest {
         tracker.newLinesSince(pid = 42, current = listOf("a", "b"))
 
         assertEquals(
-            listOf("c"),
+            listOf(DaemonLogLine("c")),
             tracker.newLinesSince(pid = 42, current = listOf("a", "b", "c")),
         )
     }
@@ -31,7 +32,7 @@ class GoCoreLogTailTrackerTest {
         tracker.newLinesSince(pid = 42, current = listOf("a", "b", "c"))
 
         assertEquals(
-            listOf("d"),
+            listOf(DaemonLogLine("d")),
             tracker.newLinesSince(pid = 42, current = listOf("b", "c", "d")),
         )
     }
@@ -42,6 +43,6 @@ class GoCoreLogTailTrackerTest {
         tracker.newLinesSince(pid = 42, current = listOf("a", "b"))
 
         assertEquals(emptyList(), tracker.newLinesSince(pid = 42, current = emptyList()))
-        assertEquals(listOf("c"), tracker.newLinesSince(pid = 42, current = listOf("c")))
+        assertEquals(listOf(DaemonLogLine("c")), tracker.newLinesSince(pid = 42, current = listOf("c")))
     }
 }

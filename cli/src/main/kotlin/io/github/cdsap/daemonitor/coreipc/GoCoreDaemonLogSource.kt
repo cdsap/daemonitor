@@ -31,7 +31,7 @@ class GoCoreDaemonLogSource internal constructor(
 
     override fun readNewLines(log: DaemonLog): List<DaemonLogLine> {
         val current = runCatching { fetchTailLines(log.pid) }.getOrElse { return emptyList() }
-        return tailTracker.newLinesSince(log.pid, current).map(::DaemonLogLine)
+        return tailTracker.newLinesSince(log.pid, current)
     }
 
     override fun tailFor(log: DaemonLog): List<String> = fetchTailLines(log.pid)
