@@ -59,33 +59,33 @@ class PublicWebsiteTest {
             "property=\"og:description\"",
             "property=\"og:image\"",
             "rel=\"icon\"",
-            "Activity Monitor for your Gradle and Kotlin daemons",
+            "Activity Monitor for Gradle and Kotlin daemons",
             "local Activity Monitor for Gradle and Kotlin daemons",
-            "Download Daemonitor",
-            "View on GitHub",
+            "Download desktop app",
+            "Install CLI",
             "macOS · Windows · Linux",
             "id=\"surfaces\"",
-            "Choose the view that fits your machine.",
-            "Download desktop app",
-            "Install the CLI",
-            "surface-pane-desktop",
-            "surface-pane-cli",
+            "Desktop app and CLI",
+            "surface-block",
             "id=\"features\"",
             "Live Monitor",
+            "Memory timeline",
             "id=\"cli\"",
             "CLI",
             "brew install daemonitor-cli",
             "No JDK required",
-            "native Go binary",
+            "Native Go binary",
             "Bubble Tea TUI",
             "Grouped daemon hierarchy with fold/expand controls",
             "Press <code>v</code> to group",
             "daemonitor-cored",
             "separate packaged JVM application",
             "Build History",
-            "MCP / Agent workflows",
+            "id=\"mcp\"",
+            "MCP",
             "id=\"privacy\"",
-            "Your build data stays on your machine.",
+            "Privacy",
+            "No telemetry",
             "id=\"download\"",
             "https://github.com/cdsap/daemonitor/releases/latest",
             "assets/live-monitor.png",
@@ -93,10 +93,20 @@ class PublicWebsiteTest {
             "assets/build-history.png",
             "assets/cli-monitor.png",
             "href=\"cli.html\"",
-            "MIT License",
+            "MIT",
+            "fonts.googleapis.com",
         ).forEach { required ->
             assertTrue(indexHtml.contains(required), "index.html should include: $required")
         }
+
+        assertFalse(
+            indexHtml.contains("feature-kicker"),
+            "Landing page should not use uppercase marketing kickers",
+        )
+        assertFalse(
+            indexHtml.contains("Choose the view that fits your machine."),
+            "Landing page should avoid punchy period-headings",
+        )
 
         assertTrue(
             indexHtml.contains("alt=\"Daemonitor Live Monitor"),
@@ -216,6 +226,8 @@ class PublicWebsiteTest {
     fun `site supports themes reduced motion and avoids third-party tracking`() {
         assertTrue(stylesCss.contains("prefers-color-scheme"))
         assertTrue(stylesCss.contains("prefers-reduced-motion"))
+        assertTrue(stylesCss.contains("IBM Plex Sans"))
+        assertTrue(stylesCss.contains("IBM Plex Mono"))
         assertTrue(stylesCss.contains("system-ui"))
         assertTrue(stylesCss.contains(".options-table"))
 

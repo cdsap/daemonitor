@@ -1,0 +1,35 @@
+/* Daemonitor site tokens — portable extract from styles.css */
+:root {
+  --color-paper: #e9efea;
+  --color-paper-2: #f7faf8;
+  --color-paper-3: #dfe7e1;
+  --color-ink: #111714;
+  --color-ink-2: #4f5d55;
+  --color-rule: #b8c4bd;
+  --color-rule-soft: #d3ddd6;
+  --color-accent: #28735f;
+  --color-accent-strong: #00695c;
+  --color-accent-soft: #d9eeea;
+  --color-accent-ink: #ffffff;
+  --color-focus: #2c5d9b;
+
+  --font-display: "IBM Plex Sans", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  --space-3xs: 0.25rem;
+  --space-2xs: 0.5rem;
+  --space-xs: 0.75rem;
+  --space-sm: 1rem;
+  --space-md: 1.5rem;
+  --space-lg: 2rem;
+  --space-xl: 3rem;
+  --space-2xl: 4.5rem;
+  --space-3xl: 6rem;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-short: 180ms;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+}

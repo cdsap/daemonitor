@@ -17,6 +17,9 @@
 
   <link rel="icon" type="image/png" href="assets/favicon.png">
   <link rel="apple-touch-icon" href="assets/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -29,10 +32,8 @@
         <span>Daemonitor</span>
       </a>
       <nav class="site-nav" aria-label="Primary">
-        <a href="index.html#features">Features</a>
-        <a href="index.html#cli">CLI</a>
-        <a href="cli.html" aria-current="page">CLI options</a>
-        <a href="https://github.com/cdsap/daemonitor" rel="noopener noreferrer">GitHub</a>
+        <a class="nav-quiet" href="cli.html" aria-current="page">CLI options</a>
+        <a class="nav-quiet" href="https://github.com/cdsap/daemonitor" rel="noopener noreferrer">GitHub</a>
         <a class="button button-primary button-compact" href="index.html#download">Download</a>
       </nav>
     </div>
@@ -41,7 +42,6 @@
   <main id="main">
     <section class="section docs-hero" aria-labelledby="cli-options-heading">
       <div class="section-inner narrow">
-        <p class="feature-kicker">Reference</p>
         <h1 id="cli-options-heading">CLI options</h1>
         <p class="section-lede">
           <code>daemonitor-cli</code> is a native Go thin client for <code>daemonitor-cored</code>, the
@@ -271,20 +271,19 @@ daemonitor-cli ps --watch --poll-interval 5s --until 1m</code></pre>
   </main>
 
   <footer class="site-footer">
-    <div class="footer-inner">
-      <p class="footer-brand">
-        <img src="assets/icon-192.png" width="28" height="28" alt="" aria-hidden="true">
-        <span>Daemonitor</span>
-      </p>
-      <p class="footer-blurb">
-        An open-source developer tool: a local Activity Monitor for Gradle daemons, wrappers,
-        Kotlin daemons, and Gradle workers.
-      </p>
-      <nav class="footer-nav" aria-label="Footer">
-        <a href="https://github.com/cdsap/daemonitor" rel="noopener noreferrer">GitHub repository</a>
+    <div class="footer-inner footer-line">
+      <p>
+        <span class="footer-brand-inline">Daemonitor</span>
+        · local Activity Monitor for Gradle and Kotlin daemons
+        ·
+        <a href="index.html">Home</a>
+        ·
+        <a href="https://github.com/cdsap/daemonitor" rel="noopener noreferrer">GitHub</a>
+        ·
         <a href="https://github.com/cdsap/daemonitor/releases" rel="noopener noreferrer">Releases</a>
-        <a href="https://github.com/cdsap/daemonitor/blob/main/LICENSE" rel="noopener noreferrer">MIT License</a>
-      </nav>
+        ·
+        <a href="https://github.com/cdsap/daemonitor/blob/main/LICENSE" rel="noopener noreferrer">MIT</a>
+      </p>
     </div>
   </footer>
 
