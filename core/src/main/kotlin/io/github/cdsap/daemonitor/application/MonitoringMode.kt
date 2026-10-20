@@ -48,29 +48,44 @@ internal fun MonitoringMode.buildProcessingMode(
 ): BuildProcessingMode = when (this) {
     MonitoringMode.Local -> LocalBuildProcessingMode(
         logSource = logSource,
-        builds = builds,
+        buildSaver = RetentionAwareBuildSaver(
+            builds = builds,
+            retentionPolicy = retentionPolicy,
+            retentionDays = retentionDays,
+            clock = clock,
+        ),
         aggregator = aggregator,
-        retentionPolicy = retentionPolicy,
-        retentionDays = retentionDays,
-        clock = clock,
     )
     is MonitoringMode.RemoteBuilds -> RemoteBuildProcessingMode(
         source = source,
-        builds = builds,
-        retentionPolicy = retentionPolicy,
-        retentionDays = retentionDays,
-        clock = clock,
+        buildSaver = RetentionAwareBuildSaver(
+            builds = builds,
+            retentionPolicy = retentionPolicy,
+            retentionDays = retentionDays,
+            clock = clock,
+        ),
     )
     MonitoringMode.SharedCoreOwnedPersistence -> CoreOwnedBuildProcessingMode
 }
 
-private class LocalBuildProcessingMode(
-    private val logSource: DaemonLogSource,
+private class RetentionAwareBuildSaver(
     private val builds: BuildWriter,
-    private val aggregator: BuildCorrelator,
     private val retentionPolicy: RetentionPolicy,
     private val retentionDays: () -> Long,
     private val clock: () -> Long,
+) {
+    fun save(build: Build): Boolean {
+        val cutoff = retentionPolicy.cutoffEpochMs(clock(), retentionDays())
+        if (build.startTimeMs < cutoff) return false
+        builds.save(build)
+        return true
+    }
+}
+
+private class LocalBuildProcessingMode(
+    private val logSource: DaemonLogSource,
+    private val buildSaver: RetentionAwareBuildSaver,
+    private val aggregator: BuildCorrelator,
 ) : BuildProcessingMode {
     override val persistsSamples = true
     private var knownDaemonPids = emptySet<Long>()
@@ -93,40 +108,30 @@ private class LocalBuildProcessingMode(
                 if (lines.isNotEmpty()) {
                     lines.flatMap { line -> aggregator.onLogLine(log.pid, line.text, line.event) }
                         .forEach { build ->
-                        if (saveIfWithinRetention(build)) inserted = true
+                        if (buildSaver.save(build)) inserted = true
                     }
                 }
             }
             if (log.pid !in activeDaemonPids) {
                 aggregator.onDaemonGone(log.pid)?.let { build ->
-                    if (saveIfWithinRetention(build)) inserted = true
+                    if (buildSaver.save(build)) inserted = true
                 }
             }
         }
 
         (knownDaemonPids - activeDaemonPids).forEach { gonePid ->
             aggregator.onDaemonGone(gonePid)?.let { build ->
-                if (saveIfWithinRetention(build)) inserted = true
+                if (buildSaver.save(build)) inserted = true
             }
         }
         knownDaemonPids = activeDaemonPids
         return inserted
     }
-
-    private fun saveIfWithinRetention(build: Build): Boolean {
-        val cutoff = retentionPolicy.cutoffEpochMs(clock(), retentionDays())
-        if (build.startTimeMs < cutoff) return false
-        builds.save(build)
-        return true
-    }
 }
 
 private class RemoteBuildProcessingMode(
     private val source: BuildSource,
-    private val builds: BuildWriter,
-    private val retentionPolicy: RetentionPolicy,
-    private val retentionDays: () -> Long,
-    private val clock: () -> Long,
+    private val buildSaver: RetentionAwareBuildSaver,
 ) : BuildProcessingMode {
     override val persistsSamples = true
     private var lastRemoteBuildFingerprint = emptyMap<String, String>()
@@ -138,19 +143,12 @@ private class RemoteBuildProcessingMode(
     ): Boolean {
         val fingerprint = linkedMapOf<String, String>()
         for (build in source.recentBuilds()) {
-            if (!saveIfWithinRetention(build)) continue
+            if (!buildSaver.save(build)) continue
             fingerprint[build.buildId] = build.finalStatus.name
         }
         val changed = fingerprint != lastRemoteBuildFingerprint
         lastRemoteBuildFingerprint = fingerprint
         return changed
-    }
-
-    private fun saveIfWithinRetention(build: Build): Boolean {
-        val cutoff = retentionPolicy.cutoffEpochMs(clock(), retentionDays())
-        if (build.startTimeMs < cutoff) return false
-        builds.save(build)
-        return true
     }
 }
 

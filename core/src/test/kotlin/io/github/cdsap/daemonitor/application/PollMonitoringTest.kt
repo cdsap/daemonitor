@@ -287,6 +287,8 @@ class PollMonitoringTest {
 
     @Test
     fun `pollOnce imports remote builds and skips log re-aggregation`() {
+        val day = RetentionPolicy.MILLIS_PER_DAY
+        val now = 100L * day
         val log = DaemonLog(pid = 42, gradleVersion = "8.14.3", path = Path.of("/tmp/daemon-42.out.log"))
         val logSource = FakeDaemonLogSource(
             logs = listOf(log),
@@ -305,8 +307,8 @@ class PollMonitoringTest {
             commandLine = null,
             workingDirectory = "/project",
             projectPath = "/project",
-            startTimeMs = 1_000,
-            endTimeMs = 2_000,
+            startTimeMs = now - day,
+            endTimeMs = now - day + 1_000,
             durationSeconds = 1.0,
             peakMemoryMb = 256,
             avgMemoryMb = 200,
@@ -315,6 +317,11 @@ class PollMonitoringTest {
             finalStatus = FinalStatus.SUCCESS,
             logSnippet = "BUILD SUCCESSFUL",
         )
+        val stale = remote.copy(
+            buildId = "stale-build",
+            startTimeMs = now - 3 * day,
+            endTimeMs = now - 3 * day + 1_000,
+        )
         val builds = RecordingBuildWriter()
         val monitoring = PollMonitoring(
             processSource = FakeProcessSource(listOf(gradleDaemon(pid = 42))),
@@ -322,16 +329,21 @@ class PollMonitoringTest {
             samples = RecordingSampleWriter(),
             retentionPolicy = RetentionPolicy.DEFAULT,
             buildProcessingMode = MonitoringMode.RemoteBuilds(object : BuildSource {
-                override fun recentBuilds(limit: Int) = listOf(remote)
+                override fun recentBuilds(limit: Int) = listOf(remote, stale)
             }).buildProcessingMode(
                 builds = builds,
                 logSource = logSource,
                 aggregator = BuildAggregator(),
-                retentionPolicy = RetentionPolicy.DEFAULT,
-                retentionDays = { RetentionPolicy.DEFAULT.defaultDays },
-                clock = { 5_000 },
+                retentionPolicy = RetentionPolicy(
+                    defaultDays = 7,
+                    minDays = 1,
+                    maxDays = 2,
+                    presets = listOf(1, 2),
+                ),
+                retentionDays = { 7 },
+                clock = { now },
             ),
-            clock = { 5_000 },
+            clock = { now },
         )
 
         val first = monitoring.pollOnce()
