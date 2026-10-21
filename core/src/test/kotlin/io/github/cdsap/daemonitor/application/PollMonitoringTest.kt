@@ -96,7 +96,6 @@ class PollMonitoringTest {
             retentionPolicy = RetentionPolicy.DEFAULT,
             buildProcessingMode = MonitoringMode.Local.buildProcessingMode(
                 builds = builds,
-                logSource = logSource,
                 aggregator = BuildAggregator(),
                 retentionPolicy = RetentionPolicy.DEFAULT,
                 retentionDays = { RetentionPolicy.DEFAULT.defaultDays },
@@ -332,7 +331,6 @@ class PollMonitoringTest {
                 override fun recentBuilds(limit: Int) = listOf(remote, stale)
             }).buildProcessingMode(
                 builds = builds,
-                logSource = logSource,
                 aggregator = BuildAggregator(),
                 retentionPolicy = RetentionPolicy(
                     defaultDays = 7,
@@ -369,7 +367,6 @@ class PollMonitoringTest {
             retentionPolicy = RetentionPolicy.DEFAULT,
             buildProcessingMode = MonitoringMode.SharedCoreOwnedPersistence.buildProcessingMode(
                 builds = builds,
-                logSource = logSource,
                 aggregator = BuildAggregator(),
                 retentionPolicy = RetentionPolicy.DEFAULT,
                 retentionDays = { RetentionPolicy.DEFAULT.defaultDays },

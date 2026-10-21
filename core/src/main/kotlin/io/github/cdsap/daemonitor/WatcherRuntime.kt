@@ -36,7 +36,6 @@ class WatcherRuntime(
         samples = samples,
         buildProcessingMode = mode.buildProcessingMode(
             builds = builds,
-            logSource = logSource,
             aggregator = aggregator,
             retentionPolicy = retentionPolicy,
             retentionDays = retentionDays,
