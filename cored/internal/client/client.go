@@ -54,6 +54,13 @@ func (c *Client) Capabilities(ctx context.Context) (model.Capabilities, error) {
 	return caps, err
 }
 
+// Self fetches /v1/self collector overhead metrics.
+func (c *Client) Self(ctx context.Context) (model.SelfMetrics, error) {
+	var self model.SelfMetrics
+	err := c.getJSON(ctx, "/v1/self", &self)
+	return self, err
+}
+
 // Processes fetches /v1/processes.
 func (c *Client) Processes(ctx context.Context) (model.Snapshot, error) {
 	var snap model.Snapshot
