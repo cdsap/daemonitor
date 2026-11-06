@@ -47,6 +47,11 @@ Go lists every discovered log, but only continuously tails **active** `GRADLE_DA
   writes when health `db_path` matches `--db`. See [`sqlite-packaging.md`](sqlite-packaging.md).
   Separate DBs still HTTP-copy builds.
 
+## Windows IPC
+
+Collector ↔ CLI on Windows uses named pipes (not Unix sockets). See
+[`windows-ipc.md`](windows-ipc.md).
+
 ## Dual-run check
 
 Procedure, comparison checklist, and cutover criteria: [`dual-run.md`](dual-run.md).

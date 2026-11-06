@@ -13,6 +13,7 @@ import (
 
 	"github.com/cdsap/daemonitor/cored/internal/api"
 	"github.com/cdsap/daemonitor/cored/internal/builds"
+	"github.com/cdsap/daemonitor/cored/internal/ipc"
 	"github.com/cdsap/daemonitor/cored/internal/model"
 )
 
@@ -39,8 +40,7 @@ func TestServerHealthAndProcessesOverUnixSocket(t *testing.T) {
 	client := &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				var d net.Dialer
-				return d.DialContext(ctx, "unix", socket)
+				return ipc.Default.Dial(ctx, socket)
 			},
 		},
 		Timeout: 3 * time.Second,
@@ -118,8 +118,7 @@ func TestBuildsEndpointFiltersByDaemonAndRejectsInvalidIdentifiers(t *testing.T)
 	go func() { errCh <- srv.Run(ctx) }()
 	client := &http.Client{
 		Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			var d net.Dialer
-			return d.DialContext(ctx, "unix", socket)
+			return ipc.Default.Dial(ctx, socket)
 		}},
 		Timeout: 3 * time.Second,
 	}
@@ -214,7 +213,7 @@ func TestBuildsPIDQueryUsesCoreResolvedDaemonIdentity(t *testing.T) {
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.Run(ctx) }()
 	client := &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-		return (&net.Dialer{}).DialContext(ctx, "unix", socket)
+		return ipc.Default.Dial(ctx, socket)
 	}}, Timeout: 3 * time.Second}
 	deadline := time.Now().Add(3 * time.Second)
 	for {

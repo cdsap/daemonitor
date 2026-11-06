@@ -1,4 +1,4 @@
-// Package client is a thin Unix-socket HTTP client for daemonitor-cored.
+// Package client is a thin local-IPC HTTP client for daemonitor-cored.
 package client
 
 import (
@@ -12,27 +12,27 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/cdsap/daemonitor/cored/internal/ipc"
 	"github.com/cdsap/daemonitor/cored/internal/logs"
 	"github.com/cdsap/daemonitor/cored/internal/model"
 )
 
 const defaultTimeout = 3 * time.Second
 
-// Client talks to daemonitor-cored over a Unix domain socket.
+// Client talks to daemonitor-cored over local IPC (Unix socket or Windows named pipe).
 type Client struct {
 	Socket string
 	HTTP   *http.Client
 }
 
-// New returns a client for the given socket path.
+// New returns a client for the given IPC endpoint (--socket path or named pipe).
 func New(socket string) *Client {
 	return &Client{
 		Socket: socket,
 		HTTP: &http.Client{
 			Transport: &http.Transport{
 				DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-					var d net.Dialer
-					return d.DialContext(ctx, "unix", socket)
+					return ipc.Default.Dial(ctx, socket)
 				},
 			},
 			Timeout: defaultTimeout,

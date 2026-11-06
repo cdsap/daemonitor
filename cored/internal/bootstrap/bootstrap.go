@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cdsap/daemonitor/cored/internal/client"
+	"github.com/cdsap/daemonitor/cored/internal/ipc"
 	"github.com/cdsap/daemonitor/cored/internal/store"
 )
 
@@ -74,8 +75,10 @@ func Connect(ctx context.Context, opts Options) (Result, error) {
 		return Result{}, connectionError(socket, "daemonitor-cored binary not found beside CLI or on PATH")
 	}
 
-	if err := os.MkdirAll(filepath.Dir(socket), 0o755); err != nil {
-		return Result{}, connectionError(socket, fmt.Sprintf("cannot create socket directory: %v", err))
+	if ipc.NeedsEndpointDir(socket) {
+		if err := os.MkdirAll(filepath.Dir(socket), 0o755); err != nil {
+			return Result{}, connectionError(socket, fmt.Sprintf("cannot create socket directory: %v", err))
+		}
 	}
 
 	fmt.Fprintf(stderr, "Starting daemonitor-cored (%s)…\n", binary)

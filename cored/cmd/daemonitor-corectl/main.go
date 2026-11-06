@@ -15,7 +15,7 @@ import (
 
 func main() {
 	defaultSock := store.DefaultSocketPath()
-	socket := flag.String("socket", defaultSock, "Unix domain socket path")
+	socket := flag.String("socket", defaultSock, "Local IPC endpoint (Unix socket path or Windows named pipe)")
 	sinceMin := flag.Int("since-min", 15, "history window in minutes (history command)")
 	limit := flag.Int("limit", 200, "history row limit")
 	flag.Parse()

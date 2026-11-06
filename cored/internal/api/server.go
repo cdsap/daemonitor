@@ -3,15 +3,14 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"net"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/cdsap/daemonitor/cored/internal/builds"
+	"github.com/cdsap/daemonitor/cored/internal/ipc"
 	"github.com/cdsap/daemonitor/cored/internal/logs"
 	"github.com/cdsap/daemonitor/cored/internal/model"
 	"github.com/cdsap/daemonitor/cored/internal/poll"
@@ -21,7 +20,7 @@ import (
 // Version is overridden by release builds with Go's -ldflags -X option.
 var Version = "0.1.0"
 
-// Server exposes a tiny HTTP API over a Unix domain socket.
+// Server exposes a tiny HTTP API over local IPC (Unix socket or Windows named pipe).
 type Server struct {
 	SocketPath string
 	DBPath     string
@@ -66,16 +65,11 @@ func NewServer(socketPath, dbPath string, interval, retention time.Duration, gra
 func (s *Server) Run(ctx context.Context) error {
 	defer s.Store.Close()
 
-	_ = os.Remove(s.SocketPath)
-
-	ln, err := net.Listen("unix", s.SocketPath)
+	ln, err := ipc.Default.Listen(s.SocketPath)
 	if err != nil {
 		return err
 	}
 	defer ln.Close()
-	defer os.Remove(s.SocketPath)
-
-	_ = os.Chmod(s.SocketPath, 0o600)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/health", s.handleHealth)
