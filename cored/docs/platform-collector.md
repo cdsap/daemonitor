@@ -26,6 +26,19 @@ Optional metrics carry an availability state. Unavailable values serialize as JS
 
 `GET /v1/capabilities` returns the current support matrix (`schema_version: 1`).
 
-## Cutover status
+## Process I/O semantics
 
-This first slice preserves existing gopsutil process metrics while exposing capability metadata for platform-specific fields (physical footprint, PSS, private commit, disk I/O, handles) that follow-up collectors will fill in.
+The I/O byte counters are cumulative and intentionally distinguish logical
+transfer from storage transfer:
+
+- Linux reads `rchar`/`wchar` as logical bytes and `read_bytes`/`write_bytes`
+  as storage bytes from `/proc/<pid>/io`.
+- macOS publishes only the storage counters exposed by `proc_pid_rusage`.
+  Generic gopsutil zero values are not treated as logical-I/O evidence.
+- Windows maps `GetProcessIoCounters` transfer bytes and operation counts to
+  the logical family. Storage counters remain null, and the process count is
+  named `handles_count`, not an open-file-descriptor count.
+
+Unavailable platform fields serialize as JSON `null`. Any future interval
+throughput must be computed only from two valid, monotonic cumulative samples;
+the first sample is therefore rate-null.
