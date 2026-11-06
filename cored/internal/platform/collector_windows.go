@@ -10,7 +10,7 @@ type windowsCollector struct{}
 func New() PlatformCollector { return windowsCollector{} }
 
 func (windowsCollector) CollectProcess(ctx context.Context, process ProcessIdentity) ProcessPlatformMetrics {
-	return collectProcessGopsutil(ctx, process)
+	return normalizeWindowsProcessMetrics(collectProcessGopsutil(ctx, process))
 }
 
 func (windowsCollector) CollectHost(ctx context.Context) HostMetrics {
@@ -21,8 +21,8 @@ func (windowsCollector) Capabilities() []MetricCapability {
 	caps := baseCapabilities()
 	setCapability(caps, "process.memory.private_committed_bytes", NotCollected, "GetProcessMemoryInfo", "")
 	setCapability(caps, "process.memory.peak_resident_bytes", NotCollected, "GetProcessMemoryInfo", "")
-	setCapability(caps, "process.handles.count", NotCollected, "GetProcessHandleCount",
-		"Windows handle count (not POSIX FDs)")
+	setCapability(caps, "process.handles.count", Available, sourceGopsutil,
+		"Windows handle count via gopsutil NumFDs (not POSIX FDs; native GetProcessHandleCount pending)")
 	setCapability(caps, "process.open_descriptors.count", Unsupported, "",
 		"POSIX open descriptors are not equivalent to Windows handles")
 	setCapability(caps, "process.memory.physical_footprint_bytes", Unsupported, "", "")
