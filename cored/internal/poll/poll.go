@@ -26,14 +26,38 @@ var (
 )
 
 type priorCPU struct {
-	cpuTimeMs   float64
-	wallClockMs int64
+	userSeconds   float64
+	systemSeconds float64
+	totalSeconds  float64
+	wallClock     time.Time
+}
+
+type incarnationKey struct {
+	pid          int32
+	createTimeMs int64
+}
+
+func cpuUsage(now time.Time, cpus int, current priorCPU, prior priorCPU, ok bool) (percent, cores *float64) {
+	if !ok {
+		return nil, nil
+	}
+	wallSeconds := now.Sub(prior.wallClock).Seconds()
+	cpuDelta := current.totalSeconds - prior.totalSeconds
+	if wallSeconds <= 0 || cpuDelta < 0 {
+		return nil, nil
+	}
+	used := cpuDelta / wallSeconds
+	cores = ptrFloat64(used)
+	if cpus > 0 {
+		percent = ptrFloat64(used / float64(cpus) * 100.0)
+	}
+	return percent, cores
 }
 
 // Collector lists Gradle-related processes using OS process APIs (gopsutil ≈ OSHI).
 type Collector struct {
 	mu     sync.Mutex
-	priors map[int32]priorCPU
+	priors map[incarnationKey]priorCPU
 	cpus   int
 	Heap   *heap.Prober
 }
@@ -44,20 +68,22 @@ func NewCollector() *Collector {
 		n = runtime.NumCPU()
 	}
 	return &Collector{
-		priors: make(map[int32]priorCPU),
+		priors: make(map[incarnationKey]priorCPU),
 		cpus:   n,
 		Heap:   heap.NewProber(),
 	}
 }
 
 func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
-	now := time.Now().UnixMilli()
+	nowTime := time.Now()
+	now := nowTime.UnixMilli()
 	pids, err := process.PidsWithContext(ctx)
 	if err != nil {
 		return model.Snapshot{}, err
 	}
 
-	seen := make(map[int32]struct{}, len(pids))
+	seen := make(map[incarnationKey]struct{}, len(pids))
+	seenPIDs := make(map[int32]struct{}, len(pids))
 	out := make([]model.Process, 0, 8)
 	for _, pid := range pids {
 		select {
@@ -78,35 +104,50 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 		if kind == "" {
 			continue
 		}
-		seen[pid] = struct{}{}
-
+		seenPIDs[pid] = struct{}{}
+		startMs := int64(0)
+		if create, err := p.CreateTimeWithContext(ctx); err == nil {
+			startMs = create
+		}
 		rssMB := int64(0)
 		osMetrics := collectOSMetrics(ctx, p)
 		if mem, err := p.MemoryInfoWithContext(ctx); err == nil && mem != nil {
 			rssMB = int64(mem.RSS) / (1024 * 1024)
 		}
 
-		var cpuPct *float64
-		cpuTimeMs := 0.0
+		var cpuPct, cpuCoresUsed *float64
+		var cpuUserSeconds, cpuSystemSeconds, cpuTotalSeconds *float64
 		if times, err := p.TimesWithContext(ctx); err == nil && times != nil {
-			cpuTimeMs = (times.User + times.System) * 1000
-			c.mu.Lock()
-			prior, ok := c.priors[pid]
-			c.mu.Unlock()
-			if ok {
-				wallDelta := now - prior.wallClockMs
-				cpuDelta := cpuTimeMs - prior.cpuTimeMs
-				if wallDelta > 0 && cpuDelta >= 0 && c.cpus > 0 {
-					pct := (cpuDelta / float64(wallDelta)) / float64(c.cpus) * 100.0
-					if pct < 0 {
-						pct = 0
+			userSeconds := times.User
+			systemSeconds := times.System
+			totalSeconds := userSeconds + systemSeconds
+			if startMs > 0 {
+				key := incarnationKey{pid: pid, createTimeMs: startMs}
+				seen[key] = struct{}{}
+				c.mu.Lock()
+				prior, ok := c.priors[key]
+				c.mu.Unlock()
+				monotonic := !ok || (userSeconds >= prior.userSeconds && systemSeconds >= prior.systemSeconds && totalSeconds >= prior.totalSeconds)
+				if monotonic {
+					cpuUserSeconds = ptrFloat64(userSeconds)
+					cpuSystemSeconds = ptrFloat64(systemSeconds)
+					cpuTotalSeconds = ptrFloat64(totalSeconds)
+					cpuPct, cpuCoresUsed = cpuUsage(nowTime, c.cpus, priorCPU{
+						userSeconds: userSeconds, systemSeconds: systemSeconds, totalSeconds: totalSeconds,
+						wallClock: nowTime,
+					}, prior, ok)
+					c.mu.Lock()
+					c.priors[key] = priorCPU{
+						userSeconds: userSeconds, systemSeconds: systemSeconds,
+						totalSeconds: totalSeconds, wallClock: nowTime,
 					}
-					cpuPct = ptrFloat64(pct)
+					c.mu.Unlock()
 				}
+			} else {
+				cpuUserSeconds = ptrFloat64(userSeconds)
+				cpuSystemSeconds = ptrFloat64(systemSeconds)
+				cpuTotalSeconds = ptrFloat64(totalSeconds)
 			}
-			c.mu.Lock()
-			c.priors[pid] = priorCPU{cpuTimeMs: cpuTimeMs, wallClockMs: now}
-			c.mu.Unlock()
 		}
 
 		parentPID := int32(0)
@@ -118,11 +159,6 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 		if statuses, err := p.StatusWithContext(ctx); err == nil && len(statuses) > 0 {
 			status = statuses[0]
 		}
-		startMs := int64(0)
-		if create, err := p.CreateTimeWithContext(ctx); err == nil {
-			startMs = create
-		}
-
 		var cwd *string
 		if dir, err := p.CwdWithContext(ctx); err == nil && dir != "" {
 			cwd = &dir
@@ -155,6 +191,11 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 			InvoluntaryContextSwitches: osMetrics.involuntaryContextSwitches,
 			OpenFileDescriptors:        osMetrics.openFileDescriptors,
 			CPUPercent:                 cpuPct,
+			CPUUserSecondsTotal:        cpuUserSeconds,
+			CPUSystemSecondsTotal:      cpuSystemSeconds,
+			CPUTotalSecondsTotal:       cpuTotalSeconds,
+			CPUCoresUsed:               cpuCoresUsed,
+			LogicalProcessorCount:      ptrInt64(int64(c.cpus)),
 			MaxHeapMB:                  jvm.MaxHeapMB,
 			MinHeapMB:                  jvm.MinHeapMB,
 			GC:                         jvm.GC,
@@ -181,15 +222,15 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 	}
 
 	c.mu.Lock()
-	for pid := range c.priors {
-		if _, ok := seen[pid]; !ok {
-			delete(c.priors, pid)
+	for key := range c.priors {
+		if _, ok := seen[key]; !ok {
+			delete(c.priors, key)
 		}
 	}
 	c.mu.Unlock()
 
 	if c.Heap != nil {
-		c.Heap.EvictMissing(seen)
+		c.Heap.EvictMissing(seenPIDs)
 	}
 
 	return model.Snapshot{SampledAtMs: now, Processes: out}, nil
