@@ -9,7 +9,11 @@ daemonitor-cored. On Windows, collector ↔ CLI IPC uses **named pipes** via
 | OS | Default endpoint | Access control |
 |----|------------------|----------------|
 | macOS / Linux | `$appSupport/daemonitor-core.sock` | file mode `0600` |
-| Windows | `\\.\pipe\daemonitor-core` | pipe SDDL: current user only (`D:P(A;;GA;;;<sid>)`) |
+| Windows | `\\.\pipe\daemonitor-core-<user-sid>` | pipe SDDL: current user only (`D:P(A;;GA;;;<sid>)`) |
+
+The pipe name includes the user SID so a different account cannot squat the
+well-known `\\.\pipe\daemonitor-core` name and intercept CLI dials. Listen still
+applies a current-user ACL. `--socket` may override with any pipe or Unix path.
 
 HTTP `/v1/*` routes are unchanged; only the listener/dialer differs. The `-socket` /
 `--socket` flag accepts either a Unix socket path or a named-pipe path.

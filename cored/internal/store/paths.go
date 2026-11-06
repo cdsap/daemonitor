@@ -23,7 +23,7 @@ func DefaultSocketPath() string {
 
 func defaultSocketPath(goos, appSupport string) string {
 	if goos == "windows" {
-		return ipc.DefaultWindowsPipePath
+		return ipc.DefaultWindowsEndpoint()
 	}
 	return filepath.Join(appSupport, "daemonitor-core.sock")
 }

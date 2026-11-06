@@ -20,8 +20,19 @@ type Transport interface {
 // Default is the OS-native transport.
 var Default Transport = platform{}
 
-// DefaultWindowsPipePath is the named-pipe endpoint used when GOOS=windows.
+// DefaultWindowsPipePath is the legacy well-known pipe name. Prefer
+// WindowsPipePathForUserSID / DefaultWindowsEndpoint so the name is
+// per-user and harder to squat across accounts.
 const DefaultWindowsPipePath = `\\.\pipe\daemonitor-core`
+
+// WindowsPipePathForUserSID returns a per-user named-pipe path.
+func WindowsPipePathForUserSID(sid string) string {
+	safe := strings.NewReplacer(`\`, "-", `/`, "-", " ", "-").Replace(strings.TrimSpace(sid))
+	if safe == "" {
+		return DefaultWindowsPipePath
+	}
+	return `\\.\pipe\daemonitor-core-` + safe
+}
 
 // IsNamedPipe reports whether endpoint is a Windows named-pipe path.
 func IsNamedPipe(endpoint string) bool {
