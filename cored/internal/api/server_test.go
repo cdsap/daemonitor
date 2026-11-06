@@ -71,6 +71,24 @@ func TestServerHealthAndProcessesOverUnixSocket(t *testing.T) {
 		t.Fatalf("health=%+v", health)
 	}
 
+	capResp, err := client.Get("http://daemonitor/v1/capabilities")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer capResp.Body.Close()
+	var caps model.Capabilities
+	if err := json.NewDecoder(capResp.Body).Decode(&caps); err != nil {
+		t.Fatal(err)
+	}
+	if caps.SchemaVersion != 1 || len(caps.Metrics) == 0 {
+		t.Fatalf("capabilities=%+v", caps)
+	}
+	for _, m := range caps.Metrics {
+		if m.Availability == "" {
+			t.Fatalf("metric %s missing availability", m.MetricName)
+		}
+	}
+
 	resp, err := client.Get("http://daemonitor/v1/processes")
 	if err != nil {
 		t.Fatal(err)

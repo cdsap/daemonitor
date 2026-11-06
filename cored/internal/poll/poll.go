@@ -10,6 +10,7 @@ import (
 
 	"github.com/cdsap/daemonitor/cored/internal/heap"
 	"github.com/cdsap/daemonitor/cored/internal/model"
+	"github.com/cdsap/daemonitor/cored/internal/platform"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/process"
 )
@@ -32,10 +33,11 @@ type priorCPU struct {
 
 // Collector lists Gradle-related processes using OS process APIs (gopsutil ≈ OSHI).
 type Collector struct {
-	mu     sync.Mutex
-	priors map[int32]priorCPU
-	cpus   int
-	Heap   *heap.Prober
+	mu       sync.Mutex
+	priors   map[int32]priorCPU
+	cpus     int
+	Heap     *heap.Prober
+	Platform platform.PlatformCollector
 }
 
 func NewCollector() *Collector {
@@ -44,10 +46,27 @@ func NewCollector() *Collector {
 		n = runtime.NumCPU()
 	}
 	return &Collector{
-		priors: make(map[int32]priorCPU),
-		cpus:   n,
-		Heap:   heap.NewProber(),
+		priors:   make(map[int32]priorCPU),
+		cpus:     n,
+		Heap:     heap.NewProber(),
+		Platform: platform.New(),
 	}
+}
+
+// Capabilities returns the OS platform metric support matrix.
+func (c *Collector) Capabilities() []platform.MetricCapability {
+	if c == nil || c.Platform == nil {
+		return nil
+	}
+	return c.Platform.Capabilities()
+}
+
+// HostMetrics returns a host-level sample from the platform adapter.
+func (c *Collector) HostMetrics(ctx context.Context) platform.HostMetrics {
+	if c == nil || c.Platform == nil {
+		return platform.HostMetrics{}
+	}
+	return c.Platform.CollectHost(ctx)
 }
 
 func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
@@ -80,16 +99,31 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 		}
 		seen[pid] = struct{}{}
 
+		startMs := int64(0)
+		if create, err := p.CreateTimeWithContext(ctx); err == nil {
+			startMs = create
+		}
+
+		platMetrics := platform.ProcessPlatformMetrics{}
+		if c.Platform != nil {
+			platMetrics = c.Platform.CollectProcess(ctx, platform.ProcessIdentity{
+				PID:          pid,
+				CreateTimeMs: startMs,
+			})
+			if platMetrics.Identity.CreateTimeMs > 0 {
+				startMs = platMetrics.Identity.CreateTimeMs
+			}
+		}
+		osMetrics := osMetricsFromPlatform(platMetrics)
 		rssMB := int64(0)
-		osMetrics := collectOSMetrics(ctx, p)
-		if mem, err := p.MemoryInfoWithContext(ctx); err == nil && mem != nil {
-			rssMB = int64(mem.RSS) / (1024 * 1024)
+		if platMetrics.ResidentBytes.Value != nil {
+			rssMB = *platMetrics.ResidentBytes.Value / (1024 * 1024)
 		}
 
 		var cpuPct *float64
 		cpuTimeMs := 0.0
-		if times, err := p.TimesWithContext(ctx); err == nil && times != nil {
-			cpuTimeMs = (times.User + times.System) * 1000
+		if platMetrics.CPUTotalSecondsTotal.Value != nil {
+			cpuTimeMs = *platMetrics.CPUTotalSecondsTotal.Value * 1000
 			c.mu.Lock()
 			prior, ok := c.priors[pid]
 			c.mu.Unlock()
@@ -117,10 +151,6 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 		status := "RUNNING"
 		if statuses, err := p.StatusWithContext(ctx); err == nil && len(statuses) > 0 {
 			status = statuses[0]
-		}
-		startMs := int64(0)
-		if create, err := p.CreateTimeWithContext(ctx); err == nil {
-			startMs = create
 		}
 
 		var cwd *string
@@ -208,27 +238,24 @@ type osMetrics struct {
 	openFileDescriptors                                    *int64
 }
 
-func collectOSMetrics(ctx context.Context, p *process.Process) osMetrics {
+func osMetricsFromPlatform(pm platform.ProcessPlatformMetrics) osMetrics {
 	m := osMetrics{}
-	if mem, err := p.MemoryInfoWithContext(ctx); err == nil && mem != nil {
-		m.virtualMemoryMB, m.swapMemoryMB = ptrInt64(int64(mem.VMS)/(1024*1024)), ptrInt64(int64(mem.Swap)/(1024*1024))
+	if pm.VirtualBytes.Value != nil {
+		m.virtualMemoryMB = ptrInt64(*pm.VirtualBytes.Value / (1024 * 1024))
 	}
-	if v, err := p.NumThreadsWithContext(ctx); err == nil {
-		m.threadCount = ptrInt64(int64(v))
+	if pm.SwapBytes.Value != nil {
+		m.swapMemoryMB = ptrInt64(*pm.SwapBytes.Value / (1024 * 1024))
 	}
-	if io, err := p.IOCountersWithContext(ctx); err == nil && io != nil {
-		m.readBytes, m.writeBytes = ptrInt64(int64(io.ReadBytes)), ptrInt64(int64(io.WriteBytes))
-		m.readOperations, m.writeOperations = ptrInt64(int64(io.ReadCount)), ptrInt64(int64(io.WriteCount))
-	}
-	if faults, err := p.PageFaultsWithContext(ctx); err == nil && faults != nil {
-		m.minorPageFaults, m.majorPageFaults = ptrInt64(int64(faults.MinorFaults)), ptrInt64(int64(faults.MajorFaults))
-	}
-	if switches, err := p.NumCtxSwitchesWithContext(ctx); err == nil && switches != nil {
-		m.voluntaryContextSwitches, m.involuntaryContextSwitches = ptrInt64(switches.Voluntary), ptrInt64(switches.Involuntary)
-	}
-	if v, err := p.NumFDsWithContext(ctx); err == nil {
-		m.openFileDescriptors = ptrInt64(int64(v))
-	}
+	m.threadCount = pm.ThreadCount.Value
+	m.readBytes = pm.LogicalReadBytesTotal.Value
+	m.writeBytes = pm.LogicalWriteBytesTotal.Value
+	m.readOperations = pm.ReadOperationsTotal.Value
+	m.writeOperations = pm.WriteOperationsTotal.Value
+	m.minorPageFaults = pm.MinorPageFaultsTotal.Value
+	m.majorPageFaults = pm.MajorPageFaultsTotal.Value
+	m.voluntaryContextSwitches = pm.VoluntaryContextSwitchesTotal.Value
+	m.involuntaryContextSwitches = pm.InvoluntaryContextSwitchesTotal.Value
+	m.openFileDescriptors = pm.OpenDescriptorsCount.Value
 	return m
 }
 
