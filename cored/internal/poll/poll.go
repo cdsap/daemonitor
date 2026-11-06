@@ -92,11 +92,6 @@ func (c *Collector) HostMetrics(ctx context.Context) platform.HostMetrics {
 
 func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 	started := time.Now()
-	defer func() {
-		if c.Observe != nil {
-			c.Observe.ObservePoll(time.Since(started), c.PollInterval)
-		}
-	}()
 
 	now := time.Now().UnixMilli()
 	pids, err := process.PidsWithContext(ctx)
@@ -223,6 +218,11 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 		if ShouldProbeLiveHeap(kind) {
 			jvmJobs = append(jvmJobs, pendingJVM{idx: idx, proc: p, pid: pid, kind: kind, startMs: startMs})
 		}
+	}
+
+	// Poll duration covers OS discovery only so self-telemetry matches probe isolation.
+	if c.Observe != nil {
+		c.Observe.ObservePoll(time.Since(started), c.PollInterval)
 	}
 
 	// Pass 2: bounded concurrent JVM probes. Failures never drop OS rows.
