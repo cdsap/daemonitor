@@ -123,6 +123,14 @@ CREATE TABLE IF NOT EXISTS process_samples (
   rss_memory_mb INTEGER NOT NULL,
 	virtual_memory_mb INTEGER,
 	swap_memory_mb INTEGER,
+	resident_bytes INTEGER,
+	virtual_bytes INTEGER,
+	private_committed_bytes INTEGER,
+	proportional_bytes INTEGER,
+	physical_footprint_bytes INTEGER,
+	swap_bytes INTEGER,
+	peak_resident_bytes INTEGER,
+	proportional_sampled_at_ms INTEGER,
 	thread_count INTEGER,
 	read_bytes INTEGER,
 	write_bytes INTEGER,
@@ -173,6 +181,14 @@ func (s *Store) ensureProcessSamplesAdditiveColumns(cols []string) error {
 	}{
 		{"virtual_memory_mb", `ALTER TABLE process_samples ADD COLUMN virtual_memory_mb INTEGER`},
 		{"swap_memory_mb", `ALTER TABLE process_samples ADD COLUMN swap_memory_mb INTEGER`},
+		{"resident_bytes", `ALTER TABLE process_samples ADD COLUMN resident_bytes INTEGER`},
+		{"virtual_bytes", `ALTER TABLE process_samples ADD COLUMN virtual_bytes INTEGER`},
+		{"private_committed_bytes", `ALTER TABLE process_samples ADD COLUMN private_committed_bytes INTEGER`},
+		{"proportional_bytes", `ALTER TABLE process_samples ADD COLUMN proportional_bytes INTEGER`},
+		{"physical_footprint_bytes", `ALTER TABLE process_samples ADD COLUMN physical_footprint_bytes INTEGER`},
+		{"swap_bytes", `ALTER TABLE process_samples ADD COLUMN swap_bytes INTEGER`},
+		{"peak_resident_bytes", `ALTER TABLE process_samples ADD COLUMN peak_resident_bytes INTEGER`},
+		{"proportional_sampled_at_ms", `ALTER TABLE process_samples ADD COLUMN proportional_sampled_at_ms INTEGER`},
 		{"thread_count", `ALTER TABLE process_samples ADD COLUMN thread_count INTEGER`},
 		{"read_bytes", `ALTER TABLE process_samples ADD COLUMN read_bytes INTEGER`},
 		{"write_bytes", `ALTER TABLE process_samples ADD COLUMN write_bytes INTEGER`},
@@ -477,7 +493,9 @@ func (s *Store) InsertSnapshot(snap model.Snapshot) error {
 	stmt, err := tx.Prepare(`
 INSERT INTO process_samples(
   timestamp, pid, parent_pid, process_type, command_line,
-  working_directory, project_path, rss_memory_mb, virtual_memory_mb, swap_memory_mb, thread_count,
+	working_directory, project_path, rss_memory_mb, virtual_memory_mb, swap_memory_mb, resident_bytes, virtual_bytes,
+	private_committed_bytes, proportional_bytes, physical_footprint_bytes, swap_bytes, peak_resident_bytes,
+	proportional_sampled_at_ms, thread_count,
   read_bytes, write_bytes, read_operations, write_operations, minor_page_faults, major_page_faults,
   voluntary_context_switches, involuntary_context_switches, open_file_descriptors, cpu_percent,
   max_heap_mb, heap_used_mb, heap_committed_mb, heap_max_mb, heap_sampled_at_ms, heap_available,
@@ -486,9 +504,11 @@ INSERT INTO process_samples(
   java_vm_name, java_vm_version, os_name, os_arch, active_processor_count,
   start_time_ms, automated
 ) VALUES (
- ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
- ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
- ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+ ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+ ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+ ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+ ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+ ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
  ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
@@ -506,7 +526,9 @@ INSERT INTO process_samples(
 		}
 		if _, err := stmt.Exec(
 			snap.SampledAtMs, p.PID, p.ParentPID, p.Type, p.CommandLine,
-			p.WorkingDirectory, p.ProjectPath, p.RSSMemoryMB, p.VirtualMemoryMB, p.SwapMemoryMB, p.ThreadCount,
+			p.WorkingDirectory, p.ProjectPath, p.RSSMemoryMB, p.VirtualMemoryMB, p.SwapMemoryMB, p.ResidentBytes,
+			p.VirtualBytes, p.PrivateCommittedBytes, p.ProportionalBytes, p.PhysicalFootprintBytes, p.SwapBytes,
+			p.PeakResidentBytes, p.ProportionalSampledAtMs, p.ThreadCount,
 			p.ReadBytes, p.WriteBytes, p.ReadOperations, p.WriteOperations, p.MinorPageFaults, p.MajorPageFaults,
 			p.VoluntaryContextSwitches, p.InvoluntaryContextSwitches, p.OpenFileDescriptors, p.CPUPercent,
 			p.MaxHeapMB, p.HeapUsedMB, p.HeapCommittedMB, p.HeapMaxMB, p.HeapSampledAtMs, heapAvail,
@@ -535,7 +557,9 @@ func (s *Store) History(sinceMs int64, limit int) ([]model.Process, error) {
 	}
 	rows, err := s.db.Query(`
 SELECT timestamp, pid, parent_pid, process_type, COALESCE(name, ''), command_line,
-       working_directory, project_path, rss_memory_mb, virtual_memory_mb, swap_memory_mb, thread_count,
+	working_directory, project_path, rss_memory_mb, virtual_memory_mb, swap_memory_mb, resident_bytes, virtual_bytes,
+	private_committed_bytes, proportional_bytes, physical_footprint_bytes, swap_bytes, peak_resident_bytes,
+	proportional_sampled_at_ms, thread_count,
        read_bytes, write_bytes, read_operations, write_operations, minor_page_faults, major_page_faults,
        voluntary_context_switches, involuntary_context_switches, open_file_descriptors, cpu_percent,
        max_heap_mb, min_heap_mb, gc, heap_used_mb, heap_committed_mb, heap_max_mb, heap_sampled_at_ms,
@@ -558,7 +582,9 @@ LIMIT ?`, sinceMs, limit)
 		var automated, heapAvailable int
 		if err := rows.Scan(
 			&p.SampledAtMs, &p.PID, &p.ParentPID, &p.Type, &p.Name, &p.CommandLine,
-			&p.WorkingDirectory, &p.ProjectPath, &p.RSSMemoryMB, &p.VirtualMemoryMB, &p.SwapMemoryMB, &p.ThreadCount,
+			&p.WorkingDirectory, &p.ProjectPath, &p.RSSMemoryMB, &p.VirtualMemoryMB, &p.SwapMemoryMB, &p.ResidentBytes,
+			&p.VirtualBytes, &p.PrivateCommittedBytes, &p.ProportionalBytes, &p.PhysicalFootprintBytes, &p.SwapBytes,
+			&p.PeakResidentBytes, &p.ProportionalSampledAtMs, &p.ThreadCount,
 			&p.ReadBytes, &p.WriteBytes, &p.ReadOperations, &p.WriteOperations, &p.MinorPageFaults, &p.MajorPageFaults,
 			&p.VoluntaryContextSwitches, &p.InvoluntaryContextSwitches, &p.OpenFileDescriptors, &p.CPUPercent,
 			&p.MaxHeapMB, &p.MinHeapMB, &p.GC, &p.HeapUsedMB, &p.HeapCommittedMB, &p.HeapMaxMB, &p.HeapSampledAtMs,

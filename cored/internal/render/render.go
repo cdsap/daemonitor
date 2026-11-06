@@ -30,7 +30,8 @@ func WriteProcessesCSV(w io.Writer, snap model.Snapshot) error {
 	c := csv.NewWriter(w)
 	if err := c.Write([]string{
 		"sampled_at_ms", "pid", "parent_pid", "type", "name", "command_line", "working_directory", "project",
-		"rss_mb", "virtual_memory_mb", "swap_memory_mb", "thread_count", "read_bytes", "write_bytes",
+		"rss_mb", "resident_bytes", "virtual_bytes", "private_committed_bytes", "proportional_bytes", "physical_footprint_bytes", "swap_bytes", "peak_resident_bytes", "proportional_sampled_at_ms",
+		"virtual_memory_mb", "swap_memory_mb", "thread_count", "read_bytes", "write_bytes",
 		"read_operations", "write_operations", "minor_page_faults", "major_page_faults", "voluntary_context_switches",
 		"involuntary_context_switches", "open_file_descriptors", "cpu_percent", "max_heap_mb", "min_heap_mb", "gc",
 		"heap_used_mb", "heap_committed_mb", "heap_max_mb", "heap_sampled_at_ms", "heap_available", "metaspace_used_mb",
@@ -43,8 +44,9 @@ func WriteProcessesCSV(w io.Writer, snap model.Snapshot) error {
 	for _, p := range snap.Processes {
 		row := []string{
 			fmt.Sprint(snap.SampledAtMs), fmt.Sprint(p.PID), fmt.Sprint(p.ParentPID), p.Type, p.Name, p.CommandLine,
-			optionalString(p.WorkingDirectory), ProjectName(p), fmt.Sprint(p.RSSMemoryMB), optionalInt64(p.VirtualMemoryMB),
-			optionalInt64(p.SwapMemoryMB), optionalInt64(p.ThreadCount), optionalInt64(p.ReadBytes), optionalInt64(p.WriteBytes),
+			optionalString(p.WorkingDirectory), ProjectName(p), fmt.Sprint(p.RSSMemoryMB), optionalInt64(p.ResidentBytes), optionalInt64(p.VirtualBytes),
+			optionalInt64(p.PrivateCommittedBytes), optionalInt64(p.ProportionalBytes), optionalInt64(p.PhysicalFootprintBytes), optionalInt64(p.SwapBytes), optionalInt64(p.PeakResidentBytes), optionalInt64(p.ProportionalSampledAtMs),
+			optionalInt64(p.VirtualMemoryMB), optionalInt64(p.SwapMemoryMB), optionalInt64(p.ThreadCount), optionalInt64(p.ReadBytes), optionalInt64(p.WriteBytes),
 			optionalInt64(p.ReadOperations), optionalInt64(p.WriteOperations), optionalInt64(p.MinorPageFaults), optionalInt64(p.MajorPageFaults),
 			optionalInt64(p.VoluntaryContextSwitches), optionalInt64(p.InvoluntaryContextSwitches), optionalInt64(p.OpenFileDescriptors),
 			CPUText(p.CPUPercent), optionalInt64(p.MaxHeapMB), optionalInt64(p.MinHeapMB), GCText(p.GC), optionalInt64(p.HeapUsedMB),
@@ -194,6 +196,13 @@ func WriteProcessesDetailedPlain(w io.Writer, snap model.Snapshot) {
 		writeProcessMetric(w, "working_directory", optionalValue(p.WorkingDirectory))
 		writeProcessMetric(w, "project", ProjectName(p))
 		writeProcessMetric(w, "rss_mb", fmt.Sprint(p.RSSMemoryMB))
+		writeProcessMetric(w, "resident_bytes", optionalInt64Value(p.ResidentBytes))
+		writeProcessMetric(w, "virtual_bytes", optionalInt64Value(p.VirtualBytes))
+		writeProcessMetric(w, "private_committed_bytes", optionalInt64Value(p.PrivateCommittedBytes))
+		writeProcessMetric(w, "proportional_bytes", optionalInt64Value(p.ProportionalBytes))
+		writeProcessMetric(w, "physical_footprint_bytes", optionalInt64Value(p.PhysicalFootprintBytes))
+		writeProcessMetric(w, "swap_bytes", optionalInt64Value(p.SwapBytes))
+		writeProcessMetric(w, "peak_resident_bytes", optionalInt64Value(p.PeakResidentBytes))
 		writeProcessMetric(w, "virtual_memory_mb", optionalInt64Value(p.VirtualMemoryMB))
 		writeProcessMetric(w, "swap_memory_mb", optionalInt64Value(p.SwapMemoryMB))
 		writeProcessMetric(w, "threads", optionalInt64Value(p.ThreadCount))

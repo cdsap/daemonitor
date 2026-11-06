@@ -32,10 +32,13 @@ type priorCPU struct {
 
 // Collector lists Gradle-related processes using OS process APIs (gopsutil ≈ OSHI).
 type Collector struct {
-	mu     sync.Mutex
-	priors map[int32]priorCPU
-	cpus   int
-	Heap   *heap.Prober
+	mu                    sync.Mutex
+	priors                map[int32]priorCPU
+	proportional          map[int32]int64
+	proportionalValues    map[int32]*int64
+	proportionalSampledAt map[int32]*int64
+	cpus                  int
+	Heap                  *heap.Prober
 }
 
 func NewCollector() *Collector {
@@ -44,9 +47,12 @@ func NewCollector() *Collector {
 		n = runtime.NumCPU()
 	}
 	return &Collector{
-		priors: make(map[int32]priorCPU),
-		cpus:   n,
-		Heap:   heap.NewProber(),
+		priors:                make(map[int32]priorCPU),
+		proportional:          make(map[int32]int64),
+		proportionalValues:    make(map[int32]*int64),
+		proportionalSampledAt: make(map[int32]*int64),
+		cpus:                  n,
+		Heap:                  heap.NewProber(),
 	}
 }
 
@@ -84,6 +90,26 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 		osMetrics := collectOSMetrics(ctx, p)
 		if mem, err := p.MemoryInfoWithContext(ctx); err == nil && mem != nil {
 			rssMB = int64(mem.RSS) / (1024 * 1024)
+		}
+		platform := platformMemory{}
+		c.mu.Lock()
+		lastProportional := c.proportional[pid]
+		c.mu.Unlock()
+		if metrics, err := collectPlatformMemory(pid, shouldSampleProportional(now, lastProportional), now); err == nil {
+			platform = metrics
+			if metrics.proportionalSampledAt != nil {
+				c.mu.Lock()
+				c.proportional[pid] = *metrics.proportionalSampledAt
+				c.proportionalValues[pid] = metrics.proportionalBytes
+				c.proportionalSampledAt[pid] = metrics.proportionalSampledAt
+				c.mu.Unlock()
+			}
+		}
+		if platform.proportionalBytes == nil {
+			c.mu.Lock()
+			platform.proportionalBytes = c.proportionalValues[pid]
+			platform.proportionalSampledAt = c.proportionalSampledAt[pid]
+			c.mu.Unlock()
 		}
 
 		var cpuPct *float64
@@ -148,6 +174,11 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 			ProjectPath:      project,
 			RSSMemoryMB:      rssMB,
 			VirtualMemoryMB:  osMetrics.virtualMemoryMB, SwapMemoryMB: osMetrics.swapMemoryMB,
+			ResidentBytes: ptrInt64(rssMB * 1024 * 1024),
+			VirtualBytes:  osMetrics.virtualBytes, SwapBytes: osMetrics.swapBytes,
+			PrivateCommittedBytes: platform.privateCommittedBytes,
+			ProportionalBytes:     platform.proportionalBytes, ProportionalSampledAtMs: platform.proportionalSampledAt,
+			PhysicalFootprintBytes: platform.physicalFootprintBytes, PeakResidentBytes: platform.peakResidentBytes,
 			ThreadCount: osMetrics.threadCount, ReadBytes: osMetrics.readBytes, WriteBytes: osMetrics.writeBytes,
 			ReadOperations: osMetrics.readOperations, WriteOperations: osMetrics.writeOperations,
 			MinorPageFaults: osMetrics.minorPageFaults, MajorPageFaults: osMetrics.majorPageFaults,
@@ -184,6 +215,9 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 	for pid := range c.priors {
 		if _, ok := seen[pid]; !ok {
 			delete(c.priors, pid)
+			delete(c.proportional, pid)
+			delete(c.proportionalValues, pid)
+			delete(c.proportionalSampledAt, pid)
 		}
 	}
 	c.mu.Unlock()
@@ -202,6 +236,7 @@ func ShouldProbeLiveHeap(kind string) bool {
 
 type osMetrics struct {
 	virtualMemoryMB, swapMemoryMB, threadCount             *int64
+	virtualBytes, swapBytes                                *int64
 	readBytes, writeBytes, readOperations, writeOperations *int64
 	minorPageFaults, majorPageFaults                       *int64
 	voluntaryContextSwitches, involuntaryContextSwitches   *int64
@@ -212,6 +247,7 @@ func collectOSMetrics(ctx context.Context, p *process.Process) osMetrics {
 	m := osMetrics{}
 	if mem, err := p.MemoryInfoWithContext(ctx); err == nil && mem != nil {
 		m.virtualMemoryMB, m.swapMemoryMB = ptrInt64(int64(mem.VMS)/(1024*1024)), ptrInt64(int64(mem.Swap)/(1024*1024))
+		m.virtualBytes, m.swapBytes = ptrInt64(int64(mem.VMS)), ptrInt64(int64(mem.Swap))
 	}
 	if v, err := p.NumThreadsWithContext(ctx); err == nil {
 		m.threadCount = ptrInt64(int64(v))
