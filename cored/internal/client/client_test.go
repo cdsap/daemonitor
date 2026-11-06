@@ -2,10 +2,8 @@ package client_test
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,6 +11,7 @@ import (
 
 	"github.com/cdsap/daemonitor/cored/internal/api"
 	"github.com/cdsap/daemonitor/cored/internal/client"
+	"github.com/cdsap/daemonitor/cored/internal/ipc"
 )
 
 type recordingTransport struct {
@@ -73,11 +72,8 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
 
 func TestClientProcessesAgainstLiveServer(t *testing.T) {
-	// Keep the socket path short: macOS sun_path is ~104 bytes.
-	socket := filepath.Join(os.TempDir(), fmt.Sprintf("dmn-cli-%d.sock", os.Getpid()))
+	socket := ipc.TempEndpoint(t, "cli")
 	db := filepath.Join(t.TempDir(), "watcher.db")
-	_ = os.Remove(socket)
-	defer os.Remove(socket)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

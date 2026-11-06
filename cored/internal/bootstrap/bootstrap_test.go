@@ -2,7 +2,6 @@ package bootstrap
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,10 +9,11 @@ import (
 	"time"
 
 	"github.com/cdsap/daemonitor/cored/internal/api"
+	"github.com/cdsap/daemonitor/cored/internal/ipc"
 )
 
 func TestConnectAutostartDisabled(t *testing.T) {
-	sock := filepath.Join(os.TempDir(), fmt.Sprintf("dmn-missing-%d.sock", os.Getpid()))
+	sock := ipc.TempEndpoint(t, "missing")
 	_, err := Connect(context.Background(), Options{
 		Socket:    sock,
 		Autostart: false,
@@ -42,10 +42,8 @@ func TestCoredArgsPropagatesGradleUserHome(t *testing.T) {
 }
 
 func TestConnectToRunningServer(t *testing.T) {
-	sock := filepath.Join(os.TempDir(), fmt.Sprintf("dmn-boot-%d.sock", os.Getpid()))
+	sock := ipc.TempEndpoint(t, "boot")
 	db := filepath.Join(t.TempDir(), "watcher.db")
-	_ = os.Remove(sock)
-	defer os.Remove(sock)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
