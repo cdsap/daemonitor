@@ -261,6 +261,83 @@ func TestBuildsPIDQueryUsesCoreResolvedDaemonIdentity(t *testing.T) {
 	}
 }
 
+func TestEventsEndpointReturnsLifecycleJSON(t *testing.T) {
+	socket := filepath.Join(os.TempDir(), fmt.Sprintf("dmn-events-%d.sock", os.Getpid()))
+	db := filepath.Join(t.TempDir(), "core.sqlite")
+	_ = os.Remove(socket)
+	defer os.Remove(socket)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srv, err := api.NewServer(socket, db, time.Hour, time.Hour, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.Store.ObserveProcesses("api-host", 1000, []model.Process{{
+		PID: 99, Type: "GRADLE_DAEMON", CommandLine: "GradleDaemon", StartTimeMs: 500,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.Store.ObserveProcesses("api-host", 2000, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Run(ctx) }()
+
+	client := &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return (&net.Dialer{}).DialContext(ctx, "unix", socket)
+			},
+		},
+		Timeout: 3 * time.Second,
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	var payload model.Events
+	for {
+		resp, reqErr := client.Get("http://daemonitor/v1/events?since_ms=0&limit=50")
+		if reqErr == nil {
+			defer resp.Body.Close()
+			if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+				t.Fatal(err)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("server never became ready: %v", reqErr)
+		}
+		select {
+		case runErr := <-errCh:
+			t.Fatalf("server exited early: %v", runErr)
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+
+	if payload.SchemaVersion != 1 || payload.Count < 2 || len(payload.Events) < 2 {
+		t.Fatalf("events=%+v", payload)
+	}
+	types := map[string]int{}
+	for _, ev := range payload.Events {
+		types[ev.EventType]++
+		if ev.SchemaVersion != 1 || ev.ProcessInstanceID == "" || ev.Source == "" {
+			t.Fatalf("event=%+v", ev)
+		}
+	}
+	if types["process.first_observed"] < 1 || types["process.disappearance_detected"] < 1 {
+		t.Fatalf("missing lifecycle types: %v", types)
+	}
+
+	cancel()
+	select {
+	case <-errCh:
+	case <-time.After(3 * time.Second):
+		t.Fatal("server did not shut down")
+	}
+}
+
 type buildsPayload struct {
 	Count  int            `json:"count"`
 	Builds []builds.Build `json:"builds"`

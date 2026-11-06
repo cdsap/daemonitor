@@ -41,11 +41,19 @@ type priorCPU struct {
 	wallClockMs int64
 }
 
+// incarnationKey identifies a process incarnation for counter series (CPU deltas).
+// PID alone is insufficient because operating systems reuse PIDs.
+type incarnationKey struct {
+	pid          int32
+	createTimeMs int64
+}
+
 // Collector lists Gradle-related processes using OS process APIs (gopsutil ≈ OSHI).
 type Collector struct {
 	mu               sync.Mutex
-	priors           map[int32]priorCPU
+	priors           map[incarnationKey]priorCPU
 	cpus             int
+	HostID           string
 	Heap             *heap.Prober
 	Platform         platform.PlatformCollector
 	Observe          *observe.Metrics
@@ -63,8 +71,9 @@ func NewCollector() *Collector {
 	prober := heap.NewProber()
 	prober.CacheTTL = cadences.JVMHeapGC
 	return &Collector{
-		priors:           make(map[int32]priorCPU),
+		priors:           make(map[incarnationKey]priorCPU),
 		cpus:             n,
+		HostID:           platform.LocalHostID(),
 		Heap:             prober,
 		Platform:         platform.New(),
 		Observe:          &observe.Metrics{},
@@ -99,9 +108,14 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 		return model.Snapshot{}, err
 	}
 
-	seen := make(map[int32]struct{}, len(pids))
+	seenPIDs := make(map[int32]struct{}, len(pids))
+	seenIncarnations := make(map[incarnationKey]struct{}, len(pids))
 	out := make([]model.Process, 0, 8)
 	var jvmJobs []pendingJVM
+	hostID := c.HostID
+	if hostID == "" {
+		hostID = platform.LocalHostID()
+	}
 
 	// Pass 1: discovery + OS metrics only. JVM probes must not delay this path.
 	for _, pid := range pids {
@@ -123,7 +137,7 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 		if kind == "" {
 			continue
 		}
-		seen[pid] = struct{}{}
+		seenPIDs[pid] = struct{}{}
 
 		startMs := int64(0)
 		if create, err := p.CreateTimeWithContext(ctx); err == nil {
@@ -135,11 +149,14 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 			platMetrics = c.Platform.CollectProcess(ctx, platform.ProcessIdentity{
 				PID:          pid,
 				CreateTimeMs: startMs,
+				HostID:       hostID,
 			})
 			if platMetrics.Identity.CreateTimeMs > 0 {
 				startMs = platMetrics.Identity.CreateTimeMs
 			}
 		}
+		key := incarnationKey{pid: pid, createTimeMs: startMs}
+		seenIncarnations[key] = struct{}{}
 		osMetrics := osMetricsFromPlatform(platMetrics)
 		rssMB := int64(0)
 		if platMetrics.ResidentBytes.Value != nil {
@@ -151,7 +168,7 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 		if platMetrics.CPUTotalSecondsTotal.Value != nil {
 			cpuTimeMs = *platMetrics.CPUTotalSecondsTotal.Value * 1000
 			c.mu.Lock()
-			prior, ok := c.priors[pid]
+			prior, ok := c.priors[key]
 			c.mu.Unlock()
 			if ok {
 				wallDelta := now - prior.wallClockMs
@@ -165,7 +182,7 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 				}
 			}
 			c.mu.Lock()
-			c.priors[pid] = priorCPU{cpuTimeMs: cpuTimeMs, wallClockMs: now}
+			c.priors[key] = priorCPU{cpuTimeMs: cpuTimeMs, wallClockMs: now}
 			c.mu.Unlock()
 		}
 
@@ -229,15 +246,15 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 	c.applyJVMProbes(ctx, now, out, jvmJobs)
 
 	c.mu.Lock()
-	for pid := range c.priors {
-		if _, ok := seen[pid]; !ok {
-			delete(c.priors, pid)
+	for key := range c.priors {
+		if _, ok := seenIncarnations[key]; !ok {
+			delete(c.priors, key)
 		}
 	}
 	c.mu.Unlock()
 
 	if c.Heap != nil {
-		c.Heap.EvictMissing(seen)
+		c.Heap.EvictMissing(seenPIDs)
 	}
 
 	return model.Snapshot{SampledAtMs: now, Processes: out}, nil
