@@ -155,8 +155,6 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 				startMs = platMetrics.Identity.CreateTimeMs
 			}
 		}
-		key := incarnationKey{pid: pid, createTimeMs: startMs}
-		seenIncarnations[key] = struct{}{}
 		osMetrics := osMetricsFromPlatform(platMetrics)
 		rssMB := int64(0)
 		if platMetrics.ResidentBytes.Value != nil {
@@ -165,7 +163,10 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 
 		var cpuPct *float64
 		cpuTimeMs := 0.0
-		if platMetrics.CPUTotalSecondsTotal.Value != nil {
+		// Skip CPU prior series when create time is unknown — PID alone is unsafe after reuse.
+		if startMs > 0 && platMetrics.CPUTotalSecondsTotal.Value != nil {
+			key := incarnationKey{pid: pid, createTimeMs: startMs}
+			seenIncarnations[key] = struct{}{}
 			cpuTimeMs = *platMetrics.CPUTotalSecondsTotal.Value * 1000
 			c.mu.Lock()
 			prior, ok := c.priors[key]

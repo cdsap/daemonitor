@@ -107,39 +107,64 @@ WHERE disappeared_at_ms IS NULL`)
 
 	seen := make(map[string]struct{}, len(processes))
 	for _, p := range processes {
+		// Without a real OS create time, PID reuse cannot be distinguished — skip identity.
+		if p.StartTimeMs <= 0 {
+			continue
+		}
 		id := ProcessInstanceID(hostID, p.PID, p.StartTimeMs)
 		seen[id] = struct{}{}
 		existing, wasAlive := alive[id]
-		if !wasAlive {
+		if wasAlive {
+			if _, err := tx.Exec(`
+UPDATE process_instances
+SET process_type=?, name=?, command_line=?, last_observed_ms=?
+WHERE id=?`, p.Type, nullStr(p.Name), p.CommandLine, sampledAtMs, id); err != nil {
+				return err
+			}
+			if existing.processType != p.Type || existing.commandLine != p.CommandLine {
+				if err := insertProcessEvent(tx, EventConfigurationObserved, sampledAtMs, id, p.PID, p.Type); err != nil {
+					return err
+				}
+			}
+			continue
+		}
+
+		var disappearedAt sql.NullInt64
+		err := tx.QueryRow(`SELECT disappeared_at_ms FROM process_instances WHERE id=?`, id).Scan(&disappearedAt)
+		switch {
+		case err == sql.ErrNoRows:
 			if _, err := tx.Exec(`
 INSERT INTO process_instances(
   id, host_id, pid, create_time_ms, process_type, name, command_line,
   first_observed_ms, last_observed_ms, disappeared_at_ms
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
-ON CONFLICT(id) DO UPDATE SET
-  process_type=excluded.process_type,
-  name=excluded.name,
-  command_line=excluded.command_line,
-  last_observed_ms=excluded.last_observed_ms,
-  disappeared_at_ms=NULL
-`, id, hostID, p.PID, p.StartTimeMs, p.Type, nullStr(p.Name), p.CommandLine, sampledAtMs, sampledAtMs); err != nil {
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+				id, hostID, p.PID, p.StartTimeMs, p.Type, nullStr(p.Name), p.CommandLine, sampledAtMs, sampledAtMs); err != nil {
 				return err
 			}
 			if err := insertProcessEvent(tx, EventFirstObserved, sampledAtMs, id, p.PID, p.Type); err != nil {
 				return err
 			}
-			continue
-		}
-
-		if _, err := tx.Exec(`
-UPDATE process_instances
-SET process_type=?, name=?, command_line=?, last_observed_ms=?
-WHERE id=?`, p.Type, nullStr(p.Name), p.CommandLine, sampledAtMs, id); err != nil {
+		case err != nil:
 			return err
-		}
-		if existing.processType != p.Type || existing.commandLine != p.CommandLine {
-			if err := insertProcessEvent(tx, EventConfigurationObserved, sampledAtMs, id, p.PID, p.Type); err != nil {
+		default:
+			// Same incarnation returned after a transient disappearance — clear the
+			// flag but do not re-emit first_observed.
+			var oldType, oldCmd string
+			if err := tx.QueryRow(
+				`SELECT process_type, command_line FROM process_instances WHERE id=?`, id,
+			).Scan(&oldType, &oldCmd); err != nil {
 				return err
+			}
+			if _, err := tx.Exec(`
+UPDATE process_instances
+SET process_type=?, name=?, command_line=?, last_observed_ms=?, disappeared_at_ms=NULL
+WHERE id=?`, p.Type, nullStr(p.Name), p.CommandLine, sampledAtMs, id); err != nil {
+				return err
+			}
+			if oldType != p.Type || oldCmd != p.CommandLine {
+				if err := insertProcessEvent(tx, EventConfigurationObserved, sampledAtMs, id, p.PID, p.Type); err != nil {
+					return err
+				}
 			}
 		}
 	}

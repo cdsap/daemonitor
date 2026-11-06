@@ -75,6 +75,70 @@ func TestProcessInstancesSeparatePIDReuse(t *testing.T) {
 	}
 }
 
+func TestResurrectionDoesNotReemitFirstObserved(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "resurrect.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	host := "host"
+	alive := []model.Process{{
+		PID: 7, Type: "KOTLIN_DAEMON", CommandLine: "Kotlin", StartTimeMs: 10,
+	}}
+	if err := s.ObserveProcesses(host, 100, alive); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ObserveProcesses(host, 200, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ObserveProcesses(host, 300, alive); err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := s.ListEvents(0, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var firstObs, disappear int
+	for _, ev := range events {
+		switch ev.EventType {
+		case store.EventFirstObserved:
+			firstObs++
+		case store.EventDisappearanceDetected:
+			disappear++
+		}
+	}
+	if firstObs != 1 {
+		t.Fatalf("first_observed=%d want 1; events=%+v", firstObs, events)
+	}
+	if disappear != 1 {
+		t.Fatalf("disappearance=%d want 1; events=%+v", disappear, events)
+	}
+}
+
+func TestSkipUnknownCreateTime(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "nocreate.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	if err := s.ObserveProcesses("host", 100, []model.Process{{
+		PID: 1, Type: "GRADLE_DAEMON", CommandLine: "x", StartTimeMs: 0,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	n, err := s.CountInstances()
+	if err != nil || n != 0 {
+		t.Fatalf("instances=%d err=%v want 0", n, err)
+	}
+	events, err := s.ListEvents(0, 10)
+	if err != nil || len(events) != 0 {
+		t.Fatalf("events=%+v err=%v", events, err)
+	}
+}
+
 func TestDisappearanceDetectedWithoutExitFabrication(t *testing.T) {
 	s, err := store.Open(filepath.Join(t.TempDir(), "disappear.sqlite"))
 	if err != nil {
