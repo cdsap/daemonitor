@@ -79,6 +79,7 @@ func (s *Server) Run(ctx context.Context) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/health", s.handleHealth)
+	mux.HandleFunc("/v1/capabilities", s.handleCapabilities)
 	mux.HandleFunc("/v1/processes", s.handleProcesses)
 	mux.HandleFunc("/v1/processes/history", s.handleHistory)
 	mux.HandleFunc("/v1/daemon-logs", s.handleDaemonLogs)
@@ -170,6 +171,27 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 		Socket:      s.SocketPath,
 		SampleCount: n,
 		DBPath:      s.DBPath,
+	})
+}
+
+func (s *Server) handleCapabilities(w http.ResponseWriter, _ *http.Request) {
+	caps := s.Collector.Capabilities()
+	metrics := make([]model.CapabilityMetric, 0, len(caps))
+	for _, c := range caps {
+		metrics = append(metrics, model.CapabilityMetric{
+			MetricName:   c.MetricName,
+			Availability: string(c.Availability),
+			Unit:         c.Unit,
+			Source:       c.Source,
+			Platform:     c.Platform,
+			Description:  c.Description,
+		})
+	}
+	writeJSON(w, model.Capabilities{
+		SchemaVersion: 1,
+		Platform:      poll.Platform(),
+		SampledAtMs:   time.Now().UnixMilli(),
+		Metrics:       metrics,
 	})
 }
 

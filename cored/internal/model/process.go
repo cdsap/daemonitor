@@ -103,3 +103,21 @@ type Health struct {
 	SampleCount int64  `json:"sample_count"`
 	DBPath      string `json:"db_path,omitempty"`
 }
+
+// Capabilities is the `/v1/capabilities` response body.
+type Capabilities struct {
+	SchemaVersion int                    `json:"schema_version"`
+	Platform      string                 `json:"platform"`
+	SampledAtMs   int64                  `json:"sampled_at_ms"`
+	Metrics       []CapabilityMetric     `json:"metrics"`
+}
+
+// CapabilityMetric is one optional metric's availability on this host.
+type CapabilityMetric struct {
+	MetricName   string  `json:"metric_name"`
+	Availability string  `json:"availability"`
+	Unit         string  `json:"unit,omitempty"`
+	Source       string  `json:"source,omitempty"`
+	Platform     string  `json:"platform,omitempty"`
+	Description  string  `json:"description,omitempty"`
+}
