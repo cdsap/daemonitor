@@ -616,6 +616,31 @@ func TestDetailsShowExtendedMetricsAndUnavailableValues(t *testing.T) {
 	}
 }
 
+func TestDetailsShowOptionalTelemetryAndKeepZeroDistinctFromUnavailable(t *testing.T) {
+	zero := int64(0)
+	cpu := 0.0
+	p := model.Process{PID: 9, Type: "GRADLE_DAEMON", YoungGCCount: &zero, HeapUsedMB: &zero, SampledAtMs: 2}
+	m := NewModel(Config{Now: fixedNow, NoColor: true})
+	m.width, m.height, m.detailsOpen, m.detailProcess = 80, 50, true, &p
+	m.detailHost = model.HostMetrics{
+		LogicalProcessors: model.IntMetric{Value: &zero},
+		CPUUsagePercent:   model.RealMetric{Value: &cpu},
+		MemoryUsedBytes:   model.IntMetric{Value: &zero},
+	}
+	body := m.View().Content
+	for _, want := range []string{"JVM MEMORY POOLS", "GC COUNTERS / RATES", "JIT / CODE CACHE", "PROCESS LIFECYCLE", "HOST RESOURCE CONTEXT", "COLLECTION CAPABILITIES", "Young count    0", "CPUs           0", "CPU usage      0.0%", "Memory used    0 MB", "Code cache     n/a"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("details missing %q: %s", want, body)
+		}
+	}
+	if strings.Contains(body, "Heap used      n/a") || strings.Contains(body, "Young count    n/a") {
+		t.Fatalf("zero-valued metrics were rendered unavailable: %s", body)
+	}
+	if strings.Contains(body, "\x1b[") {
+		t.Fatalf("--no-color emitted ANSI in optional details: %q", body)
+	}
+}
+
 func TestFormatRowIncludesGarbageCollector(t *testing.T) {
 	gc := "G1"
 	row := formatRow(model.Process{GC: &gc}, columnSet{ids: []columnID{colGC}}, fixedNow().UnixMilli())

@@ -62,7 +62,7 @@ func (c *Client) Self(ctx context.Context) (model.SelfMetrics, error) {
 	return self, err
 }
 
-// Host fetches the latest machine-level metrics.
+// Host fetches the latest machine-level metrics from `/v1/host`.
 func (c *Client) Host(ctx context.Context) (platform.HostMetrics, error) {
 	var host platform.HostMetrics
 	err := c.getJSON(ctx, "/v1/host", &host)
