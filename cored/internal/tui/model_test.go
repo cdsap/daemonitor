@@ -405,7 +405,7 @@ func TestDetailsWideCommanderPanesAndLogTail(t *testing.T) {
 	m.detailLog = &logs.DaemonLog{PID: 9, GradleVersion: "8.0", Path: "/tmp/daemon.log"}
 	m.detailTail = &logs.Tail{PID: 9, Lines: []string{"old line", "newest Gradle line"}}
 	body := m.View().Content
-	for _, want := range []string{"ATTRIBUTES", "RESOURCE TRENDS", "RECENT BUILDS", "GRADLE LOG", "newest Gradle line"} {
+	for _, want := range []string{"ATTRIBUTES", "RESOURCE TRENDS", "RECENT BUILDS", "GRADLE LOG", "Gradle version 8.0", "Log path       /tmp/daemon.log", "newest Gradle line"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("wide commander view missing %q: %s", want, body)
 		}
@@ -413,6 +413,14 @@ func TestDetailsWideCommanderPanesAndLogTail(t *testing.T) {
 	for _, line := range strings.Split(body, "\n") {
 		if displayLen(line) > m.width {
 			t.Fatalf("wide line exceeds width (%d): %q", m.width, line)
+		}
+	}
+
+	m.detailLog = nil
+	body = m.View().Content
+	for _, want := range []string{"Gradle version n/a", "Log path       n/a"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("wide commander view missing unavailable metadata %q: %s", want, body)
 		}
 	}
 }
