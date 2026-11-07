@@ -627,7 +627,14 @@ func TestDetailsShowExtendedMetricsAndUnavailableValues(t *testing.T) {
 func TestDetailsShowOptionalTelemetryAndKeepZeroDistinctFromUnavailable(t *testing.T) {
 	zero := int64(0)
 	cpu := 0.0
-	p := model.Process{PID: 9, Type: "GRADLE_DAEMON", YoungGCCount: &zero, HeapUsedMB: &zero, SampledAtMs: 2}
+	compiled, failed, invalid := int64(4123), int64(7), int64(2)
+	compilationSeconds := 48.125
+	p := model.Process{
+		PID: 9, Type: "GRADLE_DAEMON", YoungGCCount: &zero, HeapUsedMB: &zero, SampledAtMs: 2,
+		MemoryPools: []model.JVMMemoryPool{{Name: "G1 Eden Space", Used: model.JVMRawValue{Value: 12, Unit: "M"}, Committed: model.JVMRawValue{Value: 24, Unit: "M"}}},
+		CodeCache:   []model.JVMMemoryPool{{Name: "non-nmethods", Used: model.JVMRawValue{Value: 1.5, Unit: "M"}, Committed: model.JVMRawValue{Value: 4, Unit: "M"}, Max: model.JVMRawValue{Value: 8, Unit: "M"}}},
+		JIT:         &model.JITMetrics{CompiledCount: &compiled, FailedCount: &failed, InvalidCount: &invalid, CompilationTimeSeconds: &compilationSeconds},
+	}
 	m := NewModel(Config{Now: fixedNow, NoColor: true})
 	m.width, m.height, m.detailsOpen, m.detailProcess = 80, 90, true, &p
 	m.detailHost = model.HostMetrics{
@@ -639,7 +646,10 @@ func TestDetailsShowOptionalTelemetryAndKeepZeroDistinctFromUnavailable(t *testi
 	for _, want := range []string{
 		"OS ACTIVITY", "NATIVE MEMORY", "JVM MEMORY POOLS", "GC COUNTERS / RATES", "JIT / CODE CACHE",
 		"PROCESS LIFECYCLE", "HOST RESOURCE CONTEXT", "COLLECTION CAPABILITIES",
-		"Young count    0", "CPUs           0", "CPU usage      0.0%", "Memory used    0 MB", "Code cache     n/a",
+		"Young count    0", "CPUs           0", "CPU usage      0.0%", "Memory used    0 MB",
+		"Other pools    G1 Eden Space 12M/24M",
+		"Code cache     non-nmethods 1.5M/4M (max 8M)",
+		"Compilation    4123 compiled, 7 failed, 2 invalid, 48.125 s",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("details missing %q: %s", want, body)
@@ -650,6 +660,17 @@ func TestDetailsShowOptionalTelemetryAndKeepZeroDistinctFromUnavailable(t *testi
 	}
 	if strings.Contains(body, "\x1b[") {
 		t.Fatalf("--no-color emitted ANSI in optional details: %q", body)
+	}
+
+	p.MemoryPools = nil
+	p.CodeCache = nil
+	p.JIT = nil
+	m.detailProcess = &p
+	body = m.View().Content
+	for _, want := range []string{"Other pools    n/a", "Compilation    n/a", "Code cache     n/a"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("details missing unavailable value %q: %s", want, body)
+		}
 	}
 }
 

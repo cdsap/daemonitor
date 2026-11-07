@@ -170,7 +170,7 @@ func detailTelemetry(m Model, p model.Process, width int) []string {
 		detailField("Heap max", render.HeapText(p.HeapMaxMB)),
 		detailField("Metaspace used", optionalInt64Text(p.MetaspaceUsedMB, "MB")),
 		detailField("Metaspace cmt", optionalInt64Text(p.MetaspaceCommittedMB, "MB")),
-		detailField("Other pools", "n/a (not collected)"),
+		detailField("Other pools", memoryPoolsText(p.MemoryPools)),
 		"",
 		"NATIVE MEMORY",
 		detailField("Resident", optionalBytesText(p.ResidentBytes)),
@@ -189,8 +189,8 @@ func detailTelemetry(m Model, p model.Process, width int) []string {
 		detailField("Full/conc time", render.GCTimeText(p.FullGCTimeSeconds)+" / "+render.GCTimeText(p.ConcurrentGCTimeSeconds)),
 		"",
 		"JIT / CODE CACHE",
-		detailField("Compilation", "n/a (not collected)"),
-		detailField("Code cache", "n/a (not collected)"),
+		detailField("Compilation", jitText(p.JIT)),
+		detailField("Code cache", memoryPoolsText(p.CodeCache)),
 		"",
 		"PROCESS LIFECYCLE",
 		detailField("Status", na(p.Status)),
@@ -225,6 +225,55 @@ func detailTelemetry(m Model, p model.Process, width int) []string {
 		lines[i] = truncateWidth(lines[i], max(1, width-2))
 	}
 	return lines
+}
+
+func memoryPoolsText(pools []model.JVMMemoryPool) string {
+	if len(pools) == 0 {
+		return "n/a"
+	}
+	parts := make([]string, 0, len(pools))
+	for _, pool := range pools {
+		name := strings.TrimSpace(pool.Name)
+		if name == "" {
+			name = "unnamed"
+		}
+		value := formatJVMRawValue(pool.Used) + "/" + formatJVMRawValue(pool.Committed)
+		if pool.Max.Value != 0 {
+			value += " (max " + formatJVMRawValue(pool.Max) + ")"
+		}
+		parts = append(parts, name+" "+value)
+	}
+	return strings.Join(parts, "; ")
+}
+
+func formatJVMRawValue(value model.JVMRawValue) string {
+	if value.Value == math.Trunc(value.Value) {
+		return fmt.Sprintf("%.0f%s", value.Value, value.Unit)
+	}
+	return fmt.Sprintf("%.1f%s", value.Value, value.Unit)
+}
+
+func jitText(jit *model.JITMetrics) string {
+	if jit == nil {
+		return "n/a"
+	}
+	parts := make([]string, 0, 4)
+	if jit.CompiledCount != nil {
+		parts = append(parts, fmt.Sprintf("%d compiled", *jit.CompiledCount))
+	}
+	if jit.FailedCount != nil {
+		parts = append(parts, fmt.Sprintf("%d failed", *jit.FailedCount))
+	}
+	if jit.InvalidCount != nil {
+		parts = append(parts, fmt.Sprintf("%d invalid", *jit.InvalidCount))
+	}
+	if jit.CompilationTimeSeconds != nil {
+		parts = append(parts, fmt.Sprintf("%.3f s", *jit.CompilationTimeSeconds))
+	}
+	if len(parts) == 0 {
+		return "n/a"
+	}
+	return strings.Join(parts, ", ")
 }
 
 func resourceScopeText(p model.Process) string {
