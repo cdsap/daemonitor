@@ -3,16 +3,26 @@ package model
 // Process is an IPC snapshot of a Gradle-related process.
 // Field names mirror the Kotlin GradleProcess domain for dual-run clients.
 type Process struct {
-	PID                        int32    `json:"pid"`
-	ParentPID                  int32    `json:"parent_pid"`
-	Type                       string   `json:"type"`
-	Name                       string   `json:"name"`
-	CommandLine                string   `json:"command_line"`
-	WorkingDirectory           *string  `json:"working_directory"`
-	ProjectPath                *string  `json:"project_path"`
-	RSSMemoryMB                int64    `json:"rss_memory_mb"`
-	VirtualMemoryMB            *int64   `json:"virtual_memory_mb"`
-	SwapMemoryMB               *int64   `json:"swap_memory_mb"`
+	PID              int32   `json:"pid"`
+	ParentPID        int32   `json:"parent_pid"`
+	Type             string  `json:"type"`
+	Name             string  `json:"name"`
+	CommandLine      string  `json:"command_line"`
+	WorkingDirectory *string `json:"working_directory"`
+	ProjectPath      *string `json:"project_path"`
+	RSSMemoryMB      int64   `json:"rss_memory_mb"`
+	VirtualMemoryMB  *int64  `json:"virtual_memory_mb"`
+	SwapMemoryMB     *int64  `json:"swap_memory_mb"`
+	// Platform-faithful memory metrics. A nil value means the platform does not
+	// expose that measurement; it is never filled with a different metric.
+	ResidentBytes              *int64   `json:"resident_bytes"`
+	VirtualBytes               *int64   `json:"virtual_bytes"`
+	PrivateCommittedBytes      *int64   `json:"private_committed_bytes"`
+	ProportionalBytes          *int64   `json:"proportional_bytes"`
+	PhysicalFootprintBytes     *int64   `json:"physical_footprint_bytes"`
+	SwapBytes                  *int64   `json:"swap_bytes"`
+	PeakResidentBytes          *int64   `json:"peak_resident_bytes"`
+	ProportionalSampledAtMs    *int64   `json:"proportional_sampled_at_ms"`
 	ThreadCount                *int64   `json:"thread_count"`
 	ReadBytes                  *int64   `json:"read_bytes"`
 	WriteBytes                 *int64   `json:"write_bytes"`

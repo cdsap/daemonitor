@@ -69,16 +69,19 @@ func cpuUsage(now time.Time, cpus int, current priorCPU, prior priorCPU, ok bool
 
 // Collector lists Gradle-related processes using OS process APIs (gopsutil ≈ OSHI).
 type Collector struct {
-	mu               sync.Mutex
-	priors           map[incarnationKey]priorCPU
-	cpus             int
-	HostID           string
-	Heap             *heap.Prober
-	Platform         platform.PlatformCollector
-	Observe          *observe.Metrics
-	Cadences         observe.Cadences
-	ProbeConcurrency int
-	PollInterval     time.Duration
+	mu                    sync.Mutex
+	priors                map[incarnationKey]priorCPU
+	proportional          map[int32]int64
+	proportionalValues    map[int32]*int64
+	proportionalSampledAt map[int32]*int64
+	cpus                  int
+	HostID                string
+	Heap                  *heap.Prober
+	Platform              platform.PlatformCollector
+	Observe               *observe.Metrics
+	Cadences              observe.Cadences
+	ProbeConcurrency      int
+	PollInterval          time.Duration
 }
 
 func NewCollector() *Collector {
@@ -90,15 +93,18 @@ func NewCollector() *Collector {
 	prober := heap.NewProber()
 	prober.CacheTTL = cadences.JVMHeapGC
 	return &Collector{
-		priors:           make(map[incarnationKey]priorCPU),
-		cpus:             n,
-		HostID:           platform.LocalHostID(),
-		Heap:             prober,
-		Platform:         platform.New(),
-		Observe:          &observe.Metrics{},
-		Cadences:         cadences,
-		ProbeConcurrency: observe.DefaultJVMProbeConcurrency,
-		PollInterval:     cadences.ProcessOS,
+		priors:                make(map[incarnationKey]priorCPU),
+		proportional:          make(map[int32]int64),
+		proportionalValues:    make(map[int32]*int64),
+		proportionalSampledAt: make(map[int32]*int64),
+		cpus:                  n,
+		HostID:                platform.LocalHostID(),
+		Heap:                  prober,
+		Platform:              platform.New(),
+		Observe:               &observe.Metrics{},
+		Cadences:              cadences,
+		ProbeConcurrency:      observe.DefaultJVMProbeConcurrency,
+		PollInterval:          cadences.ProcessOS,
 	}
 }
 
@@ -180,6 +186,46 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 			rssMB = *platMetrics.ResidentBytes.Value / (1024 * 1024)
 		}
 
+		platformMem := platformMemory{
+			privateCommittedBytes:  platMetrics.PrivateCommittedBytes.Value,
+			proportionalBytes:      platMetrics.ProportionalBytes.Value,
+			physicalFootprintBytes: platMetrics.PhysicalFootprintBytes.Value,
+			peakResidentBytes:      platMetrics.PeakResidentBytes.Value,
+		}
+		if platMetrics.ProportionalBytes.SampledAtMs > 0 {
+			sampled := platMetrics.ProportionalBytes.SampledAtMs
+			platformMem.proportionalSampledAt = &sampled
+		}
+		c.mu.Lock()
+		lastProportional := c.proportional[pid]
+		c.mu.Unlock()
+		if metrics, err := collectPlatformMemory(pid, shouldSampleProportional(now, lastProportional), now); err == nil {
+			if metrics.privateCommittedBytes != nil {
+				platformMem.privateCommittedBytes = metrics.privateCommittedBytes
+			}
+			if metrics.physicalFootprintBytes != nil {
+				platformMem.physicalFootprintBytes = metrics.physicalFootprintBytes
+			}
+			if metrics.peakResidentBytes != nil {
+				platformMem.peakResidentBytes = metrics.peakResidentBytes
+			}
+			if metrics.proportionalSampledAt != nil {
+				platformMem.proportionalBytes = metrics.proportionalBytes
+				platformMem.proportionalSampledAt = metrics.proportionalSampledAt
+				c.mu.Lock()
+				c.proportional[pid] = *metrics.proportionalSampledAt
+				c.proportionalValues[pid] = metrics.proportionalBytes
+				c.proportionalSampledAt[pid] = metrics.proportionalSampledAt
+				c.mu.Unlock()
+			}
+		}
+		if platformMem.proportionalBytes == nil {
+			c.mu.Lock()
+			platformMem.proportionalBytes = c.proportionalValues[pid]
+			platformMem.proportionalSampledAt = c.proportionalSampledAt[pid]
+			c.mu.Unlock()
+		}
+
 		var cpuPct, cpuCoresUsed *float64
 		var cpuUserSeconds, cpuSystemSeconds, cpuTotalSeconds *float64
 		if platMetrics.CPUUserSecondsTotal.Value != nil || platMetrics.CPUSystemSecondsTotal.Value != nil || platMetrics.CPUTotalSecondsTotal.Value != nil {
@@ -255,6 +301,11 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 			ProjectPath:      project,
 			RSSMemoryMB:      rssMB,
 			VirtualMemoryMB:  osMetrics.virtualMemoryMB, SwapMemoryMB: osMetrics.swapMemoryMB,
+			ResidentBytes: platMetrics.ResidentBytes.Value,
+			VirtualBytes:  osMetrics.virtualBytes, SwapBytes: osMetrics.swapBytes,
+			PrivateCommittedBytes: platformMem.privateCommittedBytes,
+			ProportionalBytes:     platformMem.proportionalBytes, ProportionalSampledAtMs: platformMem.proportionalSampledAt,
+			PhysicalFootprintBytes: platformMem.physicalFootprintBytes, PeakResidentBytes: platformMem.peakResidentBytes,
 			ThreadCount: osMetrics.threadCount, ReadBytes: osMetrics.readBytes, WriteBytes: osMetrics.writeBytes,
 			ReadOperations: osMetrics.readOperations, WriteOperations: osMetrics.writeOperations,
 			MinorPageFaults: osMetrics.minorPageFaults, MajorPageFaults: osMetrics.majorPageFaults,
@@ -292,6 +343,13 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 	for key := range c.priors {
 		if _, ok := seen[key]; !ok {
 			delete(c.priors, key)
+		}
+	}
+	for pid := range c.proportional {
+		if _, ok := seenPIDs[pid]; !ok {
+			delete(c.proportional, pid)
+			delete(c.proportionalValues, pid)
+			delete(c.proportionalSampledAt, pid)
 		}
 	}
 	c.mu.Unlock()
@@ -377,6 +435,7 @@ func ShouldProbeLiveHeap(kind string) bool {
 
 type osMetrics struct {
 	virtualMemoryMB, swapMemoryMB, threadCount             *int64
+	virtualBytes, swapBytes                                *int64
 	readBytes, writeBytes, readOperations, writeOperations *int64
 	minorPageFaults, majorPageFaults                       *int64
 	voluntaryContextSwitches, involuntaryContextSwitches   *int64
@@ -387,9 +446,11 @@ func osMetricsFromPlatform(pm platform.ProcessPlatformMetrics) osMetrics {
 	m := osMetrics{}
 	if pm.VirtualBytes.Value != nil {
 		m.virtualMemoryMB = ptrInt64(*pm.VirtualBytes.Value / (1024 * 1024))
+		m.virtualBytes = pm.VirtualBytes.Value
 	}
 	if pm.SwapBytes.Value != nil {
 		m.swapMemoryMB = ptrInt64(*pm.SwapBytes.Value / (1024 * 1024))
+		m.swapBytes = pm.SwapBytes.Value
 	}
 	m.threadCount = pm.ThreadCount.Value
 	m.readBytes = pm.LogicalReadBytesTotal.Value
