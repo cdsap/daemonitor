@@ -143,8 +143,20 @@ func detailField(label, value string) string {
 }
 
 func detailTelemetry(m Model, p model.Process, width int) []string {
-	lines := []string{
-		"",
+	lines := []string{""}
+	if p.Type == "GRADLE_DAEMON" {
+		version, path := "", ""
+		if m.detailLog != nil {
+			version, path = m.detailLog.GradleVersion, m.detailLog.Path
+		}
+		lines = append(lines,
+			"GRADLE DAEMON LOG",
+			detailField("Gradle version", na(version)),
+			detailField("Log path", na(path)),
+			"",
+		)
+	}
+	lines = append(lines,
 		"JVM MEMORY POOLS",
 		detailField("Heap used", render.HeapText(p.HeapUsedMB)),
 		detailField("Heap committed", render.HeapText(p.HeapCommittedMB)),
@@ -171,7 +183,7 @@ func detailTelemetry(m Model, p model.Process, width int) []string {
 		detailField("End", "n/a (active or unavailable)"),
 		"",
 		"HOST RESOURCE CONTEXT",
-	}
+	)
 	if m.detailHostError != nil {
 		lines = append(lines, detailField("Host metrics", "unavailable: "+oneLine(m.detailHostError.Error())))
 	} else {
@@ -299,6 +311,8 @@ func detailAttributes(p model.Process, width int, now int64) []string {
 		detailField("Status", na(p.Status)),
 		detailField("Start", formatStart(p.StartTimeMs)),
 		detailField("Uptime", render.Uptime(p.StartTimeMs, now)),
+	}
+	lines = append(lines,
 		"",
 		"JVM / memory",
 		detailField("RSS", render.RSSText(p.RSSMemoryMB)),
@@ -333,7 +347,7 @@ func detailAttributes(p model.Process, width int, now int64) []string {
 			" · full "+render.GCTimeText(p.FullGCTimeSeconds)+
 			" · conc "+render.GCTimeText(p.ConcurrentGCTimeSeconds)+
 			" · total "+render.GCTimeText(p.TotalGCTimeSeconds)),
-	}
+	)
 	for i := range lines {
 		lines[i] = truncateWidth(lines[i], max(1, width-2))
 	}
