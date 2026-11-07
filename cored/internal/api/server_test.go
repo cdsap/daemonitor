@@ -285,7 +285,7 @@ func TestEventsEndpointReturnsLifecycleJSON(t *testing.T) {
 	client := &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				return (&net.Dialer{}).DialContext(ctx, "unix", socket)
+				return ipc.Default.Dial(ctx, socket)
 			},
 		},
 		Timeout: 3 * time.Second,
