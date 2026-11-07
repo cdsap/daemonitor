@@ -152,6 +152,14 @@ func (s *Server) refresh(ctx context.Context) {
 	}
 	writeStart := time.Now()
 	_ = s.Store.InsertSnapshot(snap)
+	hostID := ""
+	if s.Collector != nil {
+		hostID = s.Collector.HostID
+	}
+	if hostID == "" {
+		hostID = platform.LocalHostID()
+	}
+	_ = s.Store.ObserveProcesses(hostID, snap.SampledAtMs, snap.Processes)
 	if s.Collector != nil && s.Collector.Observe != nil {
 		size := int64(-1)
 		if info, err := os.Stat(s.DBPath); err == nil {
@@ -306,9 +314,9 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
-	sinceMs := time.Now().Add(-15 * time.Minute).UnixMilli()
+	sinceMs := int64(0)
 	if raw := r.URL.Query().Get("since_ms"); raw != "" {
-		if v, err := strconv.ParseInt(raw, 10, 64); err == nil && v >= 0 {
+		if v, err := strconv.ParseInt(raw, 10, 64); err == nil {
 			sinceMs = v
 		}
 	}
@@ -318,45 +326,17 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 			limit = v
 		}
 	}
-	if limit <= 0 || limit > 5000 {
-		limit = 500
+	rows, err := s.Store.ListEvents(sinceMs, limit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-	pid := int64(0)
-	if raw := r.URL.Query().Get("pid"); raw != "" {
-		v, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil || v <= 0 {
-			http.Error(w, "invalid pid", http.StatusBadRequest)
-			return
-		}
-		pid = v
-	}
-	rows := make([]model.EventRecord, 0, limit)
-	for _, tail := range s.Logs.AllTails() {
-		if pid > 0 && tail.PID != pid {
-			continue
-		}
-		identity := s.Logs.DaemonIdentity(tail.PID)
-		for _, event := range tail.Events {
-			if event.TimestampMs > 0 && event.TimestampMs < sinceMs {
-				continue
-			}
-			rows = append(rows, model.EventRecord{
-				SchemaVersion: 1, PID: tail.PID, ProcessIdentity: identity,
-				Kind: string(event.Kind), Source: "daemonitor-cored/redacted-log",
-				TimestampMs:      event.TimestampMs,
-				CollectionTimeMs: time.Now().UnixMilli(),
-				UID:              event.UID, BuildID: event.BuildID, CurrentDir: event.CurrentDir,
-				EnvNames: event.EnvNames, Success: event.Success, DurationSeconds: event.DurationSeconds,
-			})
-			if len(rows) == limit {
-				break
-			}
-		}
-		if len(rows) == limit {
-			break
-		}
-	}
-	writeJSON(w, model.Events{SchemaVersion: 1, SinceMs: sinceMs, Count: len(rows), Events: rows})
+	writeJSON(w, model.Events{
+		SchemaVersion: 1,
+		SinceMs:       sinceMs,
+		Count:         len(rows),
+		Events:        rows,
+	})
 }
 
 func (s *Server) handleDaemonLogs(w http.ResponseWriter, r *http.Request) {

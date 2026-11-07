@@ -24,6 +24,11 @@ type Process struct {
 	InvoluntaryContextSwitches *int64   `json:"involuntary_context_switches"`
 	OpenFileDescriptors        *int64   `json:"open_file_descriptors"`
 	CPUPercent                 *float64 `json:"cpu_percent"`
+	CPUUserSecondsTotal        *float64 `json:"cpu_user_seconds_total"`
+	CPUSystemSecondsTotal      *float64 `json:"cpu_system_seconds_total"`
+	CPUTotalSecondsTotal       *float64 `json:"cpu_total_seconds_total"`
+	CPUCoresUsed               *float64 `json:"cpu_cores_used"`
+	LogicalProcessorCount      *int64   `json:"logical_processor_count"`
 	MaxHeapMB                  *int64   `json:"max_heap_mb"`
 	MinHeapMB                  *int64   `json:"min_heap_mb"`
 	GC                         *string  `json:"gc"`
@@ -127,31 +132,6 @@ type SelfMetrics struct {
 	ProbeConcurrency int               `json:"probe_concurrency"`
 }
 
-// EventRecord is a redacted lifecycle event exposed to CLI clients.
-type EventRecord struct {
-	SchemaVersion    int      `json:"schema_version"`
-	PID              int64    `json:"pid"`
-	ProcessIdentity  string   `json:"process_identity,omitempty"`
-	Kind             string   `json:"kind"`
-	Source           string   `json:"source"`
-	TimestampMs      int64    `json:"timestamp_ms"`
-	CollectionTimeMs int64    `json:"collection_timestamp_ms"`
-	UID              string   `json:"uid,omitempty"`
-	BuildID          string   `json:"build_id,omitempty"`
-	CurrentDir       string   `json:"current_dir,omitempty"`
-	EnvNames         []string `json:"env_names,omitempty"`
-	Success          *bool    `json:"success,omitempty"`
-	DurationSeconds  *float64 `json:"duration_seconds,omitempty"`
-}
-
-// Events is the bounded lifecycle-event query response.
-type Events struct {
-	SchemaVersion int           `json:"schema_version"`
-	SinceMs       int64         `json:"since_ms"`
-	Count         int           `json:"count"`
-	Events        []EventRecord `json:"events"`
-}
-
 // MetricRecord is one normalized metric sample for machine-readable exports.
 type MetricRecord struct {
 	SchemaVersion    int    `json:"schema_version"`
@@ -172,4 +152,23 @@ type CollectorCadences struct {
 	JVMJITCodeCacheMs int64 `json:"jvm_jit_code_cache_ms"`
 	LinuxPSSMs        int64 `json:"linux_pss_ms"`
 	ContainerJobMs    int64 `json:"container_job_ms"`
+}
+
+// ProcessEvent is one lifecycle row from process_events (schema_version 1).
+type ProcessEvent struct {
+	SchemaVersion     int    `json:"schema_version"`
+	EventType         string `json:"event_type"`
+	TimestampMs       int64  `json:"timestamp_ms"`
+	ProcessInstanceID string `json:"process_instance_id"`
+	PID               int32  `json:"pid"`
+	ProcessType       string `json:"process_type,omitempty"`
+	Source            string `json:"source"`
+}
+
+// Events is the `/v1/events` response body.
+type Events struct {
+	SchemaVersion int            `json:"schema_version"`
+	SinceMs       int64          `json:"since_ms"`
+	Count         int            `json:"count"`
+	Events        []ProcessEvent `json:"events"`
 }

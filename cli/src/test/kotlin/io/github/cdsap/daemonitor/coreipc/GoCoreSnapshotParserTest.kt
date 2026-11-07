@@ -27,6 +27,11 @@ class GoCoreSnapshotParserTest {
                   "project_path": null,
                   "rss_memory_mb": 512,
                   "cpu_percent": 12.5,
+                  "cpu_user_seconds_total": 10.25,
+                  "cpu_system_seconds_total": 2.75,
+                  "cpu_total_seconds_total": 13.0,
+                  "cpu_cores_used": 1.5,
+                  "logical_processor_count": 8,
                   "max_heap_mb": 2048,
                   "min_heap_mb": 512,
                   "gc": "G1",
@@ -100,6 +105,11 @@ class GoCoreSnapshotParserTest {
         assertEquals(ProcessType.GRADLE_DAEMON, daemon.type)
         assertEquals(512L, daemon.rssMemoryMb)
         assertEquals(12.5, daemon.cpuPercent)
+        assertEquals(10.25, daemon.cpuUserSecondsTotal)
+        assertEquals(2.75, daemon.cpuSystemSecondsTotal)
+        assertEquals(13.0, daemon.cpuTotalSecondsTotal)
+        assertEquals(1.5, daemon.cpuCoresUsed)
+        assertEquals(8L, daemon.logicalProcessorCount)
         assertEquals(2048L, daemon.maxHeapMb)
         assertEquals(512L, daemon.minHeapMb)
         assertEquals("G1", daemon.gc)

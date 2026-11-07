@@ -405,11 +405,12 @@ func runOneShot(ctx context.Context, opts Options, cmd string, args []string, st
 		}
 		return 0
 	case "events":
-		events, err := c.Events(ctx, historySince(opts).UnixMilli(), opts.PID, boundedLimit(opts.Limit))
+		events, err := c.Events(ctx, historySince(opts).UnixMilli(), boundedLimit(opts.Limit))
 		if err != nil {
 			fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
 			return 1
 		}
+		events = filterEvents(events, opts.PID)
 		if err := writeEvents(stdout, events, opts.Output); err != nil {
 			fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
 			return 1
@@ -535,11 +536,26 @@ func writeMetrics(w io.Writer, rows []model.MetricRecord, output string) error {
 	}
 }
 
+func filterEvents(events model.Events, pid int64) model.Events {
+	if pid <= 0 {
+		return events
+	}
+	filtered := make([]model.ProcessEvent, 0, len(events.Events))
+	for _, event := range events.Events {
+		if int64(event.PID) == pid {
+			filtered = append(filtered, event)
+		}
+	}
+	events.Events = filtered
+	events.Count = len(filtered)
+	return events
+}
+
 func writeEvents(w io.Writer, events model.Events, output string) error {
 	switch output {
 	case "plain":
 		for _, event := range events.Events {
-			fmt.Fprintf(w, "%d pid=%d %s\n", event.TimestampMs, event.PID, event.Kind)
+			fmt.Fprintf(w, "%d pid=%d %s\n", event.TimestampMs, event.PID, event.EventType)
 		}
 		return nil
 	case "json":
@@ -553,11 +569,14 @@ func writeEvents(w io.Writer, events model.Events, output string) error {
 		return nil
 	case "csv":
 		cw := csv.NewWriter(w)
-		if err := cw.Write([]string{"schema_version", "pid", "process_identity", "kind", "source", "timestamp_ms", "collection_timestamp_ms", "build_id", "current_dir"}); err != nil {
+		if err := cw.Write([]string{"schema_version", "event_type", "timestamp_ms", "process_instance_id", "pid", "process_type", "source"}); err != nil {
 			return err
 		}
 		for _, event := range events.Events {
-			if err := cw.Write([]string{fmt.Sprint(event.SchemaVersion), fmt.Sprint(event.PID), event.ProcessIdentity, event.Kind, event.Source, fmt.Sprint(event.TimestampMs), fmt.Sprint(event.CollectionTimeMs), event.BuildID, event.CurrentDir}); err != nil {
+			if err := cw.Write([]string{
+				fmt.Sprint(event.SchemaVersion), event.EventType, fmt.Sprint(event.TimestampMs),
+				event.ProcessInstanceID, fmt.Sprint(event.PID), event.ProcessType, event.Source,
+			}); err != nil {
 				return err
 			}
 		}
@@ -588,12 +607,12 @@ func exportTelemetry(ctx context.Context, c *client.Client, opts Options, stdout
 			return 1
 		}
 	}
-	events, err := c.Events(ctx, start, opts.PID, boundedLimit(opts.Limit))
+	events, err := c.Events(ctx, start, boundedLimit(opts.Limit))
 	if err != nil {
 		fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
 		return 1
 	}
-	for _, row := range events.Events {
+	for _, row := range filterEvents(events, opts.PID).Events {
 		if err := enc.Encode(row); err != nil {
 			fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
 			return 1
