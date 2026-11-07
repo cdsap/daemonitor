@@ -78,6 +78,9 @@ func (s *Store) migrate() error {
 	if err := s.ensureBuildsAlignedWithApp(); err != nil {
 		return err
 	}
+	if err := s.ensureProcessInstancesAndEvents(); err != nil {
+		return err
+	}
 	_, err := s.db.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion))
 	return err
 }
@@ -85,7 +88,9 @@ func (s *Store) migrate() error {
 // schemaVersion tracks spike SQLite migrations toward the app WatcherDatabase schema.
 // v2: builds columns match Watcher.sq (start_time/end_time/command_line).
 // v4: process_samples includes optional OS and JVM observability metrics.
-const schemaVersion = 4
+// v5: process_samples includes cumulative CPU counters and interval cores used.
+// v6: process_instances + process_events for incarnation identity and lifecycle.
+const schemaVersion = 6
 
 func (s *Store) ensureProcessSamplesAlignedWithApp() error {
 	exists, err := s.tableExists("process_samples")
@@ -120,9 +125,22 @@ CREATE TABLE IF NOT EXISTS process_samples (
   working_directory TEXT,
   project_path TEXT,
   cpu_percent REAL,
+	cpu_user_seconds_total REAL,
+	cpu_system_seconds_total REAL,
+	cpu_total_seconds_total REAL,
+	cpu_cores_used REAL,
+	logical_processor_count INTEGER,
   rss_memory_mb INTEGER NOT NULL,
 	virtual_memory_mb INTEGER,
 	swap_memory_mb INTEGER,
+	resident_bytes INTEGER,
+	virtual_bytes INTEGER,
+	private_committed_bytes INTEGER,
+	proportional_bytes INTEGER,
+	physical_footprint_bytes INTEGER,
+	swap_bytes INTEGER,
+	peak_resident_bytes INTEGER,
+	proportional_sampled_at_ms INTEGER,
 	thread_count INTEGER,
 	read_bytes INTEGER,
 	write_bytes INTEGER,
@@ -149,6 +167,9 @@ CREATE TABLE IF NOT EXISTS process_samples (
 	young_gc_time_ms INTEGER,
 	old_gc_count INTEGER,
 	old_gc_time_ms INTEGER,
+	full_gc_count INTEGER,
+	concurrent_gc_count INTEGER,
+	total_gc_count INTEGER,
 	java_version TEXT,
 	java_runtime_version TEXT,
 	java_vendor TEXT,
@@ -173,6 +194,14 @@ func (s *Store) ensureProcessSamplesAdditiveColumns(cols []string) error {
 	}{
 		{"virtual_memory_mb", `ALTER TABLE process_samples ADD COLUMN virtual_memory_mb INTEGER`},
 		{"swap_memory_mb", `ALTER TABLE process_samples ADD COLUMN swap_memory_mb INTEGER`},
+		{"resident_bytes", `ALTER TABLE process_samples ADD COLUMN resident_bytes INTEGER`},
+		{"virtual_bytes", `ALTER TABLE process_samples ADD COLUMN virtual_bytes INTEGER`},
+		{"private_committed_bytes", `ALTER TABLE process_samples ADD COLUMN private_committed_bytes INTEGER`},
+		{"proportional_bytes", `ALTER TABLE process_samples ADD COLUMN proportional_bytes INTEGER`},
+		{"physical_footprint_bytes", `ALTER TABLE process_samples ADD COLUMN physical_footprint_bytes INTEGER`},
+		{"swap_bytes", `ALTER TABLE process_samples ADD COLUMN swap_bytes INTEGER`},
+		{"peak_resident_bytes", `ALTER TABLE process_samples ADD COLUMN peak_resident_bytes INTEGER`},
+		{"proportional_sampled_at_ms", `ALTER TABLE process_samples ADD COLUMN proportional_sampled_at_ms INTEGER`},
 		{"thread_count", `ALTER TABLE process_samples ADD COLUMN thread_count INTEGER`},
 		{"read_bytes", `ALTER TABLE process_samples ADD COLUMN read_bytes INTEGER`},
 		{"write_bytes", `ALTER TABLE process_samples ADD COLUMN write_bytes INTEGER`},
@@ -189,6 +218,9 @@ func (s *Store) ensureProcessSamplesAdditiveColumns(cols []string) error {
 		{"young_gc_time_ms", `ALTER TABLE process_samples ADD COLUMN young_gc_time_ms INTEGER`},
 		{"old_gc_count", `ALTER TABLE process_samples ADD COLUMN old_gc_count INTEGER`},
 		{"old_gc_time_ms", `ALTER TABLE process_samples ADD COLUMN old_gc_time_ms INTEGER`},
+		{"full_gc_count", `ALTER TABLE process_samples ADD COLUMN full_gc_count INTEGER`},
+		{"concurrent_gc_count", `ALTER TABLE process_samples ADD COLUMN concurrent_gc_count INTEGER`},
+		{"total_gc_count", `ALTER TABLE process_samples ADD COLUMN total_gc_count INTEGER`},
 		{"java_version", `ALTER TABLE process_samples ADD COLUMN java_version TEXT`},
 		{"java_runtime_version", `ALTER TABLE process_samples ADD COLUMN java_runtime_version TEXT`},
 		{"java_vendor", `ALTER TABLE process_samples ADD COLUMN java_vendor TEXT`},
@@ -197,6 +229,11 @@ func (s *Store) ensureProcessSamplesAdditiveColumns(cols []string) error {
 		{"os_name", `ALTER TABLE process_samples ADD COLUMN os_name TEXT`},
 		{"os_arch", `ALTER TABLE process_samples ADD COLUMN os_arch TEXT`},
 		{"active_processor_count", `ALTER TABLE process_samples ADD COLUMN active_processor_count INTEGER`},
+		{"cpu_user_seconds_total", `ALTER TABLE process_samples ADD COLUMN cpu_user_seconds_total REAL`},
+		{"cpu_system_seconds_total", `ALTER TABLE process_samples ADD COLUMN cpu_system_seconds_total REAL`},
+		{"cpu_total_seconds_total", `ALTER TABLE process_samples ADD COLUMN cpu_total_seconds_total REAL`},
+		{"cpu_cores_used", `ALTER TABLE process_samples ADD COLUMN cpu_cores_used REAL`},
+		{"logical_processor_count", `ALTER TABLE process_samples ADD COLUMN logical_processor_count INTEGER`},
 		{"heap_used_mb", `ALTER TABLE process_samples ADD COLUMN heap_used_mb INTEGER`},
 		{"heap_committed_mb", `ALTER TABLE process_samples ADD COLUMN heap_committed_mb INTEGER`},
 		{"heap_max_mb", `ALTER TABLE process_samples ADD COLUMN heap_max_mb INTEGER`},
@@ -477,19 +514,25 @@ func (s *Store) InsertSnapshot(snap model.Snapshot) error {
 	stmt, err := tx.Prepare(`
 INSERT INTO process_samples(
   timestamp, pid, parent_pid, process_type, command_line,
-  working_directory, project_path, rss_memory_mb, virtual_memory_mb, swap_memory_mb, thread_count,
+	working_directory, project_path, rss_memory_mb, virtual_memory_mb, swap_memory_mb, resident_bytes, virtual_bytes,
+	private_committed_bytes, proportional_bytes, physical_footprint_bytes, swap_bytes, peak_resident_bytes,
+	proportional_sampled_at_ms, thread_count,
   read_bytes, write_bytes, read_operations, write_operations, minor_page_faults, major_page_faults,
   voluntary_context_switches, involuntary_context_switches, open_file_descriptors, cpu_percent,
+  cpu_user_seconds_total, cpu_system_seconds_total, cpu_total_seconds_total, cpu_cores_used, logical_processor_count,
   max_heap_mb, heap_used_mb, heap_committed_mb, heap_max_mb, heap_sampled_at_ms, heap_available,
   status, name, min_heap_mb, gc, metaspace_used_mb, metaspace_committed_mb, young_gc_count,
-  young_gc_time_ms, old_gc_count, old_gc_time_ms, java_version, java_runtime_version, java_vendor,
+  young_gc_time_ms, old_gc_count, old_gc_time_ms, full_gc_count, concurrent_gc_count, total_gc_count, java_version, java_runtime_version, java_vendor,
   java_vm_name, java_vm_version, os_name, os_arch, active_processor_count,
   start_time_ms, automated
 ) VALUES (
- ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
- ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
- ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
- ?, ?, ?, ?, ?)`)
+ ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+ ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+ ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+ ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+ ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+ ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+ ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -506,12 +549,15 @@ INSERT INTO process_samples(
 		}
 		if _, err := stmt.Exec(
 			snap.SampledAtMs, p.PID, p.ParentPID, p.Type, p.CommandLine,
-			p.WorkingDirectory, p.ProjectPath, p.RSSMemoryMB, p.VirtualMemoryMB, p.SwapMemoryMB, p.ThreadCount,
+			p.WorkingDirectory, p.ProjectPath, p.RSSMemoryMB, p.VirtualMemoryMB, p.SwapMemoryMB, p.ResidentBytes,
+			p.VirtualBytes, p.PrivateCommittedBytes, p.ProportionalBytes, p.PhysicalFootprintBytes, p.SwapBytes,
+			p.PeakResidentBytes, p.ProportionalSampledAtMs, p.ThreadCount,
 			p.ReadBytes, p.WriteBytes, p.ReadOperations, p.WriteOperations, p.MinorPageFaults, p.MajorPageFaults,
 			p.VoluntaryContextSwitches, p.InvoluntaryContextSwitches, p.OpenFileDescriptors, p.CPUPercent,
+			p.CPUUserSecondsTotal, p.CPUSystemSecondsTotal, p.CPUTotalSecondsTotal, p.CPUCoresUsed, p.LogicalProcessorCount,
 			p.MaxHeapMB, p.HeapUsedMB, p.HeapCommittedMB, p.HeapMaxMB, p.HeapSampledAtMs, heapAvail,
 			p.Status, nullStr(p.Name), p.MinHeapMB, p.GC, p.MetaspaceUsedMB, p.MetaspaceCommittedMB,
-			p.YoungGCCount, p.YoungGCTimeMs, p.OldGCCount, p.OldGCTimeMs, p.JavaVersion, p.JavaRuntimeVersion,
+			p.YoungGCCount, p.YoungGCTimeMs, p.OldGCCount, p.OldGCTimeMs, p.FullGCCount, p.ConcurrentGCCount, p.TotalGCCount, p.JavaVersion, p.JavaRuntimeVersion,
 			p.JavaVendor, p.JavaVMName, p.JavaVMVersion, p.OSName, p.OSArch, p.ActiveProcessorCount, p.StartTimeMs, automated,
 		); err != nil {
 			return err
@@ -526,7 +572,27 @@ func (s *Store) PurgeOlderThan(retention time.Duration) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	ev, err := s.db.Exec(`DELETE FROM process_events WHERE timestamp_ms < ?`, cutoff)
+	if err != nil {
+		return n, err
+	}
+	evN, err := ev.RowsAffected()
+	if err != nil {
+		return n, err
+	}
+	inst, err := s.db.Exec(`DELETE FROM process_instances WHERE last_observed_ms < ?`, cutoff)
+	if err != nil {
+		return n + evN, err
+	}
+	instN, err := inst.RowsAffected()
+	if err != nil {
+		return n + evN, err
+	}
+	return n + evN + instN, nil
 }
 
 func (s *Store) History(sinceMs int64, limit int) ([]model.Process, error) {
@@ -535,12 +601,15 @@ func (s *Store) History(sinceMs int64, limit int) ([]model.Process, error) {
 	}
 	rows, err := s.db.Query(`
 SELECT timestamp, pid, parent_pid, process_type, COALESCE(name, ''), command_line,
-       working_directory, project_path, rss_memory_mb, virtual_memory_mb, swap_memory_mb, thread_count,
+	working_directory, project_path, rss_memory_mb, virtual_memory_mb, swap_memory_mb, resident_bytes, virtual_bytes,
+	private_committed_bytes, proportional_bytes, physical_footprint_bytes, swap_bytes, peak_resident_bytes,
+	proportional_sampled_at_ms, thread_count,
        read_bytes, write_bytes, read_operations, write_operations, minor_page_faults, major_page_faults,
        voluntary_context_switches, involuntary_context_switches, open_file_descriptors, cpu_percent,
+       cpu_user_seconds_total, cpu_system_seconds_total, cpu_total_seconds_total, cpu_cores_used, logical_processor_count,
        max_heap_mb, min_heap_mb, gc, heap_used_mb, heap_committed_mb, heap_max_mb, heap_sampled_at_ms,
        heap_available, metaspace_used_mb, metaspace_committed_mb, young_gc_count, young_gc_time_ms,
-       old_gc_count, old_gc_time_ms, java_version, java_runtime_version, java_vendor,
+       old_gc_count, old_gc_time_ms, full_gc_count, concurrent_gc_count, total_gc_count, java_version, java_runtime_version, java_vendor,
        java_vm_name, java_vm_version, os_name, os_arch, active_processor_count,
        start_time_ms, status, automated
 FROM process_samples
@@ -558,12 +627,15 @@ LIMIT ?`, sinceMs, limit)
 		var automated, heapAvailable int
 		if err := rows.Scan(
 			&p.SampledAtMs, &p.PID, &p.ParentPID, &p.Type, &p.Name, &p.CommandLine,
-			&p.WorkingDirectory, &p.ProjectPath, &p.RSSMemoryMB, &p.VirtualMemoryMB, &p.SwapMemoryMB, &p.ThreadCount,
+			&p.WorkingDirectory, &p.ProjectPath, &p.RSSMemoryMB, &p.VirtualMemoryMB, &p.SwapMemoryMB, &p.ResidentBytes,
+			&p.VirtualBytes, &p.PrivateCommittedBytes, &p.ProportionalBytes, &p.PhysicalFootprintBytes, &p.SwapBytes,
+			&p.PeakResidentBytes, &p.ProportionalSampledAtMs, &p.ThreadCount,
 			&p.ReadBytes, &p.WriteBytes, &p.ReadOperations, &p.WriteOperations, &p.MinorPageFaults, &p.MajorPageFaults,
 			&p.VoluntaryContextSwitches, &p.InvoluntaryContextSwitches, &p.OpenFileDescriptors, &p.CPUPercent,
+			&p.CPUUserSecondsTotal, &p.CPUSystemSecondsTotal, &p.CPUTotalSecondsTotal, &p.CPUCoresUsed, &p.LogicalProcessorCount,
 			&p.MaxHeapMB, &p.MinHeapMB, &p.GC, &p.HeapUsedMB, &p.HeapCommittedMB, &p.HeapMaxMB, &p.HeapSampledAtMs,
 			&heapAvailable, &p.MetaspaceUsedMB, &p.MetaspaceCommittedMB, &p.YoungGCCount, &p.YoungGCTimeMs,
-			&p.OldGCCount, &p.OldGCTimeMs, &p.JavaVersion, &p.JavaRuntimeVersion, &p.JavaVendor,
+			&p.OldGCCount, &p.OldGCTimeMs, &p.FullGCCount, &p.ConcurrentGCCount, &p.TotalGCCount, &p.JavaVersion, &p.JavaRuntimeVersion, &p.JavaVendor,
 			&p.JavaVMName, &p.JavaVMVersion, &p.OSName, &p.OSArch, &p.ActiveProcessorCount,
 			&p.StartTimeMs, &p.Status, &automated,
 		); err != nil {

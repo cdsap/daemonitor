@@ -94,6 +94,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/v1/host", s.handleHost)
 	mux.HandleFunc("/v1/processes", s.handleProcesses)
 	mux.HandleFunc("/v1/processes/history", s.handleHistory)
+	mux.HandleFunc("/v1/events", s.handleEvents)
 	mux.HandleFunc("/v1/daemon-logs", s.handleDaemonLogs)
 	mux.HandleFunc("/v1/daemon-logs/", s.handleDaemonLogTail)
 	mux.HandleFunc("/v1/builds", s.handleBuilds)
@@ -151,6 +152,14 @@ func (s *Server) refresh(ctx context.Context) {
 	}
 	writeStart := time.Now()
 	_ = s.Store.InsertSnapshot(snap)
+	hostID := ""
+	if s.Collector != nil {
+		hostID = s.Collector.HostID
+	}
+	if hostID == "" {
+		hostID = platform.LocalHostID()
+	}
+	_ = s.Store.ObserveProcesses(hostID, snap.SampledAtMs, snap.Processes)
 	if s.Collector != nil && s.Collector.Observe != nil {
 		size := int64(-1)
 		if info, err := os.Stat(s.DBPath); err == nil {
@@ -301,6 +310,32 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		SinceMs:   sinceMs,
 		Count:     len(rows),
 		Processes: rows,
+	})
+}
+
+func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
+	sinceMs := int64(0)
+	if raw := r.URL.Query().Get("since_ms"); raw != "" {
+		if v, err := strconv.ParseInt(raw, 10, 64); err == nil {
+			sinceMs = v
+		}
+	}
+	limit := 500
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		if v, err := strconv.Atoi(raw); err == nil {
+			limit = v
+		}
+	}
+	rows, err := s.Store.ListEvents(sinceMs, limit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, model.Events{
+		SchemaVersion: 1,
+		SinceMs:       sinceMs,
+		Count:         len(rows),
+		Events:        rows,
 	})
 }
 

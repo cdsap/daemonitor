@@ -19,12 +19,31 @@ CLI: `cored/cmd/daemonitor-heapprobe`.
 **Wired into** `internal/poll` → `/v1/processes` (`heap_used_mb`, `heap_committed_mb`,
 `heap_available`, …) → Kotlin `GoCoreProcessSource` / CLI-desktop HEAP USED / HEAP CMT.
 
-Policy: probe `GRADLE_DAEMON` / `KOTLIN_DAEMON` only (wrappers/workers stay `n/a`).
+Policy: probe Gradle/Kotlin daemons, Gradle test workers, generic Gradle
+workers, and other classified Gradle-related JVMs. Wrappers remain `n/a`.
+Attachment is best-effort, so an unavailable JVM tool never blocks OS metrics.
 
 `jstat -gc` cumulative GC times are seconds: `YGCT` (young), `FGCT` (full),
 `CGCT` (concurrent), and `GCT` (total). They are exposed as nullable
 `*_gc_time_seconds` snapshot fields and formatted to three decimal places with an
 `s` suffix; unavailable values are rendered as `—`.
+
+## Expanded JVM telemetry
+
+The slower JVM probe path can also parse per-pool measurements (retaining the
+HotSpot pool name and source), `jstat -compiler` cumulative JIT counters,
+`jcmd Compiler.codecache` code heaps, `jstat -class` current loaded and
+cumulative loaded-class counts, and `jcmd PerfCounter.print` safepoint
+counters. Safepoint counters are not labeled as stop-the-world pause time.
+Missing fields stay null; no zero values are synthesized.
+
+Tool lookup is configured JDK directory, then `JAVA_HOME/bin`, then `PATH`.
+The formats are intended for HotSpot JDK 17, 21, and 25; JDK/vendor-specific
+unsupported commands are reported as sanitized diagnostics. Daemons, Kotlin
+daemons, test workers, generic workers, and R8-like Gradle-related JVMs use the
+same optional attach path; a JRE, non-HotSpot VM, different-user PID, or
+disabled attach mechanism leaves JVM fields unavailable without affecting RSS,
+CPU, or other OS collection.
 
 ## Run
 
