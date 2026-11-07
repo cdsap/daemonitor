@@ -145,6 +145,13 @@ func detailField(label, value string) string {
 func detailTelemetry(m Model, p model.Process, width int) []string {
 	lines := []string{
 		"",
+		"OS ACTIVITY",
+		detailField("Resource scope", resourceScopeText(p)),
+		detailField("Page faults", "minor "+optionalInt64Text(p.MinorPageFaults, "")+" / major "+optionalInt64Text(p.MajorPageFaults, "")),
+		detailField("Context switch", "voluntary "+optionalInt64Text(p.VoluntaryContextSwitches, "")+" / involuntary "+optionalInt64Text(p.InvoluntaryContextSwitches, "")),
+		detailField("CPU seconds", "user "+optionalFloat64Text(p.CPUUserSecondsTotal, "s")+" / system "+optionalFloat64Text(p.CPUSystemSecondsTotal, "s")+" / total "+optionalFloat64Text(p.CPUTotalSecondsTotal, "s")),
+		detailField("CPU cores", optionalFloat64Text(p.CPUCoresUsed, "")),
+		"",
 		"JVM MEMORY POOLS",
 		detailField("Heap used", render.HeapText(p.HeapUsedMB)),
 		detailField("Heap committed", render.HeapText(p.HeapCommittedMB)),
@@ -199,11 +206,28 @@ func detailTelemetry(m Model, p model.Process, width int) []string {
 	return lines
 }
 
+func resourceScopeText(p model.Process) string {
+	if p.ResourceScope != "" {
+		return string(p.ResourceScope)
+	}
+	return na(string(p.Resource.Scope))
+}
+
 func optionalMetricInt(metric model.IntMetric, unit string) string {
 	if metric.Value == nil {
 		return "n/a"
 	}
 	return fmt.Sprintf("%d%s", *metric.Value, unit)
+}
+
+func optionalFloat64Text(v *float64, unit string) string {
+	if v == nil {
+		return "n/a"
+	}
+	if unit == "" {
+		return fmt.Sprintf("%.1f", *v)
+	}
+	return fmt.Sprintf("%.1f %s", *v, unit)
 }
 
 func optionalMetricReal(metric model.RealMetric, unit string) string {

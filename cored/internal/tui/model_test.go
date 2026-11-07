@@ -641,6 +641,33 @@ func TestDetailsShowOptionalTelemetryAndKeepZeroDistinctFromUnavailable(t *testi
 	}
 }
 
+func TestDetailsShowOSActivityWithMixedAvailability(t *testing.T) {
+	minor, voluntary, cpuUser, cpuTotal, cores := int64(12), int64(0), 1.25, 4.5, 2.0
+	p := model.Process{
+		PID:                      9,
+		MinorPageFaults:          &minor,
+		VoluntaryContextSwitches: &voluntary,
+		CPUUserSecondsTotal:      &cpuUser,
+		CPUTotalSecondsTotal:     &cpuTotal,
+		CPUCoresUsed:             &cores,
+	}
+	m := NewModel(Config{Now: fixedNow, NoColor: true})
+	m.width, m.height, m.detailsOpen, m.detailProcess = 80, 50, true, &p
+	body := m.View().Content
+	for _, want := range []string{
+		"OS ACTIVITY",
+		"Resource scope n/a",
+		"Page faults    minor 12 / major n/a",
+		"Context switch voluntary 0 / involuntary n/a",
+		"CPU seconds    user 1.2 s / system n/a / total 4.5 s",
+		"CPU cores      2.0",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("details missing %q: %s", want, body)
+		}
+	}
+}
+
 func TestFormatRowIncludesGarbageCollector(t *testing.T) {
 	gc := "G1"
 	row := formatRow(model.Process{GC: &gc}, columnSet{ids: []columnID{colGC}}, fixedNow().UnixMilli())
