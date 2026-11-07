@@ -56,6 +56,9 @@ func TestUsageMentionsCommands(t *testing.T) {
 			t.Fatalf("usage missing %q", needle)
 		}
 	}
+	if strings.Contains(u, "\t--include-logs") || strings.Contains(u, "\t--include-project-path") {
+		t.Fatalf("usage options should use spaces, not tabs: %q", u)
+	}
 }
 
 func TestParseArgsQueryAndWatchOptions(t *testing.T) {

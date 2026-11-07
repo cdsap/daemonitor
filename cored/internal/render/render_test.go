@@ -8,6 +8,7 @@ import (
 
 	"github.com/cdsap/daemonitor/cored/internal/client"
 	"github.com/cdsap/daemonitor/cored/internal/model"
+	"github.com/cdsap/daemonitor/cored/internal/platform"
 )
 
 func TestWriteProcessesPlainKeepsColumnsAlignedForLongTypes(t *testing.T) {
@@ -241,6 +242,43 @@ func TestRowOrientedExports(t *testing.T) {
 	}
 	if strings.Count(strings.TrimSpace(buf.String()), "\n") != 0 || !strings.HasSuffix(buf.String(), "\n") {
 		t.Fatalf("expected one JSON line: %q", buf.String())
+	}
+}
+
+func TestWriteHostPlainShowsCompactAvailableMetrics(t *testing.T) {
+	cpus := int64(8)
+	cpu := 12.5
+	used := int64(2 * 1024 * 1024 * 1024)
+	avail := int64(6 * 1024 * 1024 * 1024)
+	total := int64(8 * 1024 * 1024 * 1024)
+	host := platform.HostMetrics{
+		SampledAtMs:          42,
+		Scope:                platform.ScopeHost,
+		LogicalProcessors:    platform.IntMetric{Availability: platform.Available, Value: &cpus},
+		CPUUsagePercent:      platform.RealMetric{Availability: platform.Available, Value: &cpu},
+		MemoryUsedBytes:      platform.IntMetric{Availability: platform.Available, Value: &used},
+		MemoryAvailableBytes: platform.IntMetric{Availability: platform.Available, Value: &avail},
+		MemoryTotalBytes:     platform.IntMetric{Availability: platform.Available, Value: &total},
+		CommitUsedBytes:      platform.IntMetric{Availability: platform.Unsupported},
+		Load1:                platform.RealMetric{Availability: platform.Unsupported},
+	}
+	var buf strings.Builder
+	WriteHostPlain(&buf, host)
+	out := buf.String()
+	for _, want := range []string{
+		"sampled_at_ms=42",
+		"scope=host",
+		"logical_processors=8",
+		"cpu_usage_percent=12.50%",
+		"memory_used=2 GB",
+		"memory_available=6 GB",
+		"memory_total=8 GB",
+		"commit_used=n/a",
+		"load1=n/a",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("host plain missing %q in %q", want, out)
+		}
 	}
 }
 
