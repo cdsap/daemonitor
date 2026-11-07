@@ -69,6 +69,74 @@ CREATE TABLE builds (
 CREATE INDEX builds_start ON builds(start_time);
 CREATE INDEX builds_project ON builds(project_path);
 
+-- Additive normalized storage. Existing process_samples/builds readers remain supported.
+CREATE TABLE process_instances (
+    instance_id TEXT PRIMARY KEY,
+    pid INTEGER NOT NULL,
+    process_type TEXT NOT NULL,
+    config_json TEXT,
+    first_observed_at INTEGER NOT NULL,
+    last_observed_at INTEGER NOT NULL
+);
+CREATE INDEX process_instances_pid ON process_instances(pid);
+
+CREATE TABLE metric_definitions (
+    metric_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    unit TEXT,
+    kind TEXT NOT NULL,
+    temporality TEXT NOT NULL,
+    source TEXT NOT NULL,
+    platform TEXT,
+    UNIQUE(name, source, platform)
+);
+
+CREATE TABLE resource_scopes (
+    scope_id TEXT PRIMARY KEY,
+    scope_type TEXT NOT NULL,
+    identity TEXT NOT NULL,
+    metadata_json TEXT,
+    first_observed_at INTEGER NOT NULL,
+    last_observed_at INTEGER NOT NULL,
+    UNIQUE(scope_type, identity)
+);
+
+CREATE TABLE metric_samples (
+    sample_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp INTEGER NOT NULL,
+    instance_id TEXT NOT NULL REFERENCES process_instances(instance_id),
+    scope_id TEXT REFERENCES resource_scopes(scope_id),
+    metric_id TEXT NOT NULL REFERENCES metric_definitions(metric_id),
+    int_value INTEGER,
+    real_value REAL,
+    source TEXT NOT NULL,
+    sampled_at INTEGER NOT NULL,
+    CHECK ((int_value IS NOT NULL AND real_value IS NULL) OR
+           (int_value IS NULL AND real_value IS NOT NULL))
+);
+CREATE INDEX metric_samples_instance_metric_ts ON metric_samples(instance_id, metric_id, timestamp);
+CREATE INDEX metric_samples_metric_ts ON metric_samples(metric_id, timestamp);
+
+CREATE TABLE process_events (
+    event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    instance_id TEXT NOT NULL REFERENCES process_instances(instance_id),
+    timestamp INTEGER NOT NULL,
+    event_type TEXT NOT NULL,
+    metadata_json TEXT,
+    source TEXT NOT NULL
+);
+CREATE INDEX process_events_instance_ts ON process_events(instance_id, timestamp);
+
+CREATE TABLE collection_capabilities (
+    capability_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    source TEXT NOT NULL,
+    supported INTEGER NOT NULL,
+    available INTEGER NOT NULL,
+    details_json TEXT,
+    updated_at INTEGER NOT NULL
+);
+
 insertSample:
 INSERT INTO process_samples(timestamp, pid, parent_pid, process_type, command_line, working_directory, project_path, cpu_percent, rss_memory_mb, max_heap_mb, heap_used_mb, heap_committed_mb, heap_max_mb, heap_sampled_at_ms, heap_available, virtual_memory_mb, swap_memory_mb, thread_count, read_bytes, write_bytes, read_operations, write_operations, minor_page_faults, major_page_faults, voluntary_context_switches, involuntary_context_switches, open_file_descriptors, metaspace_used_mb, metaspace_committed_mb, young_gc_count, young_gc_time_ms, old_gc_count, old_gc_time_ms, java_version, java_vendor, active_processor_count, status)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
@@ -144,3 +212,65 @@ DELETE FROM process_samples WHERE timestamp < ?;
 
 purgeBuildsOlderThan:
 DELETE FROM builds WHERE start_time < ?;
+
+upsertProcessInstance:
+INSERT INTO process_instances(instance_id, pid, process_type, config_json, first_observed_at, last_observed_at)
+VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT(instance_id) DO UPDATE SET
+    last_observed_at = excluded.last_observed_at,
+    config_json = COALESCE(excluded.config_json, process_instances.config_json);
+
+processInstancesByPid:
+SELECT * FROM process_instances WHERE pid = ? ORDER BY first_observed_at;
+
+insertMetricDefinition:
+INSERT INTO metric_definitions(metric_id, name, unit, kind, temporality, source, platform)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(metric_id) DO UPDATE SET
+    name = excluded.name, unit = excluded.unit, kind = excluded.kind,
+    temporality = excluded.temporality, source = excluded.source, platform = excluded.platform;
+
+insertMetricSample:
+INSERT INTO metric_samples(timestamp, instance_id, scope_id, metric_id, int_value, real_value, source, sampled_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+insertProcessEvent:
+INSERT INTO process_events(instance_id, timestamp, event_type, metadata_json, source)
+VALUES (?, ?, ?, ?, ?);
+
+upsertResourceScope:
+INSERT INTO resource_scopes(scope_id, scope_type, identity, metadata_json, first_observed_at, last_observed_at)
+VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT(scope_id) DO UPDATE SET
+    last_observed_at = excluded.last_observed_at,
+    metadata_json = COALESCE(excluded.metadata_json, resource_scopes.metadata_json);
+
+upsertCollectionCapability:
+INSERT OR REPLACE INTO collection_capabilities(capability_id, name, source, supported, available, details_json, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+normalizedMetricSamples:
+SELECT timestamp, instance_id, scope_id, metric_id, int_value, real_value, source, sampled_at
+FROM metric_samples
+WHERE metric_id = ? AND timestamp >= ? AND timestamp <= ?
+ORDER BY timestamp DESC
+LIMIT ?;
+
+legacyMetricSamples:
+SELECT timestamp, pid, rss_memory_mb, cpu_percent
+FROM process_samples
+WHERE timestamp >= ? AND timestamp <= ?
+ORDER BY timestamp DESC
+LIMIT ?;
+
+purgeMetricSamplesOlderThan:
+DELETE FROM metric_samples WHERE timestamp < ?;
+
+purgeProcessEventsOlderThan:
+DELETE FROM process_events WHERE timestamp < ?;
+
+purgeProcessInstancesOlderThan:
+DELETE FROM process_instances
+WHERE last_observed_at < ?
+  AND NOT EXISTS (SELECT 1 FROM metric_samples WHERE metric_samples.instance_id = process_instances.instance_id)
+  AND NOT EXISTS (SELECT 1 FROM process_events WHERE process_events.instance_id = process_instances.instance_id);
