@@ -190,8 +190,14 @@ The first version should show available fields from the current API:
 - Associated Gradle version when available
 - Relevant daemon log path when available
 - Recent redacted daemon-log lines when available
+- Native memory bytes from the live snapshot when available
+- OS activity from the live snapshot when available
 
-Unavailable data is displayed as `n/a`. The TUI must not imply that live heap is available through the Go core when it is not.
+Unavailable or null data is displayed as `n/a`. Native memory and OS activity
+are details-only fields; the compact process table must not grow new columns for
+these metrics. See the [native metrics process-details plan](../plans/2026-11-07-tui-process-details-native-metrics-spec.md)
+for the field lists and non-goals. The TUI must not imply that live heap is
+available through the Go core when it is not.
 
 ### 7.6 Empty and error states
 
