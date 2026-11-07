@@ -260,10 +260,8 @@ func TestBuildsPIDQueryUsesCoreResolvedDaemonIdentity(t *testing.T) {
 }
 
 func TestEventsEndpointReturnsLifecycleJSON(t *testing.T) {
-	socket := filepath.Join(os.TempDir(), fmt.Sprintf("dmn-events-%d.sock", os.Getpid()))
+	socket := ipc.TempEndpoint(t, "events")
 	db := filepath.Join(t.TempDir(), "core.sqlite")
-	_ = os.Remove(socket)
-	defer os.Remove(socket)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
