@@ -43,6 +43,8 @@ type priorCPU struct {
 	wallClock     time.Time
 }
 
+// incarnationKey identifies a process incarnation for counter series (CPU deltas).
+// PID alone is insufficient because operating systems reuse PIDs.
 type incarnationKey struct {
 	pid          int32
 	createTimeMs int64
@@ -73,6 +75,7 @@ type Collector struct {
 	proportionalValues    map[int32]*int64
 	proportionalSampledAt map[int32]*int64
 	cpus                  int
+	HostID                string
 	Heap                  *heap.Prober
 	Platform              platform.PlatformCollector
 	Observe               *observe.Metrics
@@ -95,6 +98,7 @@ func NewCollector() *Collector {
 		proportionalValues:    make(map[int32]*int64),
 		proportionalSampledAt: make(map[int32]*int64),
 		cpus:                  n,
+		HostID:                platform.LocalHostID(),
 		Heap:                  prober,
 		Platform:              platform.New(),
 		Observe:               &observe.Metrics{},
@@ -133,6 +137,10 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 	seenPIDs := make(map[int32]struct{}, len(pids))
 	out := make([]model.Process, 0, 8)
 	var jvmJobs []pendingJVM
+	hostID := c.HostID
+	if hostID == "" {
+		hostID = platform.LocalHostID()
+	}
 
 	// Pass 1: discovery + OS metrics only. JVM probes must not delay this path.
 	for _, pid := range pids {
@@ -166,6 +174,7 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 			platMetrics = c.Platform.CollectProcess(ctx, platform.ProcessIdentity{
 				PID:          pid,
 				CreateTimeMs: startMs,
+				HostID:       hostID,
 			})
 			if platMetrics.Identity.CreateTimeMs > 0 {
 				startMs = platMetrics.Identity.CreateTimeMs
