@@ -28,4 +28,6 @@ Optional metrics carry an availability state. Unavailable values serialize as JS
 
 ## Cutover status
 
-This first slice preserves existing gopsutil process metrics while exposing capability metadata for platform-specific fields (physical footprint, PSS, private commit, disk I/O, handles) that follow-up collectors will fill in.
+Host metrics are sampled alongside process snapshots. Linux additionally reads load averages, PSI, and cgroup v2 files in the target process's cgroup directory; a missing cgroup or file is represented by an unavailable metric rather than zero. macOS does not expose a fabricated container-throttle metric. Windows Job Object fields are read-only optional fields: the collector never creates a Job Object or changes target membership.
+
+`ResourceScope` values are `host`, `process`, `linux_cgroup`, and `windows_job`. Every optional field carries availability metadata, so consumers should consult the capability matrix and the field's availability before using its nullable value.

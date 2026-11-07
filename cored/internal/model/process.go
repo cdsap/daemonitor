@@ -1,5 +1,7 @@
 package model
 
+import "github.com/cdsap/daemonitor/cored/internal/platform"
+
 // Process is an IPC snapshot of a Gradle-related process.
 // Field names mirror the Kotlin GradleProcess domain for dual-run clients.
 type Process struct {
@@ -39,25 +41,27 @@ type Process struct {
 	YoungGCCount         *int64 `json:"young_gc_count"`
 	YoungGCTimeMs        *int64 `json:"young_gc_time_ms"`
 	// Cumulative jstat -gc times, in seconds; null means unavailable.
-	YoungGCTimeSeconds      *float64          `json:"young_gc_time_seconds"`
-	FullGCTimeSeconds       *float64          `json:"full_gc_time_seconds"`
-	ConcurrentGCTimeSeconds *float64          `json:"concurrent_gc_time_seconds"`
-	TotalGCTimeSeconds      *float64          `json:"total_gc_time_seconds"`
-	OldGCCount              *int64            `json:"old_gc_count"`
-	OldGCTimeMs             *int64            `json:"old_gc_time_ms"`
-	JavaVersion             *string           `json:"java_version"`
-	JavaRuntimeVersion      *string           `json:"java_runtime_version"`
-	JavaVendor              *string           `json:"java_vendor"`
-	JavaVMName              *string           `json:"java_vm_name"`
-	JavaVMVersion           *string           `json:"java_vm_version"`
-	OSName                  *string           `json:"os_name"`
-	OSArch                  *string           `json:"os_arch"`
-	ActiveProcessorCount    *int64            `json:"active_processor_count"`
-	HeapProbeDiagnostics    []ProbeDiagnostic `json:"heap_probe_diagnostics,omitempty"`
-	StartTimeMs             int64             `json:"start_time_ms"`
-	Status                  string            `json:"status"`
-	Automated               bool              `json:"automated"`
-	SampledAtMs             int64             `json:"sampled_at_ms"`
+	YoungGCTimeSeconds      *float64                 `json:"young_gc_time_seconds"`
+	FullGCTimeSeconds       *float64                 `json:"full_gc_time_seconds"`
+	ConcurrentGCTimeSeconds *float64                 `json:"concurrent_gc_time_seconds"`
+	TotalGCTimeSeconds      *float64                 `json:"total_gc_time_seconds"`
+	OldGCCount              *int64                   `json:"old_gc_count"`
+	OldGCTimeMs             *int64                   `json:"old_gc_time_ms"`
+	JavaVersion             *string                  `json:"java_version"`
+	JavaRuntimeVersion      *string                  `json:"java_runtime_version"`
+	JavaVendor              *string                  `json:"java_vendor"`
+	JavaVMName              *string                  `json:"java_vm_name"`
+	JavaVMVersion           *string                  `json:"java_vm_version"`
+	OSName                  *string                  `json:"os_name"`
+	OSArch                  *string                  `json:"os_arch"`
+	ActiveProcessorCount    *int64                   `json:"active_processor_count"`
+	HeapProbeDiagnostics    []ProbeDiagnostic        `json:"heap_probe_diagnostics,omitempty"`
+	StartTimeMs             int64                    `json:"start_time_ms"`
+	Status                  string                   `json:"status"`
+	Automated               bool                     `json:"automated"`
+	SampledAtMs             int64                    `json:"sampled_at_ms"`
+	ResourceScope           platform.ResourceScope   `json:"resource_scope"`
+	Resource                platform.ResourceMetrics `json:"resource"`
 }
 
 // ProbeDiagnostic is a safe, stable summary of a failed JVM tool attempt.
@@ -70,8 +74,9 @@ type ProbeDiagnostic struct {
 
 // Snapshot is the `/v1/processes` response body.
 type Snapshot struct {
-	SampledAtMs int64     `json:"sampled_at_ms"`
-	Processes   []Process `json:"processes"`
+	SampledAtMs int64                `json:"sampled_at_ms"`
+	Host        platform.HostMetrics `json:"host"`
+	Processes   []Process            `json:"processes"`
 }
 
 // History is the `/v1/processes/history` response body.
@@ -101,18 +106,18 @@ type Health struct {
 
 // Capabilities is the `/v1/capabilities` response body.
 type Capabilities struct {
-	SchemaVersion int                    `json:"schema_version"`
-	Platform      string                 `json:"platform"`
-	SampledAtMs   int64                  `json:"sampled_at_ms"`
-	Metrics       []CapabilityMetric     `json:"metrics"`
+	SchemaVersion int                `json:"schema_version"`
+	Platform      string             `json:"platform"`
+	SampledAtMs   int64              `json:"sampled_at_ms"`
+	Metrics       []CapabilityMetric `json:"metrics"`
 }
 
 // CapabilityMetric is one optional metric's availability on this host.
 type CapabilityMetric struct {
-	MetricName   string  `json:"metric_name"`
-	Availability string  `json:"availability"`
-	Unit         string  `json:"unit,omitempty"`
-	Source       string  `json:"source,omitempty"`
-	Platform     string  `json:"platform,omitempty"`
-	Description  string  `json:"description,omitempty"`
+	MetricName   string `json:"metric_name"`
+	Availability string `json:"availability"`
+	Unit         string `json:"unit,omitempty"`
+	Source       string `json:"source,omitempty"`
+	Platform     string `json:"platform,omitempty"`
+	Description  string `json:"description,omitempty"`
 }

@@ -207,6 +207,8 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 			Status:               status,
 			Automated:            IsNonInteractive(cmdline),
 			SampledAtMs:          now,
+			ResourceScope:        platMetrics.ResourceScope,
+			Resource:             platMetrics.Resource,
 		})
 	}
 
@@ -222,7 +224,11 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 		c.Heap.EvictMissing(seen)
 	}
 
-	return model.Snapshot{SampledAtMs: now, Processes: out}, nil
+	host := platform.HostMetrics{}
+	if c.Platform != nil {
+		host = c.Platform.CollectHost(ctx)
+	}
+	return model.Snapshot{SampledAtMs: now, Host: host, Processes: out}, nil
 }
 
 // ShouldProbeLiveHeap mirrors Kotlin: only Gradle/Kotlin daemons are probed.
