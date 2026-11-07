@@ -24,6 +24,11 @@ type Process struct {
 	InvoluntaryContextSwitches *int64   `json:"involuntary_context_switches"`
 	OpenFileDescriptors        *int64   `json:"open_file_descriptors"`
 	CPUPercent                 *float64 `json:"cpu_percent"`
+	CPUUserSecondsTotal        *float64 `json:"cpu_user_seconds_total"`
+	CPUSystemSecondsTotal      *float64 `json:"cpu_system_seconds_total"`
+	CPUTotalSecondsTotal       *float64 `json:"cpu_total_seconds_total"`
+	CPUCoresUsed               *float64 `json:"cpu_cores_used"`
+	LogicalProcessorCount      *int64   `json:"logical_processor_count"`
 	MaxHeapMB                  *int64   `json:"max_heap_mb"`
 	MinHeapMB                  *int64   `json:"min_heap_mb"`
 	GC                         *string  `json:"gc"`

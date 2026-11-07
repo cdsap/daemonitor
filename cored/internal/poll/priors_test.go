@@ -1,6 +1,9 @@
 package poll
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestCPUPriorsKeyedByIncarnationNotPIDAlone(t *testing.T) {
 	c := &Collector{
@@ -9,13 +12,14 @@ func TestCPUPriorsKeyedByIncarnationNotPIDAlone(t *testing.T) {
 	}
 	first := incarnationKey{pid: 42, createTimeMs: 1000}
 	second := incarnationKey{pid: 42, createTimeMs: 2000}
-	c.priors[first] = priorCPU{cpuTimeMs: 500, wallClockMs: 100}
-	c.priors[second] = priorCPU{cpuTimeMs: 10, wallClockMs: 100}
+	now := time.UnixMilli(100)
+	c.priors[first] = priorCPU{userSeconds: 0.4, systemSeconds: 0.1, totalSeconds: 0.5, wallClock: now}
+	c.priors[second] = priorCPU{userSeconds: 0.01, systemSeconds: 0, totalSeconds: 0.01, wallClock: now}
 
 	if len(c.priors) != 2 {
 		t.Fatalf("priors=%d want 2 distinct incarnations", len(c.priors))
 	}
-	if c.priors[first].cpuTimeMs == c.priors[second].cpuTimeMs {
+	if c.priors[first].totalSeconds == c.priors[second].totalSeconds {
 		t.Fatal("PID reuse must not share CPU prior state across create times")
 	}
 

@@ -266,8 +266,8 @@ func TestSchemaVersionIncludesProcessInstances(t *testing.T) {
 	if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != 5 {
-		t.Fatalf("user_version=%d want 5", version)
+	if version != 6 {
+		t.Fatalf("user_version=%d want 6", version)
 	}
 	for _, table := range []string{"process_instances", "process_events", "process_samples", "builds"} {
 		var name string

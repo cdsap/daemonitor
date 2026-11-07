@@ -37,8 +37,10 @@ var (
 )
 
 type priorCPU struct {
-	cpuTimeMs   float64
-	wallClockMs int64
+	userSeconds   float64
+	systemSeconds float64
+	totalSeconds  float64
+	wallClock     time.Time
 }
 
 // incarnationKey identifies a process incarnation for counter series (CPU deltas).
@@ -46,6 +48,23 @@ type priorCPU struct {
 type incarnationKey struct {
 	pid          int32
 	createTimeMs int64
+}
+
+func cpuUsage(now time.Time, cpus int, current priorCPU, prior priorCPU, ok bool) (percent, cores *float64) {
+	if !ok {
+		return nil, nil
+	}
+	wallSeconds := now.Sub(prior.wallClock).Seconds()
+	cpuDelta := current.totalSeconds - prior.totalSeconds
+	if wallSeconds <= 0 || cpuDelta < 0 {
+		return nil, nil
+	}
+	used := cpuDelta / wallSeconds
+	cores = ptrFloat64(used)
+	if cpus > 0 {
+		percent = ptrFloat64(used / float64(cpus) * 100.0)
+	}
+	return percent, cores
 }
 
 // Collector lists Gradle-related processes using OS process APIs (gopsutil ≈ OSHI).
@@ -101,15 +120,15 @@ func (c *Collector) HostMetrics(ctx context.Context) platform.HostMetrics {
 
 func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 	started := time.Now()
-
-	now := time.Now().UnixMilli()
+	nowTime := started
+	now := nowTime.UnixMilli()
 	pids, err := process.PidsWithContext(ctx)
 	if err != nil {
 		return model.Snapshot{}, err
 	}
 
+	seen := make(map[incarnationKey]struct{}, len(pids))
 	seenPIDs := make(map[int32]struct{}, len(pids))
-	seenIncarnations := make(map[incarnationKey]struct{}, len(pids))
 	out := make([]model.Process, 0, 8)
 	var jvmJobs []pendingJVM
 	hostID := c.HostID
@@ -161,30 +180,48 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 			rssMB = *platMetrics.ResidentBytes.Value / (1024 * 1024)
 		}
 
-		var cpuPct *float64
-		cpuTimeMs := 0.0
-		// Skip CPU prior series when create time is unknown — PID alone is unsafe after reuse.
-		if startMs > 0 && platMetrics.CPUTotalSecondsTotal.Value != nil {
-			key := incarnationKey{pid: pid, createTimeMs: startMs}
-			seenIncarnations[key] = struct{}{}
-			cpuTimeMs = *platMetrics.CPUTotalSecondsTotal.Value * 1000
-			c.mu.Lock()
-			prior, ok := c.priors[key]
-			c.mu.Unlock()
-			if ok {
-				wallDelta := now - prior.wallClockMs
-				cpuDelta := cpuTimeMs - prior.cpuTimeMs
-				if wallDelta > 0 && cpuDelta >= 0 && c.cpus > 0 {
-					pct := (cpuDelta / float64(wallDelta)) / float64(c.cpus) * 100.0
-					if pct < 0 {
-						pct = 0
-					}
-					cpuPct = ptrFloat64(pct)
-				}
+		var cpuPct, cpuCoresUsed *float64
+		var cpuUserSeconds, cpuSystemSeconds, cpuTotalSeconds *float64
+		if platMetrics.CPUUserSecondsTotal.Value != nil || platMetrics.CPUSystemSecondsTotal.Value != nil || platMetrics.CPUTotalSecondsTotal.Value != nil {
+			userSeconds := 0.0
+			systemSeconds := 0.0
+			if platMetrics.CPUUserSecondsTotal.Value != nil {
+				userSeconds = *platMetrics.CPUUserSecondsTotal.Value
 			}
-			c.mu.Lock()
-			c.priors[key] = priorCPU{cpuTimeMs: cpuTimeMs, wallClockMs: now}
-			c.mu.Unlock()
+			if platMetrics.CPUSystemSecondsTotal.Value != nil {
+				systemSeconds = *platMetrics.CPUSystemSecondsTotal.Value
+			}
+			totalSeconds := userSeconds + systemSeconds
+			if platMetrics.CPUTotalSecondsTotal.Value != nil {
+				totalSeconds = *platMetrics.CPUTotalSecondsTotal.Value
+			}
+			if startMs > 0 {
+				key := incarnationKey{pid: pid, createTimeMs: startMs}
+				seen[key] = struct{}{}
+				c.mu.Lock()
+				prior, ok := c.priors[key]
+				c.mu.Unlock()
+				monotonic := !ok || (userSeconds >= prior.userSeconds && systemSeconds >= prior.systemSeconds && totalSeconds >= prior.totalSeconds)
+				if monotonic {
+					cpuUserSeconds = ptrFloat64(userSeconds)
+					cpuSystemSeconds = ptrFloat64(systemSeconds)
+					cpuTotalSeconds = ptrFloat64(totalSeconds)
+					cpuPct, cpuCoresUsed = cpuUsage(nowTime, c.cpus, priorCPU{
+						userSeconds: userSeconds, systemSeconds: systemSeconds, totalSeconds: totalSeconds,
+						wallClock: nowTime,
+					}, prior, ok)
+					c.mu.Lock()
+					c.priors[key] = priorCPU{
+						userSeconds: userSeconds, systemSeconds: systemSeconds,
+						totalSeconds: totalSeconds, wallClock: nowTime,
+					}
+					c.mu.Unlock()
+				}
+			} else {
+				cpuUserSeconds = ptrFloat64(userSeconds)
+				cpuSystemSeconds = ptrFloat64(systemSeconds)
+				cpuTotalSeconds = ptrFloat64(totalSeconds)
+			}
 		}
 
 		parentPID := int32(0)
@@ -225,6 +262,11 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 			InvoluntaryContextSwitches: osMetrics.involuntaryContextSwitches,
 			OpenFileDescriptors:        osMetrics.openFileDescriptors,
 			CPUPercent:                 cpuPct,
+			CPUUserSecondsTotal:        cpuUserSeconds,
+			CPUSystemSecondsTotal:      cpuSystemSeconds,
+			CPUTotalSecondsTotal:       cpuTotalSeconds,
+			CPUCoresUsed:               cpuCoresUsed,
+			LogicalProcessorCount:      ptrInt64(int64(c.cpus)),
 			MaxHeapMB:                  jvm.MaxHeapMB,
 			MinHeapMB:                  jvm.MinHeapMB,
 			GC:                         jvm.GC,
@@ -248,7 +290,7 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 
 	c.mu.Lock()
 	for key := range c.priors {
-		if _, ok := seenIncarnations[key]; !ok {
+		if _, ok := seen[key]; !ok {
 			delete(c.priors, key)
 		}
 	}

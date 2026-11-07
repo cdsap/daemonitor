@@ -88,8 +88,9 @@ func (s *Store) migrate() error {
 // schemaVersion tracks spike SQLite migrations toward the app WatcherDatabase schema.
 // v2: builds columns match Watcher.sq (start_time/end_time/command_line).
 // v4: process_samples includes optional OS and JVM observability metrics.
-// v5: process_instances + process_events for incarnation identity and lifecycle.
-const schemaVersion = 5
+// v5: process_samples includes cumulative CPU counters and interval cores used.
+// v6: process_instances + process_events for incarnation identity and lifecycle.
+const schemaVersion = 6
 
 func (s *Store) ensureProcessSamplesAlignedWithApp() error {
 	exists, err := s.tableExists("process_samples")
@@ -124,6 +125,11 @@ CREATE TABLE IF NOT EXISTS process_samples (
   working_directory TEXT,
   project_path TEXT,
   cpu_percent REAL,
+	cpu_user_seconds_total REAL,
+	cpu_system_seconds_total REAL,
+	cpu_total_seconds_total REAL,
+	cpu_cores_used REAL,
+	logical_processor_count INTEGER,
   rss_memory_mb INTEGER NOT NULL,
 	virtual_memory_mb INTEGER,
 	swap_memory_mb INTEGER,
@@ -201,6 +207,11 @@ func (s *Store) ensureProcessSamplesAdditiveColumns(cols []string) error {
 		{"os_name", `ALTER TABLE process_samples ADD COLUMN os_name TEXT`},
 		{"os_arch", `ALTER TABLE process_samples ADD COLUMN os_arch TEXT`},
 		{"active_processor_count", `ALTER TABLE process_samples ADD COLUMN active_processor_count INTEGER`},
+		{"cpu_user_seconds_total", `ALTER TABLE process_samples ADD COLUMN cpu_user_seconds_total REAL`},
+		{"cpu_system_seconds_total", `ALTER TABLE process_samples ADD COLUMN cpu_system_seconds_total REAL`},
+		{"cpu_total_seconds_total", `ALTER TABLE process_samples ADD COLUMN cpu_total_seconds_total REAL`},
+		{"cpu_cores_used", `ALTER TABLE process_samples ADD COLUMN cpu_cores_used REAL`},
+		{"logical_processor_count", `ALTER TABLE process_samples ADD COLUMN logical_processor_count INTEGER`},
 		{"heap_used_mb", `ALTER TABLE process_samples ADD COLUMN heap_used_mb INTEGER`},
 		{"heap_committed_mb", `ALTER TABLE process_samples ADD COLUMN heap_committed_mb INTEGER`},
 		{"heap_max_mb", `ALTER TABLE process_samples ADD COLUMN heap_max_mb INTEGER`},
@@ -484,16 +495,17 @@ INSERT INTO process_samples(
   working_directory, project_path, rss_memory_mb, virtual_memory_mb, swap_memory_mb, thread_count,
   read_bytes, write_bytes, read_operations, write_operations, minor_page_faults, major_page_faults,
   voluntary_context_switches, involuntary_context_switches, open_file_descriptors, cpu_percent,
+  cpu_user_seconds_total, cpu_system_seconds_total, cpu_total_seconds_total, cpu_cores_used, logical_processor_count,
   max_heap_mb, heap_used_mb, heap_committed_mb, heap_max_mb, heap_sampled_at_ms, heap_available,
   status, name, min_heap_mb, gc, metaspace_used_mb, metaspace_committed_mb, young_gc_count,
   young_gc_time_ms, old_gc_count, old_gc_time_ms, java_version, java_runtime_version, java_vendor,
   java_vm_name, java_vm_version, os_name, os_arch, active_processor_count,
   start_time_ms, automated
 ) VALUES (
+		 ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
- ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
- ?, ?, ?, ?, ?)`)
+ ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -513,6 +525,7 @@ INSERT INTO process_samples(
 			p.WorkingDirectory, p.ProjectPath, p.RSSMemoryMB, p.VirtualMemoryMB, p.SwapMemoryMB, p.ThreadCount,
 			p.ReadBytes, p.WriteBytes, p.ReadOperations, p.WriteOperations, p.MinorPageFaults, p.MajorPageFaults,
 			p.VoluntaryContextSwitches, p.InvoluntaryContextSwitches, p.OpenFileDescriptors, p.CPUPercent,
+			p.CPUUserSecondsTotal, p.CPUSystemSecondsTotal, p.CPUTotalSecondsTotal, p.CPUCoresUsed, p.LogicalProcessorCount,
 			p.MaxHeapMB, p.HeapUsedMB, p.HeapCommittedMB, p.HeapMaxMB, p.HeapSampledAtMs, heapAvail,
 			p.Status, nullStr(p.Name), p.MinHeapMB, p.GC, p.MetaspaceUsedMB, p.MetaspaceCommittedMB,
 			p.YoungGCCount, p.YoungGCTimeMs, p.OldGCCount, p.OldGCTimeMs, p.JavaVersion, p.JavaRuntimeVersion,
@@ -562,6 +575,7 @@ SELECT timestamp, pid, parent_pid, process_type, COALESCE(name, ''), command_lin
        working_directory, project_path, rss_memory_mb, virtual_memory_mb, swap_memory_mb, thread_count,
        read_bytes, write_bytes, read_operations, write_operations, minor_page_faults, major_page_faults,
        voluntary_context_switches, involuntary_context_switches, open_file_descriptors, cpu_percent,
+       cpu_user_seconds_total, cpu_system_seconds_total, cpu_total_seconds_total, cpu_cores_used, logical_processor_count,
        max_heap_mb, min_heap_mb, gc, heap_used_mb, heap_committed_mb, heap_max_mb, heap_sampled_at_ms,
        heap_available, metaspace_used_mb, metaspace_committed_mb, young_gc_count, young_gc_time_ms,
        old_gc_count, old_gc_time_ms, java_version, java_runtime_version, java_vendor,
@@ -585,6 +599,7 @@ LIMIT ?`, sinceMs, limit)
 			&p.WorkingDirectory, &p.ProjectPath, &p.RSSMemoryMB, &p.VirtualMemoryMB, &p.SwapMemoryMB, &p.ThreadCount,
 			&p.ReadBytes, &p.WriteBytes, &p.ReadOperations, &p.WriteOperations, &p.MinorPageFaults, &p.MajorPageFaults,
 			&p.VoluntaryContextSwitches, &p.InvoluntaryContextSwitches, &p.OpenFileDescriptors, &p.CPUPercent,
+			&p.CPUUserSecondsTotal, &p.CPUSystemSecondsTotal, &p.CPUTotalSecondsTotal, &p.CPUCoresUsed, &p.LogicalProcessorCount,
 			&p.MaxHeapMB, &p.MinHeapMB, &p.GC, &p.HeapUsedMB, &p.HeapCommittedMB, &p.HeapMaxMB, &p.HeapSampledAtMs,
 			&heapAvailable, &p.MetaspaceUsedMB, &p.MetaspaceCommittedMB, &p.YoungGCCount, &p.YoungGCTimeMs,
 			&p.OldGCCount, &p.OldGCTimeMs, &p.JavaVersion, &p.JavaRuntimeVersion, &p.JavaVendor,
