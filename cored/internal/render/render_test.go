@@ -244,4 +244,18 @@ func TestRowOrientedExports(t *testing.T) {
 	}
 }
 
+func TestExportSanitizationDefaultsToBasenames(t *testing.T) {
+	project := "/Users/alice/work/demo"
+	snap := model.Snapshot{Processes: []model.Process{{WorkingDirectory: strPtr(project), ProjectPath: strPtr(project)}}}
+	SanitizeSnapshotForExport(&snap, false)
+	if *snap.Processes[0].WorkingDirectory != "demo" || *snap.Processes[0].ProjectPath != "demo" {
+		t.Fatalf("snapshot paths=%+v", snap.Processes[0])
+	}
+	optIn := model.Snapshot{Processes: []model.Process{{ProjectPath: strPtr(project)}}}
+	SanitizeSnapshotForExport(&optIn, true)
+	if *optIn.Processes[0].ProjectPath != project {
+		t.Fatalf("opt-in path=%q", *optIn.Processes[0].ProjectPath)
+	}
+}
+
 func strPtr(s string) *string { return &s }

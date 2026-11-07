@@ -24,10 +24,32 @@ func RedactCommandLine(commandLine string) string {
 		return commandLine
 	}
 	parts := wsSplit.Split(trimmed, -1)
+	maskNext := false
 	for i, part := range parts {
+		if maskNext {
+			parts[i] = redactMask
+			maskNext = false
+			continue
+		}
 		parts[i] = RedactToken(part)
+		if isSensitiveOption(part) {
+			maskNext = true
+		}
 	}
 	return strings.Join(parts, " ")
+}
+
+// isSensitiveOption covers the common argv form where the secret is the next
+// argument rather than part of --key=value.
+func isSensitiveOption(token string) bool {
+	if strings.Contains(token, "=") || !strings.HasPrefix(token, "-") {
+		return false
+	}
+	key := strings.TrimLeft(token, "-")
+	if strings.HasPrefix(key, "P") || strings.HasPrefix(key, "D") {
+		key = key[1:]
+	}
+	return isSensitiveKey(key)
 }
 
 // RedactToken mirrors Kotlin Redactor.redactToken.

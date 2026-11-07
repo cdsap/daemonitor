@@ -28,26 +28,27 @@ var Version = api.Version
 
 // Options are global CLI flags.
 type Options struct {
-	Socket       string
-	PollInterval time.Duration
-	NoColor      bool
-	NoAutostart  bool
-	JSON         bool
-	Details      bool
-	Output       string
-	OutputPath   string
-	Since        time.Duration
-	Limit        int
-	PID          int64
-	Project      string
-	Status       string
-	IncludeLogs  bool
-	Watch        bool
-	Until        time.Duration
-	FailOnRSS    int64
-	Help         bool
-	Version      bool
-	Args         []string
+	Socket             string
+	PollInterval       time.Duration
+	NoColor            bool
+	NoAutostart        bool
+	JSON               bool
+	Details            bool
+	Output             string
+	OutputPath         string
+	Since              time.Duration
+	Limit              int
+	PID                int64
+	Project            string
+	Status             string
+	IncludeLogs        bool
+	IncludeProjectPath bool
+	Watch              bool
+	Until              time.Duration
+	FailOnRSS          int64
+	Help               bool
+	Version            bool
+	Args               []string
 }
 
 var knownCommands = map[string]bool{
@@ -64,6 +65,7 @@ var flagsWithValue = map[string]bool{
 	"-project": true, "--project": true,
 	"-status": true, "--status": true,
 	"-include-logs": false, "--include-logs": false,
+	"-include-project-path": false, "--include-project-path": false,
 	"-until": true, "--until": true,
 	"-format": true, "--format": true,
 	"-output": true, "--output": true,
@@ -114,6 +116,7 @@ func ParseArgs(argv []string) (Options, error) {
 	fs.StringVar(&opts.Project, "project", "", "Filter by project path or name")
 	fs.StringVar(&opts.Status, "status", "", "Filter builds by final status")
 	fs.BoolVar(&opts.IncludeLogs, "include-logs", false, "Include retained build log snippets")
+	fs.BoolVar(&opts.IncludeProjectPath, "include-project-path", false, "Include full project paths in exports")
 	fs.BoolVar(&opts.Watch, "watch", false, "Continuously refresh a non-interactive ps snapshot")
 	fs.DurationVar(&opts.Until, "until", 0, "Stop watch mode after this duration")
 	fs.Int64Var(&opts.FailOnRSS, "fail-on-rss", 0, "Exit 3 in watch mode when any process reaches this RSS in MB")
@@ -183,6 +186,8 @@ Options:
   --pid PID                Filter by process or daemon PID
   --project TEXT           Filter by project path or name
   --status TEXT            Filter builds by final status
+	--include-logs           Include retained build log snippets
+	--include-project-path   Include full project paths in exports (default: basename only)
   --watch                  Continuously refresh non-interactive ps output
   --until DURATION         Stop watch mode after this duration
   --fail-on-rss MB         In watch mode, exit 3 when any process reaches this RSS
@@ -288,6 +293,7 @@ func runOneShot(ctx context.Context, opts Options, cmd string, args []string, st
 			return 1
 		}
 		snap.Processes = filterProcesses(snap.Processes, opts)
+		render.SanitizeSnapshotForExport(&snap, opts.IncludeProjectPath)
 		if err := writeProcesses(stdout, snap, opts.Output, opts.Details); err != nil {
 			fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
 			return 1
@@ -306,6 +312,7 @@ func runOneShot(ctx context.Context, opts Options, cmd string, args []string, st
 		}
 		hist.Processes = filterProcesses(hist.Processes, opts)
 		hist.Count = len(hist.Processes)
+		render.SanitizeHistoryForExport(&hist, opts.IncludeProjectPath)
 		if err := writeHistory(stdout, hist, opts.Output); err != nil {
 			fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
 			return 1
@@ -332,6 +339,7 @@ func runOneShot(ctx context.Context, opts Options, cmd string, args []string, st
 			fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
 			return 1
 		}
+		render.SanitizeBuildsForExport(&payload, opts.IncludeProjectPath)
 		if err := writeBuilds(stdout, payload, opts.Output); err != nil {
 			fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
 			return 1
@@ -363,6 +371,7 @@ func runOneShot(ctx context.Context, opts Options, cmd string, args []string, st
 			return 1
 		}
 		list = filterLogs(list, opts)
+		render.SanitizeLogsForExport(&list, opts.IncludeProjectPath)
 		if err := writeLogs(stdout, list, opts.Output); err != nil {
 			fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
 			return 1

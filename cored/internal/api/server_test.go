@@ -164,6 +164,12 @@ func TestBuildsEndpointFiltersByDaemonAndRejectsInvalidIdentifiers(t *testing.T)
 			t.Fatalf("payload=%+v", payload)
 		}
 	})
+	t.Run("oversized query is bounded", func(t *testing.T) {
+		payload := getBuilds(t, client, "?limit=999999")
+		if payload.Count > 100 {
+			t.Fatalf("unbounded payload count=%d", payload.Count)
+		}
+	})
 	t.Run("daemon query filters and limits", func(t *testing.T) {
 		payload := getBuilds(t, client, "?daemon_pid=42&daemon_identity=uid-a&limit=1")
 		if payload.Count != 1 || len(payload.Builds) != 1 || payload.Builds[0].BuildID != "new" {
