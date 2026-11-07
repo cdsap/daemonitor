@@ -11,13 +11,9 @@ func New() PlatformCollector { return linuxCollector{} }
 
 func (linuxCollector) CollectProcess(ctx context.Context, process ProcessIdentity) ProcessPlatformMetrics {
 	out := collectProcessGopsutil(ctx, process)
-	if out.ResourceScope != ScopeProcess {
-		out.ResourceScope = ScopeProcess
-	}
+	// Process rows stay scoped as process; cgroup accounting lives on Resource.Scope.
+	out.ResourceScope = ScopeProcess
 	out.Resource = collectLinuxCgroup(process.PID)
-	if out.Resource.Scope == ScopeLinuxCgroup {
-		out.ResourceScope = ScopeLinuxCgroup
-	}
 	return out
 }
 
