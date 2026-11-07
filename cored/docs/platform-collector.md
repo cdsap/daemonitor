@@ -42,3 +42,7 @@ transfer from storage transfer:
 Unavailable platform fields serialize as JSON `null`. Any future interval
 throughput must be computed only from two valid, monotonic cumulative samples;
 the first sample is therefore rate-null.
+
+Host metrics are sampled alongside process snapshots. Linux additionally reads load averages, PSI, and cgroup v2 files in the target process's cgroup directory; a missing cgroup or file is represented by an unavailable metric rather than zero. macOS does not expose a fabricated container-throttle metric. Windows Job Object fields are read-only optional fields: the collector never creates a Job Object or changes target membership.
+
+`ResourceScope` values are `host`, `process`, `linux_cgroup`, and `windows_job`. Every optional field carries availability metadata, so consumers should consult the capability matrix and the field's availability before using its nullable value.

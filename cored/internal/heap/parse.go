@@ -27,6 +27,14 @@ type Sample struct {
 	TotalGCTimeSeconds      *float64
 	OldGCCount              *int64
 	OldGCTimeMs             *int64
+	FullGCCount             *int64
+	ConcurrentGCCount       *int64
+	TotalGCCount            *int64
+	MemoryPools             []MemoryPool
+	JIT                     *JITMetrics
+	Classes                 *ClassMetrics
+	Safepoints              *SafepointMetrics
+	CodeCache               []MemoryPool
 	JavaVersion             *string
 	JavaVendor              *string
 	ActiveProcessorCount    *int64
@@ -36,6 +44,44 @@ type Sample struct {
 	OSName                  *string
 	OSArch                  *string
 	Diagnostics             []Diagnostic
+}
+
+// RawValue retains the unit emitted by a HotSpot tool. Values are converted
+// only by consumers that explicitly need a common unit.
+type RawValue struct {
+	Value float64
+	Unit  string
+}
+
+type MemoryPool struct {
+	Name      string
+	Source    string
+	Used      RawValue
+	Committed RawValue
+	Max       RawValue
+}
+
+type JITMetrics struct {
+	CompiledCount          *int64
+	FailedCount            *int64
+	InvalidCount           *int64
+	CompilationTimeSeconds *float64
+}
+
+type ClassMetrics struct {
+	LoadedClasses      *int64
+	UnloadedClasses    *int64
+	LoadedBytes        *RawValue
+	UnloadedBytes      *RawValue
+	ClassTimeSeconds   *float64
+	LoadedClassesTotal *int64 // Loaded + cumulative unloaded; nil when either source is absent.
+}
+
+type SafepointMetrics struct {
+	SafepointCount      *int64
+	SafepointTimeNs     *int64
+	SafepointSyncTimeNs *int64
+	ApplicationTimeNs   *int64
 }
 
 // ParseJinfoSysprops extracts only the explicitly allowlisted diagnostic
@@ -201,6 +247,7 @@ func ParseJcmdHeapInfo(out string) (Sample, error) {
 	var heapUsed, heapCommitted *int64
 	var gc *string
 	var generationUsedKB, generationTotalKB float64
+	var pools []MemoryPool
 	for _, line := range strings.Split(out, "\n") {
 		lower := strings.ToLower(line)
 		if strings.Contains(lower, "garbage-first heap") {
@@ -234,6 +281,9 @@ func ParseJcmdHeapInfo(out string) (Sample, error) {
 			metaspaceUsed = parseJcmdMetaspace(line, "used")
 			metaspaceCommitted = parseJcmdMetaspace(line, "committed")
 		}
+		if pool, ok := parseJcmdPool(line); ok {
+			pools = append(pools, pool)
+		}
 		if !strings.Contains(lower, "committed") || !strings.Contains(lower, "used") {
 			continue
 		}
@@ -253,7 +303,7 @@ func ParseJcmdHeapInfo(out string) (Sample, error) {
 	if heapUsed == nil || heapCommitted == nil {
 		return Sample{}, fmt.Errorf("jcmd GC.heap_info: no heap used/committed line")
 	}
-	return Sample{UsedMB: *heapUsed, CommittedMB: *heapCommitted, Source: "jcmd", GC: gc, MetaspaceUsedMB: metaspaceUsed, MetaspaceCommittedMB: metaspaceCommitted}, nil
+	return Sample{UsedMB: *heapUsed, CommittedMB: *heapCommitted, Source: "jcmd", GC: gc, MetaspaceUsedMB: metaspaceUsed, MetaspaceCommittedMB: metaspaceCommitted, MemoryPools: pools}, nil
 }
 
 func ptrInt64(v int64) *int64 { return &v }
@@ -337,6 +387,8 @@ func ParseJstatGC(out string) (Sample, error) {
 	}
 	if v, ok := getInt("FGC"); ok {
 		oldCount = &v
+		// jstat names this counter FGC. Keep the historical OldGCCount field
+		// and expose the precise full-GC meaning separately.
 	}
 	if v, ok := getMillis("FGCT"); ok {
 		oldTime = &v
@@ -348,6 +400,21 @@ func ParseJstatGC(out string) (Sample, error) {
 	if v, ok := getMB("MC"); ok {
 		metaspaceCommitted = &v
 	}
+	var pools []MemoryPool
+	for _, name := range []string{"S0", "S1", "E", "O", "M", "CCS"} {
+		used, usedOK := getValue(name+"U", idx, values)
+		committed, committedOK := getValue(name+"C", idx, values)
+		if usedOK || committedOK {
+			pool := MemoryPool{Name: name, Source: "jstat"}
+			if usedOK {
+				pool.Used = RawValue{Value: used, Unit: "KB"}
+			}
+			if committedOK {
+				pool.Committed = RawValue{Value: committed, Unit: "KB"}
+			}
+			pools = append(pools, pool)
+		}
+	}
 	return Sample{
 		UsedMB:          kbToMB(usedKB),
 		CommittedMB:     kbToMB(committedKB),
@@ -357,7 +424,177 @@ func ParseJstatGC(out string) (Sample, error) {
 		YoungGCTimeSeconds: youngTimeSeconds, FullGCTimeSeconds: fullTimeSeconds,
 		ConcurrentGCTimeSeconds: concurrentTimeSeconds, TotalGCTimeSeconds: totalTimeSeconds,
 		OldGCCount: oldCount, OldGCTimeMs: oldTime,
+		FullGCCount: oldCount,
+		ConcurrentGCCount: func() *int64 {
+			v, ok := getInt("CGC")
+			if !ok {
+				return nil
+			}
+			return &v
+		}(),
+		MemoryPools: pools,
 	}, nil
+}
+
+// ParseJstatCompiler parses the stable cumulative columns emitted by
+// `jstat -compiler`. FailedType and FailedMethod are intentionally ignored.
+func ParseJstatCompiler(out string) (JITMetrics, error) {
+	lines := nonEmptyLines(out)
+	if len(lines) < 2 {
+		return JITMetrics{}, fmt.Errorf("jstat -compiler: need header and data row")
+	}
+	headers, values := strings.Fields(lines[0]), strings.Fields(lines[len(lines)-1])
+	if len(values) < len(headers) {
+		return JITMetrics{}, fmt.Errorf("jstat -compiler: column count mismatch")
+	}
+	idx := map[string]int{}
+	for i, h := range headers {
+		idx[h] = i
+	}
+	getInt := func(name string) *int64 {
+		i, ok := idx[name]
+		if !ok || i >= len(values) {
+			return nil
+		}
+		v, err := strconv.ParseInt(values[i], 10, 64)
+		if err != nil {
+			return nil
+		}
+		return &v
+	}
+	getFloat := func(name string) *float64 {
+		i, ok := idx[name]
+		if !ok || i >= len(values) {
+			return nil
+		}
+		v, err := strconv.ParseFloat(values[i], 64)
+		if err != nil {
+			return nil
+		}
+		return &v
+	}
+	m := JITMetrics{CompiledCount: getInt("Compiled"), FailedCount: getInt("Failed"), InvalidCount: getInt("Invalid"), CompilationTimeSeconds: getFloat("Time")}
+	if m.CompiledCount == nil && m.FailedCount == nil && m.InvalidCount == nil && m.CompilationTimeSeconds == nil {
+		return JITMetrics{}, fmt.Errorf("jstat -compiler: no supported counters")
+	}
+	return m, nil
+}
+
+// ParseJstatClass parses current loaded classes separately from cumulative
+// unloads. jstat -class does not provide a cumulative loaded count.
+func ParseJstatClass(out string) (ClassMetrics, error) {
+	lines := nonEmptyLines(out)
+	if len(lines) < 2 {
+		return ClassMetrics{}, fmt.Errorf("jstat -class: need header and data row")
+	}
+	headers, values := strings.Fields(lines[0]), strings.Fields(lines[len(lines)-1])
+	if len(values) < len(headers) {
+		return ClassMetrics{}, fmt.Errorf("jstat -class: column count mismatch")
+	}
+	idx := map[string]int{}
+	for i, h := range headers {
+		idx[h] = i
+	}
+	getInt := func(name string) *int64 {
+		i, ok := idx[name]
+		if !ok || i >= len(values) {
+			return nil
+		}
+		v, err := strconv.ParseInt(values[i], 10, 64)
+		if err != nil {
+			return nil
+		}
+		return &v
+	}
+	getFloat := func(name string) *float64 {
+		i, ok := idx[name]
+		if !ok || i >= len(values) {
+			return nil
+		}
+		v, err := strconv.ParseFloat(values[i], 64)
+		if err != nil {
+			return nil
+		}
+		return &v
+	}
+	loaded, unloaded := getInt("Loaded"), getInt("Unloaded")
+	var loadedTotal *int64
+	if loaded != nil && unloaded != nil {
+		total := *loaded + *unloaded
+		loadedTotal = &total
+	}
+	return ClassMetrics{LoadedClasses: loaded, UnloadedClasses: unloaded, LoadedClassesTotal: loadedTotal, ClassTimeSeconds: getFloat("Time")}, nil
+}
+
+// ParsePerfCounterSafepoints parses cumulative HotSpot perf counters. These
+// values are not STW pause time; safepointTime includes VM-side time only.
+func ParsePerfCounterSafepoints(out string) (SafepointMetrics, error) {
+	var m SafepointMetrics
+	for _, line := range strings.Split(out, "\n") {
+		parts := strings.SplitN(strings.TrimSpace(line), "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		v, err := strconv.ParseInt(strings.TrimSpace(parts[1]), 10, 64)
+		if err != nil {
+			continue
+		}
+		switch strings.TrimSpace(parts[0]) {
+		case "sun.rt.safepoints":
+			m.SafepointCount = &v
+		case "sun.rt.safepointTime":
+			m.SafepointTimeNs = &v
+		case "sun.rt.safepointSyncTime":
+			m.SafepointSyncTimeNs = &v
+		case "sun.rt.applicationTime":
+			m.ApplicationTimeNs = &v
+		}
+	}
+	if m.SafepointCount == nil && m.SafepointTimeNs == nil && m.SafepointSyncTimeNs == nil && m.ApplicationTimeNs == nil {
+		return SafepointMetrics{}, fmt.Errorf("PerfCounter.print: safepoint counters unavailable")
+	}
+	return m, nil
+}
+
+var codeHeapPattern = regexp.MustCompile(`(?i)^\s*CodeHeap\s+'([^']+)'\s*:\s*size=([^ ]+)\s+used=([^ ]+)\s+max_used=([^ ]+)`)
+var rawValuePattern = regexp.MustCompile(`^(-?(?:[0-9]+(?:\.[0-9]+)?))(B|K|Kb|M|Mb|G|Gb)?$`)
+
+func parseRawValue(token string) (RawValue, bool) {
+	m := rawValuePattern.FindStringSubmatch(strings.TrimSpace(token))
+	if m == nil {
+		return RawValue{}, false
+	}
+	value, err := strconv.ParseFloat(m[1], 64)
+	if err != nil {
+		return RawValue{}, false
+	}
+	unit := m[2]
+	if unit == "" {
+		unit = "B"
+	}
+	return RawValue{Value: value, Unit: unit}, true
+}
+
+// ParseJcmdCodeCache preserves each original CodeHeap name and emitted unit.
+func ParseJcmdCodeCache(out string) ([]MemoryPool, error) {
+	var pools []MemoryPool
+	for _, line := range strings.Split(out, "\n") {
+		m := codeHeapPattern.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		size, ok1 := parseRawValue(m[2])
+		used, ok2 := parseRawValue(m[3])
+		max, ok3 := parseRawValue(m[4])
+		if !ok1 || !ok2 || !ok3 {
+			continue
+		}
+		pools = append(pools, MemoryPool{Name: m[1], Source: "jcmd", Used: used, Committed: size, Max: max})
+	}
+	if len(pools) == 0 {
+		return nil, fmt.Errorf("jcmd Compiler.codecache: no code heaps")
+	}
+	return pools, nil
 }
 
 func parseJcmdMetaspace(line, label string) *int64 {
@@ -370,6 +607,38 @@ func parseJcmdMetaspace(line, label string) *int64 {
 	}
 	result := kbToMB(v)
 	return &result
+}
+
+func parseJcmdPool(line string) (MemoryPool, bool) {
+	lower := strings.ToLower(line)
+	if !strings.Contains(lower, "used") || !strings.Contains(lower, "committed") {
+		return MemoryPool{}, false
+	}
+	used, usedOK := findRawToken(line, "used")
+	committed, committedOK := findRawToken(line, "committed")
+	if !usedOK || !committedOK {
+		return MemoryPool{}, false
+	}
+	nameEnd := strings.Index(lower, "used")
+	name := strings.TrimSpace(strings.TrimRight(line[:nameEnd], ":"))
+	if name == "" || strings.Contains(strings.ToLower(name), "heap") {
+		return MemoryPool{}, false
+	}
+	return MemoryPool{Name: name, Source: "jcmd", Used: used, Committed: committed}, true
+}
+
+func findRawToken(line, label string) (RawValue, bool) {
+	lower := strings.ToLower(line)
+	pos := strings.Index(lower, strings.ToLower(label))
+	if pos < 0 {
+		return RawValue{}, false
+	}
+	rest := strings.TrimLeft(line[pos+len(label):], " \t:")
+	fields := strings.Fields(rest)
+	if len(fields) == 0 {
+		return RawValue{}, false
+	}
+	return parseRawValue(strings.TrimSuffix(fields[0], ","))
 }
 
 func kbToMB(kb float64) int64 {

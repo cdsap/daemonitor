@@ -14,11 +14,22 @@ func (windowsCollector) CollectProcess(ctx context.Context, process ProcessIdent
 }
 
 func (windowsCollector) CollectHost(ctx context.Context) HostMetrics {
-	return collectHostGopsutil(ctx)
+	out := collectHostGopsutil(ctx)
+	used, limit := collectWindowsCommit(out.SampledAtMs)
+	out.CommitUsedBytes, out.CommitLimitBytes = used, limit
+	out.Resource.CommitUsedBytes, out.Resource.CommitLimitBytes = used, limit
+	return out
 }
 
 func (windowsCollector) Capabilities() []MetricCapability {
 	caps := baseCapabilities()
+	setCapability(caps, "job.cpu.limit", NotCollected, "Windows Job Object", "Read-only query for an existing target Job Object; no job is created")
+	setCapability(caps, "job.cpu.time_seconds_total", NotCollected, "Windows Job Object", "Read-only query for an existing target Job Object; no job is created")
+	setCapability(caps, "job.memory.limit_bytes", NotCollected, "Windows Job Object", "Read-only query for an existing target Job Object; no job is created")
+	setCapability(caps, "job.memory.usage_bytes", NotCollected, "Windows Job Object", "Read-only query for an existing target Job Object; no job is created")
+	setCapability(caps, "job.process_count", NotCollected, "Windows Job Object", "Read-only query for an existing target Job Object; no job is created")
+	setCapability(caps, "host.memory.commit_used_bytes", Available, "GlobalMemoryStatusEx", "Windows system commit usage")
+	setCapability(caps, "host.memory.commit_limit_bytes", Available, "GlobalMemoryStatusEx", "Windows system commit limit")
 	setCapability(caps, "process.memory.private_committed_bytes", NotCollected, "GetProcessMemoryInfo", "")
 	setCapability(caps, "process.memory.peak_resident_bytes", NotCollected, "GetProcessMemoryInfo", "")
 	setCapability(caps, "process.handles.count", Available, sourceGopsutil,

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/shirou/gopsutil/v4/cpu"
+	"github.com/shirou/gopsutil/v4/load"
 	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/shirou/gopsutil/v4/process"
 )
@@ -18,9 +19,11 @@ const sourceGopsutil = "gopsutil"
 func collectProcessGopsutil(ctx context.Context, id ProcessIdentity) ProcessPlatformMetrics {
 	now := time.Now().UnixMilli()
 	out := ProcessPlatformMetrics{
-		Identity:    id,
-		SampledAtMs: now,
+		Identity:      id,
+		SampledAtMs:   now,
+		ResourceScope: ScopeProcess,
 	}
+	out.Resource = unavailableResources(ScopeProcess, NotCollected, sourceGopsutil)
 	markUnsupportedPlatformExtras(&out)
 
 	p, err := process.NewProcessWithContext(ctx, id.PID)
@@ -122,7 +125,13 @@ func ioMetricsFromCounters(io process.IOCountersStat, sampledAtMs int64) (IntMet
 
 func collectHostGopsutil(ctx context.Context) HostMetrics {
 	now := time.Now().UnixMilli()
-	out := HostMetrics{SampledAtMs: now}
+	out := HostMetrics{SampledAtMs: now, Scope: ScopeHost}
+	out.Resource = unavailableResources(ScopeHost, NotCollected, sourceGopsutil)
+	out.CommitUsedBytes = IntUnavailable(Unsupported, sourceGopsutil)
+	out.CommitLimitBytes = IntUnavailable(Unsupported, sourceGopsutil)
+	out.PSICPU = unavailablePSI(Unsupported, sourceGopsutil)
+	out.PSIMemory = unavailablePSI(Unsupported, sourceGopsutil)
+	out.PSIIO = unavailablePSI(Unsupported, sourceGopsutil)
 
 	n, err := cpu.CountsWithContext(ctx, true)
 	if err != nil || n <= 0 {
@@ -134,7 +143,11 @@ func collectHostGopsutil(ctx context.Context) HostMetrics {
 		out.LogicalProcessors = IntUnavailable(ProbeFailed, sourceGopsutil)
 	}
 
-	out.CPUUsagePercent = RealUnavailable(NotCollected, sourceGopsutil)
+	if usage, err := cpu.PercentWithContext(ctx, 0, false); err == nil && len(usage) > 0 {
+		out.CPUUsagePercent = RealAvailable(usage[0], now, sourceGopsutil)
+	} else {
+		out.CPUUsagePercent = RealUnavailable(mapOptionalErr(err), sourceGopsutil)
+	}
 
 	if vm, err := mem.VirtualMemoryWithContext(ctx); err == nil && vm != nil {
 		out.MemoryTotalBytes = IntAvailable(int64(vm.Total), now, sourceGopsutil)
@@ -145,6 +158,14 @@ func collectHostGopsutil(ctx context.Context) HostMetrics {
 		out.MemoryTotalBytes = IntUnavailable(a, sourceGopsutil)
 		out.MemoryAvailableBytes = IntUnavailable(a, sourceGopsutil)
 		out.MemoryUsedBytes = IntUnavailable(a, sourceGopsutil)
+	}
+	if avg, err := load.AvgWithContext(ctx); err == nil && avg != nil {
+		out.Load1 = RealAvailable(avg.Load1, now, sourceGopsutil)
+		out.Load5 = RealAvailable(avg.Load5, now, sourceGopsutil)
+		out.Load15 = RealAvailable(avg.Load15, now, sourceGopsutil)
+	} else {
+		a := mapOptionalErr(err)
+		out.Load1, out.Load5, out.Load15 = RealUnavailable(a, sourceGopsutil), RealUnavailable(a, sourceGopsutil), RealUnavailable(a, sourceGopsutil)
 	}
 	return out
 }
@@ -182,10 +203,31 @@ func baseCapabilities() []MetricCapability {
 		cap("process.cpu.system_seconds_total", "seconds", "Cumulative system CPU time", Available),
 		cap("process.cpu.total_seconds_total", "seconds", "Cumulative total CPU time", Available),
 		cap("host.cpu.logical_processors", "count", "Logical host processors", Available),
-		cap("host.cpu.usage_percent", "percent", "Host CPU usage percent", NotCollected),
+		cap("host.cpu.usage_percent", "percent", "Host CPU usage percent", Available),
 		cap("host.memory.total_bytes", "bytes", "Host memory total", Available),
 		cap("host.memory.available_bytes", "bytes", "Host memory available", Available),
 		cap("host.memory.used_bytes", "bytes", "Host memory used", Available),
+		cap("host.memory.commit_used_bytes", "bytes", "Committed virtual memory in use", Unsupported),
+		cap("host.memory.commit_limit_bytes", "bytes", "Committed virtual memory limit", Unsupported),
+		cap("host.load.1", "load", "One-minute load average", Unsupported),
+		cap("host.load.5", "load", "Five-minute load average", Unsupported),
+		cap("host.load.15", "load", "Fifteen-minute load average", Unsupported),
+		cap("host.psi.cpu.some", "percent", "CPU pressure some average", Unsupported),
+		cap("host.psi.memory.some", "percent", "Memory pressure some average", Unsupported),
+		cap("host.psi.memory.full", "percent", "Memory pressure full average", Unsupported),
+		cap("host.psi.io.some", "percent", "I/O pressure some average", Unsupported),
+		cap("container.cpu.quota_cores", "cores", "Target process cgroup CPU quota", Unsupported),
+		cap("container.cpu.usage_seconds_total", "seconds", "Target process cgroup CPU usage", Unsupported),
+		cap("container.cpu.throttled_seconds_total", "seconds", "Target process cgroup throttled CPU", Unsupported),
+		cap("container.memory.current_bytes", "bytes", "Target process cgroup memory current", Unsupported),
+		cap("container.memory.limit_bytes", "bytes", "Target process cgroup memory limit", Unsupported),
+		cap("container.memory.events.oom_total", "count", "Target process cgroup OOM events", Unsupported),
+		cap("container.memory.events.oom_kill_total", "count", "Target process cgroup OOM kills", Unsupported),
+		cap("job.cpu.limit", "seconds", "Windows Job Object CPU limit", Unsupported),
+		cap("job.cpu.time_seconds_total", "seconds", "Windows Job Object CPU time", Unsupported),
+		cap("job.memory.limit_bytes", "bytes", "Windows Job Object memory limit", Unsupported),
+		cap("job.memory.usage_bytes", "bytes", "Windows Job Object memory usage", Unsupported),
+		cap("job.process_count", "count", "Windows Job Object process count", Unsupported),
 	}
 }
 

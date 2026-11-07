@@ -54,6 +54,20 @@ func (c *Client) Capabilities(ctx context.Context) (model.Capabilities, error) {
 	return caps, err
 }
 
+// Self fetches /v1/self collector overhead metrics.
+func (c *Client) Self(ctx context.Context) (model.SelfMetrics, error) {
+	var self model.SelfMetrics
+	err := c.getJSON(ctx, "/v1/self", &self)
+	return self, err
+}
+
+// Host fetches the latest host resource context.
+func (c *Client) Host(ctx context.Context) (model.HostMetrics, error) {
+	var host model.HostMetrics
+	err := c.getJSON(ctx, "/v1/host", &host)
+	return host, err
+}
+
 // Processes fetches /v1/processes.
 func (c *Client) Processes(ctx context.Context) (model.Snapshot, error) {
 	var snap model.Snapshot
@@ -68,6 +82,15 @@ func (c *Client) History(ctx context.Context, sinceMs int64, limit int) (model.H
 	var hist model.History
 	err := c.getJSON(ctx, path, &hist)
 	return hist, err
+}
+
+// Events fetches lifecycle events at or after sinceMs.
+func (c *Client) Events(ctx context.Context, sinceMs int64, limit int) (model.Events, error) {
+	path := "/v1/events?since_ms=" + strconv.FormatInt(sinceMs, 10) +
+		"&limit=" + strconv.Itoa(limit)
+	var events model.Events
+	err := c.getJSON(ctx, path, &events)
+	return events, err
 }
 
 // DaemonLogs lists discovered Gradle daemon logs.
