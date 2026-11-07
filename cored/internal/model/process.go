@@ -169,8 +169,8 @@ type Capabilities struct {
 	Metrics       []CapabilityMetric `json:"metrics"`
 }
 
-// HostMetrics is the `/v1/host` response. Optional values remain nullable so
-// the TUI can distinguish an unavailable measurement from a measured zero.
+// HostMetrics is a compact host view for TUI/clients that only need the common
+// optional measurements. The core `/v1/host` payload remains platform.HostMetrics.
 type HostMetrics struct {
 	SampledAtMs          int64      `json:"sampled_at_ms"`
 	LogicalProcessors    IntMetric  `json:"logical_processors"`
@@ -210,6 +210,18 @@ type SelfMetrics struct {
 	Metrics          any               `json:"metrics"`
 	Cadences         CollectorCadences `json:"cadences"`
 	ProbeConcurrency int               `json:"probe_concurrency"`
+}
+
+// MetricRecord is one normalized metric sample for machine-readable exports.
+type MetricRecord struct {
+	SchemaVersion    int    `json:"schema_version"`
+	MetricName       string `json:"metric_name"`
+	Unit             string `json:"unit"`
+	Value            any    `json:"value"`
+	Source           string `json:"source"`
+	CollectionTimeMs int64  `json:"collection_timestamp_ms"`
+	ProcessIdentity  string `json:"process_identity,omitempty"`
+	PID              int32  `json:"pid,omitempty"`
 }
 
 // CollectorCadences exposes provisional independent sampling intervals.

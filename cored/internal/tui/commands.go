@@ -10,6 +10,7 @@ import (
 	"github.com/cdsap/daemonitor/cored/internal/client"
 	"github.com/cdsap/daemonitor/cored/internal/logs"
 	"github.com/cdsap/daemonitor/cored/internal/model"
+	"github.com/cdsap/daemonitor/cored/internal/platform"
 	"github.com/cdsap/daemonitor/cored/internal/render"
 )
 
@@ -98,7 +99,7 @@ func (m Model) fetchDetails(pid, startMs int64) tea.Cmd {
 		builds, buildsErr := c.BuildsForDaemon(ctx, pid, startMs, 20)
 		host, hostErr := c.Host(ctx)
 		capabilities, capabilitiesErr := c.Capabilities(ctx)
-		msg := detailsLoadedMsg{pid: pid, startMs: startMs, log: logMeta, history: history.Processes, builds: builds, buildsErr: buildsErr, host: host, hostErr: hostErr, capabilities: capabilities, capabilitiesErr: capabilitiesErr}
+		msg := detailsLoadedMsg{pid: pid, startMs: startMs, log: logMeta, history: history.Processes, builds: builds, buildsErr: buildsErr, host: compactHostMetrics(host), hostErr: hostErr, capabilities: capabilities, capabilitiesErr: capabilitiesErr}
 		if tailErr != nil {
 			msg.err = tailErr
 			return msg
@@ -143,4 +144,15 @@ func killNotice(msg killFinishedMsg) (string, bool) {
 		text += fmt.Sprintf(" (+%d more failed)", failed-1)
 	}
 	return text, true
+}
+
+func compactHostMetrics(host platform.HostMetrics) model.HostMetrics {
+	return model.HostMetrics{
+		SampledAtMs:          host.SampledAtMs,
+		LogicalProcessors:    model.IntMetric{Availability: string(host.LogicalProcessors.Availability), Value: host.LogicalProcessors.Value, SampledAtMs: host.LogicalProcessors.SampledAtMs},
+		CPUUsagePercent:      model.RealMetric{Availability: string(host.CPUUsagePercent.Availability), Value: host.CPUUsagePercent.Value, SampledAtMs: host.CPUUsagePercent.SampledAtMs},
+		MemoryTotalBytes:     model.IntMetric{Availability: string(host.MemoryTotalBytes.Availability), Value: host.MemoryTotalBytes.Value, SampledAtMs: host.MemoryTotalBytes.SampledAtMs},
+		MemoryAvailableBytes: model.IntMetric{Availability: string(host.MemoryAvailableBytes.Availability), Value: host.MemoryAvailableBytes.Value, SampledAtMs: host.MemoryAvailableBytes.SampledAtMs},
+		MemoryUsedBytes:      model.IntMetric{Availability: string(host.MemoryUsedBytes.Availability), Value: host.MemoryUsedBytes.Value, SampledAtMs: host.MemoryUsedBytes.SampledAtMs},
+	}
 }

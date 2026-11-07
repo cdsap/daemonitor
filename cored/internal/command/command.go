@@ -2,6 +2,8 @@ package command
 
 import (
 	"context"
+	"encoding/csv"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -33,6 +35,7 @@ type Options struct {
 	JSON         bool
 	Details      bool
 	Output       string
+	OutputPath   string
 	Since        time.Duration
 	Limit        int
 	PID          int64
@@ -49,6 +52,7 @@ type Options struct {
 
 var knownCommands = map[string]bool{
 	"top": true, "ps": true, "history": true, "builds": true, "logs": true, "health": true,
+	"metrics": true, "events": true, "host": true, "export": true,
 }
 
 var flagsWithValue = map[string]bool{
@@ -62,8 +66,11 @@ var flagsWithValue = map[string]bool{
 	"-include-logs": false, "--include-logs": false,
 	"-until": true, "--until": true,
 	"-format": true, "--format": true,
+	"-output": true, "--output": true,
 	"-fail-on-rss": true, "--fail-on-rss": true,
 }
+
+const maxQueryWindow = 7 * 24 * time.Hour
 
 // ParseArgs parses argv into options and remaining command args.
 // Flags may appear before or after the subcommand (e.g. `ps --json`).
@@ -100,6 +107,7 @@ func ParseArgs(argv []string) (Options, error) {
 	fs.BoolVar(&opts.JSON, "json", false, "Emit JSON where supported")
 	fs.BoolVar(&opts.Details, "details", false, "Show all process metrics in detailed plain output")
 	fs.StringVar(&opts.Output, "format", opts.Output, "Output format: plain, json, jsonl, or csv")
+	fs.StringVar(&opts.OutputPath, "output", "", "Write export output to PATH")
 	fs.DurationVar(&opts.Since, "since", 0, "History window (for example 1h or 15m)")
 	fs.IntVar(&opts.Limit, "limit", 0, "Maximum rows to return")
 	fs.Int64Var(&opts.PID, "pid", 0, "Filter by process or daemon PID")
@@ -126,8 +134,8 @@ func ParseArgs(argv []string) (Options, error) {
 		}
 		opts.Output = "json"
 	}
-	if opts.Limit < 0 || opts.PID < 0 || opts.Since < 0 || opts.Until < 0 || opts.FailOnRSS < 0 || opts.PollInterval <= 0 {
-		return opts, fmt.Errorf("limits, durations, pid, and poll interval must be non-negative (poll interval must be positive)")
+	if opts.Limit < 0 || opts.PID < 0 || opts.Since < 0 || opts.Since > maxQueryWindow || opts.Until < 0 || opts.FailOnRSS < 0 || opts.PollInterval <= 0 {
+		return opts, fmt.Errorf("limits, durations, and pid must be non-negative; --since must be at most 168h; poll interval must be positive")
 	}
 	if len(fs.Args()) > 0 {
 		return opts, fmt.Errorf("unexpected arguments: %v", fs.Args())
@@ -156,6 +164,11 @@ Commands:
   logs             List discovered Gradle daemon logs
   logs <pid>       Show the retained log tail for one daemon
   health           Show core health and connection information
+  metrics list     Show the metric capability/discovery matrix
+  metrics          Show bounded process metrics
+  events           Show bounded redacted lifecycle events
+  host             Show host metrics
+  export           Export bounded telemetry as JSONL to --output
 
 Options:
   --socket PATH            Use an explicit core socket
@@ -218,7 +231,7 @@ func Run(ctx context.Context, opts Options, stdout, stderr io.Writer) int {
 			return 2
 		}
 		return runTUI(ctx, opts, stderr)
-	case "ps", "history", "builds", "logs", "health":
+	case "ps", "history", "builds", "logs", "health", "metrics", "events", "host", "export":
 		if opts.Watch && cmd != "ps" {
 			fmt.Fprintln(stderr, "daemonitor-cli: --watch is only valid with ps")
 			return 2
@@ -366,9 +379,256 @@ func runOneShot(ctx context.Context, opts Options, cmd string, args []string, st
 			return 1
 		}
 		return 0
+	case "metrics":
+		if len(args) > 0 && args[0] == "list" {
+			caps, err := c.Capabilities(ctx)
+			if err != nil {
+				fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
+				return 1
+			}
+			if err := writeCapabilities(stdout, caps, opts.Output); err != nil {
+				fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
+				return 1
+			}
+			return 0
+		}
+		hist, err := c.History(ctx, historySince(opts).UnixMilli(), boundedLimit(opts.Limit))
+		if err != nil {
+			fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
+			return 1
+		}
+		hist.Processes = filterProcesses(hist.Processes, opts)
+		rows := metricRecords(hist.Processes)
+		if err := writeMetrics(stdout, rows, opts.Output); err != nil {
+			fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
+			return 1
+		}
+		return 0
+	case "events":
+		events, err := c.Events(ctx, historySince(opts).UnixMilli(), boundedLimit(opts.Limit))
+		if err != nil {
+			fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
+			return 1
+		}
+		events = filterEvents(events, opts.PID)
+		if err := writeEvents(stdout, events, opts.Output); err != nil {
+			fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
+			return 1
+		}
+		return 0
+	case "host":
+		host, err := c.Host(ctx)
+		if err != nil {
+			fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
+			return 1
+		}
+		if err := writeValue(stdout, host, opts.Output, func() { fmt.Fprintf(stdout, "sampled_at_ms=%d\n", host.SampledAtMs) }); err != nil {
+			fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
+			return 1
+		}
+		return 0
+	case "export":
+		if opts.OutputPath == "" {
+			fmt.Fprintln(stderr, "daemonitor-cli: export requires --output PATH")
+			return 2
+		}
+		return exportTelemetry(ctx, c, opts, stdout, stderr)
 	default:
 		return 2
 	}
+}
+
+func boundedLimit(limit int) int {
+	if limit <= 0 || limit > 5000 {
+		return 500
+	}
+	return limit
+}
+
+func metricRecords(processes []model.Process) []model.MetricRecord {
+	rows := make([]model.MetricRecord, 0, len(processes)*8)
+	for _, p := range processes {
+		identity := fmt.Sprintf("%d:%d", p.PID, p.StartTimeMs)
+		add := func(name, unit string, value any) {
+			rows = append(rows, model.MetricRecord{SchemaVersion: 1, MetricName: name, Unit: unit, Value: value,
+				Source: "daemonitor-cored/history", CollectionTimeMs: p.SampledAtMs, ProcessIdentity: identity, PID: p.PID})
+		}
+		add("process.memory.rss_mb", "MB", p.RSSMemoryMB)
+		add("process.memory.virtual_mb", "MB", p.VirtualMemoryMB)
+		add("process.memory.swap_mb", "MB", p.SwapMemoryMB)
+		add("process.threads.count", "count", p.ThreadCount)
+		add("process.io.logical_read_bytes_total", "bytes", p.ReadBytes)
+		add("process.io.logical_write_bytes_total", "bytes", p.WriteBytes)
+		add("process.io.read_operations_total", "count", p.ReadOperations)
+		add("process.io.write_operations_total", "count", p.WriteOperations)
+		add("process.cpu.usage_percent", "percent", p.CPUPercent)
+		add("process.jvm.heap_used_mb", "MB", p.HeapUsedMB)
+		add("process.jvm.heap_committed_mb", "MB", p.HeapCommittedMB)
+		add("process.jvm.young_gc_count", "count", p.YoungGCCount)
+	}
+	return rows
+}
+
+func writeCapabilities(w io.Writer, caps model.Capabilities, output string) error {
+	switch output {
+	case "plain":
+		for _, m := range caps.Metrics {
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", m.MetricName, m.Availability, m.Unit, m.Description)
+		}
+		return nil
+	case "json":
+		return render.WriteJSON(w, caps)
+	case "jsonl":
+		for _, m := range caps.Metrics {
+			if err := render.WriteJSONLine(w, m); err != nil {
+				return err
+			}
+		}
+		return nil
+	case "csv":
+		cw := csv.NewWriter(w)
+		if err := cw.Write([]string{"metric_name", "availability", "unit", "source", "platform", "description"}); err != nil {
+			return err
+		}
+		for _, m := range caps.Metrics {
+			if err := cw.Write([]string{m.MetricName, m.Availability, m.Unit, m.Source, m.Platform, m.Description}); err != nil {
+				return err
+			}
+		}
+		cw.Flush()
+		return cw.Error()
+	default:
+		return fmt.Errorf("unsupported output format %s", output)
+	}
+}
+
+func writeMetrics(w io.Writer, rows []model.MetricRecord, output string) error {
+	switch output {
+	case "plain":
+		for _, row := range rows {
+			fmt.Fprintf(w, "%s=%v %s pid=%d at=%d\n", row.MetricName, row.Value, row.Unit, row.PID, row.CollectionTimeMs)
+		}
+		return nil
+	case "json":
+		return render.WriteJSON(w, map[string]any{"schema_version": 1, "metrics": rows})
+	case "jsonl":
+		for _, row := range rows {
+			if err := render.WriteJSONLine(w, row); err != nil {
+				return err
+			}
+		}
+		return nil
+	case "csv":
+		cw := csv.NewWriter(w)
+		if err := cw.Write([]string{"schema_version", "metric_name", "unit", "value", "source", "collection_timestamp_ms", "process_identity", "pid"}); err != nil {
+			return err
+		}
+		for _, row := range rows {
+			b, _ := json.Marshal(row.Value)
+			if err := cw.Write([]string{fmt.Sprint(row.SchemaVersion), row.MetricName, row.Unit, string(b), row.Source, fmt.Sprint(row.CollectionTimeMs), row.ProcessIdentity, fmt.Sprint(row.PID)}); err != nil {
+				return err
+			}
+		}
+		cw.Flush()
+		return cw.Error()
+	default:
+		return fmt.Errorf("unsupported output format %s", output)
+	}
+}
+
+func filterEvents(events model.Events, pid int64) model.Events {
+	if pid <= 0 {
+		return events
+	}
+	filtered := make([]model.ProcessEvent, 0, len(events.Events))
+	for _, event := range events.Events {
+		if int64(event.PID) == pid {
+			filtered = append(filtered, event)
+		}
+	}
+	events.Events = filtered
+	events.Count = len(filtered)
+	return events
+}
+
+func writeEvents(w io.Writer, events model.Events, output string) error {
+	switch output {
+	case "plain":
+		for _, event := range events.Events {
+			fmt.Fprintf(w, "%d pid=%d %s\n", event.TimestampMs, event.PID, event.EventType)
+		}
+		return nil
+	case "json":
+		return render.WriteJSON(w, events)
+	case "jsonl":
+		for _, event := range events.Events {
+			if err := render.WriteJSONLine(w, event); err != nil {
+				return err
+			}
+		}
+		return nil
+	case "csv":
+		cw := csv.NewWriter(w)
+		if err := cw.Write([]string{"schema_version", "event_type", "timestamp_ms", "process_instance_id", "pid", "process_type", "source"}); err != nil {
+			return err
+		}
+		for _, event := range events.Events {
+			if err := cw.Write([]string{
+				fmt.Sprint(event.SchemaVersion), event.EventType, fmt.Sprint(event.TimestampMs),
+				event.ProcessInstanceID, fmt.Sprint(event.PID), event.ProcessType, event.Source,
+			}); err != nil {
+				return err
+			}
+		}
+		cw.Flush()
+		return cw.Error()
+	default:
+		return fmt.Errorf("unsupported output format %s", output)
+	}
+}
+
+func exportTelemetry(ctx context.Context, c *client.Client, opts Options, stdout, stderr io.Writer) int {
+	file, err := os.OpenFile(opts.OutputPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
+		return 1
+	}
+	defer file.Close()
+	enc := json.NewEncoder(file)
+	start := historySince(opts).UnixMilli()
+	hist, err := c.History(ctx, start, boundedLimit(opts.Limit))
+	if err != nil {
+		fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
+		return 1
+	}
+	for _, row := range metricRecords(filterProcesses(hist.Processes, opts)) {
+		if err := enc.Encode(row); err != nil {
+			fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
+			return 1
+		}
+	}
+	events, err := c.Events(ctx, start, boundedLimit(opts.Limit))
+	if err != nil {
+		fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
+		return 1
+	}
+	for _, row := range filterEvents(events, opts.PID).Events {
+		if err := enc.Encode(row); err != nil {
+			fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
+			return 1
+		}
+	}
+	host, err := c.Host(ctx)
+	if err != nil {
+		fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
+		return 1
+	}
+	if err := enc.Encode(map[string]any{"schema_version": 1, "kind": "host", "collection_timestamp_ms": host.SampledAtMs, "source": "daemonitor-cored/host", "host": host}); err != nil {
+		fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
+		return 1
+	}
+	_ = stdout
+	return 0
 }
 
 func historySince(opts Options) time.Time {
