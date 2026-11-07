@@ -78,6 +78,9 @@ func (s *Store) migrate() error {
 	if err := s.ensureBuildsAlignedWithApp(); err != nil {
 		return err
 	}
+	if err := s.ensureProcessInstancesAndEvents(); err != nil {
+		return err
+	}
 	_, err := s.db.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion))
 	return err
 }
@@ -86,7 +89,8 @@ func (s *Store) migrate() error {
 // v2: builds columns match Watcher.sq (start_time/end_time/command_line).
 // v4: process_samples includes optional OS and JVM observability metrics.
 // v5: process_samples includes cumulative CPU counters and interval cores used.
-const schemaVersion = 5
+// v6: process_instances + process_events for incarnation identity and lifecycle.
+const schemaVersion = 6
 
 func (s *Store) ensureProcessSamplesAlignedWithApp() error {
 	exists, err := s.tableExists("process_samples")
@@ -539,7 +543,27 @@ func (s *Store) PurgeOlderThan(retention time.Duration) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	ev, err := s.db.Exec(`DELETE FROM process_events WHERE timestamp_ms < ?`, cutoff)
+	if err != nil {
+		return n, err
+	}
+	evN, err := ev.RowsAffected()
+	if err != nil {
+		return n, err
+	}
+	inst, err := s.db.Exec(`DELETE FROM process_instances WHERE last_observed_ms < ?`, cutoff)
+	if err != nil {
+		return n + evN, err
+	}
+	instN, err := inst.RowsAffected()
+	if err != nil {
+		return n + evN, err
+	}
+	return n + evN + instN, nil
 }
 
 func (s *Store) History(sinceMs int64, limit int) ([]model.Process, error) {

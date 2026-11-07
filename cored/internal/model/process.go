@@ -141,3 +141,22 @@ type CollectorCadences struct {
 	LinuxPSSMs        int64 `json:"linux_pss_ms"`
 	ContainerJobMs    int64 `json:"container_job_ms"`
 }
+
+// ProcessEvent is one lifecycle row from process_events (schema_version 1).
+type ProcessEvent struct {
+	SchemaVersion     int    `json:"schema_version"`
+	EventType         string `json:"event_type"`
+	TimestampMs       int64  `json:"timestamp_ms"`
+	ProcessInstanceID string `json:"process_instance_id"`
+	PID               int32  `json:"pid"`
+	ProcessType       string `json:"process_type,omitempty"`
+	Source            string `json:"source"`
+}
+
+// Events is the `/v1/events` response body.
+type Events struct {
+	SchemaVersion int            `json:"schema_version"`
+	SinceMs       int64          `json:"since_ms"`
+	Count         int            `json:"count"`
+	Events        []ProcessEvent `json:"events"`
+}
