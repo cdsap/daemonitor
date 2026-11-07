@@ -15,14 +15,16 @@ func TestDefaultSocketPathSelection(t *testing.T) {
 	// On non-Windows hosts DefaultWindowsEndpoint returns the legacy constant;
 	// on Windows it is SID-suffixed. Either form is a valid pipe path.
 	_ = ipc.DefaultWindowsPipePath
-	unix := defaultSocketPath("darwin", "/Users/x/Library/Application Support/Daemonitor")
+	darwinSupport := filepath.FromSlash("/Users/x/Library/Application Support/Daemonitor")
+	unix := defaultSocketPath("darwin", darwinSupport)
 	if filepath.Base(unix) != "daemonitor-core.sock" {
 		t.Fatalf("darwin=%q", unix)
 	}
-	if filepath.Dir(unix) != "/Users/x/Library/Application Support/Daemonitor" {
+	if filepath.Dir(unix) != darwinSupport {
 		t.Fatalf("darwin dir=%q", filepath.Dir(unix))
 	}
-	linux := defaultSocketPath("linux", "/home/x/.local/share/Daemonitor")
+	linuxSupport := filepath.FromSlash("/home/x/.local/share/Daemonitor")
+	linux := defaultSocketPath("linux", linuxSupport)
 	if filepath.Base(linux) != "daemonitor-core.sock" {
 		t.Fatalf("linux=%q", linux)
 	}
