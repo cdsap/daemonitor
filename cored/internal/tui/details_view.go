@@ -143,7 +143,26 @@ func detailField(label, value string) string {
 }
 
 func detailTelemetry(m Model, p model.Process, width int) []string {
-	lines := []string{
+	lines := []string{""}
+	if p.Type == "GRADLE_DAEMON" {
+		version, path := "", ""
+		if m.detailLog != nil {
+			version, path = m.detailLog.GradleVersion, m.detailLog.Path
+		}
+		lines = append(lines,
+			"GRADLE DAEMON LOG",
+			detailField("Gradle version", na(version)),
+			detailField("Log path", na(path)),
+			"",
+		)
+	}
+	lines = append(lines,
+		"OS ACTIVITY",
+		detailField("Resource scope", resourceScopeText(p)),
+		detailField("Page faults", "minor "+optionalInt64Text(p.MinorPageFaults, "")+" / major "+optionalInt64Text(p.MajorPageFaults, "")),
+		detailField("Context switch", "voluntary "+optionalInt64Text(p.VoluntaryContextSwitches, "")+" / involuntary "+optionalInt64Text(p.InvoluntaryContextSwitches, "")),
+		detailField("CPU seconds", "user "+optionalFloat64Text(p.CPUUserSecondsTotal, "s")+" / system "+optionalFloat64Text(p.CPUSystemSecondsTotal, "s")+" / total "+optionalFloat64Text(p.CPUTotalSecondsTotal, "s")),
+		detailField("CPU cores", optionalFloat64Text(p.CPUCoresUsed, "")),
 		"",
 		"JVM MEMORY POOLS",
 		detailField("Heap used", render.HeapText(p.HeapUsedMB)),
@@ -152,6 +171,15 @@ func detailTelemetry(m Model, p model.Process, width int) []string {
 		detailField("Metaspace used", optionalInt64Text(p.MetaspaceUsedMB, "MB")),
 		detailField("Metaspace cmt", optionalInt64Text(p.MetaspaceCommittedMB, "MB")),
 		detailField("Other pools", memoryPoolsText(p.MemoryPools)),
+		"",
+		"NATIVE MEMORY",
+		detailField("Resident", optionalBytesText(p.ResidentBytes)),
+		detailField("Virtual", optionalBytesText(p.VirtualBytes)),
+		detailField("Private committed", optionalBytesText(p.PrivateCommittedBytes)),
+		detailField("Proportional (PSS)", optionalBytesText(p.ProportionalBytes)),
+		detailField("Physical footprint", optionalBytesText(p.PhysicalFootprintBytes)),
+		detailField("Swap", optionalBytesText(p.SwapBytes)),
+		detailField("Peak resident", optionalBytesText(p.PeakResidentBytes)),
 		"",
 		"GC COUNTERS / RATES",
 		detailField("Young count", optionalInt64Text(p.YoungGCCount, "")),
@@ -171,7 +199,7 @@ func detailTelemetry(m Model, p model.Process, width int) []string {
 		detailField("End", "n/a (active or unavailable)"),
 		"",
 		"HOST RESOURCE CONTEXT",
-	}
+	)
 	if m.detailHostError != nil {
 		lines = append(lines, detailField("Host metrics", "unavailable: "+oneLine(m.detailHostError.Error())))
 	} else {
@@ -248,11 +276,28 @@ func jitText(jit *model.JITMetrics) string {
 	return strings.Join(parts, ", ")
 }
 
+func resourceScopeText(p model.Process) string {
+	if p.ResourceScope != "" {
+		return string(p.ResourceScope)
+	}
+	return na(string(p.Resource.Scope))
+}
+
 func optionalMetricInt(metric model.IntMetric, unit string) string {
 	if metric.Value == nil {
 		return "n/a"
 	}
 	return fmt.Sprintf("%d%s", *metric.Value, unit)
+}
+
+func optionalFloat64Text(v *float64, unit string) string {
+	if v == nil {
+		return "n/a"
+	}
+	if unit == "" {
+		return fmt.Sprintf("%.1f", *v)
+	}
+	return fmt.Sprintf("%.1f %s", *v, unit)
 }
 
 func optionalMetricReal(metric model.RealMetric, unit string) string {
@@ -267,6 +312,26 @@ func optionalMetricBytes(metric model.IntMetric) string {
 		return "n/a"
 	}
 	return render.RSSText(*metric.Value / (1024 * 1024))
+}
+
+func optionalBytesText(v *int64) string {
+	if v == nil {
+		return "n/a"
+	}
+	return formatBytes(*v)
+}
+
+func formatBytes(bytes int64) string {
+	units := []string{"B", "KB", "MB", "GB"}
+	value := float64(bytes)
+	unit := 0
+	for value >= 1024 && unit < len(units)-1 {
+		value /= 1024
+		unit++
+	}
+	formatted := fmt.Sprintf("%.1f", value)
+	formatted = strings.TrimRight(strings.TrimRight(formatted, "0"), ".")
+	return formatted + " " + units[unit]
 }
 
 func gcRateText(history []model.Process, p model.Process) string {
@@ -348,6 +413,8 @@ func detailAttributes(p model.Process, width int, now int64) []string {
 		detailField("Status", na(p.Status)),
 		detailField("Start", formatStart(p.StartTimeMs)),
 		detailField("Uptime", render.Uptime(p.StartTimeMs, now)),
+	}
+	lines = append(lines,
 		"",
 		"JVM / memory",
 		detailField("RSS", render.RSSText(p.RSSMemoryMB)),
@@ -382,7 +449,7 @@ func detailAttributes(p model.Process, width int, now int64) []string {
 			" · full "+render.GCTimeText(p.FullGCTimeSeconds)+
 			" · conc "+render.GCTimeText(p.ConcurrentGCTimeSeconds)+
 			" · total "+render.GCTimeText(p.TotalGCTimeSeconds)),
-	}
+	)
 	for i := range lines {
 		lines[i] = truncateWidth(lines[i], max(1, width-2))
 	}
