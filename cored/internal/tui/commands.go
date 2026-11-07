@@ -24,14 +24,18 @@ type snapshotFailedMsg struct {
 }
 
 type detailsLoadedMsg struct {
-	pid       int64
-	startMs   int64
-	log       *logs.DaemonLog
-	tail      *logs.Tail
-	history   []model.Process
-	builds    client.BuildsPayload
-	buildsErr error
-	err       error
+	pid             int64
+	startMs         int64
+	log             *logs.DaemonLog
+	tail            *logs.Tail
+	history         []model.Process
+	builds          client.BuildsPayload
+	buildsErr       error
+	host            model.HostMetrics
+	hostErr         error
+	capabilities    model.Capabilities
+	capabilitiesErr error
+	err             error
 }
 
 type killFailure struct {
@@ -92,7 +96,9 @@ func (m Model) fetchDetails(pid, startMs int64) tea.Cmd {
 		tail, tailErr := c.DaemonLogTail(ctx, pid)
 		history, _ = c.History(ctx, time.Now().Add(-30*time.Minute).UnixMilli(), 500)
 		builds, buildsErr := c.BuildsForDaemon(ctx, pid, startMs, 20)
-		msg := detailsLoadedMsg{pid: pid, startMs: startMs, log: logMeta, history: history.Processes, builds: builds, buildsErr: buildsErr}
+		host, hostErr := c.Host(ctx)
+		capabilities, capabilitiesErr := c.Capabilities(ctx)
+		msg := detailsLoadedMsg{pid: pid, startMs: startMs, log: logMeta, history: history.Processes, builds: builds, buildsErr: buildsErr, host: host, hostErr: hostErr, capabilities: capabilities, capabilitiesErr: capabilitiesErr}
 		if tailErr != nil {
 			msg.err = tailErr
 			return msg

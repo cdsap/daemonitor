@@ -24,7 +24,9 @@ func (m Model) renderDetails() string {
 		now = m.now().UnixMilli()
 	}
 	header := detailHeader(*p, now, m.detailIsEnded(), m.detailIsStale(), m.width, m.noColor)
-	attributes := detailAttributes(*p, m.width, now)
+	// Keep the established attributes at the bottom of this pane so existing
+	// scrolling behavior still lands on the familiar process fields.
+	attributes := append(detailTelemetry(m, *p, m.width), detailAttributes(*p, m.width, now)...)
 	gradle := p.Type == "GRADLE_DAEMON"
 	builds := []string(nil)
 	if gradle {
@@ -129,6 +131,105 @@ func detailPaneName(pane detailPaneKind) string {
 	default:
 		return "attributes"
 	}
+}
+
+// detailTelemetry is deliberately confined to the selected-process view. The
+// process table remains the compact operator overview while this section gives
+// expanded telemetry a place to grow without changing its columns.
+func detailTelemetry(m Model, p model.Process, width int) []string {
+	lines := []string{
+		"",
+		"JVM MEMORY POOLS",
+		"  Heap used       " + render.HeapText(p.HeapUsedMB),
+		"  Heap committed  " + render.HeapText(p.HeapCommittedMB),
+		"  Heap max        " + render.HeapText(p.HeapMaxMB),
+		"  Metaspace used  " + optionalInt64Text(p.MetaspaceUsedMB, "MB"),
+		"  Metaspace cmt   " + optionalInt64Text(p.MetaspaceCommittedMB, "MB"),
+		"  Other pools     n/a (not collected)",
+		"",
+		"GC COUNTERS / RATES",
+		"  Young count     " + optionalInt64Text(p.YoungGCCount, ""),
+		"  Old count       " + optionalInt64Text(p.OldGCCount, ""),
+		"  Total time      " + render.GCTimeText(p.TotalGCTimeSeconds),
+		"  Rate (recent)   " + gcRateText(m.detailHistory, p),
+		"  Full/conc time  " + render.GCTimeText(p.FullGCTimeSeconds) + " / " + render.GCTimeText(p.ConcurrentGCTimeSeconds),
+		"",
+		"JIT / CODE CACHE",
+		"  Compilation     n/a (not collected)",
+		"  Code cache      n/a (not collected)",
+		"",
+		"PROCESS LIFECYCLE",
+		"  Status          " + na(p.Status),
+		"  Start           " + formatStart(p.StartTimeMs),
+		"  Sampled         " + formatStart(p.SampledAtMs),
+		"  End             n/a (active or unavailable)",
+		"",
+		"HOST RESOURCE CONTEXT",
+	}
+	if m.detailHostError != nil {
+		lines = append(lines, "  Host metrics    unavailable: "+oneLine(m.detailHostError.Error()))
+	} else {
+		lines = append(lines,
+			"  CPUs            "+optionalMetricInt(m.detailHost.LogicalProcessors, ""),
+			"  CPU usage       "+optionalMetricReal(m.detailHost.CPUUsagePercent, "%"),
+			"  Memory used     "+optionalMetricBytes(m.detailHost.MemoryUsedBytes),
+			"  Memory avail    "+optionalMetricBytes(m.detailHost.MemoryAvailableBytes),
+			"  Memory total    "+optionalMetricBytes(m.detailHost.MemoryTotalBytes),
+		)
+	}
+	lines = append(lines, "", "COLLECTION CAPABILITIES")
+	if m.detailCapabilitiesError != nil {
+		lines = append(lines, "  Capabilities    unavailable: "+oneLine(m.detailCapabilitiesError.Error()))
+	} else if len(m.detailCapabilities.Metrics) == 0 {
+		lines = append(lines, "  Capabilities    n/a")
+	} else {
+		for _, capability := range m.detailCapabilities.Metrics {
+			lines = append(lines, "  "+capability.MetricName+"  "+capability.Availability)
+		}
+	}
+	for i := range lines {
+		lines[i] = truncateWidth(lines[i], max(1, width-2))
+	}
+	return lines
+}
+
+func optionalMetricInt(metric model.IntMetric, unit string) string {
+	if metric.Value == nil {
+		return "n/a"
+	}
+	return fmt.Sprintf("%d%s", *metric.Value, unit)
+}
+
+func optionalMetricReal(metric model.RealMetric, unit string) string {
+	if metric.Value == nil {
+		return "n/a"
+	}
+	return fmt.Sprintf("%.1f%s", *metric.Value, unit)
+}
+
+func optionalMetricBytes(metric model.IntMetric) string {
+	if metric.Value == nil {
+		return "n/a"
+	}
+	return render.RSSText(*metric.Value / (1024 * 1024))
+}
+
+func gcRateText(history []model.Process, p model.Process) string {
+	var first, last *model.Process
+	for i := range history {
+		sample := history[i]
+		if sample.PID != p.PID || sample.StartTimeMs != p.StartTimeMs || sample.YoungGCCount == nil {
+			continue
+		}
+		if first == nil {
+			first = &sample
+		}
+		last = &sample
+	}
+	if first == nil || last == nil || first == last || last.SampledAtMs <= first.SampledAtMs || *last.YoungGCCount < *first.YoungGCCount {
+		return "n/a"
+	}
+	return fmt.Sprintf("%.2f young/s", float64(*last.YoungGCCount-*first.YoungGCCount)/float64(last.SampledAtMs-first.SampledAtMs)*1000)
 }
 
 func (m Model) detailIsEnded() bool {

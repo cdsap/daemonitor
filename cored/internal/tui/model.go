@@ -120,6 +120,10 @@ type Model struct {
 	detailTail                 *logs.Tail
 	detailHistory              []model.Process
 	detailBuilds               client.BuildsPayload
+	detailHost                 model.HostMetrics
+	detailHostError            error
+	detailCapabilities         model.Capabilities
+	detailCapabilitiesError    error
 	detailLoading              bool
 	detailError                string
 	detailScroll               int
@@ -218,6 +222,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.detailTail = msg.tail
 		m.detailHistory = msg.history
 		m.detailBuilds = msg.builds
+		m.detailHost = msg.host
+		m.detailHostError = msg.hostErr
+		m.detailCapabilities = msg.capabilities
+		m.detailCapabilitiesError = msg.capabilitiesErr
 		if msg.err != nil {
 			m.detailError = msg.err.Error()
 		} else if msg.buildsErr != nil {
@@ -256,6 +264,10 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.detailTail = nil
 			m.detailHistory = nil
 			m.detailBuilds = client.BuildsPayload{}
+			m.detailHost = model.HostMetrics{}
+			m.detailHostError = nil
+			m.detailCapabilities = model.Capabilities{}
+			m.detailCapabilitiesError = nil
 			m.detailError = ""
 			m.detailLoading = false
 			m.detailScroll = 0
@@ -373,6 +385,10 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.detailTail = nil
 			m.detailHistory = nil
 			m.detailBuilds = client.BuildsPayload{}
+			m.detailHost = model.HostMetrics{}
+			m.detailHostError = nil
+			m.detailCapabilities = model.Capabilities{}
+			m.detailCapabilitiesError = nil
 			m.detailError = ""
 			m.detailScroll = 0
 			m.detailPane = detailPaneAttributes

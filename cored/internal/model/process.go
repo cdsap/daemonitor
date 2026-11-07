@@ -101,10 +101,33 @@ type Health struct {
 
 // Capabilities is the `/v1/capabilities` response body.
 type Capabilities struct {
-	SchemaVersion int                    `json:"schema_version"`
-	Platform      string                 `json:"platform"`
-	SampledAtMs   int64                  `json:"sampled_at_ms"`
-	Metrics       []CapabilityMetric     `json:"metrics"`
+	SchemaVersion int                `json:"schema_version"`
+	Platform      string             `json:"platform"`
+	SampledAtMs   int64              `json:"sampled_at_ms"`
+	Metrics       []CapabilityMetric `json:"metrics"`
+}
+
+// HostMetrics is the `/v1/host` response. Optional values remain nullable so
+// the TUI can distinguish an unavailable measurement from a measured zero.
+type HostMetrics struct {
+	SampledAtMs          int64      `json:"sampled_at_ms"`
+	LogicalProcessors    IntMetric  `json:"logical_processors"`
+	CPUUsagePercent      RealMetric `json:"cpu_usage_percent"`
+	MemoryTotalBytes     IntMetric  `json:"memory_total_bytes"`
+	MemoryAvailableBytes IntMetric  `json:"memory_available_bytes"`
+	MemoryUsedBytes      IntMetric  `json:"memory_used_bytes"`
+}
+
+type IntMetric struct {
+	Availability string `json:"availability"`
+	Value        *int64 `json:"value"`
+	SampledAtMs  int64  `json:"sampled_at_ms,omitempty"`
+}
+
+type RealMetric struct {
+	Availability string   `json:"availability"`
+	Value        *float64 `json:"value"`
+	SampledAtMs  int64    `json:"sampled_at_ms,omitempty"`
 }
 
 // CapabilityMetric is one optional metric's availability on this host.

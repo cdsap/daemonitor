@@ -61,6 +61,13 @@ func (c *Client) Self(ctx context.Context) (model.SelfMetrics, error) {
 	return self, err
 }
 
+// Host fetches the latest host resource context.
+func (c *Client) Host(ctx context.Context) (model.HostMetrics, error) {
+	var host model.HostMetrics
+	err := c.getJSON(ctx, "/v1/host", &host)
+	return host, err
+}
+
 // Processes fetches /v1/processes.
 func (c *Client) Processes(ctx context.Context) (model.Snapshot, error) {
 	var snap model.Snapshot
