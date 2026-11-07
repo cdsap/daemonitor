@@ -42,7 +42,7 @@ type Process struct {
 	MaxHeapMB                  *int64   `json:"max_heap_mb"`
 	MinHeapMB                  *int64   `json:"min_heap_mb"`
 	GC                         *string  `json:"gc"`
-	// Live heap from jcmd/jstat (Gradle/Kotlin daemons only). Null used/committed when
+	// Live heap from jcmd/jstat (Gradle/Kotlin daemons and eligible workers). Null used/committed when
 	// unavailable — never coerced to zero. Distinct from MaxHeapMB (-Xmx).
 	HeapUsedMB           *int64 `json:"heap_used_mb"`
 	HeapCommittedMB      *int64 `json:"heap_committed_mb"`
@@ -60,6 +60,14 @@ type Process struct {
 	TotalGCTimeSeconds      *float64          `json:"total_gc_time_seconds"`
 	OldGCCount              *int64            `json:"old_gc_count"`
 	OldGCTimeMs             *int64            `json:"old_gc_time_ms"`
+	FullGCCount             *int64            `json:"full_gc_count"`
+	ConcurrentGCCount       *int64            `json:"concurrent_gc_count"`
+	TotalGCCount            *int64            `json:"total_gc_count"`
+	MemoryPools             []JVMMemoryPool   `json:"memory_pools,omitempty"`
+	CodeCache               []JVMMemoryPool   `json:"code_cache,omitempty"`
+	JIT                     *JITMetrics       `json:"jit,omitempty"`
+	Classes                 *ClassMetrics     `json:"classes,omitempty"`
+	Safepoints              *SafepointMetrics `json:"safepoints,omitempty"`
 	JavaVersion             *string           `json:"java_version"`
 	JavaRuntimeVersion      *string           `json:"java_runtime_version"`
 	JavaVendor              *string           `json:"java_vendor"`
@@ -73,6 +81,40 @@ type Process struct {
 	Status                  string            `json:"status"`
 	Automated               bool              `json:"automated"`
 	SampledAtMs             int64             `json:"sampled_at_ms"`
+}
+
+type JVMRawValue struct {
+	Value float64 `json:"value"`
+	Unit  string  `json:"unit"`
+}
+
+type JVMMemoryPool struct {
+	Name      string      `json:"name"`
+	Source    string      `json:"source"`
+	Used      JVMRawValue `json:"used"`
+	Committed JVMRawValue `json:"committed"`
+	Max       JVMRawValue `json:"max"`
+}
+
+type JITMetrics struct {
+	CompiledCount          *int64   `json:"compiled_count"`
+	FailedCount            *int64   `json:"failed_count"`
+	InvalidCount           *int64   `json:"invalid_count"`
+	CompilationTimeSeconds *float64 `json:"compilation_time_seconds"`
+}
+
+type ClassMetrics struct {
+	LoadedClasses      *int64   `json:"loaded"`
+	UnloadedClasses    *int64   `json:"unloaded_total"`
+	LoadedClassesTotal *int64   `json:"loaded_total"`
+	ClassTimeSeconds   *float64 `json:"time_seconds"`
+}
+
+type SafepointMetrics struct {
+	SafepointCount      *int64 `json:"count"`
+	SafepointTimeNs     *int64 `json:"time_ns"`
+	SafepointSyncTimeNs *int64 `json:"sync_time_ns"`
+	ApplicationTimeNs   *int64 `json:"application_time_ns"`
 }
 
 // ProbeDiagnostic is a safe, stable summary of a failed JVM tool attempt.
@@ -116,10 +158,10 @@ type Health struct {
 
 // Capabilities is the `/v1/capabilities` response body.
 type Capabilities struct {
-	SchemaVersion int                    `json:"schema_version"`
-	Platform      string                 `json:"platform"`
-	SampledAtMs   int64                  `json:"sampled_at_ms"`
-	Metrics       []CapabilityMetric     `json:"metrics"`
+	SchemaVersion int                `json:"schema_version"`
+	Platform      string             `json:"platform"`
+	SampledAtMs   int64              `json:"sampled_at_ms"`
+	Metrics       []CapabilityMetric `json:"metrics"`
 }
 
 // CapabilityMetric is one optional metric's availability on this host.
