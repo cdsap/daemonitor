@@ -58,10 +58,9 @@ func collectProcessGopsutil(ctx context.Context, id ProcessIdentity) ProcessPlat
 	}
 
 	if io, err := p.IOCountersWithContext(ctx); err == nil && io != nil {
-		out.LogicalReadBytesTotal = IntAvailable(int64(io.ReadBytes), now, sourceGopsutil)
-		out.LogicalWriteBytesTotal = IntAvailable(int64(io.WriteBytes), now, sourceGopsutil)
-		out.ReadOperationsTotal = IntAvailable(int64(io.ReadCount), now, sourceGopsutil)
-		out.WriteOperationsTotal = IntAvailable(int64(io.WriteCount), now, sourceGopsutil)
+		out.LogicalReadBytesTotal, out.LogicalWriteBytesTotal,
+			out.DiskReadBytesTotal, out.DiskWriteBytesTotal,
+			out.ReadOperationsTotal, out.WriteOperationsTotal = ioMetricsFromCounters(*io, now)
 	} else {
 		a := mapOptionalErr(err)
 		out.LogicalReadBytesTotal = IntUnavailable(a, sourceGopsutil)
@@ -69,8 +68,10 @@ func collectProcessGopsutil(ctx context.Context, id ProcessIdentity) ProcessPlat
 		out.ReadOperationsTotal = IntUnavailable(a, sourceGopsutil)
 		out.WriteOperationsTotal = IntUnavailable(a, sourceGopsutil)
 	}
-	out.DiskReadBytesTotal = IntUnavailable(Unsupported, sourceGopsutil)
-	out.DiskWriteBytesTotal = IntUnavailable(Unsupported, sourceGopsutil)
+	if out.DiskReadBytesTotal.Availability == "" {
+		out.DiskReadBytesTotal = IntUnavailable(Unsupported, sourceGopsutil)
+		out.DiskWriteBytesTotal = IntUnavailable(Unsupported, sourceGopsutil)
+	}
 
 	if faults, err := p.PageFaultsWithContext(ctx); err == nil && faults != nil {
 		out.MinorPageFaultsTotal = IntAvailable(int64(faults.MinorFaults), now, sourceGopsutil)
@@ -111,6 +112,15 @@ func collectProcessGopsutil(ctx context.Context, id ProcessIdentity) ProcessPlat
 	}
 
 	return out
+}
+
+func ioMetricsFromCounters(io process.IOCountersStat, sampledAtMs int64) (IntMetric, IntMetric, IntMetric, IntMetric, IntMetric, IntMetric) {
+	return IntAvailable(int64(io.ReadBytes), sampledAtMs, sourceGopsutil),
+		IntAvailable(int64(io.WriteBytes), sampledAtMs, sourceGopsutil),
+		IntAvailable(int64(io.DiskReadBytes), sampledAtMs, sourceGopsutil),
+		IntAvailable(int64(io.DiskWriteBytes), sampledAtMs, sourceGopsutil),
+		IntAvailable(int64(io.ReadCount), sampledAtMs, sourceGopsutil),
+		IntAvailable(int64(io.WriteCount), sampledAtMs, sourceGopsutil)
 }
 
 func collectHostGopsutil(ctx context.Context) HostMetrics {

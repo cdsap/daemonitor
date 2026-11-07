@@ -33,7 +33,7 @@ func (windowsCollector) Capabilities() []MetricCapability {
 	setCapability(caps, "process.memory.private_committed_bytes", NotCollected, "GetProcessMemoryInfo", "")
 	setCapability(caps, "process.memory.peak_resident_bytes", NotCollected, "GetProcessMemoryInfo", "")
 	setCapability(caps, "process.handles.count", Available, sourceGopsutil,
-		"Windows handle count via gopsutil NumFDs (not POSIX FDs; native GetProcessHandleCount pending)")
+		"Windows handle count via GetProcessHandleCount; it is not a POSIX FD count")
 	setCapability(caps, "process.open_descriptors.count", Unsupported, "",
 		"POSIX open descriptors are not equivalent to Windows handles")
 	setCapability(caps, "process.memory.physical_footprint_bytes", Unsupported, "", "")

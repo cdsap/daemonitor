@@ -33,10 +33,10 @@ func (linuxCollector) Capabilities() []MetricCapability {
 	setCapability(caps, "process.memory.private_committed_bytes", NotCollected, "smaps_rollup", "")
 	setCapability(caps, "process.memory.physical_footprint_bytes", Unsupported, "", "")
 	setCapability(caps, "process.handles.count", Unsupported, "", "")
-	setCapability(caps, "process.io.disk_read_bytes_total", NotCollected, "/proc/<pid>/io",
-		"Storage vs logical I/O distinction pending")
-	setCapability(caps, "process.io.disk_write_bytes_total", NotCollected, "/proc/<pid>/io",
-		"Storage vs logical I/O distinction pending")
+	setCapability(caps, "process.io.disk_read_bytes_total", Available, "/proc/<pid>/io",
+		"Storage bytes read (read_bytes), distinct from logical rchar")
+	setCapability(caps, "process.io.disk_write_bytes_total", Available, "/proc/<pid>/io",
+		"Storage bytes written (write_bytes), distinct from logical wchar")
 	setCapability(caps, "host.load.1", Available, "procfs", "One-minute load average")
 	setCapability(caps, "host.load.5", Available, "procfs", "Five-minute load average")
 	setCapability(caps, "host.load.15", Available, "procfs", "Fifteen-minute load average")
