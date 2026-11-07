@@ -1,6 +1,8 @@
 package command
 
 import (
+	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -79,6 +81,39 @@ func TestParseArgsQueryAndWatchOptions(t *testing.T) {
 	opts, err = ParseArgs([]string{"builds", "--include-logs"})
 	if err != nil || !opts.IncludeLogs {
 		t.Fatalf("unexpected log option: %+v, err=%v", opts, err)
+	}
+}
+
+func TestParseArgsTelemetryCommandsAndBounds(t *testing.T) {
+	opts, err := ParseArgs([]string{"metrics", "list", "--pid", "8421", "--format", "jsonl"})
+	if err != nil || opts.Output != "jsonl" || opts.PID != 8421 || len(opts.Args) != 2 || opts.Args[1] != "list" {
+		t.Fatalf("telemetry args=%+v err=%v", opts, err)
+	}
+	opts, err = ParseArgs([]string{"export", "--since", "1h", "--output", "telemetry.jsonl"})
+	if err != nil || opts.OutputPath != "telemetry.jsonl" || opts.Since != time.Hour {
+		t.Fatalf("export args=%+v err=%v", opts, err)
+	}
+	if boundedLimit(0) != 500 || boundedLimit(5001) != 500 || boundedLimit(42) != 42 {
+		t.Fatal("unexpected bounded export limits")
+	}
+}
+
+func TestMetricJSONLHasStableSchemaFields(t *testing.T) {
+	project := "/private/project"
+	rows := metricRecords([]model.Process{{PID: 8421, StartTimeMs: 123, SampledAtMs: 456, ProjectPath: &project, RSSMemoryMB: 7}})
+	var out bytes.Buffer
+	if err := writeMetrics(&out, rows, "jsonl"); err != nil {
+		t.Fatal(err)
+	}
+	var record map[string]any
+	firstLine := strings.SplitN(strings.TrimSpace(out.String()), "\n", 2)[0]
+	if err := json.Unmarshal([]byte(firstLine), &record); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"schema_version", "metric_name", "unit", "value", "source", "collection_timestamp_ms", "process_identity"} {
+		if _, ok := record[field]; !ok {
+			t.Fatalf("missing %q in %s", field, out.String())
+		}
 	}
 }
 

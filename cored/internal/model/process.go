@@ -101,10 +101,10 @@ type Health struct {
 
 // Capabilities is the `/v1/capabilities` response body.
 type Capabilities struct {
-	SchemaVersion int                    `json:"schema_version"`
-	Platform      string                 `json:"platform"`
-	SampledAtMs   int64                  `json:"sampled_at_ms"`
-	Metrics       []CapabilityMetric     `json:"metrics"`
+	SchemaVersion int                `json:"schema_version"`
+	Platform      string             `json:"platform"`
+	SampledAtMs   int64              `json:"sampled_at_ms"`
+	Metrics       []CapabilityMetric `json:"metrics"`
 }
 
 // CapabilityMetric is one optional metric's availability on this host.
@@ -125,6 +125,43 @@ type SelfMetrics struct {
 	Metrics          any               `json:"metrics"`
 	Cadences         CollectorCadences `json:"cadences"`
 	ProbeConcurrency int               `json:"probe_concurrency"`
+}
+
+// EventRecord is a redacted lifecycle event exposed to CLI clients.
+type EventRecord struct {
+	SchemaVersion    int      `json:"schema_version"`
+	PID              int64    `json:"pid"`
+	ProcessIdentity  string   `json:"process_identity,omitempty"`
+	Kind             string   `json:"kind"`
+	Source           string   `json:"source"`
+	TimestampMs      int64    `json:"timestamp_ms"`
+	CollectionTimeMs int64    `json:"collection_timestamp_ms"`
+	UID              string   `json:"uid,omitempty"`
+	BuildID          string   `json:"build_id,omitempty"`
+	CurrentDir       string   `json:"current_dir,omitempty"`
+	EnvNames         []string `json:"env_names,omitempty"`
+	Success          *bool    `json:"success,omitempty"`
+	DurationSeconds  *float64 `json:"duration_seconds,omitempty"`
+}
+
+// Events is the bounded lifecycle-event query response.
+type Events struct {
+	SchemaVersion int           `json:"schema_version"`
+	SinceMs       int64         `json:"since_ms"`
+	Count         int           `json:"count"`
+	Events        []EventRecord `json:"events"`
+}
+
+// MetricRecord is one normalized metric sample for machine-readable exports.
+type MetricRecord struct {
+	SchemaVersion    int    `json:"schema_version"`
+	MetricName       string `json:"metric_name"`
+	Unit             string `json:"unit"`
+	Value            any    `json:"value"`
+	Source           string `json:"source"`
+	CollectionTimeMs int64  `json:"collection_timestamp_ms"`
+	ProcessIdentity  string `json:"process_identity,omitempty"`
+	PID              int32  `json:"pid,omitempty"`
 }
 
 // CollectorCadences exposes provisional independent sampling intervals.

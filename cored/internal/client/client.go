@@ -14,6 +14,7 @@ import (
 
 	"github.com/cdsap/daemonitor/cored/internal/logs"
 	"github.com/cdsap/daemonitor/cored/internal/model"
+	"github.com/cdsap/daemonitor/cored/internal/platform"
 )
 
 const defaultTimeout = 3 * time.Second
@@ -61,6 +62,13 @@ func (c *Client) Self(ctx context.Context) (model.SelfMetrics, error) {
 	return self, err
 }
 
+// Host fetches the latest machine-level metrics.
+func (c *Client) Host(ctx context.Context) (platform.HostMetrics, error) {
+	var host platform.HostMetrics
+	err := c.getJSON(ctx, "/v1/host", &host)
+	return host, err
+}
+
 // Processes fetches /v1/processes.
 func (c *Client) Processes(ctx context.Context) (model.Snapshot, error) {
 	var snap model.Snapshot
@@ -75,6 +83,17 @@ func (c *Client) History(ctx context.Context, sinceMs int64, limit int) (model.H
 	var hist model.History
 	err := c.getJSON(ctx, path, &hist)
 	return hist, err
+}
+
+// Events fetches redacted lifecycle events retained by the core.
+func (c *Client) Events(ctx context.Context, sinceMs, pid int64, limit int) (model.Events, error) {
+	params := url.Values{"since_ms": {strconv.FormatInt(sinceMs, 10)}, "limit": {strconv.Itoa(limit)}}
+	if pid > 0 {
+		params.Set("pid", strconv.FormatInt(pid, 10))
+	}
+	var events model.Events
+	err := c.getJSON(ctx, "/v1/events?"+params.Encode(), &events)
+	return events, err
 }
 
 // DaemonLogs lists discovered Gradle daemon logs.
