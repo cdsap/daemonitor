@@ -1,5 +1,7 @@
 package model
 
+import "github.com/cdsap/daemonitor/cored/internal/platform"
+
 // Process is an IPC snapshot of a Gradle-related process.
 // Field names mirror the Kotlin GradleProcess domain for dual-run clients.
 type Process struct {
@@ -54,33 +56,35 @@ type Process struct {
 	YoungGCCount         *int64 `json:"young_gc_count"`
 	YoungGCTimeMs        *int64 `json:"young_gc_time_ms"`
 	// Cumulative jstat -gc times, in seconds; null means unavailable.
-	YoungGCTimeSeconds      *float64          `json:"young_gc_time_seconds"`
-	FullGCTimeSeconds       *float64          `json:"full_gc_time_seconds"`
-	ConcurrentGCTimeSeconds *float64          `json:"concurrent_gc_time_seconds"`
-	TotalGCTimeSeconds      *float64          `json:"total_gc_time_seconds"`
-	OldGCCount              *int64            `json:"old_gc_count"`
-	OldGCTimeMs             *int64            `json:"old_gc_time_ms"`
-	FullGCCount             *int64            `json:"full_gc_count"`
-	ConcurrentGCCount       *int64            `json:"concurrent_gc_count"`
-	TotalGCCount            *int64            `json:"total_gc_count"`
-	MemoryPools             []JVMMemoryPool   `json:"memory_pools,omitempty"`
-	CodeCache               []JVMMemoryPool   `json:"code_cache,omitempty"`
-	JIT                     *JITMetrics       `json:"jit,omitempty"`
-	Classes                 *ClassMetrics     `json:"classes,omitempty"`
-	Safepoints              *SafepointMetrics `json:"safepoints,omitempty"`
-	JavaVersion             *string           `json:"java_version"`
-	JavaRuntimeVersion      *string           `json:"java_runtime_version"`
-	JavaVendor              *string           `json:"java_vendor"`
-	JavaVMName              *string           `json:"java_vm_name"`
-	JavaVMVersion           *string           `json:"java_vm_version"`
-	OSName                  *string           `json:"os_name"`
-	OSArch                  *string           `json:"os_arch"`
-	ActiveProcessorCount    *int64            `json:"active_processor_count"`
-	HeapProbeDiagnostics    []ProbeDiagnostic `json:"heap_probe_diagnostics,omitempty"`
-	StartTimeMs             int64             `json:"start_time_ms"`
-	Status                  string            `json:"status"`
-	Automated               bool              `json:"automated"`
-	SampledAtMs             int64             `json:"sampled_at_ms"`
+	YoungGCTimeSeconds      *float64                 `json:"young_gc_time_seconds"`
+	FullGCTimeSeconds       *float64                 `json:"full_gc_time_seconds"`
+	ConcurrentGCTimeSeconds *float64                 `json:"concurrent_gc_time_seconds"`
+	TotalGCTimeSeconds      *float64                 `json:"total_gc_time_seconds"`
+	OldGCCount              *int64                   `json:"old_gc_count"`
+	OldGCTimeMs             *int64                   `json:"old_gc_time_ms"`
+	FullGCCount             *int64                   `json:"full_gc_count"`
+	ConcurrentGCCount       *int64                   `json:"concurrent_gc_count"`
+	TotalGCCount            *int64                   `json:"total_gc_count"`
+	MemoryPools             []JVMMemoryPool          `json:"memory_pools,omitempty"`
+	CodeCache               []JVMMemoryPool          `json:"code_cache,omitempty"`
+	JIT                     *JITMetrics              `json:"jit,omitempty"`
+	Classes                 *ClassMetrics            `json:"classes,omitempty"`
+	Safepoints              *SafepointMetrics        `json:"safepoints,omitempty"`
+	JavaVersion             *string                  `json:"java_version"`
+	JavaRuntimeVersion      *string                  `json:"java_runtime_version"`
+	JavaVendor              *string                  `json:"java_vendor"`
+	JavaVMName              *string                  `json:"java_vm_name"`
+	JavaVMVersion           *string                  `json:"java_vm_version"`
+	OSName                  *string                  `json:"os_name"`
+	OSArch                  *string                  `json:"os_arch"`
+	ActiveProcessorCount    *int64                   `json:"active_processor_count"`
+	HeapProbeDiagnostics    []ProbeDiagnostic        `json:"heap_probe_diagnostics,omitempty"`
+	StartTimeMs             int64                    `json:"start_time_ms"`
+	Status                  string                   `json:"status"`
+	Automated               bool                     `json:"automated"`
+	SampledAtMs             int64                    `json:"sampled_at_ms"`
+	ResourceScope           platform.ResourceScope   `json:"resource_scope"`
+	Resource                platform.ResourceMetrics `json:"resource"`
 }
 
 type JVMRawValue struct {
@@ -127,8 +131,9 @@ type ProbeDiagnostic struct {
 
 // Snapshot is the `/v1/processes` response body.
 type Snapshot struct {
-	SampledAtMs int64     `json:"sampled_at_ms"`
-	Processes   []Process `json:"processes"`
+	SampledAtMs int64                `json:"sampled_at_ms"`
+	Host        platform.HostMetrics `json:"host"`
+	Processes   []Process            `json:"processes"`
 }
 
 // History is the `/v1/processes/history` response body.

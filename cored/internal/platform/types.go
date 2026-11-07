@@ -20,6 +20,16 @@ type MetricCapability struct {
 	Description  string       `json:"description,omitempty"`
 }
 
+// ResourceScope identifies the accounting domain for a metric.
+type ResourceScope string
+
+const (
+	ScopeHost        ResourceScope = "host"
+	ScopeProcess     ResourceScope = "process"
+	ScopeLinuxCgroup ResourceScope = "linux_cgroup"
+	ScopeWindowsJob  ResourceScope = "windows_job"
+)
+
 // IntMetric is an optional integer measurement with availability and sample time.
 type IntMetric struct {
 	Availability Availability `json:"availability"`
@@ -40,18 +50,20 @@ type RealMetric struct {
 // Fields that a platform cannot supply must use Unsupported (or another non-available
 // state) with a null value — never a fabricated zero.
 type ProcessPlatformMetrics struct {
-	Identity    ProcessIdentity `json:"identity"`
-	SampledAtMs int64           `json:"sampled_at_ms"`
+	Identity      ProcessIdentity `json:"identity"`
+	SampledAtMs   int64           `json:"sampled_at_ms"`
+	ResourceScope ResourceScope   `json:"resource_scope"`
+	Resource      ResourceMetrics `json:"resource,omitempty"`
 
 	ResidentBytes IntMetric `json:"resident_bytes"`
 	VirtualBytes  IntMetric `json:"virtual_bytes"`
 	SwapBytes     IntMetric `json:"swap_bytes"`
 
 	// Platform-specific memory. Unsupported on OSes that lack an equivalent.
-	PhysicalFootprintBytes  IntMetric `json:"physical_footprint_bytes"`
-	ProportionalBytes       IntMetric `json:"proportional_bytes"`
-	PrivateCommittedBytes   IntMetric `json:"private_committed_bytes"`
-	PeakResidentBytes       IntMetric `json:"peak_resident_bytes"`
+	PhysicalFootprintBytes IntMetric `json:"physical_footprint_bytes"`
+	ProportionalBytes      IntMetric `json:"proportional_bytes"`
+	PrivateCommittedBytes  IntMetric `json:"private_committed_bytes"`
+	PeakResidentBytes      IntMetric `json:"peak_resident_bytes"`
 
 	ThreadCount IntMetric `json:"thread_count"`
 
@@ -78,14 +90,54 @@ type ProcessPlatformMetrics struct {
 	CPUTotalSecondsTotal  RealMetric `json:"cpu_total_seconds_total"`
 }
 
+// ResourceMetrics contains accounting available for the process's resource
+// scope. Optional values are null when the scope is absent or unsupported.
+type ResourceMetrics struct {
+	Scope ResourceScope `json:"scope"`
+
+	CPUQuotaCores            RealMetric `json:"cpu_quota_cores"`
+	CPUUsageSecondsTotal     RealMetric `json:"cpu_usage_seconds_total"`
+	CPUThrottledSecondsTotal RealMetric `json:"cpu_throttled_seconds_total"`
+	MemoryCurrentBytes       IntMetric  `json:"memory_current_bytes"`
+	MemoryLimitBytes         IntMetric  `json:"memory_limit_bytes"`
+	MemoryOOMTotal           IntMetric  `json:"memory_oom_total"`
+	MemoryOOMKillTotal       IntMetric  `json:"memory_oom_kill_total"`
+
+	CommitUsedBytes        IntMetric  `json:"commit_used_bytes"`
+	CommitLimitBytes       IntMetric  `json:"commit_limit_bytes"`
+	JobCPUTimeSecondsTotal RealMetric `json:"job_cpu_time_seconds_total"`
+	JobMemoryUsageBytes    IntMetric  `json:"job_memory_usage_bytes"`
+	JobProcessCount        IntMetric  `json:"job_process_count"`
+}
+
 // HostMetrics are machine-level measurements independent of a target process.
 type HostMetrics struct {
-	SampledAtMs        int64     `json:"sampled_at_ms"`
-	LogicalProcessors  IntMetric `json:"logical_processors"`
-	CPUUsagePercent    RealMetric `json:"cpu_usage_percent"`
-	MemoryTotalBytes   IntMetric `json:"memory_total_bytes"`
-	MemoryAvailableBytes IntMetric `json:"memory_available_bytes"`
-	MemoryUsedBytes    IntMetric `json:"memory_used_bytes"`
+	SampledAtMs          int64           `json:"sampled_at_ms"`
+	Scope                ResourceScope   `json:"scope"`
+	LogicalProcessors    IntMetric       `json:"logical_processors"`
+	CPUUsagePercent      RealMetric      `json:"cpu_usage_percent"`
+	MemoryTotalBytes     IntMetric       `json:"memory_total_bytes"`
+	MemoryAvailableBytes IntMetric       `json:"memory_available_bytes"`
+	MemoryUsedBytes      IntMetric       `json:"memory_used_bytes"`
+	CommitUsedBytes      IntMetric       `json:"commit_used_bytes"`
+	CommitLimitBytes     IntMetric       `json:"commit_limit_bytes"`
+	Load1                RealMetric      `json:"load1"`
+	Load5                RealMetric      `json:"load5"`
+	Load15               RealMetric      `json:"load15"`
+	PSICPU               SomePSI         `json:"psi_cpu"`
+	PSIMemory            SomePSI         `json:"psi_memory"`
+	PSIIO                SomePSI         `json:"psi_io"`
+	Resource             ResourceMetrics `json:"resource"`
+}
+
+// SomePSI contains Linux pressure-stall "some" and optional "full" values.
+type SomePSI struct {
+	SomeAvg10  RealMetric `json:"some_avg10"`
+	SomeAvg60  RealMetric `json:"some_avg60"`
+	SomeAvg300 RealMetric `json:"some_avg300"`
+	FullAvg10  RealMetric `json:"full_avg10"`
+	FullAvg60  RealMetric `json:"full_avg60"`
+	FullAvg300 RealMetric `json:"full_avg300"`
 }
 
 // PlatformCollector is the OS-specific adapter for process and host telemetry.
@@ -119,4 +171,15 @@ func RealUnavailable(a Availability, source string) RealMetric {
 		a = NotCollected
 	}
 	return RealMetric{Availability: a, Source: source}
+}
+
+func unavailableResources(scope ResourceScope, a Availability, source string) ResourceMetrics {
+	return ResourceMetrics{Scope: scope,
+		CPUQuotaCores: RealUnavailable(a, source), CPUUsageSecondsTotal: RealUnavailable(a, source), CPUThrottledSecondsTotal: RealUnavailable(a, source),
+		MemoryCurrentBytes: IntUnavailable(a, source), MemoryLimitBytes: IntUnavailable(a, source), MemoryOOMTotal: IntUnavailable(a, source), MemoryOOMKillTotal: IntUnavailable(a, source),
+		CommitUsedBytes: IntUnavailable(a, source), CommitLimitBytes: IntUnavailable(a, source), JobCPUTimeSecondsTotal: RealUnavailable(a, source), JobMemoryUsageBytes: IntUnavailable(a, source), JobProcessCount: IntUnavailable(a, source)}
+}
+
+func unavailablePSI(a Availability, source string) SomePSI {
+	return SomePSI{SomeAvg10: RealUnavailable(a, source), SomeAvg60: RealUnavailable(a, source), SomeAvg300: RealUnavailable(a, source), FullAvg10: RealUnavailable(a, source), FullAvg60: RealUnavailable(a, source), FullAvg300: RealUnavailable(a, source)}
 }

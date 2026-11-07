@@ -43,11 +43,13 @@ func (unsupportedCollector) CollectProcess(_ context.Context, id ProcessIdentity
 
 func (unsupportedCollector) CollectHost(_ context.Context) HostMetrics {
 	return HostMetrics{
+		Scope:                ScopeHost,
 		LogicalProcessors:    IntUnavailable(Unsupported, runtime.GOOS),
 		CPUUsagePercent:      RealUnavailable(Unsupported, runtime.GOOS),
 		MemoryTotalBytes:     IntUnavailable(Unsupported, runtime.GOOS),
 		MemoryAvailableBytes: IntUnavailable(Unsupported, runtime.GOOS),
 		MemoryUsedBytes:      IntUnavailable(Unsupported, runtime.GOOS),
+		Resource:             unavailableResources(ScopeHost, Unsupported, runtime.GOOS),
 	}
 }
 

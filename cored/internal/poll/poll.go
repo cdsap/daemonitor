@@ -326,6 +326,8 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 			Status:                     status,
 			Automated:                  IsNonInteractive(cmdline),
 			SampledAtMs:                now,
+			ResourceScope:              platMetrics.ResourceScope,
+			Resource:                   platMetrics.Resource,
 		})
 		if ShouldProbeLiveHeap(kind) {
 			jvmJobs = append(jvmJobs, pendingJVM{idx: idx, proc: p, pid: pid, kind: kind, startMs: startMs})
@@ -359,7 +361,11 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 		c.Heap.EvictMissing(seenPIDs)
 	}
 
-	return model.Snapshot{SampledAtMs: now, Processes: out}, nil
+	host := platform.HostMetrics{}
+	if c.Platform != nil {
+		host = c.Platform.CollectHost(ctx)
+	}
+	return model.Snapshot{SampledAtMs: now, Host: host, Processes: out}, nil
 }
 
 func rawValue(v heap.RawValue) model.JVMRawValue {
