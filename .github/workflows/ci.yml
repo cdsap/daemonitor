@@ -128,12 +128,7 @@ jobs:
             package_task: packageMsi
             package_glob: build/compose/binaries/main/msi/*.msi
             launcher: build/compose/binaries/main/app/Daemonitor/Daemonitor.exe
-          - os: macos-13
-            platform: macos
-            package_task: packageDmg
-            package_glob: build/compose/binaries/main/dmg/*.dmg
-            launcher: build/compose/binaries/main/app/Daemonitor.app/Contents/MacOS/Daemonitor
-          - os: macos-14
+          - os: macos-latest
             platform: macos
             package_task: packageDmg
             package_glob: build/compose/binaries/main/dmg/*.dmg
@@ -308,7 +303,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-13, macos-14]
+        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -349,7 +344,11 @@ jobs:
         working-directory: cored
         run: |
           set -euo pipefail
-          SOCK=$(mktemp -u "${TMPDIR:-/tmp}/daemonitor-json-XXXXXX.sock")
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            SOCK="//./pipe/daemonitor-ci-json-$$"
+          else
+            SOCK=$(mktemp -u "${TMPDIR:-/tmp}/daemonitor-json-XXXXXX.sock")
+          fi
           DB=$(mktemp "${TMPDIR:-/tmp}/daemonitor-json-XXXXXX.db")
           ./bin/daemonitor-cored -socket "$SOCK" -db "$DB" -interval 200ms >/dev/null 2>&1 &
           CORED_PID=$!
@@ -359,11 +358,20 @@ jobs:
             rm -f "$SOCK" "$DB" "${DB}-wal" "${DB}-shm"
           }
           trap cleanup EXIT
+          out=""
           for _ in $(seq 1 50); do
-            [[ -S "$SOCK" ]] && break
+            if [[ "${RUNNER_OS}" != "Windows" ]]; then
+              [[ -S "$SOCK" ]] || { sleep 0.05; continue; }
+            fi
+            if out=$(./bin/daemonitor-cli ps --json --socket "$SOCK" --no-autostart 2>/dev/null); then
+              break
+            fi
             sleep 0.05
           done
-          out=$(./bin/daemonitor-cli ps --json --socket "$SOCK" --no-autostart)
+          if [[ -z "${out}" ]]; then
+            echo "timed out waiting for daemonitor-cored at $SOCK" >&2
+            exit 1
+          fi
           python3 -c 'import json,sys; json.loads(sys.argv[1])' "$out"
           if printf '%s' "$out" | grep -q $'\x1b'; then
             echo "ANSI found in redirected JSON output" >&2

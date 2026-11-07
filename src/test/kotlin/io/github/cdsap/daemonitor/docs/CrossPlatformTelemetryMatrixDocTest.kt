@@ -38,8 +38,8 @@ class CrossPlatformTelemetryMatrixDocTest {
     }
 
     @Test
-    fun `ci references both native mac architectures and jdk compatibility matrix`() {
-        listOf("macos-13", "macos-14", "ubuntu-24.04-arm", "windows-latest").forEach { runner ->
+    fun `ci references hosted runners and jdk compatibility matrix`() {
+        listOf("macos-latest", "ubuntu-24.04-arm", "windows-latest").forEach { runner ->
             assertTrue(workflow.contains(runner), "CI should reference $runner")
         }
         assertTrue(workflow.contains("jdk: ['17', '21', '25']"), "CI should test JDK 17, 21, and 25")

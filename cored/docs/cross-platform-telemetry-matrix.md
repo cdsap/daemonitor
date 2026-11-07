@@ -20,8 +20,8 @@ runtime evidence for the target OS or architecture.
 
 | Environment | Required coverage | CI evidence | Status |
 |---|---|---|---|
-| macOS Intel | CLI, process collector, JVM probes | `macos-13` test and cored jobs | automated |
-| macOS Apple Silicon | CLI, process collector, JVM probes | `macos-14` test and cored jobs | automated |
+| macOS Apple Silicon | CLI, process collector, JVM probes | `macos-latest` test and cored jobs (hosted runner is currently Apple Silicon) | automated |
+| macOS Intel | CLI, process collector, JVM probes | No reliable hosted `macos-13`/`macos-14` Intel queue for this repository; do not claim Intel runtime coverage from Apple Silicon CI | **unsupported for hosted runtime CI**; attach manual Intel evidence when required |
 | Ubuntu x64 | CLI, JVM, `/proc`, optional PSS | `ubuntu-latest` test/cored jobs; Linux capability response | automated; PSS may be `not_collected` |
 | Ubuntu ARM64 | CLI, JVM, `/proc`, optional PSS | `ubuntu-24.04-arm` cored job | automated where the hosted runner is available; PSS may be `not_collected` |
 | Linux cgroup v2 | CPU and memory constraints | Linux cored job verifies `/sys/fs/cgroup/cgroup.controllers`; constraint results are recorded in the job summary | automated host gate; constrained soak is manual |
