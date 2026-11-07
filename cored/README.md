@@ -133,6 +133,8 @@ inherits the same redaction and result bounds.
 - **Linux dual-run honesty in CI:** `dual-run-honesty` job runs `scripts/dual-run-linux.sh`
 - **First-class module:** top-level `cored/` (`github.com/cdsap/daemonitor/cored`); left `spikes/`
 - **Live heap (Go path):** `internal/heap` (`jcmd`/`jstat`) wired into poll / `/v1/processes` (#245)
+- **Platform-faithful process memory:** byte metrics and native extras are documented in
+  [`docs/process-memory-metrics.md`](docs/process-memory-metrics.md) (#401)
 
 ## Dual-run with Kotlin clients
 

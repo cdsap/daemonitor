@@ -40,14 +40,12 @@ interface BuildProcessingMode {
 
 internal fun MonitoringMode.buildProcessingMode(
     builds: BuildWriter,
-    logSource: DaemonLogSource,
     aggregator: BuildCorrelator,
     retentionPolicy: RetentionPolicy,
     retentionDays: () -> Long,
     clock: () -> Long,
 ): BuildProcessingMode = when (this) {
     MonitoringMode.Local -> LocalBuildProcessingMode(
-        logSource = logSource,
         buildSaver = RetentionAwareBuildSaver(
             builds = builds,
             retentionPolicy = retentionPolicy,
@@ -83,7 +81,6 @@ private class RetentionAwareBuildSaver(
 }
 
 private class LocalBuildProcessingMode(
-    private val logSource: DaemonLogSource,
     private val buildSaver: RetentionAwareBuildSaver,
     private val aggregator: BuildCorrelator,
 ) : BuildProcessingMode {

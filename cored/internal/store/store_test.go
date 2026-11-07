@@ -28,6 +28,7 @@ func TestInsertHistoryAndPurge(t *testing.T) {
 	logicalProcessors := int64(8)
 	maxHeap := int64(1024)
 	vms, threads, readBytes, youngGC := int64(2048), int64(42), int64(12345), int64(7)
+	fullGC, concurrentGC := int64(3), int64(4)
 	javaVersion, javaRuntimeVersion, javaVendor := "21.0.1", "21.0.1+12", "Eclipse Adoptium"
 	javaVMName, javaVMVersion, osName, osArch := "OpenJDK 64-Bit Server VM", "21.0.1+12", "Linux", "amd64"
 	snap := model.Snapshot{
@@ -35,7 +36,7 @@ func TestInsertHistoryAndPurge(t *testing.T) {
 		Processes: []model.Process{{
 			PID: 42, Type: "GRADLE_DAEMON", Name: "java",
 			CommandLine: "GradleDaemon", RSSMemoryMB: 100, VirtualMemoryMB: &vms, ThreadCount: &threads,
-			ReadBytes: &readBytes, YoungGCCount: &youngGC, JavaVersion: &javaVersion, JavaRuntimeVersion: &javaRuntimeVersion,
+			ReadBytes: &readBytes, YoungGCCount: &youngGC, FullGCCount: &fullGC, ConcurrentGCCount: &concurrentGC, JavaVersion: &javaVersion, JavaRuntimeVersion: &javaRuntimeVersion,
 			JavaVendor: &javaVendor, JavaVMName: &javaVMName, JavaVMVersion: &javaVMVersion, OSName: &osName, OSArch: &osArch,
 			CPUPercent:          &cpu,
 			CPUUserSecondsTotal: &cpuUser, CPUSystemSecondsTotal: &cpuSystem, CPUTotalSecondsTotal: &cpuTotal,
@@ -63,6 +64,9 @@ func TestInsertHistoryAndPurge(t *testing.T) {
 	}
 	if hist[0].ReadBytes == nil || *hist[0].ReadBytes != readBytes || hist[0].YoungGCCount == nil || *hist[0].YoungGCCount != youngGC {
 		t.Fatalf("counter metrics: read=%v young=%v", hist[0].ReadBytes, hist[0].YoungGCCount)
+	}
+	if hist[0].FullGCCount == nil || *hist[0].FullGCCount != fullGC || hist[0].ConcurrentGCCount == nil || *hist[0].ConcurrentGCCount != concurrentGC {
+		t.Fatalf("GC counters: full=%v concurrent=%v", hist[0].FullGCCount, hist[0].ConcurrentGCCount)
 	}
 	if hist[0].JavaVersion == nil || *hist[0].JavaVersion != javaVersion || hist[0].JavaVendor == nil || *hist[0].JavaVendor != javaVendor {
 		t.Fatalf("JVM identity: version=%v vendor=%v", hist[0].JavaVersion, hist[0].JavaVendor)

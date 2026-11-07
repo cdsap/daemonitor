@@ -10,6 +10,9 @@ import io.github.cdsap.daemonitor.domain.model.Source
 import io.github.cdsap.daemonitor.persistence.BuildRepository
 import io.github.cdsap.daemonitor.persistence.ProcessSampleRepository
 import io.github.cdsap.daemonitor.persistence.RetentionRepository
+import io.github.cdsap.daemonitor.persistence.MetricDefinition
+import io.github.cdsap.daemonitor.persistence.MetricSample
+import io.github.cdsap.daemonitor.persistence.ProcessEvent
 import io.github.cdsap.daemonitor.store.db.WatcherDb
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -324,6 +327,52 @@ class WatcherDatabaseTest {
         val path = tmp.resolve("watcher.db")
         WatcherDatabase.open(path).use { db ->
             assertEquals(5_000L, db.busyTimeoutMs())
+        }
+    }
+
+    @Test
+    fun `additive migration preserves legacy data and creates normalized tables`(@TempDirArg tmp: Path) {
+        val path = tmp.resolve("watcher.db")
+        WatcherDatabase.open(path).use { it.save(build("legacy", 1_000)) }
+        JdbcSqliteDriver("jdbc:sqlite:${path.toAbsolutePath()}").use { driver ->
+            listOf("collection_capabilities", "process_events", "metric_samples", "resource_scopes", "metric_definitions", "process_instances")
+                .forEach { driver.execute(null, "DROP TABLE $it", 0) }
+        }
+
+        WatcherDatabase.open(path).use { db ->
+            assertEquals(listOf("legacy"), db.recentBuilds().map { it.buildId })
+            db.insertMetricDefinition(MetricDefinition("rss", "process.rss", "bytes", "gauge", "instant", "test"))
+            db.upsertProcessInstance(
+                io.github.cdsap.daemonitor.persistence.ProcessInstance("7:10", 7, ProcessType.GRADLE_DAEMON, firstObservedAtMs = 10, lastObservedAtMs = 10),
+            )
+            db.insertMetricSample(MetricSample(10, "7:10", null, "rss", intValue = Long.MAX_VALUE, realValue = null, "test", 10))
+            assertEquals(Long.MAX_VALUE, db.metricSamples("rss").single().intValue)
+        }
+    }
+
+    @Test
+    fun `reused pid gets separate process instances`(@TempDirArg tmp: Path) {
+        WatcherDatabase.open(tmp.resolve("watcher.db")).use { db ->
+            db.save(sample(timestampMs = 1_000, commandLine = "first").copy(startTimeMs = 100), 1_000)
+            db.save(sample(timestampMs = 2_000, commandLine = "second").copy(startTimeMs = 2_000), 2_000)
+            assertEquals(listOf("5:100", "5:2000"), db.processInstancesForPid(5).map { it.instanceId })
+        }
+    }
+
+    @Test
+    fun `normalized metrics and events obey retention`(@TempDirArg tmp: Path) {
+        WatcherDatabase.open(tmp.resolve("watcher.db")).use { db ->
+            db.insertMetricDefinition(MetricDefinition("cpu", "process.cpu", "%", "gauge", "instant", "test"))
+            db.upsertProcessInstance(io.github.cdsap.daemonitor.persistence.ProcessInstance("1:1", 1, ProcessType.GRADLE_DAEMON, firstObservedAtMs = 1, lastObservedAtMs = 1))
+            db.insertMetricSample(MetricSample(1, "1:1", null, "cpu", null, 12.5, "test", 1))
+            db.insertProcessEvent(ProcessEvent("1:1", 1, "started", "{}", "test"))
+            db.insertMetricSample(MetricSample(100, "1:1", null, "cpu", null, 25.0, "test", 100))
+            assertEquals(2, db.metricSamples("cpu").size)
+
+            db.save(sample(timestampMs = 50, commandLine = "legacy"), 50)
+            assertEquals(1, db.metricSamples(WatcherDatabase.LEGACY_RSS_METRIC).size)
+            db.purgeOlderThan(100 + 8L * 24 * 60 * 60 * 1000, 7)
+            assertEquals(0, db.metricSamples("cpu").size)
         }
     }
 

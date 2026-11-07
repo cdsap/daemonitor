@@ -107,10 +107,12 @@ func TestIsNonInteractive(t *testing.T) {
 }
 
 func TestShouldProbeLiveHeap(t *testing.T) {
-	if !poll.ShouldProbeLiveHeap("GRADLE_DAEMON") || !poll.ShouldProbeLiveHeap("KOTLIN_DAEMON") {
-		t.Fatal("daemons must be probed")
+	for _, kind := range []string{"GRADLE_DAEMON", "KOTLIN_DAEMON", "GRADLE_WORKER", "TEST_WORKER", "UNKNOWN_GRADLE_WORKER", "JAVA_GRADLE_RELATED"} {
+		if !poll.ShouldProbeLiveHeap(kind) {
+			t.Fatalf("%s must be probed", kind)
+		}
 	}
-	for _, kind := range []string{"GRADLE_WRAPPER", "GRADLE_WORKER", "TEST_WORKER", "UNKNOWN_GRADLE_WORKER", "JAVA_GRADLE_RELATED", ""} {
+	for _, kind := range []string{"GRADLE_WRAPPER", ""} {
 		if poll.ShouldProbeLiveHeap(kind) {
 			t.Fatalf("%s must stay unprobed", kind)
 		}

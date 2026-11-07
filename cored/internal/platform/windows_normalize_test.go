@@ -23,6 +23,12 @@ func TestNormalizeWindowsProcessMetrics(t *testing.T) {
 	if out.OpenDescriptorsCount.Availability != Unsupported || out.OpenDescriptorsCount.Value != nil {
 		t.Fatalf("open_descriptors=%+v", out.OpenDescriptorsCount)
 	}
+	if out.DiskReadBytesTotal.Availability != Unsupported || out.DiskReadBytesTotal.Value != nil {
+		t.Fatalf("disk_read=%+v", out.DiskReadBytesTotal)
+	}
+	if out.DiskWriteBytesTotal.Availability != Unsupported || out.DiskWriteBytesTotal.Value != nil {
+		t.Fatalf("disk_write=%+v", out.DiskWriteBytesTotal)
+	}
 	if out.HandlesCount.Availability != Available || out.HandlesCount.Value == nil || *out.HandlesCount.Value != 42 {
 		t.Fatalf("handles=%+v", out.HandlesCount)
 	}

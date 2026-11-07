@@ -14,6 +14,7 @@ import (
 
 	"github.com/cdsap/daemonitor/cored/internal/logs"
 	"github.com/cdsap/daemonitor/cored/internal/model"
+	"github.com/cdsap/daemonitor/cored/internal/platform"
 )
 
 const defaultTimeout = 3 * time.Second
@@ -59,6 +60,13 @@ func (c *Client) Self(ctx context.Context) (model.SelfMetrics, error) {
 	var self model.SelfMetrics
 	err := c.getJSON(ctx, "/v1/self", &self)
 	return self, err
+}
+
+// Host fetches the latest machine-level metrics from `/v1/host`.
+func (c *Client) Host(ctx context.Context) (platform.HostMetrics, error) {
+	var host platform.HostMetrics
+	err := c.getJSON(ctx, "/v1/host", &host)
+	return host, err
 }
 
 // Processes fetches /v1/processes.
