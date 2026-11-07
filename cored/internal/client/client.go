@@ -84,6 +84,15 @@ func (c *Client) History(ctx context.Context, sinceMs int64, limit int) (model.H
 	return hist, err
 }
 
+// Events fetches lifecycle events at or after sinceMs.
+func (c *Client) Events(ctx context.Context, sinceMs int64, limit int) (model.Events, error) {
+	path := "/v1/events?since_ms=" + strconv.FormatInt(sinceMs, 10) +
+		"&limit=" + strconv.Itoa(limit)
+	var events model.Events
+	err := c.getJSON(ctx, path, &events)
+	return events, err
+}
+
 // DaemonLogs lists discovered Gradle daemon logs.
 func (c *Client) DaemonLogs(ctx context.Context) ([]logs.DaemonLog, error) {
 	var payload struct {

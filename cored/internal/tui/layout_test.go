@@ -220,7 +220,7 @@ func TestEndKeySelectsLastVisibleRowWhenGroupsCollapsed(t *testing.T) {
 }
 
 func TestDetailAttributeValuesAlign(t *testing.T) {
-	m := layoutModel(true, 100, 60)
+	m := layoutModel(true, 100, 120)
 	p := m.processes[0]
 	m.detailsOpen, m.detailProcess = true, &p
 	lines := plainLines(m)

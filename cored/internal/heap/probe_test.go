@@ -3,6 +3,8 @@ package heap_test
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -124,6 +126,59 @@ func TestProberSupplementsJcmdHeapSampleWithJstatGCTimes(t *testing.T) {
 		s.ConcurrentGCTimeSeconds == nil || *s.ConcurrentGCTimeSeconds != 3.456 ||
 		s.TotalGCTimeSeconds == nil || *s.TotalGCTimeSeconds != 7.035 {
 		t.Fatalf("sample=%+v", s)
+	}
+}
+
+func TestProberAdvancedTelemetryIsBestEffort(t *testing.T) {
+	p := heap.NewProber()
+	p.EnableAdvancedTelemetry = true
+	p.LookPath = func(name string) (string, error) { return "/fake/" + name, nil }
+	p.Runner = func(ctx context.Context, name string, args ...string) (string, error) {
+		if strings.Contains(name, "jcmd") {
+			switch args[len(args)-1] {
+			case "Compiler.codecache":
+				return "CodeHeap 'profiled nmethods': size=10Kb used=2Kb max_used=3Kb free=8Kb\n", nil
+			case "PerfCounter.print":
+				return "sun.rt.safepoints=3\nsun.rt.safepointTime=7\n", nil
+			default:
+				return jcmdHeapInfoFixture, nil
+			}
+		}
+		if strings.Contains(args[0], "-compiler") {
+			return "Compiled Failed Invalid Time\n10 1 2 3.5\n", nil
+		}
+		if strings.Contains(args[0], "-class") {
+			return "Loaded Bytes Unloaded Bytes Time\n12 1K 2 2K 3.5\n", nil
+		}
+		if strings.Contains(args[0], "-gc") {
+			return jstatGCFixture, nil
+		}
+		return "", errors.New("attach denied")
+	}
+	s, err := p.SampleFor(context.Background(), 42, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.JIT == nil || s.CodeCache == nil || s.Classes == nil || s.Safepoints == nil {
+		t.Fatalf("advanced telemetry=%+v", s)
+	}
+}
+
+func TestLookPathWithJDKDirPrecedesJavaHomeAndPath(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tool := filepath.Join(dir, "bin", "jcmd")
+	if err := os.WriteFile(tool, []byte(""), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got, err := heap.LookPathWithJDKDir(dir, "jcmd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != tool {
+		t.Fatalf("tool=%q want %q", got, tool)
 	}
 }
 

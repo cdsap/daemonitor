@@ -78,6 +78,15 @@ func FailureDiagnostics(err error) []Diagnostic {
 type Prober struct {
 	Timeout  time.Duration
 	CacheTTL time.Duration
+	// EnableAdvancedTelemetry enables slower cumulative JVM probes. It is
+	// opt-in because these attach operations are intentionally not part of the
+	// fast OS sampling path.
+	EnableAdvancedTelemetry bool
+	// JDKDir, when set, is the configured toolchain directory to search first.
+	JDKDir string
+	// TargetJDKDir optionally resolves the target JVM's toolchain directory.
+	// It is consulted after JDKDir and before JAVA_HOME/PATH.
+	TargetJDKDir func(pid int32) string
 	// LookPath finds an executable (defaults to exec.LookPath).
 	LookPath func(string) (string, error)
 	// Runner runs a command; defaults to exec.CommandContext.
@@ -102,10 +111,37 @@ func NewProber() *Prober {
 	return &Prober{
 		Timeout:  DefaultTimeout,
 		CacheTTL: DefaultCacheTTL,
-		LookPath: LookPathWithJavaHome,
 		cache:    make(map[cacheKey]cacheEntry),
 		gcCache:  make(map[cacheKey]gcCacheEntry),
 	}
+}
+
+// LookPathWithJDKDir resolves a JDK tool before JAVA_HOME and PATH.
+func LookPathWithJDKDir(jdkDir, name string) (string, error) {
+	if jdkDir != "" {
+		path := filepath.Join(jdkDir, "bin", name)
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			return path, nil
+		}
+	}
+	return LookPathWithJavaHome(name)
+}
+
+func (p *Prober) lookPath(pid int32, name string) (string, error) {
+	if p != nil && p.LookPath != nil {
+		return p.LookPath(name)
+	}
+	if p != nil {
+		if path, err := LookPathWithJDKDir(p.JDKDir, name); err == nil {
+			return path, nil
+		}
+		if p.TargetJDKDir != nil {
+			if path, err := LookPathWithJDKDir(p.TargetJDKDir(pid), name); err == nil {
+				return path, nil
+			}
+		}
+	}
+	return LookPathWithJavaHome(name)
 }
 
 type gcCacheEntry struct {
@@ -228,10 +264,7 @@ func (p *Prober) probeGC(ctx context.Context, pid int32) (*string, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	look := p.LookPath
-	if look == nil {
-		look = exec.LookPath
-	}
+	look := func(name string) (string, error) { return p.lookPath(pid, name) }
 	run := p.Runner
 	if run == nil {
 		run = defaultRunner
@@ -259,10 +292,7 @@ func (p *Prober) probe(ctx context.Context, pid int32) (Sample, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	look := p.LookPath
-	if look == nil {
-		look = exec.LookPath
-	}
+	look := func(name string) (string, error) { return p.lookPath(pid, name) }
 	run := p.Runner
 	if run == nil {
 		run = defaultRunner
@@ -289,6 +319,7 @@ func (p *Prober) probe(ctx context.Context, pid int32) (Sample, error) {
 				p.supplementGC(ctx, look, run, pid, &s)
 				p.supplementGCTimes(ctx, look, run, pid, &s)
 				p.collectAllowlistedSysprops(ctx, look, run, pid, &s)
+				p.supplementAdvanced(ctx, look, run, pid, &s)
 				return s, nil
 			}
 			diagnostics = append(diagnostics, diagnostic("jcmd", "GC.heap_info", perr))
@@ -317,7 +348,50 @@ func (p *Prober) probe(ctx context.Context, pid int32) (Sample, error) {
 	s.Diagnostics = diagnostics
 	p.supplementGC(ctx, look, run, pid, &s)
 	p.collectAllowlistedSysprops(ctx, look, run, pid, &s)
+	p.supplementAdvanced(ctx, look, run, pid, &s)
 	return s, nil
+}
+
+func (p *Prober) supplementAdvanced(ctx context.Context, look func(string) (string, error), run func(context.Context, string, ...string) (string, error), pid int32, sample *Sample) {
+	if p == nil || !p.EnableAdvancedTelemetry || sample == nil {
+		return
+	}
+	// Each probe is independent. A missing/unsupported attach command is a
+	// diagnostic, never a reason to discard the successful OS or heap sample.
+	if jstat, err := look("jstat"); err == nil {
+		if out, err := run(ctx, jstat, "-compiler", fmt.Sprintf("%d", pid)); err == nil {
+			if metrics, err := ParseJstatCompiler(out); err == nil {
+				sample.JIT = &metrics
+			}
+		} else {
+			sample.Diagnostics = append(sample.Diagnostics, diagnostic("jstat", "-compiler", err))
+		}
+		if out, err := run(ctx, jstat, "-class", fmt.Sprintf("%d", pid)); err == nil {
+			if metrics, err := ParseJstatClass(out); err == nil {
+				sample.Classes = &metrics
+			}
+		} else {
+			sample.Diagnostics = append(sample.Diagnostics, diagnostic("jstat", "-class", err))
+		}
+	} else {
+		sample.Diagnostics = append(sample.Diagnostics, diagnostic("jstat", "-compiler", err))
+	}
+	if jcmd, err := look("jcmd"); err == nil {
+		if out, err := run(ctx, jcmd, fmt.Sprintf("%d", pid), "Compiler.codecache"); err == nil {
+			if pools, err := ParseJcmdCodeCache(out); err == nil {
+				sample.CodeCache = pools
+			}
+		} else {
+			sample.Diagnostics = append(sample.Diagnostics, diagnostic("jcmd", "Compiler.codecache", err))
+		}
+		if out, err := run(ctx, jcmd, fmt.Sprintf("%d", pid), "PerfCounter.print"); err == nil {
+			if metrics, err := ParsePerfCounterSafepoints(out); err == nil {
+				sample.Safepoints = &metrics
+			}
+		} else {
+			sample.Diagnostics = append(sample.Diagnostics, diagnostic("jcmd", "PerfCounter.print", err))
+		}
+	}
 }
 
 // collectAllowlistedSysprops obtains only the JVM properties explicitly

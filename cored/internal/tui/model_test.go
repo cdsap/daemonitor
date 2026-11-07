@@ -628,12 +628,12 @@ func TestDetailsShowOptionalTelemetryAndKeepZeroDistinctFromUnavailable(t *testi
 		MemoryUsedBytes:   model.IntMetric{Value: &zero},
 	}
 	body := m.View().Content
-	for _, want := range []string{"JVM MEMORY POOLS", "GC COUNTERS / RATES", "JIT / CODE CACHE", "PROCESS LIFECYCLE", "HOST RESOURCE CONTEXT", "COLLECTION CAPABILITIES", "Young count     0", "CPUs            0", "CPU usage       0.0%", "Memory used     0 MB", "Code cache      n/a"} {
+	for _, want := range []string{"JVM MEMORY POOLS", "GC COUNTERS / RATES", "JIT / CODE CACHE", "PROCESS LIFECYCLE", "HOST RESOURCE CONTEXT", "COLLECTION CAPABILITIES", "Young count    0", "CPUs           0", "CPU usage      0.0%", "Memory used    0 MB", "Code cache     n/a"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("details missing %q: %s", want, body)
 		}
 	}
-	if strings.Contains(body, "Heap used       n/a") || strings.Contains(body, "Young count     n/a") {
+	if strings.Contains(body, "Heap used      n/a") || strings.Contains(body, "Young count    n/a") {
 		t.Fatalf("zero-valued metrics were rendered unavailable: %s", body)
 	}
 	if strings.Contains(body, "\x1b[") {

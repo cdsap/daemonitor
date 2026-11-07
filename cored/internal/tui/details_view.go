@@ -136,55 +136,61 @@ func detailPaneName(pane detailPaneKind) string {
 // detailTelemetry is deliberately confined to the selected-process view. The
 // process table remains the compact operator overview while this section gives
 // expanded telemetry a place to grow without changing its columns.
+func detailField(label, value string) string {
+	// Wide enough for the longest shared labels ("Metaspace used", "Virtual memory").
+	const labelWidth = 14
+	return fmt.Sprintf("  %-*s %s", labelWidth, label, value)
+}
+
 func detailTelemetry(m Model, p model.Process, width int) []string {
 	lines := []string{
 		"",
 		"JVM MEMORY POOLS",
-		"  Heap used       " + render.HeapText(p.HeapUsedMB),
-		"  Heap committed  " + render.HeapText(p.HeapCommittedMB),
-		"  Heap max        " + render.HeapText(p.HeapMaxMB),
-		"  Metaspace used  " + optionalInt64Text(p.MetaspaceUsedMB, "MB"),
-		"  Metaspace cmt   " + optionalInt64Text(p.MetaspaceCommittedMB, "MB"),
-		"  Other pools     n/a (not collected)",
+		detailField("Heap used", render.HeapText(p.HeapUsedMB)),
+		detailField("Heap committed", render.HeapText(p.HeapCommittedMB)),
+		detailField("Heap max", render.HeapText(p.HeapMaxMB)),
+		detailField("Metaspace used", optionalInt64Text(p.MetaspaceUsedMB, "MB")),
+		detailField("Metaspace cmt", optionalInt64Text(p.MetaspaceCommittedMB, "MB")),
+		detailField("Other pools", "n/a (not collected)"),
 		"",
 		"GC COUNTERS / RATES",
-		"  Young count     " + optionalInt64Text(p.YoungGCCount, ""),
-		"  Old count       " + optionalInt64Text(p.OldGCCount, ""),
-		"  Total time      " + render.GCTimeText(p.TotalGCTimeSeconds),
-		"  Rate (recent)   " + gcRateText(m.detailHistory, p),
-		"  Full/conc time  " + render.GCTimeText(p.FullGCTimeSeconds) + " / " + render.GCTimeText(p.ConcurrentGCTimeSeconds),
+		detailField("Young count", optionalInt64Text(p.YoungGCCount, "")),
+		detailField("Old count", optionalInt64Text(p.OldGCCount, "")),
+		detailField("Total time", render.GCTimeText(p.TotalGCTimeSeconds)),
+		detailField("Rate (recent)", gcRateText(m.detailHistory, p)),
+		detailField("Full/conc time", render.GCTimeText(p.FullGCTimeSeconds)+" / "+render.GCTimeText(p.ConcurrentGCTimeSeconds)),
 		"",
 		"JIT / CODE CACHE",
-		"  Compilation     n/a (not collected)",
-		"  Code cache      n/a (not collected)",
+		detailField("Compilation", "n/a (not collected)"),
+		detailField("Code cache", "n/a (not collected)"),
 		"",
 		"PROCESS LIFECYCLE",
-		"  Status          " + na(p.Status),
-		"  Start           " + formatStart(p.StartTimeMs),
-		"  Sampled         " + formatStart(p.SampledAtMs),
-		"  End             n/a (active or unavailable)",
+		detailField("Status", na(p.Status)),
+		detailField("Start", formatStart(p.StartTimeMs)),
+		detailField("Sampled", formatStart(p.SampledAtMs)),
+		detailField("End", "n/a (active or unavailable)"),
 		"",
 		"HOST RESOURCE CONTEXT",
 	}
 	if m.detailHostError != nil {
-		lines = append(lines, "  Host metrics    unavailable: "+oneLine(m.detailHostError.Error()))
+		lines = append(lines, detailField("Host metrics", "unavailable: "+oneLine(m.detailHostError.Error())))
 	} else {
 		lines = append(lines,
-			"  CPUs            "+optionalMetricInt(m.detailHost.LogicalProcessors, ""),
-			"  CPU usage       "+optionalMetricReal(m.detailHost.CPUUsagePercent, "%"),
-			"  Memory used     "+optionalMetricBytes(m.detailHost.MemoryUsedBytes),
-			"  Memory avail    "+optionalMetricBytes(m.detailHost.MemoryAvailableBytes),
-			"  Memory total    "+optionalMetricBytes(m.detailHost.MemoryTotalBytes),
+			detailField("CPUs", optionalMetricInt(m.detailHost.LogicalProcessors, "")),
+			detailField("CPU usage", optionalMetricReal(m.detailHost.CPUUsagePercent, "%")),
+			detailField("Memory used", optionalMetricBytes(m.detailHost.MemoryUsedBytes)),
+			detailField("Memory avail", optionalMetricBytes(m.detailHost.MemoryAvailableBytes)),
+			detailField("Memory total", optionalMetricBytes(m.detailHost.MemoryTotalBytes)),
 		)
 	}
 	lines = append(lines, "", "COLLECTION CAPABILITIES")
 	if m.detailCapabilitiesError != nil {
-		lines = append(lines, "  Capabilities    unavailable: "+oneLine(m.detailCapabilitiesError.Error()))
+		lines = append(lines, detailField("Capabilities", "unavailable: "+oneLine(m.detailCapabilitiesError.Error())))
 	} else if len(m.detailCapabilities.Metrics) == 0 {
-		lines = append(lines, "  Capabilities    n/a")
+		lines = append(lines, detailField("Capabilities", "n/a"))
 	} else {
 		for _, capability := range m.detailCapabilities.Metrics {
-			lines = append(lines, "  "+capability.MetricName+"  "+capability.Availability)
+			lines = append(lines, detailField(capability.MetricName, capability.Availability))
 		}
 	}
 	for i := range lines {
@@ -283,52 +289,47 @@ func detailHeader(p model.Process, now int64, ended, stale bool, width int, noCo
 }
 
 func detailAttributes(p model.Process, width int, now int64) []string {
-	// Wide enough for the longest label ("Metaspace used", "Virtual memory").
-	const labelWidth = 14
-	field := func(label, value string) string {
-		return fmt.Sprintf("  %-*s %s", labelWidth, label, value)
-	}
 	lines := []string{
 		"Identity",
-		field("Type", render.TypeDisplay(p.Type)),
-		field("PID", fmt.Sprintf("%d", p.PID)),
-		field("Name", na(p.Name)),
-		field("Project", render.ProjectName(p)),
-		field("Work dir", optionalStringText(p.WorkingDirectory)),
-		field("Status", na(p.Status)),
-		field("Start", formatStart(p.StartTimeMs)),
-		field("Uptime", render.Uptime(p.StartTimeMs, now)),
+		detailField("Type", render.TypeDisplay(p.Type)),
+		detailField("PID", fmt.Sprintf("%d", p.PID)),
+		detailField("Name", na(p.Name)),
+		detailField("Project", render.ProjectName(p)),
+		detailField("Work dir", optionalStringText(p.WorkingDirectory)),
+		detailField("Status", na(p.Status)),
+		detailField("Start", formatStart(p.StartTimeMs)),
+		detailField("Uptime", render.Uptime(p.StartTimeMs, now)),
 		"",
 		"JVM / memory",
-		field("RSS", render.RSSText(p.RSSMemoryMB)),
-		field("CPU", render.CPUText(p.CPUPercent)),
-		field("GC", render.GCText(p.GC)),
-		field("Xmx", render.HeapLimitText(p.MaxHeapMB)),
-		field("Xms", optionalInt64Text(p.MinHeapMB, "MB")),
-		field("Heap used", render.HeapText(p.HeapUsedMB)),
-		field("Heap cmt", render.HeapText(p.HeapCommittedMB)),
-		field("Heap max", render.HeapText(p.HeapMaxMB)),
-		field("Heap %", render.HeapPercentText(p.HeapUsedMB, p.HeapMaxMB)),
-		field("Metaspace used", optionalInt64Text(p.MetaspaceUsedMB, "MB")),
+		detailField("RSS", render.RSSText(p.RSSMemoryMB)),
+		detailField("CPU", render.CPUText(p.CPUPercent)),
+		detailField("GC", render.GCText(p.GC)),
+		detailField("Xmx", render.HeapLimitText(p.MaxHeapMB)),
+		detailField("Xms", optionalInt64Text(p.MinHeapMB, "MB")),
+		detailField("Heap used", render.HeapText(p.HeapUsedMB)),
+		detailField("Heap cmt", render.HeapText(p.HeapCommittedMB)),
+		detailField("Heap max", render.HeapText(p.HeapMaxMB)),
+		detailField("Heap %", render.HeapPercentText(p.HeapUsedMB, p.HeapMaxMB)),
+		detailField("Metaspace used", optionalInt64Text(p.MetaspaceUsedMB, "MB")),
 		"",
 		"Diagnostics",
-		field("Threads", optionalInt64Text(p.ThreadCount, "")),
-		field("VM", optionalStringText(p.JavaVMName)),
-		field("Java version", optionalStringText(p.JavaVersion)),
-		field("OS", optionalStringText(p.OSName)+" / "+optionalStringText(p.OSArch)),
-		field("Processors", optionalInt64Text(p.ActiveProcessorCount, "")),
-		field("GC young", optionalInt64Text(p.YoungGCCount, "")+" / "+optionalInt64Text(p.YoungGCTimeMs, "ms")),
-		field("GC old", optionalInt64Text(p.OldGCCount, "")+" / "+optionalInt64Text(p.OldGCTimeMs, "ms")),
-		field("VM version", optionalStringText(p.JavaVMVersion)),
-		field("Runtime", optionalStringText(p.JavaRuntimeVersion)),
-		field("Vendor", optionalStringText(p.JavaVendor)),
-		field("Open files", optionalInt64Text(p.OpenFileDescriptors, "")),
-		field("Virtual memory", optionalInt64Text(p.VirtualMemoryMB, "MB")),
-		field("Swap memory", optionalInt64Text(p.SwapMemoryMB, "MB")),
-		field("Disk read", optionalInt64Text(p.ReadBytes, "bytes")),
-		field("Disk write", optionalInt64Text(p.WriteBytes, "bytes")),
-		field("Young GC time", optionalInt64Text(p.YoungGCTimeMs, "ms")),
-		field("GC time (s)", "young "+render.GCTimeText(p.YoungGCTimeSeconds)+
+		detailField("Threads", optionalInt64Text(p.ThreadCount, "")),
+		detailField("VM", optionalStringText(p.JavaVMName)),
+		detailField("Java version", optionalStringText(p.JavaVersion)),
+		detailField("OS", optionalStringText(p.OSName)+" / "+optionalStringText(p.OSArch)),
+		detailField("Processors", optionalInt64Text(p.ActiveProcessorCount, "")),
+		detailField("GC young", optionalInt64Text(p.YoungGCCount, "")+" / "+optionalInt64Text(p.YoungGCTimeMs, "ms")),
+		detailField("GC old", optionalInt64Text(p.OldGCCount, "")+" / "+optionalInt64Text(p.OldGCTimeMs, "ms")),
+		detailField("VM version", optionalStringText(p.JavaVMVersion)),
+		detailField("Runtime", optionalStringText(p.JavaRuntimeVersion)),
+		detailField("Vendor", optionalStringText(p.JavaVendor)),
+		detailField("Open files", optionalInt64Text(p.OpenFileDescriptors, "")),
+		detailField("Virtual memory", optionalInt64Text(p.VirtualMemoryMB, "MB")),
+		detailField("Swap memory", optionalInt64Text(p.SwapMemoryMB, "MB")),
+		detailField("Disk read", optionalInt64Text(p.ReadBytes, "bytes")),
+		detailField("Disk write", optionalInt64Text(p.WriteBytes, "bytes")),
+		detailField("Young GC time", optionalInt64Text(p.YoungGCTimeMs, "ms")),
+		detailField("GC time (s)", "young "+render.GCTimeText(p.YoungGCTimeSeconds)+
 			" · full "+render.GCTimeText(p.FullGCTimeSeconds)+
 			" · conc "+render.GCTimeText(p.ConcurrentGCTimeSeconds)+
 			" · total "+render.GCTimeText(p.TotalGCTimeSeconds)),

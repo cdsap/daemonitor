@@ -25,6 +25,29 @@ const jcmdParallelHeapInfoFixture = `63124:
  Metaspace       used 80K, committed 320K, reserved 1114112K
 `
 
+const jstatCompilerFixture = `
+Compiled Failed Invalid   Time   FailedType      FailedMethod
+   4123      7       2  48.125             0               0
+`
+
+const jstatClassFixture = `
+Loaded  Bytes  Unloaded  Bytes     Time
+ 18432  35.2M       217  1.1M  12.345
+`
+
+const perfCounterSafepointFixture = `
+sun.rt.safepointTime=1234567890
+sun.rt.safepoints=42
+sun.rt.applicationTime=9876543210
+sun.rt.safepointSyncTime=12345
+`
+
+const codeCacheFixture = `
+CodeHeap 'non-nmethods': size=5692Kb used=321Kb max_used=400Kb free=5371Kb
+CodeHeap 'profiled nmethods': size=120032Kb used=4567Kb max_used=5000Kb free=115465Kb
+CodeHeap 'non-profiled nmethods': size=120032Kb used=1234Kb max_used=1500Kb free=118798Kb
+`
+
 func TestParseJstatGC(t *testing.T) {
 	s, err := heap.ParseJstatGC(jstatGCFixture)
 	if err != nil {
@@ -205,5 +228,45 @@ func TestParseJinfoFlagsGCRejectsUnsupportedOutput(t *testing.T) {
 		if _, err := heap.ParseJinfoFlagsGC(out); err == nil {
 			t.Fatalf("expected unsupported output error for %q", out)
 		}
+	}
+}
+
+func TestParseJstatCompiler(t *testing.T) {
+	s, err := heap.ParseJstatCompiler(jstatCompilerFixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.CompiledCount == nil || *s.CompiledCount != 4123 || s.FailedCount == nil || *s.FailedCount != 7 || s.InvalidCount == nil || *s.InvalidCount != 2 || s.CompilationTimeSeconds == nil || *s.CompilationTimeSeconds != 48.125 {
+		t.Fatalf("compiler=%+v", s)
+	}
+}
+
+func TestParseJstatClassKeepsGaugeAndCumulativeCountersDistinct(t *testing.T) {
+	s, err := heap.ParseJstatClass(jstatClassFixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.LoadedClasses == nil || *s.LoadedClasses != 18432 || s.UnloadedClasses == nil || *s.UnloadedClasses != 217 || s.LoadedClassesTotal == nil || *s.LoadedClassesTotal != 18649 {
+		t.Fatalf("classes=%+v", s)
+	}
+}
+
+func TestParsePerfCounterSafepoints(t *testing.T) {
+	s, err := heap.ParsePerfCounterSafepoints(perfCounterSafepointFixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.SafepointCount == nil || *s.SafepointCount != 42 || s.SafepointTimeNs == nil || *s.SafepointTimeNs != 1234567890 || s.SafepointSyncTimeNs == nil || *s.SafepointSyncTimeNs != 12345 {
+		t.Fatalf("safepoints=%+v", s)
+	}
+}
+
+func TestParseJcmdCodeCachePreservesPoolNamesAndUnits(t *testing.T) {
+	pools, err := heap.ParseJcmdCodeCache(codeCacheFixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pools) != 3 || pools[0].Name != "non-nmethods" || pools[0].Source != "jcmd" || pools[0].Used.Unit != "Kb" || pools[0].Used.Value != 321 {
+		t.Fatalf("pools=%+v", pools)
 	}
 }

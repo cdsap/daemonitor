@@ -3,16 +3,26 @@ package model
 // Process is an IPC snapshot of a Gradle-related process.
 // Field names mirror the Kotlin GradleProcess domain for dual-run clients.
 type Process struct {
-	PID                        int32    `json:"pid"`
-	ParentPID                  int32    `json:"parent_pid"`
-	Type                       string   `json:"type"`
-	Name                       string   `json:"name"`
-	CommandLine                string   `json:"command_line"`
-	WorkingDirectory           *string  `json:"working_directory"`
-	ProjectPath                *string  `json:"project_path"`
-	RSSMemoryMB                int64    `json:"rss_memory_mb"`
-	VirtualMemoryMB            *int64   `json:"virtual_memory_mb"`
-	SwapMemoryMB               *int64   `json:"swap_memory_mb"`
+	PID              int32   `json:"pid"`
+	ParentPID        int32   `json:"parent_pid"`
+	Type             string  `json:"type"`
+	Name             string  `json:"name"`
+	CommandLine      string  `json:"command_line"`
+	WorkingDirectory *string `json:"working_directory"`
+	ProjectPath      *string `json:"project_path"`
+	RSSMemoryMB      int64   `json:"rss_memory_mb"`
+	VirtualMemoryMB  *int64  `json:"virtual_memory_mb"`
+	SwapMemoryMB     *int64  `json:"swap_memory_mb"`
+	// Platform-faithful memory metrics. A nil value means the platform does not
+	// expose that measurement; it is never filled with a different metric.
+	ResidentBytes              *int64   `json:"resident_bytes"`
+	VirtualBytes               *int64   `json:"virtual_bytes"`
+	PrivateCommittedBytes      *int64   `json:"private_committed_bytes"`
+	ProportionalBytes          *int64   `json:"proportional_bytes"`
+	PhysicalFootprintBytes     *int64   `json:"physical_footprint_bytes"`
+	SwapBytes                  *int64   `json:"swap_bytes"`
+	PeakResidentBytes          *int64   `json:"peak_resident_bytes"`
+	ProportionalSampledAtMs    *int64   `json:"proportional_sampled_at_ms"`
 	ThreadCount                *int64   `json:"thread_count"`
 	ReadBytes                  *int64   `json:"read_bytes"`
 	WriteBytes                 *int64   `json:"write_bytes"`
@@ -24,10 +34,15 @@ type Process struct {
 	InvoluntaryContextSwitches *int64   `json:"involuntary_context_switches"`
 	OpenFileDescriptors        *int64   `json:"open_file_descriptors"`
 	CPUPercent                 *float64 `json:"cpu_percent"`
+	CPUUserSecondsTotal        *float64 `json:"cpu_user_seconds_total"`
+	CPUSystemSecondsTotal      *float64 `json:"cpu_system_seconds_total"`
+	CPUTotalSecondsTotal       *float64 `json:"cpu_total_seconds_total"`
+	CPUCoresUsed               *float64 `json:"cpu_cores_used"`
+	LogicalProcessorCount      *int64   `json:"logical_processor_count"`
 	MaxHeapMB                  *int64   `json:"max_heap_mb"`
 	MinHeapMB                  *int64   `json:"min_heap_mb"`
 	GC                         *string  `json:"gc"`
-	// Live heap from jcmd/jstat (Gradle/Kotlin daemons only). Null used/committed when
+	// Live heap from jcmd/jstat (Gradle/Kotlin daemons and eligible workers). Null used/committed when
 	// unavailable — never coerced to zero. Distinct from MaxHeapMB (-Xmx).
 	HeapUsedMB           *int64 `json:"heap_used_mb"`
 	HeapCommittedMB      *int64 `json:"heap_committed_mb"`
@@ -45,6 +60,14 @@ type Process struct {
 	TotalGCTimeSeconds      *float64          `json:"total_gc_time_seconds"`
 	OldGCCount              *int64            `json:"old_gc_count"`
 	OldGCTimeMs             *int64            `json:"old_gc_time_ms"`
+	FullGCCount             *int64            `json:"full_gc_count"`
+	ConcurrentGCCount       *int64            `json:"concurrent_gc_count"`
+	TotalGCCount            *int64            `json:"total_gc_count"`
+	MemoryPools             []JVMMemoryPool   `json:"memory_pools,omitempty"`
+	CodeCache               []JVMMemoryPool   `json:"code_cache,omitempty"`
+	JIT                     *JITMetrics       `json:"jit,omitempty"`
+	Classes                 *ClassMetrics     `json:"classes,omitempty"`
+	Safepoints              *SafepointMetrics `json:"safepoints,omitempty"`
 	JavaVersion             *string           `json:"java_version"`
 	JavaRuntimeVersion      *string           `json:"java_runtime_version"`
 	JavaVendor              *string           `json:"java_vendor"`
@@ -58,6 +81,40 @@ type Process struct {
 	Status                  string            `json:"status"`
 	Automated               bool              `json:"automated"`
 	SampledAtMs             int64             `json:"sampled_at_ms"`
+}
+
+type JVMRawValue struct {
+	Value float64 `json:"value"`
+	Unit  string  `json:"unit"`
+}
+
+type JVMMemoryPool struct {
+	Name      string      `json:"name"`
+	Source    string      `json:"source"`
+	Used      JVMRawValue `json:"used"`
+	Committed JVMRawValue `json:"committed"`
+	Max       JVMRawValue `json:"max"`
+}
+
+type JITMetrics struct {
+	CompiledCount          *int64   `json:"compiled_count"`
+	FailedCount            *int64   `json:"failed_count"`
+	InvalidCount           *int64   `json:"invalid_count"`
+	CompilationTimeSeconds *float64 `json:"compilation_time_seconds"`
+}
+
+type ClassMetrics struct {
+	LoadedClasses      *int64   `json:"loaded"`
+	UnloadedClasses    *int64   `json:"unloaded_total"`
+	LoadedClassesTotal *int64   `json:"loaded_total"`
+	ClassTimeSeconds   *float64 `json:"time_seconds"`
+}
+
+type SafepointMetrics struct {
+	SafepointCount      *int64 `json:"count"`
+	SafepointTimeNs     *int64 `json:"time_ns"`
+	SafepointSyncTimeNs *int64 `json:"sync_time_ns"`
+	ApplicationTimeNs   *int64 `json:"application_time_ns"`
 }
 
 // ProbeDiagnostic is a safe, stable summary of a failed JVM tool attempt.
@@ -158,4 +215,23 @@ type CollectorCadences struct {
 	JVMJITCodeCacheMs int64 `json:"jvm_jit_code_cache_ms"`
 	LinuxPSSMs        int64 `json:"linux_pss_ms"`
 	ContainerJobMs    int64 `json:"container_job_ms"`
+}
+
+// ProcessEvent is one lifecycle row from process_events (schema_version 1).
+type ProcessEvent struct {
+	SchemaVersion     int    `json:"schema_version"`
+	EventType         string `json:"event_type"`
+	TimestampMs       int64  `json:"timestamp_ms"`
+	ProcessInstanceID string `json:"process_instance_id"`
+	PID               int32  `json:"pid"`
+	ProcessType       string `json:"process_type,omitempty"`
+	Source            string `json:"source"`
+}
+
+// Events is the `/v1/events` response body.
+type Events struct {
+	SchemaVersion int            `json:"schema_version"`
+	SinceMs       int64          `json:"since_ms"`
+	Count         int            `json:"count"`
+	Events        []ProcessEvent `json:"events"`
 }
