@@ -121,3 +121,23 @@ type CapabilityMetric struct {
 	Platform     string `json:"platform,omitempty"`
 	Description  string `json:"description,omitempty"`
 }
+
+// SelfMetrics is the `/v1/self` response for collector overhead.
+type SelfMetrics struct {
+	SchemaVersion    int               `json:"schema_version"`
+	Platform         string            `json:"platform"`
+	SampledAtMs      int64             `json:"sampled_at_ms"`
+	Metrics          any               `json:"metrics"`
+	Cadences         CollectorCadences `json:"cadences"`
+	ProbeConcurrency int               `json:"probe_concurrency"`
+}
+
+// CollectorCadences exposes provisional independent sampling intervals.
+type CollectorCadences struct {
+	ProcessOSMs       int64 `json:"process_os_ms"`
+	HostMs            int64 `json:"host_ms"`
+	JVMHeapGCMs       int64 `json:"jvm_heap_gc_ms"`
+	JVMJITCodeCacheMs int64 `json:"jvm_jit_code_cache_ms"`
+	LinuxPSSMs        int64 `json:"linux_pss_ms"`
+	ContainerJobMs    int64 `json:"container_job_ms"`
+}

@@ -2,6 +2,7 @@ package poll
 
 import (
 	"context"
+	"errors"
 	"os"
 	"regexp"
 	"runtime"
@@ -10,10 +11,19 @@ import (
 
 	"github.com/cdsap/daemonitor/cored/internal/heap"
 	"github.com/cdsap/daemonitor/cored/internal/model"
+	"github.com/cdsap/daemonitor/cored/internal/observe"
 	"github.com/cdsap/daemonitor/cored/internal/platform"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/process"
 )
+
+type pendingJVM struct {
+	idx     int
+	proc    *process.Process
+	pid     int32
+	kind    string
+	startMs int64
+}
 
 var (
 	gradleDaemon       = regexp.MustCompile(`org\.gradle\.launcher\.daemon\.bootstrap\.GradleDaemon|GradleDaemon`)
@@ -33,11 +43,15 @@ type priorCPU struct {
 
 // Collector lists Gradle-related processes using OS process APIs (gopsutil ≈ OSHI).
 type Collector struct {
-	mu       sync.Mutex
-	priors   map[int32]priorCPU
-	cpus     int
-	Heap     *heap.Prober
-	Platform platform.PlatformCollector
+	mu               sync.Mutex
+	priors           map[int32]priorCPU
+	cpus             int
+	Heap             *heap.Prober
+	Platform         platform.PlatformCollector
+	Observe          *observe.Metrics
+	Cadences         observe.Cadences
+	ProbeConcurrency int
+	PollInterval     time.Duration
 }
 
 func NewCollector() *Collector {
@@ -45,11 +59,18 @@ func NewCollector() *Collector {
 	if err != nil || n <= 0 {
 		n = runtime.NumCPU()
 	}
+	cadences := observe.DefaultCadences()
+	prober := heap.NewProber()
+	prober.CacheTTL = cadences.JVMHeapGC
 	return &Collector{
-		priors:   make(map[int32]priorCPU),
-		cpus:     n,
-		Heap:     heap.NewProber(),
-		Platform: platform.New(),
+		priors:           make(map[int32]priorCPU),
+		cpus:             n,
+		Heap:             prober,
+		Platform:         platform.New(),
+		Observe:          &observe.Metrics{},
+		Cadences:         cadences,
+		ProbeConcurrency: observe.DefaultJVMProbeConcurrency,
+		PollInterval:     cadences.ProcessOS,
 	}
 }
 
@@ -70,6 +91,8 @@ func (c *Collector) HostMetrics(ctx context.Context) platform.HostMetrics {
 }
 
 func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
+	started := time.Now()
+
 	now := time.Now().UnixMilli()
 	pids, err := process.PidsWithContext(ctx)
 	if err != nil {
@@ -78,6 +101,9 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 
 	seen := make(map[int32]struct{}, len(pids))
 	out := make([]model.Process, 0, 8)
+	var jvmJobs []pendingJVM
+
+	// Pass 1: discovery + OS metrics only. JVM probes must not delay this path.
 	for _, pid := range pids {
 		select {
 		case <-ctx.Done():
@@ -163,11 +189,7 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 		}
 
 		jvm := ParseJVMArgs(cmdline)
-		jvmMetrics, probeFailure := collectJVMMetrics(ctx, c.Heap, p, pid, kind, startMs)
-		usedMB, committedMB, maxMB, heapSampledAt, heapAvail := liveHeapFieldsFromSample(now, jvmMetrics, probeFailure)
-		if jvm.GC == nil {
-			jvm.GC = jvmMetrics.GC
-		}
+		idx := len(out)
 		out = append(out, model.Process{
 			PID:              pid,
 			ParentPID:        parentPID,
@@ -188,29 +210,25 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 			MaxHeapMB:                  jvm.MaxHeapMB,
 			MinHeapMB:                  jvm.MinHeapMB,
 			GC:                         jvm.GC,
-			HeapUsedMB:                 usedMB,
-			HeapCommittedMB:            committedMB,
-			HeapMaxMB:                  maxMB,
-			HeapSampledAtMs:            heapSampledAt,
-			HeapAvailable:              heapAvail,
-			MetaspaceUsedMB:            jvmMetrics.MetaspaceUsedMB, MetaspaceCommittedMB: jvmMetrics.MetaspaceCommittedMB,
-			YoungGCCount: jvmMetrics.YoungGCCount, YoungGCTimeMs: jvmMetrics.YoungGCTimeMs,
-			YoungGCTimeSeconds: jvmMetrics.YoungGCTimeSeconds, FullGCTimeSeconds: jvmMetrics.FullGCTimeSeconds,
-			ConcurrentGCTimeSeconds: jvmMetrics.ConcurrentGCTimeSeconds, TotalGCTimeSeconds: jvmMetrics.TotalGCTimeSeconds,
-			OldGCCount: jvmMetrics.OldGCCount, OldGCTimeMs: jvmMetrics.OldGCTimeMs,
-			JavaVersion: jvmMetrics.JavaVersion, JavaRuntimeVersion: jvmMetrics.JavaRuntimeVersion,
-			JavaVendor: jvmMetrics.JavaVendor, JavaVMName: jvmMetrics.JavaVMName, JavaVMVersion: jvmMetrics.JavaVMVersion,
-			OSName: jvmMetrics.OSName, OSArch: jvmMetrics.OSArch,
-			ActiveProcessorCount: jvmMetrics.ActiveProcessorCount,
-			HeapProbeDiagnostics: probeDiagnostics(jvmMetrics.Diagnostics, probeFailure),
-			StartTimeMs:          startMs,
-			Status:               status,
-			Automated:            IsNonInteractive(cmdline),
-			SampledAtMs:          now,
-			ResourceScope:        platMetrics.ResourceScope,
-			Resource:             platMetrics.Resource,
+			StartTimeMs:                startMs,
+			Status:                     status,
+			Automated:                  IsNonInteractive(cmdline),
+			SampledAtMs:                now,
+			ResourceScope:              platMetrics.ResourceScope,
+			Resource:                   platMetrics.Resource,
 		})
+		if ShouldProbeLiveHeap(kind) {
+			jvmJobs = append(jvmJobs, pendingJVM{idx: idx, proc: p, pid: pid, kind: kind, startMs: startMs})
+		}
 	}
+
+	// Poll duration covers OS discovery only so self-telemetry matches probe isolation.
+	if c.Observe != nil {
+		c.Observe.ObservePoll(time.Since(started), c.PollInterval)
+	}
+
+	// Pass 2: bounded concurrent JVM probes. Failures never drop OS rows.
+	c.applyJVMProbes(ctx, now, out, jvmJobs)
 
 	c.mu.Lock()
 	for pid := range c.priors {
@@ -229,6 +247,73 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 		host = c.Platform.CollectHost(ctx)
 	}
 	return model.Snapshot{SampledAtMs: now, Host: host, Processes: out}, nil
+}
+
+func (c *Collector) applyJVMProbes(ctx context.Context, now int64, out []model.Process, jobs []pendingJVM) {
+	if len(jobs) == 0 {
+		return
+	}
+	concurrency := c.ProbeConcurrency
+	if concurrency <= 0 {
+		concurrency = observe.DefaultJVMProbeConcurrency
+	}
+	sem := make(chan struct{}, concurrency)
+	var wg sync.WaitGroup
+	for _, job := range jobs {
+		job := job
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			select {
+			case <-ctx.Done():
+				return
+			case sem <- struct{}{}:
+			}
+			defer func() { <-sem }()
+
+			probeStart := time.Now()
+			jvmMetrics, probeFailure := collectJVMMetrics(ctx, c.Heap, job.proc, job.pid, job.kind, job.startMs)
+			timedOut := probeFailure == heap.FailureTimeout
+			var probeErr error
+			if probeFailure != "" {
+				probeErr = errors.New(probeFailure)
+			}
+			if c.Observe != nil {
+				c.Observe.ObserveProbe(time.Since(probeStart), probeErr, timedOut)
+			}
+
+			usedMB, committedMB, maxMB, heapSampledAt, heapAvail := liveHeapFieldsFromSample(now, jvmMetrics, probeFailure)
+			proc := &out[job.idx]
+			if proc.GC == nil {
+				proc.GC = jvmMetrics.GC
+			}
+			proc.HeapUsedMB = usedMB
+			proc.HeapCommittedMB = committedMB
+			proc.HeapMaxMB = maxMB
+			proc.HeapSampledAtMs = heapSampledAt
+			proc.HeapAvailable = heapAvail
+			proc.MetaspaceUsedMB = jvmMetrics.MetaspaceUsedMB
+			proc.MetaspaceCommittedMB = jvmMetrics.MetaspaceCommittedMB
+			proc.YoungGCCount = jvmMetrics.YoungGCCount
+			proc.YoungGCTimeMs = jvmMetrics.YoungGCTimeMs
+			proc.YoungGCTimeSeconds = jvmMetrics.YoungGCTimeSeconds
+			proc.FullGCTimeSeconds = jvmMetrics.FullGCTimeSeconds
+			proc.ConcurrentGCTimeSeconds = jvmMetrics.ConcurrentGCTimeSeconds
+			proc.TotalGCTimeSeconds = jvmMetrics.TotalGCTimeSeconds
+			proc.OldGCCount = jvmMetrics.OldGCCount
+			proc.OldGCTimeMs = jvmMetrics.OldGCTimeMs
+			proc.JavaVersion = jvmMetrics.JavaVersion
+			proc.JavaRuntimeVersion = jvmMetrics.JavaRuntimeVersion
+			proc.JavaVendor = jvmMetrics.JavaVendor
+			proc.JavaVMName = jvmMetrics.JavaVMName
+			proc.JavaVMVersion = jvmMetrics.JavaVMVersion
+			proc.OSName = jvmMetrics.OSName
+			proc.OSArch = jvmMetrics.OSArch
+			proc.ActiveProcessorCount = jvmMetrics.ActiveProcessorCount
+			proc.HeapProbeDiagnostics = probeDiagnostics(jvmMetrics.Diagnostics, probeFailure)
+		}()
+	}
+	wg.Wait()
 }
 
 // ShouldProbeLiveHeap mirrors Kotlin: only Gradle/Kotlin daemons are probed.
