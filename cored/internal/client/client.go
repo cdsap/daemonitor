@@ -47,6 +47,13 @@ func (c *Client) Health(ctx context.Context) (model.Health, error) {
 	return h, err
 }
 
+// Capabilities fetches /v1/capabilities.
+func (c *Client) Capabilities(ctx context.Context) (model.Capabilities, error) {
+	var caps model.Capabilities
+	err := c.getJSON(ctx, "/v1/capabilities", &caps)
+	return caps, err
+}
+
 // Processes fetches /v1/processes.
 func (c *Client) Processes(ctx context.Context) (model.Snapshot, error) {
 	var snap model.Snapshot

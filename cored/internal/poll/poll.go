@@ -10,6 +10,7 @@ import (
 
 	"github.com/cdsap/daemonitor/cored/internal/heap"
 	"github.com/cdsap/daemonitor/cored/internal/model"
+	"github.com/cdsap/daemonitor/cored/internal/platform"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/process"
 )
@@ -39,6 +40,7 @@ type Collector struct {
 	proportionalSampledAt map[int32]*int64
 	cpus                  int
 	Heap                  *heap.Prober
+	Platform              platform.PlatformCollector
 }
 
 func NewCollector() *Collector {
@@ -53,7 +55,24 @@ func NewCollector() *Collector {
 		proportionalSampledAt: make(map[int32]*int64),
 		cpus:                  n,
 		Heap:                  heap.NewProber(),
+		Platform:              platform.New(),
 	}
+}
+
+// Capabilities returns the OS platform metric support matrix.
+func (c *Collector) Capabilities() []platform.MetricCapability {
+	if c == nil || c.Platform == nil {
+		return nil
+	}
+	return c.Platform.Capabilities()
+}
+
+// HostMetrics returns a host-level sample from the platform adapter.
+func (c *Collector) HostMetrics(ctx context.Context) platform.HostMetrics {
+	if c == nil || c.Platform == nil {
+		return platform.HostMetrics{}
+	}
+	return c.Platform.CollectHost(ctx)
 }
 
 func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
@@ -86,18 +105,53 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 		}
 		seen[pid] = struct{}{}
 
-		rssMB := int64(0)
-		osMetrics := collectOSMetrics(ctx, p)
-		if mem, err := p.MemoryInfoWithContext(ctx); err == nil && mem != nil {
-			rssMB = int64(mem.RSS) / (1024 * 1024)
+		startMs := int64(0)
+		if create, err := p.CreateTimeWithContext(ctx); err == nil {
+			startMs = create
 		}
-		platform := platformMemory{}
+
+		platMetrics := platform.ProcessPlatformMetrics{}
+		if c.Platform != nil {
+			platMetrics = c.Platform.CollectProcess(ctx, platform.ProcessIdentity{
+				PID:          pid,
+				CreateTimeMs: startMs,
+			})
+			if platMetrics.Identity.CreateTimeMs > 0 {
+				startMs = platMetrics.Identity.CreateTimeMs
+			}
+		}
+		osMetrics := osMetricsFromPlatform(platMetrics)
+		rssMB := int64(0)
+		if platMetrics.ResidentBytes.Value != nil {
+			rssMB = *platMetrics.ResidentBytes.Value / (1024 * 1024)
+		}
+
+		platformMem := platformMemory{
+			privateCommittedBytes:  platMetrics.PrivateCommittedBytes.Value,
+			proportionalBytes:      platMetrics.ProportionalBytes.Value,
+			physicalFootprintBytes: platMetrics.PhysicalFootprintBytes.Value,
+			peakResidentBytes:      platMetrics.PeakResidentBytes.Value,
+		}
+		if platMetrics.ProportionalBytes.SampledAtMs > 0 {
+			sampled := platMetrics.ProportionalBytes.SampledAtMs
+			platformMem.proportionalSampledAt = &sampled
+		}
 		c.mu.Lock()
 		lastProportional := c.proportional[pid]
 		c.mu.Unlock()
 		if metrics, err := collectPlatformMemory(pid, shouldSampleProportional(now, lastProportional), now); err == nil {
-			platform = metrics
+			if metrics.privateCommittedBytes != nil {
+				platformMem.privateCommittedBytes = metrics.privateCommittedBytes
+			}
+			if metrics.physicalFootprintBytes != nil {
+				platformMem.physicalFootprintBytes = metrics.physicalFootprintBytes
+			}
+			if metrics.peakResidentBytes != nil {
+				platformMem.peakResidentBytes = metrics.peakResidentBytes
+			}
 			if metrics.proportionalSampledAt != nil {
+				platformMem.proportionalBytes = metrics.proportionalBytes
+				platformMem.proportionalSampledAt = metrics.proportionalSampledAt
 				c.mu.Lock()
 				c.proportional[pid] = *metrics.proportionalSampledAt
 				c.proportionalValues[pid] = metrics.proportionalBytes
@@ -105,17 +159,17 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 				c.mu.Unlock()
 			}
 		}
-		if platform.proportionalBytes == nil {
+		if platformMem.proportionalBytes == nil {
 			c.mu.Lock()
-			platform.proportionalBytes = c.proportionalValues[pid]
-			platform.proportionalSampledAt = c.proportionalSampledAt[pid]
+			platformMem.proportionalBytes = c.proportionalValues[pid]
+			platformMem.proportionalSampledAt = c.proportionalSampledAt[pid]
 			c.mu.Unlock()
 		}
 
 		var cpuPct *float64
 		cpuTimeMs := 0.0
-		if times, err := p.TimesWithContext(ctx); err == nil && times != nil {
-			cpuTimeMs = (times.User + times.System) * 1000
+		if platMetrics.CPUTotalSecondsTotal.Value != nil {
+			cpuTimeMs = *platMetrics.CPUTotalSecondsTotal.Value * 1000
 			c.mu.Lock()
 			prior, ok := c.priors[pid]
 			c.mu.Unlock()
@@ -144,10 +198,6 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 		if statuses, err := p.StatusWithContext(ctx); err == nil && len(statuses) > 0 {
 			status = statuses[0]
 		}
-		startMs := int64(0)
-		if create, err := p.CreateTimeWithContext(ctx); err == nil {
-			startMs = create
-		}
 
 		var cwd *string
 		if dir, err := p.CwdWithContext(ctx); err == nil && dir != "" {
@@ -174,11 +224,11 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 			ProjectPath:      project,
 			RSSMemoryMB:      rssMB,
 			VirtualMemoryMB:  osMetrics.virtualMemoryMB, SwapMemoryMB: osMetrics.swapMemoryMB,
-			ResidentBytes: ptrInt64(rssMB * 1024 * 1024),
+			ResidentBytes: platMetrics.ResidentBytes.Value,
 			VirtualBytes:  osMetrics.virtualBytes, SwapBytes: osMetrics.swapBytes,
-			PrivateCommittedBytes: platform.privateCommittedBytes,
-			ProportionalBytes:     platform.proportionalBytes, ProportionalSampledAtMs: platform.proportionalSampledAt,
-			PhysicalFootprintBytes: platform.physicalFootprintBytes, PeakResidentBytes: platform.peakResidentBytes,
+			PrivateCommittedBytes: platformMem.privateCommittedBytes,
+			ProportionalBytes:     platformMem.proportionalBytes, ProportionalSampledAtMs: platformMem.proportionalSampledAt,
+			PhysicalFootprintBytes: platformMem.physicalFootprintBytes, PeakResidentBytes: platformMem.peakResidentBytes,
 			ThreadCount: osMetrics.threadCount, ReadBytes: osMetrics.readBytes, WriteBytes: osMetrics.writeBytes,
 			ReadOperations: osMetrics.readOperations, WriteOperations: osMetrics.writeOperations,
 			MinorPageFaults: osMetrics.minorPageFaults, MajorPageFaults: osMetrics.majorPageFaults,
@@ -243,28 +293,26 @@ type osMetrics struct {
 	openFileDescriptors                                    *int64
 }
 
-func collectOSMetrics(ctx context.Context, p *process.Process) osMetrics {
+func osMetricsFromPlatform(pm platform.ProcessPlatformMetrics) osMetrics {
 	m := osMetrics{}
-	if mem, err := p.MemoryInfoWithContext(ctx); err == nil && mem != nil {
-		m.virtualMemoryMB, m.swapMemoryMB = ptrInt64(int64(mem.VMS)/(1024*1024)), ptrInt64(int64(mem.Swap)/(1024*1024))
-		m.virtualBytes, m.swapBytes = ptrInt64(int64(mem.VMS)), ptrInt64(int64(mem.Swap))
+	if pm.VirtualBytes.Value != nil {
+		m.virtualMemoryMB = ptrInt64(*pm.VirtualBytes.Value / (1024 * 1024))
+		m.virtualBytes = pm.VirtualBytes.Value
 	}
-	if v, err := p.NumThreadsWithContext(ctx); err == nil {
-		m.threadCount = ptrInt64(int64(v))
+	if pm.SwapBytes.Value != nil {
+		m.swapMemoryMB = ptrInt64(*pm.SwapBytes.Value / (1024 * 1024))
+		m.swapBytes = pm.SwapBytes.Value
 	}
-	if io, err := p.IOCountersWithContext(ctx); err == nil && io != nil {
-		m.readBytes, m.writeBytes = ptrInt64(int64(io.ReadBytes)), ptrInt64(int64(io.WriteBytes))
-		m.readOperations, m.writeOperations = ptrInt64(int64(io.ReadCount)), ptrInt64(int64(io.WriteCount))
-	}
-	if faults, err := p.PageFaultsWithContext(ctx); err == nil && faults != nil {
-		m.minorPageFaults, m.majorPageFaults = ptrInt64(int64(faults.MinorFaults)), ptrInt64(int64(faults.MajorFaults))
-	}
-	if switches, err := p.NumCtxSwitchesWithContext(ctx); err == nil && switches != nil {
-		m.voluntaryContextSwitches, m.involuntaryContextSwitches = ptrInt64(switches.Voluntary), ptrInt64(switches.Involuntary)
-	}
-	if v, err := p.NumFDsWithContext(ctx); err == nil {
-		m.openFileDescriptors = ptrInt64(int64(v))
-	}
+	m.threadCount = pm.ThreadCount.Value
+	m.readBytes = pm.LogicalReadBytesTotal.Value
+	m.writeBytes = pm.LogicalWriteBytesTotal.Value
+	m.readOperations = pm.ReadOperationsTotal.Value
+	m.writeOperations = pm.WriteOperationsTotal.Value
+	m.minorPageFaults = pm.MinorPageFaultsTotal.Value
+	m.majorPageFaults = pm.MajorPageFaultsTotal.Value
+	m.voluntaryContextSwitches = pm.VoluntaryContextSwitchesTotal.Value
+	m.involuntaryContextSwitches = pm.InvoluntaryContextSwitchesTotal.Value
+	m.openFileDescriptors = pm.OpenDescriptorsCount.Value
 	return m
 }
 
