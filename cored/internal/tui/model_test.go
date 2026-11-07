@@ -621,14 +621,18 @@ func TestDetailsShowOptionalTelemetryAndKeepZeroDistinctFromUnavailable(t *testi
 	cpu := 0.0
 	p := model.Process{PID: 9, Type: "GRADLE_DAEMON", YoungGCCount: &zero, HeapUsedMB: &zero, SampledAtMs: 2}
 	m := NewModel(Config{Now: fixedNow, NoColor: true})
-	m.width, m.height, m.detailsOpen, m.detailProcess = 80, 70, true, &p
+	m.width, m.height, m.detailsOpen, m.detailProcess = 80, 90, true, &p
 	m.detailHost = model.HostMetrics{
 		LogicalProcessors: model.IntMetric{Value: &zero},
 		CPUUsagePercent:   model.RealMetric{Value: &cpu},
 		MemoryUsedBytes:   model.IntMetric{Value: &zero},
 	}
 	body := m.View().Content
-	for _, want := range []string{"JVM MEMORY POOLS", "GC COUNTERS / RATES", "JIT / CODE CACHE", "PROCESS LIFECYCLE", "HOST RESOURCE CONTEXT", "COLLECTION CAPABILITIES", "Young count    0", "CPUs           0", "CPU usage      0.0%", "Memory used    0 MB", "Code cache     n/a"} {
+	for _, want := range []string{
+		"OS ACTIVITY", "NATIVE MEMORY", "JVM MEMORY POOLS", "GC COUNTERS / RATES", "JIT / CODE CACHE",
+		"PROCESS LIFECYCLE", "HOST RESOURCE CONTEXT", "COLLECTION CAPABILITIES",
+		"Young count    0", "CPUs           0", "CPU usage      0.0%", "Memory used    0 MB", "Code cache     n/a",
+	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("details missing %q: %s", want, body)
 		}
@@ -638,6 +642,33 @@ func TestDetailsShowOptionalTelemetryAndKeepZeroDistinctFromUnavailable(t *testi
 	}
 	if strings.Contains(body, "\x1b[") {
 		t.Fatalf("--no-color emitted ANSI in optional details: %q", body)
+	}
+}
+
+func TestDetailsShowOSActivityWithMixedAvailability(t *testing.T) {
+	minor, voluntary, cpuUser, cpuTotal, cores := int64(12), int64(0), 1.25, 4.5, 2.0
+	p := model.Process{
+		PID:                      9,
+		MinorPageFaults:          &minor,
+		VoluntaryContextSwitches: &voluntary,
+		CPUUserSecondsTotal:      &cpuUser,
+		CPUTotalSecondsTotal:     &cpuTotal,
+		CPUCoresUsed:             &cores,
+	}
+	m := NewModel(Config{Now: fixedNow, NoColor: true})
+	m.width, m.height, m.detailsOpen, m.detailProcess = 100, 80, true, &p
+	body := m.View().Content
+	for _, want := range []string{
+		"OS ACTIVITY",
+		"Resource scope n/a",
+		"Page faults    minor 12 / major n/a",
+		"Context switch voluntary 0 / involuntary n/a",
+		"CPU seconds    user 1.2 s / system n/a / total 4.5 s",
+		"CPU cores      2.0",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("details missing %q: %s", want, body)
+		}
 	}
 }
 
@@ -653,7 +684,7 @@ func TestDetailsShowNativeMemoryMetricsInTelemetry(t *testing.T) {
 		PeakResidentBytes:      int64Ptr(4 * 1024 * 1024),
 	}
 	m := NewModel(Config{Now: fixedNow, NoColor: true})
-	m.width, m.height, m.detailsOpen, m.detailProcess = 120, 40, true, &p
+	m.width, m.height, m.detailsOpen, m.detailProcess = 120, 80, true, &p
 
 	body := m.View().Content
 	for _, want := range []struct{ label, value string }{
@@ -688,7 +719,7 @@ func TestDetailsShowNativeMemoryMetricsInTelemetry(t *testing.T) {
 func TestDetailsShowNativeMemoryUnavailableAsNA(t *testing.T) {
 	p := model.Process{PID: 9}
 	m := NewModel(Config{Now: fixedNow, NoColor: true})
-	m.width, m.height, m.detailsOpen, m.detailProcess = 120, 40, true, &p
+	m.width, m.height, m.detailsOpen, m.detailProcess = 120, 80, true, &p
 
 	body := m.View().Content
 	if !strings.Contains(body, "NATIVE MEMORY") {
