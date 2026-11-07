@@ -61,6 +61,13 @@ func TestRedactCommandLineTabs(t *testing.T) {
 	}
 }
 
+func TestRedactCommandLineMasksValueFollowingSensitiveOption(t *testing.T) {
+	got := poll.RedactCommandLine("java --password secret --token=inline --safe value")
+	if got != "java --password *** --token=*** --safe value" {
+		t.Fatalf("redacted command line=%q", got)
+	}
+}
+
 func TestRedactDoesNotOverRedactKeySubstring(t *testing.T) {
 	if poll.RedactToken("-Dmonkey.count=5") != "-Dmonkey.count=5" {
 		t.Fatal("monkey.count over-redacted")

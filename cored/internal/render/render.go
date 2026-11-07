@@ -13,6 +13,54 @@ import (
 	"github.com/cdsap/daemonitor/cored/internal/model"
 )
 
+// SanitizeSnapshotForExport keeps exports useful while avoiding full local
+// paths unless the caller explicitly opts in.
+func SanitizeSnapshotForExport(snap *model.Snapshot, includeProjectPath bool) {
+	if snap == nil || includeProjectPath {
+		return
+	}
+	for i := range snap.Processes {
+		snap.Processes[i].WorkingDirectory = basenamePointer(snap.Processes[i].WorkingDirectory)
+		snap.Processes[i].ProjectPath = basenamePointer(snap.Processes[i].ProjectPath)
+	}
+}
+
+func SanitizeHistoryForExport(hist *model.History, includeProjectPath bool) {
+	if hist == nil || includeProjectPath {
+		return
+	}
+	for i := range hist.Processes {
+		hist.Processes[i].WorkingDirectory = basenamePointer(hist.Processes[i].WorkingDirectory)
+		hist.Processes[i].ProjectPath = basenamePointer(hist.Processes[i].ProjectPath)
+	}
+}
+
+func SanitizeBuildsForExport(payload *client.BuildsPayload, includeProjectPath bool) {
+	if payload == nil || includeProjectPath {
+		return
+	}
+	for i := range payload.Builds {
+		payload.Builds[i].ProjectPath = basename(payload.Builds[i].ProjectPath)
+	}
+}
+
+func SanitizeLogsForExport(items *[]logs.DaemonLog, includeProjectPath bool) {
+	if items == nil || includeProjectPath {
+		return
+	}
+	for i := range *items {
+		(*items)[i].Path = basename((*items)[i].Path)
+	}
+}
+
+func basenamePointer(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	result := basename(*value)
+	return &result
+}
+
 // WriteJSON encodes v as indented JSON to w.
 func WriteJSON(w io.Writer, v any) error {
 	enc := json.NewEncoder(w)

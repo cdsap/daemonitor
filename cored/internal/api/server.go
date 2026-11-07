@@ -42,6 +42,11 @@ type Server struct {
 	lastHostAt   time.Time
 }
 
+const (
+	defaultQueryLimit = 100
+	maxQueryLimit     = 500
+)
+
 func NewServer(socketPath, dbPath string, interval, retention time.Duration, gradleUserHome string) (*Server, error) {
 	st, err := store.Open(dbPath)
 	if err != nil {
@@ -295,10 +300,10 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 			sinceMs = v
 		}
 	}
-	limit := 500
+	limit := defaultQueryLimit
 	if raw := r.URL.Query().Get("limit"); raw != "" {
 		if v, err := strconv.Atoi(raw); err == nil {
-			limit = v
+			limit = boundedLimit(v)
 		}
 	}
 	rows, err := s.Store.History(sinceMs, limit)
@@ -320,10 +325,10 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 			sinceMs = v
 		}
 	}
-	limit := 500
+	limit := defaultQueryLimit
 	if raw := r.URL.Query().Get("limit"); raw != "" {
 		if v, err := strconv.Atoi(raw); err == nil {
-			limit = v
+			limit = boundedLimit(v)
 		}
 	}
 	rows, err := s.Store.ListEvents(sinceMs, limit)
@@ -371,10 +376,10 @@ func (s *Server) handleDaemonLogTail(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleBuilds(w http.ResponseWriter, r *http.Request) {
-	limit := 100
+	limit := defaultQueryLimit
 	if raw := r.URL.Query().Get("limit"); raw != "" {
 		if v, err := strconv.Atoi(raw); err == nil {
-			limit = v
+			limit = boundedLimit(v)
 		}
 	}
 	var filters store.BuildFilters
@@ -486,4 +491,11 @@ func writeJSON(w http.ResponseWriter, v any) {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(v)
+}
+
+func boundedLimit(value int) int {
+	if value <= 0 || value > maxQueryLimit {
+		return defaultQueryLimit
+	}
+	return value
 }

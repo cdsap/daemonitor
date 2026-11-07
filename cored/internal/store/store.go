@@ -40,6 +40,12 @@ func Open(path string) (*Store, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	// SQLite files can contain command lines, paths, and diagnostic metadata.
+	// Do not rely on the process umask for this privacy boundary.
+	if err := os.Chmod(path, 0o600); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("restrict db permissions: %w", err)
+	}
 	return s, nil
 }
 

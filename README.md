@@ -255,6 +255,7 @@ Review `docs/images/` before committing (synthetic samples only).
 **Stack:** Kotlin · Compose for Desktop · OSHI · SQLDelight · Coroutines
 
 **Privacy:** Local-only storage, redacted command lines/logs, owner-only database. Outbound traffic
-is limited to GitHub Releases checks and downloads you approve.
+is limited to GitHub Releases checks and downloads you approve. Telemetry is not uploaded by
+default; exports omit full project paths unless `--include-project-path` is explicitly requested.
 
 **Status:** Early (v1.2.2). See `requirements.md` for the original spec.

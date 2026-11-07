@@ -80,6 +80,10 @@ func TestParseArgsQueryAndWatchOptions(t *testing.T) {
 	if err != nil || !opts.IncludeLogs {
 		t.Fatalf("unexpected log option: %+v, err=%v", opts, err)
 	}
+	opts, err = ParseArgs([]string{"builds", "--include-project-path"})
+	if err != nil || !opts.IncludeProjectPath {
+		t.Fatalf("unexpected project path option: %+v, err=%v", opts, err)
+	}
 }
 
 func TestParseArgsRejectsInvalidOutputAndNegativeValues(t *testing.T) {

@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"database/sql"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -90,6 +91,22 @@ func TestInsertHistoryAndPurge(t *testing.T) {
 	n, _ = s.Count()
 	if n != 1 {
 		t.Fatalf("after purge count=%d", n)
+	}
+}
+
+func TestOpenRestrictsDatabasePermissions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "private.sqlite")
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("database permissions=%o want 600", got)
 	}
 }
 
