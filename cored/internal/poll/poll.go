@@ -45,10 +45,12 @@ func NewCollector() *Collector {
 	if err != nil || n <= 0 {
 		n = runtime.NumCPU()
 	}
+	prober := heap.NewProber()
+	prober.EnableAdvancedTelemetry = true
 	return &Collector{
 		priors:   make(map[int32]priorCPU),
 		cpus:     n,
-		Heap:     heap.NewProber(),
+		Heap:     prober,
 		Platform: platform.New(),
 	}
 }
@@ -198,6 +200,9 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 			YoungGCTimeSeconds: jvmMetrics.YoungGCTimeSeconds, FullGCTimeSeconds: jvmMetrics.FullGCTimeSeconds,
 			ConcurrentGCTimeSeconds: jvmMetrics.ConcurrentGCTimeSeconds, TotalGCTimeSeconds: jvmMetrics.TotalGCTimeSeconds,
 			OldGCCount: jvmMetrics.OldGCCount, OldGCTimeMs: jvmMetrics.OldGCTimeMs,
+			FullGCCount: jvmMetrics.FullGCCount, ConcurrentGCCount: jvmMetrics.ConcurrentGCCount, TotalGCCount: jvmMetrics.TotalGCCount,
+			MemoryPools: memoryPools(jvmMetrics.MemoryPools), CodeCache: memoryPools(jvmMetrics.CodeCache),
+			JIT: jitMetrics(jvmMetrics.JIT), Classes: classMetrics(jvmMetrics.Classes), Safepoints: safepointMetrics(jvmMetrics.Safepoints),
 			JavaVersion: jvmMetrics.JavaVersion, JavaRuntimeVersion: jvmMetrics.JavaRuntimeVersion,
 			JavaVendor: jvmMetrics.JavaVendor, JavaVMName: jvmMetrics.JavaVMName, JavaVMVersion: jvmMetrics.JavaVMVersion,
 			OSName: jvmMetrics.OSName, OSArch: jvmMetrics.OSArch,
@@ -225,9 +230,51 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 	return model.Snapshot{SampledAtMs: now, Processes: out}, nil
 }
 
-// ShouldProbeLiveHeap mirrors Kotlin: only Gradle/Kotlin daemons are probed.
+func rawValue(v heap.RawValue) model.JVMRawValue {
+	return model.JVMRawValue{Value: v.Value, Unit: v.Unit}
+}
+
+func memoryPools(pools []heap.MemoryPool) []model.JVMMemoryPool {
+	if len(pools) == 0 {
+		return nil
+	}
+	out := make([]model.JVMMemoryPool, 0, len(pools))
+	for _, p := range pools {
+		out = append(out, model.JVMMemoryPool{Name: p.Name, Source: p.Source, Used: rawValue(p.Used), Committed: rawValue(p.Committed), Max: rawValue(p.Max)})
+	}
+	return out
+}
+
+func jitMetrics(m *heap.JITMetrics) *model.JITMetrics {
+	if m == nil {
+		return nil
+	}
+	return &model.JITMetrics{CompiledCount: m.CompiledCount, FailedCount: m.FailedCount, InvalidCount: m.InvalidCount, CompilationTimeSeconds: m.CompilationTimeSeconds}
+}
+
+func classMetrics(m *heap.ClassMetrics) *model.ClassMetrics {
+	if m == nil {
+		return nil
+	}
+	return &model.ClassMetrics{LoadedClasses: m.LoadedClasses, UnloadedClasses: m.UnloadedClasses, LoadedClassesTotal: m.LoadedClassesTotal, ClassTimeSeconds: m.ClassTimeSeconds}
+}
+
+func safepointMetrics(m *heap.SafepointMetrics) *model.SafepointMetrics {
+	if m == nil {
+		return nil
+	}
+	return &model.SafepointMetrics{SafepointCount: m.SafepointCount, SafepointTimeNs: m.SafepointTimeNs, SafepointSyncTimeNs: m.SafepointSyncTimeNs, ApplicationTimeNs: m.ApplicationTimeNs}
+}
+
+// ShouldProbeLiveHeap covers JVM processes that can carry Gradle work. Tool
+// attachment remains optional, so a failed probe leaves OS metrics intact.
 func ShouldProbeLiveHeap(kind string) bool {
-	return kind == "GRADLE_DAEMON" || kind == "KOTLIN_DAEMON"
+	switch kind {
+	case "GRADLE_DAEMON", "KOTLIN_DAEMON", "TEST_WORKER", "GRADLE_WORKER", "UNKNOWN_GRADLE_WORKER", "JAVA_GRADLE_RELATED":
+		return true
+	default:
+		return false
+	}
 }
 
 type osMetrics struct {

@@ -149,6 +149,9 @@ CREATE TABLE IF NOT EXISTS process_samples (
 	young_gc_time_ms INTEGER,
 	old_gc_count INTEGER,
 	old_gc_time_ms INTEGER,
+	full_gc_count INTEGER,
+	concurrent_gc_count INTEGER,
+	total_gc_count INTEGER,
 	java_version TEXT,
 	java_runtime_version TEXT,
 	java_vendor TEXT,
@@ -189,6 +192,9 @@ func (s *Store) ensureProcessSamplesAdditiveColumns(cols []string) error {
 		{"young_gc_time_ms", `ALTER TABLE process_samples ADD COLUMN young_gc_time_ms INTEGER`},
 		{"old_gc_count", `ALTER TABLE process_samples ADD COLUMN old_gc_count INTEGER`},
 		{"old_gc_time_ms", `ALTER TABLE process_samples ADD COLUMN old_gc_time_ms INTEGER`},
+		{"full_gc_count", `ALTER TABLE process_samples ADD COLUMN full_gc_count INTEGER`},
+		{"concurrent_gc_count", `ALTER TABLE process_samples ADD COLUMN concurrent_gc_count INTEGER`},
+		{"total_gc_count", `ALTER TABLE process_samples ADD COLUMN total_gc_count INTEGER`},
 		{"java_version", `ALTER TABLE process_samples ADD COLUMN java_version TEXT`},
 		{"java_runtime_version", `ALTER TABLE process_samples ADD COLUMN java_runtime_version TEXT`},
 		{"java_vendor", `ALTER TABLE process_samples ADD COLUMN java_vendor TEXT`},
@@ -482,14 +488,14 @@ INSERT INTO process_samples(
   voluntary_context_switches, involuntary_context_switches, open_file_descriptors, cpu_percent,
   max_heap_mb, heap_used_mb, heap_committed_mb, heap_max_mb, heap_sampled_at_ms, heap_available,
   status, name, min_heap_mb, gc, metaspace_used_mb, metaspace_committed_mb, young_gc_count,
-  young_gc_time_ms, old_gc_count, old_gc_time_ms, java_version, java_runtime_version, java_vendor,
+  young_gc_time_ms, old_gc_count, old_gc_time_ms, full_gc_count, concurrent_gc_count, total_gc_count, java_version, java_runtime_version, java_vendor,
   java_vm_name, java_vm_version, os_name, os_arch, active_processor_count,
   start_time_ms, automated
 ) VALUES (
  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
- ?, ?, ?, ?, ?)`)
+ ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -511,7 +517,7 @@ INSERT INTO process_samples(
 			p.VoluntaryContextSwitches, p.InvoluntaryContextSwitches, p.OpenFileDescriptors, p.CPUPercent,
 			p.MaxHeapMB, p.HeapUsedMB, p.HeapCommittedMB, p.HeapMaxMB, p.HeapSampledAtMs, heapAvail,
 			p.Status, nullStr(p.Name), p.MinHeapMB, p.GC, p.MetaspaceUsedMB, p.MetaspaceCommittedMB,
-			p.YoungGCCount, p.YoungGCTimeMs, p.OldGCCount, p.OldGCTimeMs, p.JavaVersion, p.JavaRuntimeVersion,
+			p.YoungGCCount, p.YoungGCTimeMs, p.OldGCCount, p.OldGCTimeMs, p.FullGCCount, p.ConcurrentGCCount, p.TotalGCCount, p.JavaVersion, p.JavaRuntimeVersion,
 			p.JavaVendor, p.JavaVMName, p.JavaVMVersion, p.OSName, p.OSArch, p.ActiveProcessorCount, p.StartTimeMs, automated,
 		); err != nil {
 			return err
@@ -540,7 +546,7 @@ SELECT timestamp, pid, parent_pid, process_type, COALESCE(name, ''), command_lin
        voluntary_context_switches, involuntary_context_switches, open_file_descriptors, cpu_percent,
        max_heap_mb, min_heap_mb, gc, heap_used_mb, heap_committed_mb, heap_max_mb, heap_sampled_at_ms,
        heap_available, metaspace_used_mb, metaspace_committed_mb, young_gc_count, young_gc_time_ms,
-       old_gc_count, old_gc_time_ms, java_version, java_runtime_version, java_vendor,
+       old_gc_count, old_gc_time_ms, full_gc_count, concurrent_gc_count, total_gc_count, java_version, java_runtime_version, java_vendor,
        java_vm_name, java_vm_version, os_name, os_arch, active_processor_count,
        start_time_ms, status, automated
 FROM process_samples
@@ -563,7 +569,7 @@ LIMIT ?`, sinceMs, limit)
 			&p.VoluntaryContextSwitches, &p.InvoluntaryContextSwitches, &p.OpenFileDescriptors, &p.CPUPercent,
 			&p.MaxHeapMB, &p.MinHeapMB, &p.GC, &p.HeapUsedMB, &p.HeapCommittedMB, &p.HeapMaxMB, &p.HeapSampledAtMs,
 			&heapAvailable, &p.MetaspaceUsedMB, &p.MetaspaceCommittedMB, &p.YoungGCCount, &p.YoungGCTimeMs,
-			&p.OldGCCount, &p.OldGCTimeMs, &p.JavaVersion, &p.JavaRuntimeVersion, &p.JavaVendor,
+			&p.OldGCCount, &p.OldGCTimeMs, &p.FullGCCount, &p.ConcurrentGCCount, &p.TotalGCCount, &p.JavaVersion, &p.JavaRuntimeVersion, &p.JavaVendor,
 			&p.JavaVMName, &p.JavaVMVersion, &p.OSName, &p.OSArch, &p.ActiveProcessorCount,
 			&p.StartTimeMs, &p.Status, &automated,
 		); err != nil {
