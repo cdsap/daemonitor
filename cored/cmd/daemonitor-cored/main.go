@@ -10,13 +10,14 @@ import (
 	"time"
 
 	"github.com/cdsap/daemonitor/cored/internal/api"
+	"github.com/cdsap/daemonitor/cored/internal/ipc"
 	"github.com/cdsap/daemonitor/cored/internal/store"
 )
 
 func main() {
 	defaultSock := store.DefaultSocketPath()
 	defaultDB := store.DefaultWatcherDBPath()
-	socket := flag.String("socket", defaultSock, "Unix domain socket path")
+	socket := flag.String("socket", defaultSock, "Local IPC endpoint (Unix socket path or Windows named pipe)")
 	dbPath := flag.String("db", defaultDB, "SQLite database path (defaults to app watcher.db)")
 	interval := flag.Duration("interval", 2*time.Second, "process poll interval")
 	retention := flag.Duration("retention", 24*time.Hour, "sample retention window")
@@ -31,8 +32,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "daemonitor-cored: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Fprintf(os.Stderr, "daemonitor-cored %s listening on unix://%s db=%s poll=%s retention=%s\n",
-		api.Version, *socket, *dbPath, *interval, *retention)
+	fmt.Fprintf(os.Stderr, "daemonitor-cored %s listening on %s://%s db=%s poll=%s retention=%s\n",
+		api.Version, ipc.Scheme(*socket), *socket, *dbPath, *interval, *retention)
 	if err := srv.Run(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "daemonitor-cored: %v\n", err)
 		os.Exit(1)

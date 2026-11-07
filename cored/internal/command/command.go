@@ -102,7 +102,7 @@ func ParseArgs(argv []string) (Options, error) {
 		Output:       "plain",
 		Limit:        0,
 	}
-	fs.StringVar(&opts.Socket, "socket", opts.Socket, "Unix domain socket path")
+	fs.StringVar(&opts.Socket, "socket", opts.Socket, "Local IPC endpoint (Unix socket path or Windows named pipe)")
 	fs.DurationVar(&opts.PollInterval, "poll-interval", opts.PollInterval, "TUI refresh interval")
 	fs.BoolVar(&opts.NoColor, "no-color", false, "Disable color")
 	fs.BoolVar(&opts.NoAutostart, "no-autostart", false, "Do not start daemonitor-cored automatically")
@@ -174,7 +174,7 @@ Commands:
   export           Export bounded telemetry as JSONL to --output
 
 Options:
-  --socket PATH            Use an explicit core socket
+  --socket PATH            Use an explicit core IPC endpoint (Unix socket or Windows named pipe)
   --poll-interval DURATION TUI refresh interval (default 2s)
   --no-color               Disable color (NO_COLOR also honored)
   --no-autostart           Do not start daemonitor-cored automatically

@@ -5,10 +5,12 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/cdsap/daemonitor/cored/internal/builds"
+	"github.com/cdsap/daemonitor/cored/internal/ipc"
 	"github.com/cdsap/daemonitor/cored/internal/model"
 	"github.com/cdsap/daemonitor/cored/internal/poll"
 	"github.com/cdsap/daemonitor/cored/internal/store"
@@ -567,6 +569,15 @@ func TestDefaultWatcherDBPathEndsWithWatcherDB(t *testing.T) {
 
 func TestDefaultSocketPathBesideAppSupport(t *testing.T) {
 	sock := store.DefaultSocketPath()
+	if runtime.GOOS == "windows" {
+		if !ipc.IsNamedPipe(sock) {
+			t.Fatalf("sock=%q want named pipe", sock)
+		}
+		if !strings.Contains(sock, `daemonitor-core`) {
+			t.Fatalf("sock=%q", sock)
+		}
+		return
+	}
 	if filepath.Base(sock) != "daemonitor-core.sock" {
 		t.Fatalf("sock=%q", sock)
 	}
@@ -574,3 +585,4 @@ func TestDefaultSocketPathBesideAppSupport(t *testing.T) {
 		t.Fatalf("dir=%q want %q", filepath.Dir(sock), store.DefaultAppSupportDir())
 	}
 }
+

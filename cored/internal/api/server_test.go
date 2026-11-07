@@ -3,7 +3,6 @@ package api_test
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -13,15 +12,14 @@ import (
 
 	"github.com/cdsap/daemonitor/cored/internal/api"
 	"github.com/cdsap/daemonitor/cored/internal/builds"
+	"github.com/cdsap/daemonitor/cored/internal/ipc"
 	"github.com/cdsap/daemonitor/cored/internal/model"
 )
 
 func TestServerHealthAndProcessesOverUnixSocket(t *testing.T) {
-	// Keep the socket path short: macOS sun_path is ~104 bytes and t.TempDir() paths are often longer.
-	socket := filepath.Join(os.TempDir(), fmt.Sprintf("dmn-core-%d.sock", os.Getpid()))
+	// Keep the endpoint short: macOS sun_path is ~104 bytes; Windows uses a named pipe.
+	socket := ipc.TempEndpoint(t, "core")
 	db := filepath.Join(t.TempDir(), "core.sqlite")
-	_ = os.Remove(socket)
-	defer os.Remove(socket)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -39,8 +37,7 @@ func TestServerHealthAndProcessesOverUnixSocket(t *testing.T) {
 	client := &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				var d net.Dialer
-				return d.DialContext(ctx, "unix", socket)
+				return ipc.Default.Dial(ctx, socket)
 			},
 		},
 		Timeout: 3 * time.Second,
@@ -111,10 +108,8 @@ func TestServerHealthAndProcessesOverUnixSocket(t *testing.T) {
 }
 
 func TestBuildsEndpointFiltersByDaemonAndRejectsInvalidIdentifiers(t *testing.T) {
-	socket := filepath.Join(os.TempDir(), fmt.Sprintf("dmn-builds-%d.sock", os.Getpid()))
+	socket := ipc.TempEndpoint(t, "builds")
 	db := filepath.Join(t.TempDir(), "core.sqlite")
-	_ = os.Remove(socket)
-	defer os.Remove(socket)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -136,8 +131,7 @@ func TestBuildsEndpointFiltersByDaemonAndRejectsInvalidIdentifiers(t *testing.T)
 	go func() { errCh <- srv.Run(ctx) }()
 	client := &http.Client{
 		Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			var d net.Dialer
-			return d.DialContext(ctx, "unix", socket)
+			return ipc.Default.Dial(ctx, socket)
 		}},
 		Timeout: 3 * time.Second,
 	}
@@ -214,9 +208,7 @@ func TestBuildsPIDQueryUsesCoreResolvedDaemonIdentity(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(logDir, "daemon-42.out.log"), []byte("2026-06-24T14:42:12.402-0700 [INFO] [x] DefaultDaemonContext[uid=current-uid, daemonOpts=-Xmx1g]\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	socket := filepath.Join(os.TempDir(), fmt.Sprintf("dmn-pid-builds-%d.sock", os.Getpid()))
-	_ = os.Remove(socket)
-	defer os.Remove(socket)
+	socket := ipc.TempEndpoint(t, "pid-builds")
 	srv, err := api.NewServer(socket, filepath.Join(t.TempDir(), "core.sqlite"), time.Hour, time.Hour, gradleHome)
 	if err != nil {
 		t.Fatal(err)
@@ -238,7 +230,7 @@ func TestBuildsPIDQueryUsesCoreResolvedDaemonIdentity(t *testing.T) {
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.Run(ctx) }()
 	client := &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-		return (&net.Dialer{}).DialContext(ctx, "unix", socket)
+		return ipc.Default.Dial(ctx, socket)
 	}}, Timeout: 3 * time.Second}
 	deadline := time.Now().Add(3 * time.Second)
 	for {
@@ -268,10 +260,8 @@ func TestBuildsPIDQueryUsesCoreResolvedDaemonIdentity(t *testing.T) {
 }
 
 func TestEventsEndpointReturnsLifecycleJSON(t *testing.T) {
-	socket := filepath.Join(os.TempDir(), fmt.Sprintf("dmn-events-%d.sock", os.Getpid()))
+	socket := ipc.TempEndpoint(t, "events")
 	db := filepath.Join(t.TempDir(), "core.sqlite")
-	_ = os.Remove(socket)
-	defer os.Remove(socket)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -295,7 +285,7 @@ func TestEventsEndpointReturnsLifecycleJSON(t *testing.T) {
 	client := &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				return (&net.Dialer{}).DialContext(ctx, "unix", socket)
+				return ipc.Default.Dial(ctx, socket)
 			},
 		},
 		Timeout: 3 * time.Second,

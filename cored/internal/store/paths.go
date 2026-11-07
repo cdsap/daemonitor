@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+
+	"github.com/cdsap/daemonitor/cored/internal/ipc"
 )
 
 // DefaultWatcherDBPath returns the app WatcherDatabase path for this OS, matching Kotlin
@@ -12,9 +14,18 @@ func DefaultWatcherDBPath() string {
 	return filepath.Join(DefaultAppSupportDir(), "watcher.db")
 }
 
-// DefaultSocketPath is the Unix-domain socket beside the app DB under the data directory.
+// DefaultSocketPath is the local IPC endpoint for daemonitor-cored.
+// On macOS/Linux this is a Unix-domain socket beside the app DB; on Windows it is a
+// named-pipe path (\\.\pipe\daemonitor-core). --socket / -socket accept either form.
 func DefaultSocketPath() string {
-	return filepath.Join(DefaultAppSupportDir(), "daemonitor-core.sock")
+	return defaultSocketPath(runtime.GOOS, DefaultAppSupportDir())
+}
+
+func defaultSocketPath(goos, appSupport string) string {
+	if goos == "windows" {
+		return ipc.DefaultWindowsEndpoint()
+	}
+	return filepath.Join(appSupport, "daemonitor-core.sock")
 }
 
 // DefaultAppSupportDir matches Kotlin AppDirectories.appSupportDir.

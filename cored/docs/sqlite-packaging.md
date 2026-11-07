@@ -37,7 +37,9 @@ build/install/daemonitor-cli/bin/daemonitor-cored
 build/install/daemonitor-cli/bin/daemonitor-cli --socket "$HOME/Library/Application Support/Daemonitor/daemonitor-core.sock"
 ```
 
-`DefaultWatcherDBPath()` / `DefaultSocketPath()` match Kotlin `AppDirectories`.
+`DefaultWatcherDBPath()` matches Kotlin `AppDirectories`. `DefaultSocketPath()` is the
+same app-dir Unix socket on macOS/Linux; on Windows it is the named pipe
+`\\.\pipe\daemonitor-core` (see [`windows-ipc.md`](windows-ipc.md)).
 
 ### Where cored lands
 
