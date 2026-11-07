@@ -11,6 +11,7 @@ import (
 	"github.com/cdsap/daemonitor/cored/internal/client"
 	"github.com/cdsap/daemonitor/cored/internal/logs"
 	"github.com/cdsap/daemonitor/cored/internal/model"
+	"github.com/cdsap/daemonitor/cored/internal/platform"
 )
 
 // SanitizeSnapshotForExport keeps exports useful while avoiding full local
@@ -398,6 +399,57 @@ func WriteHealthPlain(w io.Writer, h model.Health) {
 		fmt.Fprintf(w, " db=%s", h.DBPath)
 	}
 	fmt.Fprintln(w)
+}
+
+// WriteHostPlain prints a compact host summary for terminal use.
+func WriteHostPlain(w io.Writer, host platform.HostMetrics) {
+	scope := string(host.Scope)
+	if strings.TrimSpace(scope) == "" {
+		scope = "n/a"
+	}
+	fmt.Fprintf(w, "sampled_at_ms=%d scope=%s\n", host.SampledAtMs, scope)
+	fmt.Fprintf(w, "logical_processors=%s\n", plainIntMetric(host.LogicalProcessors, ""))
+	fmt.Fprintf(w, "cpu_usage_percent=%s\n", plainRealMetric(host.CPUUsagePercent, "%"))
+	fmt.Fprintf(w, "memory_used=%s\n", plainBytesMetric(host.MemoryUsedBytes))
+	fmt.Fprintf(w, "memory_available=%s\n", plainBytesMetric(host.MemoryAvailableBytes))
+	fmt.Fprintf(w, "memory_total=%s\n", plainBytesMetric(host.MemoryTotalBytes))
+	fmt.Fprintf(w, "commit_used=%s\n", plainBytesMetric(host.CommitUsedBytes))
+	fmt.Fprintf(w, "commit_limit=%s\n", plainBytesMetric(host.CommitLimitBytes))
+	fmt.Fprintf(w, "load1=%s load5=%s load15=%s\n",
+		plainRealMetric(host.Load1, ""),
+		plainRealMetric(host.Load5, ""),
+		plainRealMetric(host.Load15, ""),
+	)
+}
+
+func plainIntMetric(m platform.IntMetric, unit string) string {
+	if m.Value == nil || m.Availability != platform.Available {
+		if m.Availability != "" && m.Availability != platform.Available {
+			return "n/a"
+		}
+		return "n/a"
+	}
+	if unit == "" {
+		return fmt.Sprintf("%d", *m.Value)
+	}
+	return fmt.Sprintf("%d%s", *m.Value, unit)
+}
+
+func plainRealMetric(m platform.RealMetric, unit string) string {
+	if m.Value == nil || m.Availability != platform.Available {
+		return "n/a"
+	}
+	if unit == "" {
+		return fmt.Sprintf("%.2f", *m.Value)
+	}
+	return fmt.Sprintf("%.2f%s", *m.Value, unit)
+}
+
+func plainBytesMetric(m platform.IntMetric) string {
+	if m.Value == nil || m.Availability != platform.Available {
+		return "n/a"
+	}
+	return RSSText(*m.Value / (1024 * 1024))
 }
 
 // TypeDisplay maps API type codes to short labels.

@@ -186,8 +186,8 @@ Options:
   --pid PID                Filter by process or daemon PID
   --project TEXT           Filter by project path or name
   --status TEXT            Filter builds by final status
-	--include-logs           Include retained build log snippets
-	--include-project-path   Include full project paths in exports (default: basename only)
+  --include-logs           Include retained build log snippets
+  --include-project-path   Include full project paths in exports (default: basename only)
   --watch                  Continuously refresh non-interactive ps output
   --until DURATION         Stop watch mode after this duration
   --fail-on-rss MB         In watch mode, exit 3 when any process reaches this RSS
@@ -431,7 +431,7 @@ func runOneShot(ctx context.Context, opts Options, cmd string, args []string, st
 			fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
 			return 1
 		}
-		if err := writeValue(stdout, host, opts.Output, func() { fmt.Fprintf(stdout, "sampled_at_ms=%d\n", host.SampledAtMs) }); err != nil {
+		if err := writeValue(stdout, host, opts.Output, func() { render.WriteHostPlain(stdout, host) }); err != nil {
 			fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
 			return 1
 		}
