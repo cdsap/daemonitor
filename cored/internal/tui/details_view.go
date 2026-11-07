@@ -160,6 +160,15 @@ func detailTelemetry(m Model, p model.Process, width int) []string {
 		detailField("Metaspace cmt", optionalInt64Text(p.MetaspaceCommittedMB, "MB")),
 		detailField("Other pools", "n/a (not collected)"),
 		"",
+		"NATIVE MEMORY",
+		detailField("Resident", optionalBytesText(p.ResidentBytes)),
+		detailField("Virtual", optionalBytesText(p.VirtualBytes)),
+		detailField("Private committed", optionalBytesText(p.PrivateCommittedBytes)),
+		detailField("Proportional (PSS)", optionalBytesText(p.ProportionalBytes)),
+		detailField("Physical footprint", optionalBytesText(p.PhysicalFootprintBytes)),
+		detailField("Swap", optionalBytesText(p.SwapBytes)),
+		detailField("Peak resident", optionalBytesText(p.PeakResidentBytes)),
+		"",
 		"GC COUNTERS / RATES",
 		detailField("Young count", optionalInt64Text(p.YoungGCCount, "")),
 		detailField("Old count", optionalInt64Text(p.OldGCCount, "")),
@@ -242,6 +251,26 @@ func optionalMetricBytes(metric model.IntMetric) string {
 		return "n/a"
 	}
 	return render.RSSText(*metric.Value / (1024 * 1024))
+}
+
+func optionalBytesText(v *int64) string {
+	if v == nil {
+		return "n/a"
+	}
+	return formatBytes(*v)
+}
+
+func formatBytes(bytes int64) string {
+	units := []string{"B", "KB", "MB", "GB"}
+	value := float64(bytes)
+	unit := 0
+	for value >= 1024 && unit < len(units)-1 {
+		value /= 1024
+		unit++
+	}
+	formatted := fmt.Sprintf("%.1f", value)
+	formatted = strings.TrimRight(strings.TrimRight(formatted, "0"), ".")
+	return formatted + " " + units[unit]
 }
 
 func gcRateText(history []model.Process, p model.Process) string {

@@ -621,14 +621,18 @@ func TestDetailsShowOptionalTelemetryAndKeepZeroDistinctFromUnavailable(t *testi
 	cpu := 0.0
 	p := model.Process{PID: 9, Type: "GRADLE_DAEMON", YoungGCCount: &zero, HeapUsedMB: &zero, SampledAtMs: 2}
 	m := NewModel(Config{Now: fixedNow, NoColor: true})
-	m.width, m.height, m.detailsOpen, m.detailProcess = 80, 50, true, &p
+	m.width, m.height, m.detailsOpen, m.detailProcess = 80, 90, true, &p
 	m.detailHost = model.HostMetrics{
 		LogicalProcessors: model.IntMetric{Value: &zero},
 		CPUUsagePercent:   model.RealMetric{Value: &cpu},
 		MemoryUsedBytes:   model.IntMetric{Value: &zero},
 	}
 	body := m.View().Content
-	for _, want := range []string{"JVM MEMORY POOLS", "GC COUNTERS / RATES", "JIT / CODE CACHE", "PROCESS LIFECYCLE", "HOST RESOURCE CONTEXT", "COLLECTION CAPABILITIES", "Young count    0", "CPUs           0", "CPU usage      0.0%", "Memory used    0 MB", "Code cache     n/a"} {
+	for _, want := range []string{
+		"OS ACTIVITY", "NATIVE MEMORY", "JVM MEMORY POOLS", "GC COUNTERS / RATES", "JIT / CODE CACHE",
+		"PROCESS LIFECYCLE", "HOST RESOURCE CONTEXT", "COLLECTION CAPABILITIES",
+		"Young count    0", "CPUs           0", "CPU usage      0.0%", "Memory used    0 MB", "Code cache     n/a",
+	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("details missing %q: %s", want, body)
 		}
@@ -652,7 +656,7 @@ func TestDetailsShowOSActivityWithMixedAvailability(t *testing.T) {
 		CPUCoresUsed:             &cores,
 	}
 	m := NewModel(Config{Now: fixedNow, NoColor: true})
-	m.width, m.height, m.detailsOpen, m.detailProcess = 80, 50, true, &p
+	m.width, m.height, m.detailsOpen, m.detailProcess = 100, 80, true, &p
 	body := m.View().Content
 	for _, want := range []string{
 		"OS ACTIVITY",
@@ -664,6 +668,73 @@ func TestDetailsShowOSActivityWithMixedAvailability(t *testing.T) {
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("details missing %q: %s", want, body)
+		}
+	}
+}
+
+func TestDetailsShowNativeMemoryMetricsInTelemetry(t *testing.T) {
+	p := model.Process{
+		PID:                    9,
+		ResidentBytes:          int64Ptr(1536),
+		VirtualBytes:           int64Ptr(2 * 1024 * 1024),
+		PrivateCommittedBytes:  int64Ptr(3 * 1024 * 1024 * 1024),
+		ProportionalBytes:      int64Ptr(6),
+		PhysicalFootprintBytes: int64Ptr(1024),
+		SwapBytes:              int64Ptr(0),
+		PeakResidentBytes:      int64Ptr(4 * 1024 * 1024),
+	}
+	m := NewModel(Config{Now: fixedNow, NoColor: true})
+	m.width, m.height, m.detailsOpen, m.detailProcess = 120, 80, true, &p
+
+	body := m.View().Content
+	for _, want := range []struct{ label, value string }{
+		{"NATIVE MEMORY", ""},
+		{"Resident", "1.5 KB"},
+		{"Virtual", "2 MB"},
+		{"Private committed", "3 GB"},
+		{"Proportional (PSS)", "6 B"},
+		{"Physical footprint", "1 KB"},
+		{"Swap", "0 B"},
+		{"Peak resident", "4 MB"},
+	} {
+		if want.value == "" {
+			if !strings.Contains(body, want.label) {
+				t.Fatalf("native memory details missing %q: %s", want.label, body)
+			}
+			continue
+		}
+		found := false
+		for _, line := range strings.Split(body, "\n") {
+			if strings.Contains(line, want.label) && strings.Contains(line, want.value) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("native memory details missing %q=%q: %s", want.label, want.value, body)
+		}
+	}
+}
+
+func TestDetailsShowNativeMemoryUnavailableAsNA(t *testing.T) {
+	p := model.Process{PID: 9}
+	m := NewModel(Config{Now: fixedNow, NoColor: true})
+	m.width, m.height, m.detailsOpen, m.detailProcess = 120, 80, true, &p
+
+	body := m.View().Content
+	if !strings.Contains(body, "NATIVE MEMORY") {
+		t.Fatalf("native memory section missing: %s", body)
+	}
+	for _, label := range []string{"Resident", "Virtual", "Private committed", "Proportional (PSS)", "Physical footprint", "Swap", "Peak resident"} {
+		found := false
+		for _, line := range strings.Split(body, "\n") {
+			if strings.Contains(line, label) && strings.Contains(line, "n/a") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("native memory field %q was not unavailable: %s", label, body)
 		}
 	}
 }
@@ -906,6 +977,8 @@ func pids(ps []model.Process) []int32 {
 }
 
 func strPtr(s string) *string { return &s }
+
+func int64Ptr(v int64) *int64 { return &v }
 
 type errString string
 
