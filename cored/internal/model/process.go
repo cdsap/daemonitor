@@ -3,16 +3,26 @@ package model
 // Process is an IPC snapshot of a Gradle-related process.
 // Field names mirror the Kotlin GradleProcess domain for dual-run clients.
 type Process struct {
-	PID                        int32    `json:"pid"`
-	ParentPID                  int32    `json:"parent_pid"`
-	Type                       string   `json:"type"`
-	Name                       string   `json:"name"`
-	CommandLine                string   `json:"command_line"`
-	WorkingDirectory           *string  `json:"working_directory"`
-	ProjectPath                *string  `json:"project_path"`
-	RSSMemoryMB                int64    `json:"rss_memory_mb"`
-	VirtualMemoryMB            *int64   `json:"virtual_memory_mb"`
-	SwapMemoryMB               *int64   `json:"swap_memory_mb"`
+	PID              int32   `json:"pid"`
+	ParentPID        int32   `json:"parent_pid"`
+	Type             string  `json:"type"`
+	Name             string  `json:"name"`
+	CommandLine      string  `json:"command_line"`
+	WorkingDirectory *string `json:"working_directory"`
+	ProjectPath      *string `json:"project_path"`
+	RSSMemoryMB      int64   `json:"rss_memory_mb"`
+	VirtualMemoryMB  *int64  `json:"virtual_memory_mb"`
+	SwapMemoryMB     *int64  `json:"swap_memory_mb"`
+	// Platform-faithful memory metrics. A nil value means the platform does not
+	// expose that measurement; it is never filled with a different metric.
+	ResidentBytes              *int64   `json:"resident_bytes"`
+	VirtualBytes               *int64   `json:"virtual_bytes"`
+	PrivateCommittedBytes      *int64   `json:"private_committed_bytes"`
+	ProportionalBytes          *int64   `json:"proportional_bytes"`
+	PhysicalFootprintBytes     *int64   `json:"physical_footprint_bytes"`
+	SwapBytes                  *int64   `json:"swap_bytes"`
+	PeakResidentBytes          *int64   `json:"peak_resident_bytes"`
+	ProportionalSampledAtMs    *int64   `json:"proportional_sampled_at_ms"`
 	ThreadCount                *int64   `json:"thread_count"`
 	ReadBytes                  *int64   `json:"read_bytes"`
 	WriteBytes                 *int64   `json:"write_bytes"`
@@ -182,4 +192,23 @@ type CollectorCadences struct {
 	JVMJITCodeCacheMs int64 `json:"jvm_jit_code_cache_ms"`
 	LinuxPSSMs        int64 `json:"linux_pss_ms"`
 	ContainerJobMs    int64 `json:"container_job_ms"`
+}
+
+// ProcessEvent is one lifecycle row from process_events (schema_version 1).
+type ProcessEvent struct {
+	SchemaVersion     int    `json:"schema_version"`
+	EventType         string `json:"event_type"`
+	TimestampMs       int64  `json:"timestamp_ms"`
+	ProcessInstanceID string `json:"process_instance_id"`
+	PID               int32  `json:"pid"`
+	ProcessType       string `json:"process_type,omitempty"`
+	Source            string `json:"source"`
+}
+
+// Events is the `/v1/events` response body.
+type Events struct {
+	SchemaVersion int            `json:"schema_version"`
+	SinceMs       int64          `json:"since_ms"`
+	Count         int            `json:"count"`
+	Events        []ProcessEvent `json:"events"`
 }

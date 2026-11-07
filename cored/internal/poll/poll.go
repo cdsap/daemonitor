@@ -43,6 +43,8 @@ type priorCPU struct {
 	wallClock     time.Time
 }
 
+// incarnationKey identifies a process incarnation for counter series (CPU deltas).
+// PID alone is insufficient because operating systems reuse PIDs.
 type incarnationKey struct {
 	pid          int32
 	createTimeMs int64
@@ -67,15 +69,19 @@ func cpuUsage(now time.Time, cpus int, current priorCPU, prior priorCPU, ok bool
 
 // Collector lists Gradle-related processes using OS process APIs (gopsutil ≈ OSHI).
 type Collector struct {
-	mu               sync.Mutex
-	priors           map[incarnationKey]priorCPU
-	cpus             int
-	Heap             *heap.Prober
-	Platform         platform.PlatformCollector
-	Observe          *observe.Metrics
-	Cadences         observe.Cadences
-	ProbeConcurrency int
-	PollInterval     time.Duration
+	mu                    sync.Mutex
+	priors                map[incarnationKey]priorCPU
+	proportional          map[int32]int64
+	proportionalValues    map[int32]*int64
+	proportionalSampledAt map[int32]*int64
+	cpus                  int
+	HostID                string
+	Heap                  *heap.Prober
+	Platform              platform.PlatformCollector
+	Observe               *observe.Metrics
+	Cadences              observe.Cadences
+	ProbeConcurrency      int
+	PollInterval          time.Duration
 }
 
 func NewCollector() *Collector {
@@ -88,14 +94,18 @@ func NewCollector() *Collector {
 	prober.CacheTTL = cadences.JVMHeapGC
 	prober.EnableAdvancedTelemetry = true
 	return &Collector{
-		priors:           make(map[incarnationKey]priorCPU),
-		cpus:             n,
-		Heap:             prober,
-		Platform:         platform.New(),
-		Observe:          &observe.Metrics{},
-		Cadences:         cadences,
-		ProbeConcurrency: observe.DefaultJVMProbeConcurrency,
-		PollInterval:     cadences.ProcessOS,
+		priors:                make(map[incarnationKey]priorCPU),
+		proportional:          make(map[int32]int64),
+		proportionalValues:    make(map[int32]*int64),
+		proportionalSampledAt: make(map[int32]*int64),
+		cpus:                  n,
+		HostID:                platform.LocalHostID(),
+		Heap:                  prober,
+		Platform:              platform.New(),
+		Observe:               &observe.Metrics{},
+		Cadences:              cadences,
+		ProbeConcurrency:      observe.DefaultJVMProbeConcurrency,
+		PollInterval:          cadences.ProcessOS,
 	}
 }
 
@@ -128,6 +138,10 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 	seenPIDs := make(map[int32]struct{}, len(pids))
 	out := make([]model.Process, 0, 8)
 	var jvmJobs []pendingJVM
+	hostID := c.HostID
+	if hostID == "" {
+		hostID = platform.LocalHostID()
+	}
 
 	// Pass 1: discovery + OS metrics only. JVM probes must not delay this path.
 	for _, pid := range pids {
@@ -161,6 +175,7 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 			platMetrics = c.Platform.CollectProcess(ctx, platform.ProcessIdentity{
 				PID:          pid,
 				CreateTimeMs: startMs,
+				HostID:       hostID,
 			})
 			if platMetrics.Identity.CreateTimeMs > 0 {
 				startMs = platMetrics.Identity.CreateTimeMs
@@ -170,6 +185,46 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 		rssMB := int64(0)
 		if platMetrics.ResidentBytes.Value != nil {
 			rssMB = *platMetrics.ResidentBytes.Value / (1024 * 1024)
+		}
+
+		platformMem := platformMemory{
+			privateCommittedBytes:  platMetrics.PrivateCommittedBytes.Value,
+			proportionalBytes:      platMetrics.ProportionalBytes.Value,
+			physicalFootprintBytes: platMetrics.PhysicalFootprintBytes.Value,
+			peakResidentBytes:      platMetrics.PeakResidentBytes.Value,
+		}
+		if platMetrics.ProportionalBytes.SampledAtMs > 0 {
+			sampled := platMetrics.ProportionalBytes.SampledAtMs
+			platformMem.proportionalSampledAt = &sampled
+		}
+		c.mu.Lock()
+		lastProportional := c.proportional[pid]
+		c.mu.Unlock()
+		if metrics, err := collectPlatformMemory(pid, shouldSampleProportional(now, lastProportional), now); err == nil {
+			if metrics.privateCommittedBytes != nil {
+				platformMem.privateCommittedBytes = metrics.privateCommittedBytes
+			}
+			if metrics.physicalFootprintBytes != nil {
+				platformMem.physicalFootprintBytes = metrics.physicalFootprintBytes
+			}
+			if metrics.peakResidentBytes != nil {
+				platformMem.peakResidentBytes = metrics.peakResidentBytes
+			}
+			if metrics.proportionalSampledAt != nil {
+				platformMem.proportionalBytes = metrics.proportionalBytes
+				platformMem.proportionalSampledAt = metrics.proportionalSampledAt
+				c.mu.Lock()
+				c.proportional[pid] = *metrics.proportionalSampledAt
+				c.proportionalValues[pid] = metrics.proportionalBytes
+				c.proportionalSampledAt[pid] = metrics.proportionalSampledAt
+				c.mu.Unlock()
+			}
+		}
+		if platformMem.proportionalBytes == nil {
+			c.mu.Lock()
+			platformMem.proportionalBytes = c.proportionalValues[pid]
+			platformMem.proportionalSampledAt = c.proportionalSampledAt[pid]
+			c.mu.Unlock()
 		}
 
 		var cpuPct, cpuCoresUsed *float64
@@ -247,6 +302,11 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 			ProjectPath:      project,
 			RSSMemoryMB:      rssMB,
 			VirtualMemoryMB:  osMetrics.virtualMemoryMB, SwapMemoryMB: osMetrics.swapMemoryMB,
+			ResidentBytes: platMetrics.ResidentBytes.Value,
+			VirtualBytes:  osMetrics.virtualBytes, SwapBytes: osMetrics.swapBytes,
+			PrivateCommittedBytes: platformMem.privateCommittedBytes,
+			ProportionalBytes:     platformMem.proportionalBytes, ProportionalSampledAtMs: platformMem.proportionalSampledAt,
+			PhysicalFootprintBytes: platformMem.physicalFootprintBytes, PeakResidentBytes: platformMem.peakResidentBytes,
 			ThreadCount: osMetrics.threadCount, ReadBytes: osMetrics.readBytes, WriteBytes: osMetrics.writeBytes,
 			ReadOperations: osMetrics.readOperations, WriteOperations: osMetrics.writeOperations,
 			MinorPageFaults: osMetrics.minorPageFaults, MajorPageFaults: osMetrics.majorPageFaults,
@@ -284,6 +344,13 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 	for key := range c.priors {
 		if _, ok := seen[key]; !ok {
 			delete(c.priors, key)
+		}
+	}
+	for pid := range c.proportional {
+		if _, ok := seenPIDs[pid]; !ok {
+			delete(c.proportional, pid)
+			delete(c.proportionalValues, pid)
+			delete(c.proportionalSampledAt, pid)
 		}
 	}
 	c.mu.Unlock()
@@ -419,6 +486,7 @@ func ShouldProbeLiveHeap(kind string) bool {
 
 type osMetrics struct {
 	virtualMemoryMB, swapMemoryMB, threadCount             *int64
+	virtualBytes, swapBytes                                *int64
 	readBytes, writeBytes, readOperations, writeOperations *int64
 	minorPageFaults, majorPageFaults                       *int64
 	voluntaryContextSwitches, involuntaryContextSwitches   *int64
@@ -429,9 +497,11 @@ func osMetricsFromPlatform(pm platform.ProcessPlatformMetrics) osMetrics {
 	m := osMetrics{}
 	if pm.VirtualBytes.Value != nil {
 		m.virtualMemoryMB = ptrInt64(*pm.VirtualBytes.Value / (1024 * 1024))
+		m.virtualBytes = pm.VirtualBytes.Value
 	}
 	if pm.SwapBytes.Value != nil {
 		m.swapMemoryMB = ptrInt64(*pm.SwapBytes.Value / (1024 * 1024))
+		m.swapBytes = pm.SwapBytes.Value
 	}
 	m.threadCount = pm.ThreadCount.Value
 	m.readBytes = pm.LogicalReadBytesTotal.Value
