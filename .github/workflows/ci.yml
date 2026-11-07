@@ -128,7 +128,12 @@ jobs:
             package_task: packageMsi
             package_glob: build/compose/binaries/main/msi/*.msi
             launcher: build/compose/binaries/main/app/Daemonitor/Daemonitor.exe
-          - os: macos-latest
+          - os: macos-13
+            platform: macos
+            package_task: packageDmg
+            package_glob: build/compose/binaries/main/dmg/*.dmg
+            launcher: build/compose/binaries/main/app/Daemonitor.app/Contents/MacOS/Daemonitor
+          - os: macos-14
             platform: macos
             package_task: packageDmg
             package_glob: build/compose/binaries/main/dmg/*.dmg
@@ -265,12 +270,45 @@ jobs:
           echo "- Harness: \`cored/scripts/dual-run-linux.sh\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Test: \`DualRunHonestyTest\` (\`DAEMONITOR_DUAL_RUN=1\`)" >> "$GITHUB_STEP_SUMMARY"
 
+  jvm-compatibility:
+    name: JVM telemetry (JDK ${{ matrix.jdk }})
+    strategy:
+      fail-fast: false
+      matrix:
+        jdk: ['17', '21', '25']
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ matrix.jdk }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.jdk }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: cored/go.mod
+          cache-dependency-path: cored/go.sum
+
+      - name: Run JVM probe and serialization tests
+        working-directory: cored
+        run: go test ./internal/heap ./internal/poll ./internal/api -count=1
+
+      - name: Summarize JVM compatibility
+        if: always()
+        run: |
+          echo "### JVM telemetry compatibility" >> "$GITHUB_STEP_SUMMARY"
+          echo "- JDK: ${{ matrix.jdk }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Probe, collector, API, and JSON tests: executed" >> "$GITHUB_STEP_SUMMARY"
+
   cored:
     name: Go cored (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-13, macos-14]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -340,11 +378,23 @@ jobs:
         if: runner.os == 'Linux'
         run: ./cored/scripts/cross-compile-cli.sh build/cli-cross
 
+      - name: Verify Linux cgroup v2 host
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          test -r /sys/fs/cgroup/cgroup.controllers
+          grep -qw cpu /sys/fs/cgroup/cgroup.controllers
+          grep -qw memory /sys/fs/cgroup/cgroup.controllers
+          {
+            echo "### Linux cgroup v2"
+            echo "- cpu and memory controllers: available"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload cored cross artifacts
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
-          name: daemonitor-cored-cross-${{ github.sha }}
+          name: daemonitor-cored-cross-${{ matrix.os }}-${{ github.sha }}
           path: build/cored-cross/*
           if-no-files-found: error
           retention-days: 7
