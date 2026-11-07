@@ -105,6 +105,21 @@ GET /v1/daemon-logs/{pid}/tail   # lines + parsed U3 events
 GET /v1/builds?limit=<n>&pid=<pid>&project=<text>&status=<status>
 ```
 
+## Security and privacy
+
+Daemonitor is local-only by default: the core does not upload telemetry or start a
+remote exporter. Command lines and daemon-log lines are redacted before storage;
+environment values are never collected; JVM properties are restricted to an
+allowlist; and JVM diagnostic output is used only for the requested probe and is
+not persisted. Probe failures cross the API as stable categories, never raw tool
+stderr.
+
+The IPC socket and SQLite database are owner-only on supported local filesystems.
+History, event, build, and export queries are bounded. CLI exports include only
+project and log basenames by default; pass `--include-project-path` when a full
+path is explicitly needed. MCP remains an optional, read-only local surface and
+inherits the same redaction and result bounds.
+
 ## Status
 
 - Poll + classify works on macOS against live Gradle/Kotlin daemons
@@ -118,6 +133,8 @@ GET /v1/builds?limit=<n>&pid=<pid>&project=<text>&status=<status>
 - **Linux dual-run honesty in CI:** `dual-run-honesty` job runs `scripts/dual-run-linux.sh`
 - **First-class module:** top-level `cored/` (`github.com/cdsap/daemonitor/cored`); left `spikes/`
 - **Live heap (Go path):** `internal/heap` (`jcmd`/`jstat`) wired into poll / `/v1/processes` (#245)
+- **Platform-faithful process memory:** byte metrics and native extras are documented in
+  [`docs/process-memory-metrics.md`](docs/process-memory-metrics.md) (#401)
 
 ## Dual-run with Kotlin clients
 

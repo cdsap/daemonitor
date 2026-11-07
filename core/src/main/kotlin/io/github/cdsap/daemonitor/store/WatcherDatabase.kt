@@ -17,6 +17,13 @@ import io.github.cdsap.daemonitor.persistence.BuildRepository
 import io.github.cdsap.daemonitor.persistence.ProcessSample
 import io.github.cdsap.daemonitor.persistence.ProcessSampleRepository
 import io.github.cdsap.daemonitor.persistence.RetentionRepository
+import io.github.cdsap.daemonitor.persistence.CollectionCapability
+import io.github.cdsap.daemonitor.persistence.MetricDefinition
+import io.github.cdsap.daemonitor.persistence.MetricSample
+import io.github.cdsap.daemonitor.persistence.NormalizedMetricSample
+import io.github.cdsap.daemonitor.persistence.ProcessEvent
+import io.github.cdsap.daemonitor.persistence.ProcessInstance
+import io.github.cdsap.daemonitor.persistence.ResourceScope
 import io.github.cdsap.daemonitor.platform.AppDirectories
 import io.github.cdsap.daemonitor.store.db.Process_samples
 import io.github.cdsap.daemonitor.store.db.WatcherDb
@@ -63,7 +70,16 @@ class WatcherDatabase private constructor(
     fun insertSample(sample: GradleProcess, timestampMs: Long) {
         val live = sample.liveHeap
         val heapAvailable = live?.available == true
-        db.watcherQueries.insertSample(
+        db.transaction {
+            db.watcherQueries.upsertProcessInstance(
+                instance_id = processInstanceId(sample),
+                pid = sample.pid,
+                process_type = sample.type.name,
+                config_json = null,
+                first_observed_at = sample.startTimeMs,
+                last_observed_at = timestampMs,
+            )
+            db.watcherQueries.insertSample(
             timestamp = timestampMs,
             pid = sample.pid,
             parent_pid = sample.parentPid,
@@ -101,7 +117,92 @@ class WatcherDatabase private constructor(
             java_vendor = sample.javaVendor,
             active_processor_count = sample.activeProcessorCount,
             status = sample.status,
+            )
+        }
+    }
+
+    /** Stable identity for a process lifetime; a reused PID receives a new instance. */
+    fun processInstanceId(sample: GradleProcess): String = processInstanceId(sample.pid, sample.startTimeMs)
+
+    fun processInstanceId(pid: Long, startTimeMs: Long): String = "$pid:$startTimeMs"
+
+    fun upsertProcessInstance(instance: ProcessInstance) {
+        db.watcherQueries.upsertProcessInstance(
+            instance.instanceId, instance.pid, instance.processType.name, instance.configJson,
+            instance.firstObservedAtMs, instance.lastObservedAtMs,
         )
+    }
+
+    fun processInstancesForPid(pid: Long): List<ProcessInstance> =
+        db.watcherQueries.processInstancesByPid(pid).executeAsList().map {
+            ProcessInstance(
+                instanceId = it.instance_id,
+                pid = it.pid,
+                processType = runCatching { ProcessType.valueOf(it.process_type) }.getOrDefault(ProcessType.UNKNOWN_GRADLE_WORKER),
+                configJson = it.config_json,
+                firstObservedAtMs = it.first_observed_at,
+                lastObservedAtMs = it.last_observed_at,
+            )
+        }
+
+    fun insertMetricDefinition(definition: MetricDefinition) {
+        db.watcherQueries.insertMetricDefinition(
+            definition.metricId, definition.name, definition.unit, definition.kind,
+            definition.temporality, definition.source, definition.platform,
+        )
+    }
+
+    fun insertMetricSample(sample: MetricSample) {
+        db.watcherQueries.insertMetricSample(
+            sample.timestampMs, sample.instanceId, sample.scopeId, sample.metricId,
+            sample.intValue, sample.realValue, sample.source, sample.sampledAtMs,
+        )
+    }
+
+    fun insertProcessEvent(event: ProcessEvent) {
+        db.watcherQueries.insertProcessEvent(
+            event.instanceId, event.timestampMs, event.eventType, event.metadataJson, event.source,
+        )
+    }
+
+    fun upsertResourceScope(scope: ResourceScope) {
+        db.watcherQueries.upsertResourceScope(
+            scope.scopeId, scope.scopeType, scope.identity, scope.metadataJson,
+            scope.firstObservedAtMs, scope.lastObservedAtMs,
+        )
+    }
+
+    fun upsertCollectionCapability(capability: CollectionCapability) {
+        db.watcherQueries.upsertCollectionCapability(
+            capability.capabilityId, capability.name, capability.source,
+            if (capability.supported) 1L else 0L, if (capability.available) 1L else 0L,
+            capability.detailsJson, capability.updatedAtMs,
+        )
+    }
+
+    fun metricSamples(
+        metricId: String,
+        fromMs: Long = Long.MIN_VALUE,
+        toMs: Long = Long.MAX_VALUE,
+        instanceId: String? = null,
+        limit: Long = DEFAULT_QUERY_LIMIT,
+    ): List<NormalizedMetricSample> {
+        val max = limit.coerceQueryLimit()
+        val normalized = db.watcherQueries.normalizedMetricSamples(
+            metricId, fromMs, toMs, max,
+        ).executeAsList().map {
+            NormalizedMetricSample(it.timestamp, it.instance_id, it.metric_id, it.int_value,
+                it.real_value, it.source, it.sampled_at)
+        }
+        val legacy = when (metricId) {
+            LEGACY_RSS_METRIC -> db.watcherQueries.legacyMetricSamples(fromMs, toMs, max)
+                .executeAsList().map { NormalizedMetricSample(it.timestamp, "legacy-pid:${it.pid}", metricId, it.rss_memory_mb, null, "legacy", it.timestamp) }
+            LEGACY_CPU_METRIC -> db.watcherQueries.legacyMetricSamples(fromMs, toMs, max)
+                .executeAsList().mapNotNull { it.cpu_percent?.let { value -> NormalizedMetricSample(it.timestamp, "legacy-pid:${it.pid}", metricId, null, value, "legacy", it.timestamp) } }
+            else -> emptyList()
+        }
+        return (normalized + legacy).filter { instanceId == null || it.instanceId == instanceId }
+            .sortedByDescending { it.timestampMs }.take(max.toInt())
     }
 
     fun insertBuild(build: Build) {
@@ -215,6 +316,9 @@ class WatcherDatabase private constructor(
         val cutoff = RetentionPolicy.DEFAULT.cutoffEpochMs(nowMs, retentionDays)
         db.watcherQueries.purgeSamplesOlderThan(cutoff)
         db.watcherQueries.purgeBuildsOlderThan(cutoff)
+        db.watcherQueries.purgeMetricSamplesOlderThan(cutoff)
+        db.watcherQueries.purgeProcessEventsOlderThan(cutoff)
+        db.watcherQueries.purgeProcessInstancesOlderThan(cutoff)
         compactAfterPurge()
     }
 
@@ -339,6 +443,16 @@ class WatcherDatabase private constructor(
                 "ALTER TABLE process_samples ADD COLUMN java_version TEXT",
                 "ALTER TABLE process_samples ADD COLUMN java_vendor TEXT",
                 "ALTER TABLE process_samples ADD COLUMN active_processor_count INTEGER",
+                "CREATE TABLE IF NOT EXISTS process_instances (instance_id TEXT PRIMARY KEY, pid INTEGER NOT NULL, process_type TEXT NOT NULL, config_json TEXT, first_observed_at INTEGER NOT NULL, last_observed_at INTEGER NOT NULL)",
+                "CREATE INDEX IF NOT EXISTS process_instances_pid ON process_instances(pid)",
+                "CREATE TABLE IF NOT EXISTS metric_definitions (metric_id TEXT PRIMARY KEY, name TEXT NOT NULL, unit TEXT, kind TEXT NOT NULL, temporality TEXT NOT NULL, source TEXT NOT NULL, platform TEXT, UNIQUE(name, source, platform))",
+                "CREATE TABLE IF NOT EXISTS resource_scopes (scope_id TEXT PRIMARY KEY, scope_type TEXT NOT NULL, identity TEXT NOT NULL, metadata_json TEXT, first_observed_at INTEGER NOT NULL, last_observed_at INTEGER NOT NULL, UNIQUE(scope_type, identity))",
+                "CREATE TABLE IF NOT EXISTS metric_samples (sample_id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp INTEGER NOT NULL, instance_id TEXT NOT NULL REFERENCES process_instances(instance_id), scope_id TEXT REFERENCES resource_scopes(scope_id), metric_id TEXT NOT NULL REFERENCES metric_definitions(metric_id), int_value INTEGER, real_value REAL, source TEXT NOT NULL, sampled_at INTEGER NOT NULL, CHECK ((int_value IS NOT NULL AND real_value IS NULL) OR (int_value IS NULL AND real_value IS NOT NULL)))",
+                "CREATE INDEX IF NOT EXISTS metric_samples_instance_metric_ts ON metric_samples(instance_id, metric_id, timestamp)",
+                "CREATE INDEX IF NOT EXISTS metric_samples_metric_ts ON metric_samples(metric_id, timestamp)",
+                "CREATE TABLE IF NOT EXISTS process_events (event_id INTEGER PRIMARY KEY AUTOINCREMENT, instance_id TEXT NOT NULL REFERENCES process_instances(instance_id), timestamp INTEGER NOT NULL, event_type TEXT NOT NULL, metadata_json TEXT, source TEXT NOT NULL)",
+                "CREATE INDEX IF NOT EXISTS process_events_instance_ts ON process_events(instance_id, timestamp)",
+                "CREATE TABLE IF NOT EXISTS collection_capabilities (capability_id TEXT PRIMARY KEY, name TEXT NOT NULL, source TEXT NOT NULL, supported INTEGER NOT NULL, available INTEGER NOT NULL, details_json TEXT, updated_at INTEGER NOT NULL)",
             ).forEach { sql -> runCatching { driver.execute(null, sql, 0) } }
         }
 
@@ -347,6 +461,8 @@ class WatcherDatabase private constructor(
         private const val AUTO_VACUUM_NONE = 0L
         private const val MAX_INCREMENTAL_VACUUM_PAGES = 100_000
         private const val BUSY_TIMEOUT_MS = 5_000
+        const val LEGACY_RSS_METRIC = "process.rss_memory_mb"
+        const val LEGACY_CPU_METRIC = "process.cpu_percent"
 
         private fun Long.coerceQueryLimit(): Long = coerceIn(1, MAX_QUERY_LIMIT)
 

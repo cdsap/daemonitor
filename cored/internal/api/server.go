@@ -13,6 +13,8 @@ import (
 	"github.com/cdsap/daemonitor/cored/internal/ipc"
 	"github.com/cdsap/daemonitor/cored/internal/logs"
 	"github.com/cdsap/daemonitor/cored/internal/model"
+	"github.com/cdsap/daemonitor/cored/internal/observe"
+	"github.com/cdsap/daemonitor/cored/internal/platform"
 	"github.com/cdsap/daemonitor/cored/internal/poll"
 	"github.com/cdsap/daemonitor/cored/internal/store"
 )
@@ -30,27 +32,40 @@ type Server struct {
 	Agg        *builds.Aggregator
 	Retention  time.Duration
 
-	mu         sync.RWMutex
-	last       model.Snapshot
-	prevActive map[int64]struct{}
-	interval   time.Duration
+	mu           sync.RWMutex
+	last         model.Snapshot
+	lastHost     platform.HostMetrics
+	prevActive   map[int64]struct{}
+	interval     time.Duration
+	hostInterval time.Duration
+	lastHostAt   time.Time
 }
+
+const (
+	defaultQueryLimit = 100
+	maxQueryLimit     = 500
+)
 
 func NewServer(socketPath, dbPath string, interval, retention time.Duration, gradleUserHome string) (*Server, error) {
 	st, err := store.Open(dbPath)
 	if err != nil {
 		return nil, err
 	}
+	collector := poll.NewCollector()
+	if interval > 0 {
+		collector.PollInterval = interval
+	}
 	s := &Server{
-		SocketPath: socketPath,
-		DBPath:     dbPath,
-		Collector:  poll.NewCollector(),
-		Logs:       logs.NewWatcher(gradleUserHome),
-		Store:      st,
-		Retention:  retention,
-		interval:   interval,
-		last:       model.Snapshot{Processes: []model.Process{}},
-		prevActive: map[int64]struct{}{},
+		SocketPath:   socketPath,
+		DBPath:       dbPath,
+		Collector:    collector,
+		Logs:         logs.NewWatcher(gradleUserHome),
+		Store:        st,
+		Retention:    retention,
+		interval:     interval,
+		hostInterval: collector.Cadences.Host,
+		last:         model.Snapshot{Processes: []model.Process{}},
+		prevActive:   map[int64]struct{}{},
 	}
 	s.Agg = builds.NewAggregator(
 		func(pid, startMs, endMs int64) []builds.Sample {
@@ -73,8 +88,12 @@ func (s *Server) Run(ctx context.Context) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/health", s.handleHealth)
+	mux.HandleFunc("/v1/capabilities", s.handleCapabilities)
+	mux.HandleFunc("/v1/self", s.handleSelf)
+	mux.HandleFunc("/v1/host", s.handleHost)
 	mux.HandleFunc("/v1/processes", s.handleProcesses)
 	mux.HandleFunc("/v1/processes/history", s.handleHistory)
+	mux.HandleFunc("/v1/events", s.handleEvents)
 	mux.HandleFunc("/v1/daemon-logs", s.handleDaemonLogs)
 	mux.HandleFunc("/v1/daemon-logs/", s.handleDaemonLogTail)
 	mux.HandleFunc("/v1/builds", s.handleBuilds)
@@ -105,12 +124,20 @@ func (s *Server) loop(ctx context.Context) {
 	defer t.Stop()
 	purgeEvery := time.NewTicker(30 * time.Second)
 	defer purgeEvery.Stop()
+	hostEvery := s.hostInterval
+	if hostEvery <= 0 {
+		hostEvery = observe.DefaultCadences().Host
+	}
+	hostTick := time.NewTicker(hostEvery)
+	defer hostTick.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
 			s.refresh(ctx)
+		case <-hostTick.C:
+			s.refreshHost(ctx)
 		case <-purgeEvery.C:
 			_, _ = s.Store.PurgeOlderThan(s.Retention)
 		}
@@ -122,7 +149,23 @@ func (s *Server) refresh(ctx context.Context) {
 	if err != nil {
 		return
 	}
+	writeStart := time.Now()
 	_ = s.Store.InsertSnapshot(snap)
+	hostID := ""
+	if s.Collector != nil {
+		hostID = s.Collector.HostID
+	}
+	if hostID == "" {
+		hostID = platform.LocalHostID()
+	}
+	_ = s.Store.ObserveProcesses(hostID, snap.SampledAtMs, snap.Processes)
+	if s.Collector != nil && s.Collector.Observe != nil {
+		size := int64(-1)
+		if info, err := os.Stat(s.DBPath); err == nil {
+			size = info.Size()
+		}
+		s.Collector.Observe.ObserveStorageWrite(time.Since(writeStart), size)
+	}
 	active := make(map[int64]struct{})
 	for _, p := range snap.Processes {
 		if p.Type == "GRADLE_DAEMON" {
@@ -156,6 +199,14 @@ func (s *Server) refresh(ctx context.Context) {
 	s.mu.Unlock()
 }
 
+func (s *Server) refreshHost(ctx context.Context) {
+	host := s.Collector.HostMetrics(ctx)
+	s.mu.Lock()
+	s.lastHost = host
+	s.lastHostAt = time.Now()
+	s.mu.Unlock()
+}
+
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	n, _ := s.Store.Count()
 	writeJSON(w, model.Health{
@@ -165,6 +216,68 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 		SampleCount: n,
 		DBPath:      s.DBPath,
 	})
+}
+
+func (s *Server) handleCapabilities(w http.ResponseWriter, _ *http.Request) {
+	caps := s.Collector.Capabilities()
+	metrics := make([]model.CapabilityMetric, 0, len(caps))
+	for _, c := range caps {
+		metrics = append(metrics, model.CapabilityMetric{
+			MetricName:   c.MetricName,
+			Availability: string(c.Availability),
+			Unit:         c.Unit,
+			Source:       c.Source,
+			Platform:     c.Platform,
+			Description:  c.Description,
+		})
+	}
+	writeJSON(w, model.Capabilities{
+		SchemaVersion: 1,
+		Platform:      poll.Platform(),
+		SampledAtMs:   time.Now().UnixMilli(),
+		Metrics:       metrics,
+	})
+}
+
+func (s *Server) handleSelf(w http.ResponseWriter, _ *http.Request) {
+	var snap observe.Snapshot
+	if s.Collector != nil && s.Collector.Observe != nil {
+		snap = s.Collector.Observe.Snapshot()
+	}
+	cadences := observe.DefaultCadences()
+	probeConcurrency := observe.DefaultJVMProbeConcurrency
+	if s.Collector != nil {
+		cadences = s.Collector.Cadences
+		if s.Collector.ProbeConcurrency > 0 {
+			probeConcurrency = s.Collector.ProbeConcurrency
+		}
+	}
+	writeJSON(w, model.SelfMetrics{
+		SchemaVersion: 1,
+		Platform:      poll.Platform(),
+		SampledAtMs:   time.Now().UnixMilli(),
+		Metrics:       snap,
+		Cadences: model.CollectorCadences{
+			ProcessOSMs:       cadences.ProcessOS.Milliseconds(),
+			HostMs:            cadences.Host.Milliseconds(),
+			JVMHeapGCMs:       cadences.JVMHeapGC.Milliseconds(),
+			JVMJITCodeCacheMs: cadences.JVMJITCodeCache.Milliseconds(),
+			LinuxPSSMs:        cadences.LinuxPSS.Milliseconds(),
+			ContainerJobMs:    cadences.ContainerJob.Milliseconds(),
+		},
+		ProbeConcurrency: probeConcurrency,
+	})
+}
+
+func (s *Server) handleHost(w http.ResponseWriter, _ *http.Request) {
+	s.mu.RLock()
+	host := s.lastHost
+	at := s.lastHostAt
+	s.mu.RUnlock()
+	if at.IsZero() {
+		host = s.Collector.HostMetrics(context.Background())
+	}
+	writeJSON(w, host)
 }
 
 func (s *Server) handleProcesses(w http.ResponseWriter, _ *http.Request) {
@@ -181,10 +294,10 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 			sinceMs = v
 		}
 	}
-	limit := 500
+	limit := defaultQueryLimit
 	if raw := r.URL.Query().Get("limit"); raw != "" {
 		if v, err := strconv.Atoi(raw); err == nil {
-			limit = v
+			limit = boundedLimit(v)
 		}
 	}
 	rows, err := s.Store.History(sinceMs, limit)
@@ -196,6 +309,32 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		SinceMs:   sinceMs,
 		Count:     len(rows),
 		Processes: rows,
+	})
+}
+
+func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
+	sinceMs := int64(0)
+	if raw := r.URL.Query().Get("since_ms"); raw != "" {
+		if v, err := strconv.ParseInt(raw, 10, 64); err == nil {
+			sinceMs = v
+		}
+	}
+	limit := defaultQueryLimit
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		if v, err := strconv.Atoi(raw); err == nil {
+			limit = boundedLimit(v)
+		}
+	}
+	rows, err := s.Store.ListEvents(sinceMs, limit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, model.Events{
+		SchemaVersion: 1,
+		SinceMs:       sinceMs,
+		Count:         len(rows),
+		Events:        rows,
 	})
 }
 
@@ -231,10 +370,10 @@ func (s *Server) handleDaemonLogTail(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleBuilds(w http.ResponseWriter, r *http.Request) {
-	limit := 100
+	limit := defaultQueryLimit
 	if raw := r.URL.Query().Get("limit"); raw != "" {
 		if v, err := strconv.Atoi(raw); err == nil {
-			limit = v
+			limit = boundedLimit(v)
 		}
 	}
 	var filters store.BuildFilters
@@ -346,4 +485,11 @@ func writeJSON(w http.ResponseWriter, v any) {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(v)
+}
+
+func boundedLimit(value int) int {
+	if value <= 0 || value > maxQueryLimit {
+		return defaultQueryLimit
+	}
+	return value
 }
