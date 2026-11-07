@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -99,6 +100,9 @@ func TestInsertHistoryAndPurge(t *testing.T) {
 }
 
 func TestOpenRestrictsDatabasePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX file modes are not enforced on Windows")
+	}
 	path := filepath.Join(t.TempDir(), "private.sqlite")
 	s, err := store.Open(path)
 	if err != nil {
