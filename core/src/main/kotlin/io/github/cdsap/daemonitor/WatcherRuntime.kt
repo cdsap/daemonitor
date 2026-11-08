@@ -2,7 +2,6 @@ package io.github.cdsap.daemonitor
 
 import io.github.cdsap.daemonitor.application.PollMonitoring
 import io.github.cdsap.daemonitor.application.MonitoringMode
-import io.github.cdsap.daemonitor.application.buildProcessingMode
 import io.github.cdsap.daemonitor.application.ProcessSource
 import io.github.cdsap.daemonitor.application.DaemonLogSource
 import io.github.cdsap.daemonitor.application.BuildWriter
@@ -33,15 +32,12 @@ class WatcherRuntime(
     private val monitoring = PollMonitoring(
         processSource = processSource,
         logSource = logSource,
+        builds = builds,
         samples = samples,
-        buildProcessingMode = mode.buildProcessingMode(
-            builds = builds,
-            aggregator = aggregator,
-            retentionPolicy = retentionPolicy,
-            retentionDays = retentionDays,
-            clock = clock,
-        ),
+        aggregator = aggregator,
+        mode = mode,
         retentionPolicy = retentionPolicy,
+        retentionDays = retentionDays,
         clock = clock,
     )
 
