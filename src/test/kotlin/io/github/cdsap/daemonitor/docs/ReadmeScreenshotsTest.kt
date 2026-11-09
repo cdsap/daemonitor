@@ -34,7 +34,7 @@ class ReadmeScreenshotsTest {
         val tuiImage: BufferedImage = assertNotNull(ImageIO.read(tui.toFile()), "TUI screenshot should be readable")
         assertEquals(860, tuiImage.width)
         assertEquals(466, tuiImage.height)
-        assertTrue(readme.contains("![Daemonitor CLI showing a live terminal table of Gradle-related processes with RSS, heap, CPU, and uptime](docs/images/cli-monitor.png)"))
+        assertTrue(readme.contains("![Daemonitor CLI process details showing OS activity, JVM memory pools, and native memory metrics](docs/images/cli-monitor.png)"))
     }
 
     @Test
@@ -53,11 +53,11 @@ class ReadmeScreenshotsTest {
         val state = SampleUi.liveState()
         val sample = state.rssTimeline.last()
 
-        assertEquals(1200L, sample.heapUsedByPid[4821L])
-        assertEquals(4096L, sample.heapLimitByPid[4821L])
-        assertEquals(220L, sample.heapUsedByPid[4914L])
-        assertEquals(410L, sample.heapUsedByPid[4930L])
-        assertEquals(300L, sample.heapUsedByPid[5077L])
+        assertEquals(1480L, sample.heapUsedByPid[6120L])
+        assertEquals(4096L, sample.heapLimitByPid[6120L])
+        assertEquals(190L, sample.heapUsedByPid[6204L])
+        assertEquals(480L, sample.heapUsedByPid[6218L])
+        assertEquals(360L, sample.heapUsedByPid[6301L])
 
         state.processes.forEach { process ->
             val used = sample.heapUsedByPid[process.pid]
