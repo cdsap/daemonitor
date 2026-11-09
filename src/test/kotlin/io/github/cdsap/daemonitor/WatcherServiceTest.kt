@@ -153,7 +153,8 @@ class WatcherServiceTest {
         )
         val service = WatcherService.forTests(
             runtime = runtime,
-            database = database,
+            buildRepository = database,
+            retentionRepository = database,
             settingsRepository = SettingsStore(tmp.resolve("settings.properties")),
             pollAction = { runtime.pollOnce() },
             mcpServerFactory = {
@@ -275,7 +276,8 @@ class WatcherServiceTest {
             builds = database,
             samples = database,
         ),
-        database = database,
+        buildRepository = database,
+        retentionRepository = database,
         settingsRepository = SettingsStore(tmp.resolve("settings.properties")),
         clock = clock,
         pollAction = pollAction,

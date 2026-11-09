@@ -3,9 +3,10 @@ package io.github.cdsap.daemonitor
 import io.github.cdsap.daemonitor.application.DaemonLog
 import io.github.cdsap.daemonitor.application.DaemonLogTailResult
 import io.github.cdsap.daemonitor.application.update.UpdateService
+import io.github.cdsap.daemonitor.persistence.BuildRepository
+import io.github.cdsap.daemonitor.persistence.RetentionRepository
 import io.github.cdsap.daemonitor.persistence.SettingsRepository
 import io.github.cdsap.daemonitor.store.SettingsStore
-import io.github.cdsap.daemonitor.store.WatcherDatabase
 import io.github.cdsap.daemonitor.ui.history.HistoryViewModel
 import io.github.cdsap.daemonitor.ui.live.DetailState
 import io.github.cdsap.daemonitor.ui.live.LiveViewModel
@@ -181,7 +182,8 @@ class WatcherService(
 
         internal fun forTests(
             runtime: WatcherRuntime,
-            database: WatcherDatabase,
+            buildRepository: BuildRepository,
+            retentionRepository: RetentionRepository,
             settingsRepository: SettingsRepository = SettingsStore(),
             clock: () -> Long = System::currentTimeMillis,
             pollAction: suspend () -> WatcherRuntime.PollResult = { runtime.pollOnce() },
@@ -192,8 +194,8 @@ class WatcherService(
         ): WatcherService {
             return WatcherService(
                 runtime = runtime,
-                historyService = HistoryService(database),
-                settingsService = SettingsService(settingsRepository, database, clock),
+                historyService = HistoryService(buildRepository),
+                settingsService = SettingsService(settingsRepository, retentionRepository, clock),
                 mcpController = McpServiceController.create(mcpServerFactory),
                 updateService = updateService,
                 monitoringService = MonitoringService(
