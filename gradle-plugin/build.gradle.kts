@@ -6,7 +6,6 @@ plugins {
 group = "io.github.cdsap.daemonitor"
 version = "0.1.0"
 
-
 gradlePlugin {
     plugins {
         create("daemonitor") {
