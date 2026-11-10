@@ -27,6 +27,7 @@ object DaemonitorMcpStdio {
                     builds = builds,
                     samples = samples,
                     processSource = processSource,
+                    history = db,
                 ),
             )
             McpMessageStream(input, output).serve(server)

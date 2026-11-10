@@ -5,7 +5,7 @@ import io.github.cdsap.daemonitor.domain.model.GradleProcess
 
 /** Application-facing read API used by MCP and other query consumers. */
 interface DaemonitorQueryService {
-    fun searchHistory(query: String, limit: Int): List<Build>
+    fun searchHistory(query: String, limit: Int): List<HistoryEntry>
 
     fun buildsForProcess(process: String, limit: Int): ProcessBuildResult
 
