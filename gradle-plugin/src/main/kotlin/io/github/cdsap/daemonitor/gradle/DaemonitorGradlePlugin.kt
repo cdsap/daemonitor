@@ -13,7 +13,10 @@ class DaemonitorGradlePlugin : Plugin<Project> {
             spec.parameters.socketPath.convention(project.providers.gradleProperty("daemonitor.cored.socket").orElse(defaultSocketPath()))
             spec.parameters.rootProjectPath.convention(project.rootProject.layout.projectDirectory.asFile.absolutePath)
         }
-        project.tasks.configureEach { task -> task.doFirst { service.get() } }
+        project.tasks.configureEach { task ->
+            task.usesService(service)
+            task.doFirst { service.get() }
+        }
         project.gradle.projectsEvaluated {
             if (project == project.rootProject) DevelocitySink.register(project) { service.get().closeNow() }
         }
