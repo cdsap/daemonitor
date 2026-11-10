@@ -2,7 +2,6 @@ package io.github.cdsap.daemonitor.gradle
 
 import java.net.InetAddress
 import java.nio.file.Path
-import java.time.Instant
 import java.util.UUID
 import org.gradle.api.Plugin
 import org.gradle.api.Project
@@ -87,6 +86,7 @@ abstract class DaemonitorObservationBuildService : org.gradle.api.services.Build
             val response = client().close(sessionId, closePayload())
             if (!response.isSuccess) throw ObservationClientException("cored close returned HTTP ${response.status}")
             closeSnapshot = response.body
+            ObservationReportSink(Path.of(parameters.rootProjectPath.get())).writeIfPresent(closeSnapshot)
         } catch (failure: Throwable) {
             warn("observation close failed; build result was not changed", failure)
         }
@@ -135,7 +135,7 @@ abstract class DaemonitorObservationBuildService : org.gradle.api.services.Build
             value.forEach { char ->
                 when (char) {
                     '\\' -> append("\\\\")
-                    '\"' -> append("\\\"")
+                    '"' -> append("\\\"")
                     '\n' -> append("\\n")
                     '\r' -> append("\\r")
                     '\t' -> append("\\t")
