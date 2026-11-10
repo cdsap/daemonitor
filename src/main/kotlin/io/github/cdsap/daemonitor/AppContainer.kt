@@ -88,6 +88,7 @@ class AppContainer(
                 builds = builds,
                 samples = samples,
                 processSource = ProcessSource { currentProcessesProvider() },
+                history = database,
             ),
         )
     }
