@@ -6,10 +6,6 @@ plugins {
 group = "io.github.cdsap.daemonitor"
 version = "0.1.0"
 
-repositories {
-    gradlePluginPortal()
-    mavenCentral()
-}
 
 gradlePlugin {
     plugins {
