@@ -15,8 +15,8 @@ class ReleaseMetadataTest {
     fun `Gradle project and native package versions are aligned for v1_2_3`() {
         val buildFile = Path.of("build.gradle.kts").readText()
 
-        assertTrue(buildFile.contains("version = \"1.2.3\""), buildFile)
-        assertTrue(buildFile.contains("val nativePackageVersion = \"1.2.3\""), buildFile)
+        assertTrue(buildFile.contains("version = \"1.2.4\""), buildFile)
+        assertTrue(buildFile.contains("val nativePackageVersion = \"1.2.4\""), buildFile)
     }
 
     @Test

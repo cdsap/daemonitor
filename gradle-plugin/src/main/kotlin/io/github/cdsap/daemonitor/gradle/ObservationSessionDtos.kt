@@ -1,54 +1,51 @@
 package io.github.cdsap.daemonitor.gradle
 
-/** Request fields accepted by cored's observation-session open endpoint. */
-data class ObservationSessionOpenRequest(
-    val sessionId: String? = null,
-    val rootProjectPath: String,
-    val buildId: String? = null,
-    val ciJobId: String? = null,
-    val hostId: String? = null,
-    val gradleJvmPid: Int? = null,
-    val gradleJvmStartTimeMs: Long? = null,
-    val startedAtMs: Long? = null,
-)
-
-/** Process identity supplied to cored when an observation session closes. */
-data class ObservationProcessHint(
-    val pid: Int,
-    val startTimeMs: Long? = null,
-    val type: String? = null,
-    val name: String? = null,
-)
-
-/** Request fields accepted by cored's observation-session close endpoint. */
-data class ObservationSessionCloseRequest(
-    val endedAtMs: Long? = null,
-    val outcome: String? = null,
-    val processHints: List<ObservationProcessHint> = emptyList(),
-)
-
-/** Phase-1 RSS summary returned by cored when an observation session closes. */
 data class ObservationSummary(
-    val schemaVersion: String,
-    val sessionId: String,
-    val rootProjectPath: String = "",
-    val buildId: String = "",
-    val startedAtMs: Long = 0,
-    val endedAtMs: Long = 0,
-    val outcome: String = "",
-    val processes: List<ProcessRssSummary> = emptyList(),
-    val totalPeakRssMb: Long = 0,
-    val spikeNotes: List<String> = emptyList(),
+    val name: String,
+    val association: String,
+    val hostId: String,
+    val processes: List<ProcessRssSummary>,
+    val buildsCount: Int,
+    val buildsSuccessCount: Int,
+    val buildsFailureCount: Int,
 )
 
 data class ProcessRssSummary(
-    val pid: Int,
-    val type: String = "",
-    val name: String = "",
-    val association: String = "",
-    val firstRssMb: Long? = null,
-    val peakRssMb: Long? = null,
-    val lastRssMb: Long? = null,
-    val deltaRssMb: Long? = null,
-    val sampleCount: Int = 0,
+    val hostId: String,
+    val pid: Long,
+    val startTimeMs: Long,
+    val sampleCount: Int,
+    val firstRssMb: Long,
+    val peakRssMb: Long,
+    val lastRssMb: Long,
+    val deltaRssMb: Long,
+    val association: String,
 )
+
+internal object ObservationSummaryParser {
+    fun parse(json: String): ObservationSummary {
+        fun string(name: String, source: String = json): String =
+            Regex("\\\"$name\\\"\\s*:\\s*\\\"((?:\\\\.|[^\\\"])*)\\\"")
+                .find(source)?.groupValues?.get(1)?.replace("\\\\\\\"", "\\\"")
+                ?: ""
+        fun number(name: String, source: String = json): Long =
+            Regex("\\\"$name\\\"\\s*:\\s*(-?\\d+)").find(source)?.groupValues?.get(1)?.toLongOrNull() ?: 0
+        val processBody = Regex("\\\"processes\\\"\\s*:\\s*\\[(.*)]\\s*,\\s*\\\"builds\\\"", RegexOption.DOT_MATCHES_ALL)
+            .find(json)?.groupValues?.get(1).orEmpty()
+        val processes = Regex("\\{(.*?)\\}", RegexOption.DOT_MATCHES_ALL).findAll(processBody).map { match ->
+            val body = match.value
+            ProcessRssSummary(
+                hostId = string("host_id", body), pid = number("pid", body), startTimeMs = number("start_time_ms", body),
+                sampleCount = number("sample_count", body).toInt(), firstRssMb = number("first_rss_mb", body),
+                peakRssMb = number("peak_rss_mb", body), lastRssMb = number("last_rss_mb", body),
+                deltaRssMb = number("delta_rss_mb", body), association = string("association", body),
+            )
+        }.toList()
+        val builds = Regex("\\\"builds\\\"\\s*:\\s*\\{(.*?)\\}", RegexOption.DOT_MATCHES_ALL).find(json)?.value.orEmpty()
+        return ObservationSummary(
+            name = string("name"), association = string("association"), hostId = string("host_id"), processes = processes,
+            buildsCount = number("count", builds).toInt(), buildsSuccessCount = number("success_count", builds).toInt(),
+            buildsFailureCount = number("failure_count", builds).toInt(),
+        )
+    }
+}

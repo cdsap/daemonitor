@@ -25,7 +25,7 @@ import (
 )
 
 // Version is overridden by release builds with Go's -ldflags -X option.
-var Version = "1.2.3"
+var Version = "1.2.4"
 
 // Server exposes a tiny HTTP API over local IPC (Unix socket or Windows named pipe).
 type Server struct {
