@@ -1,6 +1,6 @@
 rootProject.name = "daemonitor"
 
-include(":core", ":cli")
+include(":core", ":cli", ":gradle-plugin")
 
 pluginManagement {
     repositories {
