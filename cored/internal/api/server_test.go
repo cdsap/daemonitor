@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net"
@@ -99,6 +100,55 @@ func TestServerHealthAndProcessesOverUnixSocket(t *testing.T) {
 		t.Fatal("expected processes array (possibly empty), got null")
 	}
 
+	cancel()
+	select {
+	case <-errCh:
+	case <-time.After(3 * time.Second):
+		t.Fatal("server did not shut down")
+	}
+}
+
+func TestObservationSessionAPIRejectsMalformedAndUnknownRequests(t *testing.T) {
+	socket := ipc.TempEndpoint(t, "sessions-errors")
+	srv, err := api.NewServer(socket, filepath.Join(t.TempDir(), "core.sqlite"), time.Hour, time.Hour, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Run(ctx) }()
+	client := &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return ipc.Default.Dial(ctx, socket)
+	}}, Timeout: 3 * time.Second}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		resp, err := client.Get("http://daemonitor/v1/health")
+		if err == nil {
+			_ = resp.Body.Close()
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("server never became ready: %v", err)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	resp, err := client.Post("http://daemonitor/v1/observation-sessions/open", "application/json", bytes.NewBufferString("not-json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("malformed open status=%d", resp.StatusCode)
+	}
+	resp, err = client.Post("http://daemonitor/v1/observation-sessions/close", "application/json", bytes.NewBufferString("{\"name\":\"missing\"}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("unknown close status=%d", resp.StatusCode)
+	}
 	cancel()
 	select {
 	case <-errCh:

@@ -87,6 +87,9 @@ func (s *Store) migrate() error {
 	if err := s.ensureProcessInstancesAndEvents(); err != nil {
 		return err
 	}
+	if err := s.ensureObservationSessions(); err != nil {
+		return err
+	}
 	_, err := s.db.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion))
 	return err
 }
@@ -124,6 +127,7 @@ func (s *Store) createProcessSamplesAppAligned() error {
 CREATE TABLE IF NOT EXISTS process_samples (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   timestamp INTEGER NOT NULL,
+  host_id TEXT NOT NULL DEFAULT '',
   pid INTEGER NOT NULL,
   parent_pid INTEGER NOT NULL DEFAULT 0,
   process_type TEXT NOT NULL,
@@ -249,6 +253,7 @@ func (s *Store) ensureProcessSamplesAdditiveColumns(cols []string) error {
 		{"min_heap_mb", `ALTER TABLE process_samples ADD COLUMN min_heap_mb INTEGER`},
 		{"gc", `ALTER TABLE process_samples ADD COLUMN gc TEXT`},
 		{"start_time_ms", `ALTER TABLE process_samples ADD COLUMN start_time_ms INTEGER NOT NULL DEFAULT 0`},
+		{"host_id", `ALTER TABLE process_samples ADD COLUMN host_id TEXT NOT NULL DEFAULT ''`},
 		{"automated", `ALTER TABLE process_samples ADD COLUMN automated INTEGER NOT NULL DEFAULT 0`},
 	}
 	for _, a := range alters {
@@ -511,6 +516,10 @@ func contains(xs []string, want string) bool {
 }
 
 func (s *Store) InsertSnapshot(snap model.Snapshot) error {
+	return s.InsertSnapshotForHost("", snap)
+}
+
+func (s *Store) InsertSnapshotForHost(hostID string, snap model.Snapshot) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -519,7 +528,7 @@ func (s *Store) InsertSnapshot(snap model.Snapshot) error {
 
 	stmt, err := tx.Prepare(`
 INSERT INTO process_samples(
-  timestamp, pid, parent_pid, process_type, command_line,
+  timestamp, host_id, pid, parent_pid, process_type, command_line,
 	working_directory, project_path, rss_memory_mb, virtual_memory_mb, swap_memory_mb, resident_bytes, virtual_bytes,
 	private_committed_bytes, proportional_bytes, physical_footprint_bytes, swap_bytes, peak_resident_bytes,
 	proportional_sampled_at_ms, thread_count,
@@ -538,7 +547,7 @@ INSERT INTO process_samples(
  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
- ?, ?, ?)`)
+ ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -554,7 +563,7 @@ INSERT INTO process_samples(
 			heapAvail = 1
 		}
 		if _, err := stmt.Exec(
-			snap.SampledAtMs, p.PID, p.ParentPID, p.Type, p.CommandLine,
+			snap.SampledAtMs, hostID, p.PID, p.ParentPID, p.Type, p.CommandLine,
 			p.WorkingDirectory, p.ProjectPath, p.RSSMemoryMB, p.VirtualMemoryMB, p.SwapMemoryMB, p.ResidentBytes,
 			p.VirtualBytes, p.PrivateCommittedBytes, p.ProportionalBytes, p.PhysicalFootprintBytes, p.SwapBytes,
 			p.PeakResidentBytes, p.ProportionalSampledAtMs, p.ThreadCount,

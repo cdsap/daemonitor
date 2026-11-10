@@ -1,5 +1,6 @@
 package io.github.cdsap.daemonitor.gradle
 
+/** Request fields accepted by cored's observation-session open endpoint. */
 data class ObservationSessionOpenRequest(
     val sessionId: String? = null,
     val rootProjectPath: String,
@@ -11,6 +12,7 @@ data class ObservationSessionOpenRequest(
     val startedAtMs: Long? = null,
 )
 
+/** Process identity supplied to cored when an observation session closes. */
 data class ObservationProcessHint(
     val pid: Int,
     val startTimeMs: Long? = null,
@@ -18,12 +20,14 @@ data class ObservationProcessHint(
     val name: String? = null,
 )
 
+/** Request fields accepted by cored's observation-session close endpoint. */
 data class ObservationSessionCloseRequest(
     val endedAtMs: Long? = null,
     val outcome: String? = null,
     val processHints: List<ObservationProcessHint> = emptyList(),
 )
 
+/** Phase-1 RSS summary returned by cored when an observation session closes. */
 data class ObservationSummary(
     val schemaVersion: String,
     val sessionId: String,
