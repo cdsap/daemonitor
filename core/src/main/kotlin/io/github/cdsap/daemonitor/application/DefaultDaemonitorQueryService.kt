@@ -5,6 +5,7 @@ import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.persistence.BuildRepository
 import io.github.cdsap.daemonitor.persistence.ProcessSample
 import io.github.cdsap.daemonitor.persistence.ProcessSampleRepository
+import io.github.cdsap.daemonitor.persistence.HistoryRepository
 
 /**
  * Query service backed by persistence reads and a [ProcessSource].
@@ -14,9 +15,13 @@ class DefaultDaemonitorQueryService(
     private val builds: BuildRepository,
     private val samples: ProcessSampleRepository,
     private val processSource: ProcessSource,
+    private val history: HistoryRepository = (builds as? HistoryRepository) ?: object : HistoryRepository {
+        override fun searchHistory(query: String, limit: Long): List<HistoryEntry> =
+            builds.search(query, limit).map(::BuildHistoryEntry)
+    },
 ) : DaemonitorQueryService {
-    override fun searchHistory(query: String, limit: Int): List<Build> =
-        builds.search(query, limit.coerceQueryLimit())
+    override fun searchHistory(query: String, limit: Int): List<HistoryEntry> =
+        history.searchHistory(query, limit.coerceQueryLimit())
 
     override fun buildsForProcess(process: String, limit: Int): ProcessBuildResult {
         val safeLimit = limit.coerceQueryLimit()
