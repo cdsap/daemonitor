@@ -246,7 +246,7 @@ class DaemonitorMcpServer(
         "openedAtMs" to JsonNumber(startTimeMs),
         "closedAtMs" to jsonNumberOrNull(endTimeMs),
         "peakRssMb" to jsonNumberOrNull(peakRssMb),
-        "totalPeakRssMb" to JsonNumber(totalPeakRssMb),
+        "totalPeakRssMb" to jsonNumberOrNull(peakRssMb),
         "builds" to jsonObject(
             "count" to JsonNumber(buildCount),
             "successCount" to JsonNumber(successCount),

@@ -23,7 +23,6 @@ data class ObservationSessionHistoryEntry(
     val failureCount: Long,
 ) : HistoryEntry {
     val peakRssMb: Long? get() = processes.maxOfOrNull { it.peakRssMb }
-    val totalPeakRssMb: Long get() = processes.sumOf { it.peakRssMb }
 }
 
 data class ObservationProcessSummary(
