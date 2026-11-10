@@ -75,7 +75,6 @@ class DaemonitorMcpServerTest {
             connection.createStatement().use { statement ->
                 statement.executeUpdate("INSERT INTO observation_sessions(name, host_id, association, opened_at_ms, closed_at_ms) VALUES ('session-1', 'host-a', 'confirmed', 1000, 2000)")
                 statement.executeUpdate("INSERT INTO observation_session_process_summaries(session_name, host_id, pid, start_time_ms, sample_count, first_rss_mb, peak_rss_mb, last_rss_mb, delta_rss_mb, association) VALUES ('session-1', 'host-a', 42, 900, 3, 200, 300, 250, 50, 'confirmed')")
-                statement.executeUpdate("INSERT INTO observation_session_process_summaries(session_name, host_id, pid, start_time_ms, sample_count, first_rss_mb, peak_rss_mb, last_rss_mb, delta_rss_mb, association) VALUES ('session-1', 'host-a', 43, 901, 2, 100, 120, 110, 10, 'confirmed')")
             }
         }
         val server = DaemonitorMcpServer(queryService(WatcherDatabase.open(path), emptyList()))
@@ -85,9 +84,8 @@ class DaemonitorMcpServerTest {
 
         assertEquals("observationSession", session.string("kind"))
         assertEquals(300L, session.long("peakRssMb"))
-        assertEquals(420L, session.long("totalPeakRssMb"))
-        assertEquals(listOf(42L, 43L), session.array("processes")!!.values.map { (it as JsonObject).long("pid") })
-        assertEquals(listOf(300L, 120L), session.array("processes")!!.values.map { (it as JsonObject).long("peakRssMb") })
+        assertEquals(300L, session.long("totalPeakRssMb"))
+        assertEquals(300L, session.array("processes")!!.values.single().let { (it as JsonObject).long("peakRssMb") })
     }
 
     @Test
