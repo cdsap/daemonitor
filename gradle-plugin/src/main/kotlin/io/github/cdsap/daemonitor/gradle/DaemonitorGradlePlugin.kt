@@ -24,6 +24,8 @@ class DaemonitorGradlePlugin : Plugin<Project> {
             spec.parameters.rootProjectPath.convention(project.rootProject.layout.projectDirectory.asFile.absolutePath)
         }
 
+        // A shared service is started once, on first task execution, and closed by Gradle
+        // after the build. Attaching it to every task keeps the registration configuration-cache safe.
         project.tasks.configureEach { task ->
             task.doFirst { service.get() }
         }
