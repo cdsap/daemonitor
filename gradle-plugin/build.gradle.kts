@@ -16,13 +16,12 @@ gradlePlugin {
 }
 
 dependencies {
+    // Optional at consumer runtime: the bridge is reflection-only and is gated by Class.forName.
+    compileOnly("com.gradle:develocity-gradle-plugin:4.6.1")
+    implementation("io.github.cdsap:build-observability-core:0.0.7")
     testImplementation(kotlin("test"))
+    testImplementation("com.gradle:develocity-gradle-plugin:4.6.1")
 }
 
-kotlin {
-    jvmToolchain(21)
-}
-
-tasks.test {
-    useJUnitPlatform()
-}
+kotlin { jvmToolchain(21) }
+tasks.test { useJUnitPlatform() }
