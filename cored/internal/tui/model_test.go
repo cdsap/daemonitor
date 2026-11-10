@@ -401,7 +401,7 @@ func TestDetailsIgnoreBuildsForReplacedPID(t *testing.T) {
 func TestDetailsWideCommanderPanesAndLogTail(t *testing.T) {
 	p := model.Process{PID: 9, Type: "GRADLE_DAEMON", Name: "gradle", StartTimeMs: 100}
 	m := NewModel(Config{Now: fixedNow, NoColor: true})
-	m.width, m.height, m.detailsOpen, m.detailProcess = 160, 30, true, &p
+	m.width, m.height, m.detailsOpen, m.detailProcess = 160, 80, true, &p
 	m.detailLog = &logs.DaemonLog{PID: 9, GradleVersion: "8.0", Path: "/tmp/daemon.log"}
 	m.detailTail = &logs.Tail{PID: 9, Lines: []string{"old line", "newest Gradle line"}}
 	body := m.View().Content
@@ -614,13 +614,37 @@ func TestDetailsShowExtendedMetricsAndUnavailableValues(t *testing.T) {
 	threads, used, max := int64(12), int64(512), int64(1024)
 	p := model.Process{PID: 9, ThreadCount: &threads, HeapUsedMB: &used, HeapMaxMB: &max, MetaspaceUsedMB: &used}
 	m := NewModel(Config{Now: fixedNow, NoColor: true})
-	m.width, m.height, m.detailsOpen, m.detailProcess = 120, 30, true, &p
-	m.detailScroll = 1000
+	m.width, m.height, m.detailsOpen, m.detailProcess = 120, 80, true, &p
 	body := m.View().Content
 	for _, want := range []string{"Threads", "Heap %", "Metaspace used", "Virtual memory", "Disk read", "Young GC time", "Java version", "n/a"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("details missing %q: %s", want, body)
 		}
+	}
+}
+
+func TestDetailsPrioritizesOperatorSectionsBeforeCollectionCapabilities(t *testing.T) {
+	for _, width := range []int{160, 120, 100} {
+		t.Run(fmt.Sprintf("width-%d", width), func(t *testing.T) {
+			p := model.Process{PID: 9, Type: "GRADLE_DAEMON", Name: "gradle"}
+			m := NewModel(Config{Now: fixedNow, NoColor: true})
+			m.width, m.height, m.detailsOpen, m.detailProcess = width, 120, true, &p
+			body := m.View().Content
+
+			positions := make([]int, 0, 4)
+			for _, section := range []string{"Identity", "JVM / memory", "Diagnostics", "COLLECTION CAPABILITIES"} {
+				position := strings.Index(body, section)
+				if position < 0 {
+					t.Fatalf("details missing %q: %s", section, body)
+				}
+				positions = append(positions, position)
+			}
+			for i := 1; i < len(positions); i++ {
+				if positions[i-1] >= positions[i] {
+					t.Fatalf("details sections out of order: %v in %s", positions, body)
+				}
+			}
+		})
 	}
 }
 
@@ -636,7 +660,7 @@ func TestDetailsShowOptionalTelemetryAndKeepZeroDistinctFromUnavailable(t *testi
 		JIT:         &model.JITMetrics{CompiledCount: &compiled, FailedCount: &failed, InvalidCount: &invalid, CompilationTimeSeconds: &compilationSeconds},
 	}
 	m := NewModel(Config{Now: fixedNow, NoColor: true})
-	m.width, m.height, m.detailsOpen, m.detailProcess = 80, 90, true, &p
+	m.width, m.height, m.detailsOpen, m.detailProcess = 80, 140, true, &p
 	m.detailHost = model.HostMetrics{
 		LogicalProcessors: model.IntMetric{Value: &zero},
 		CPUUsagePercent:   model.RealMetric{Value: &cpu},

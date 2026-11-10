@@ -137,6 +137,42 @@ CREATE TABLE collection_capabilities (
     updated_at INTEGER NOT NULL
 );
 
+-- Shared with cored. These tables intentionally use the cored column names so either
+-- process can create the database first and the other can read it afterwards.
+CREATE TABLE observation_sessions (
+    name TEXT PRIMARY KEY NOT NULL,
+    host_id TEXT NOT NULL,
+    association TEXT NOT NULL,
+    opened_at_ms INTEGER NOT NULL,
+    closed_at_ms INTEGER,
+    response_json TEXT
+);
+
+CREATE TABLE observation_session_processes (
+    session_name TEXT NOT NULL,
+    host_id TEXT NOT NULL,
+    pid INTEGER NOT NULL,
+    start_time_ms INTEGER NOT NULL,
+    PRIMARY KEY(session_name, host_id, pid, start_time_ms),
+    FOREIGN KEY(session_name) REFERENCES observation_sessions(name)
+);
+
+CREATE TABLE observation_session_process_summaries (
+    session_name TEXT NOT NULL,
+    host_id TEXT NOT NULL,
+    pid INTEGER NOT NULL,
+    start_time_ms INTEGER NOT NULL,
+    sample_count INTEGER NOT NULL,
+    first_rss_mb INTEGER NOT NULL,
+    peak_rss_mb INTEGER NOT NULL,
+    last_rss_mb INTEGER NOT NULL,
+    delta_rss_mb INTEGER NOT NULL,
+    association TEXT NOT NULL,
+    PRIMARY KEY(session_name, host_id, pid, start_time_ms),
+    FOREIGN KEY(session_name) REFERENCES observation_sessions(name)
+);
+CREATE INDEX observation_sessions_opened ON observation_sessions(opened_at_ms);
+
 insertSample:
 INSERT INTO process_samples(timestamp, pid, parent_pid, process_type, command_line, working_directory, project_path, cpu_percent, rss_memory_mb, max_heap_mb, heap_used_mb, heap_committed_mb, heap_max_mb, heap_sampled_at_ms, heap_available, virtual_memory_mb, swap_memory_mb, thread_count, read_bytes, write_bytes, read_operations, write_operations, minor_page_faults, major_page_faults, voluntary_context_switches, involuntary_context_switches, open_file_descriptors, metaspace_used_mb, metaspace_committed_mb, young_gc_count, young_gc_time_ms, old_gc_count, old_gc_time_ms, java_version, java_vendor, active_processor_count, status)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
@@ -262,6 +298,34 @@ FROM process_samples
 WHERE timestamp >= ? AND timestamp <= ?
 ORDER BY timestamp DESC
 LIMIT ?;
+
+recentObservationSessions:
+SELECT *
+FROM observation_sessions
+ORDER BY opened_at_ms DESC
+LIMIT ?;
+
+searchObservationSessions:
+SELECT *
+FROM observation_sessions
+WHERE lower(name) LIKE '%' || lower(?) || '%'
+   OR lower(host_id) LIKE '%' || lower(?) || '%'
+   OR lower(association) LIKE '%' || lower(?) || '%'
+ORDER BY opened_at_ms DESC
+LIMIT ?;
+
+observationSessionProcesses:
+SELECT *
+FROM observation_session_process_summaries
+WHERE session_name = ?
+ORDER BY host_id, pid, start_time_ms;
+
+observationBuildTotals:
+SELECT COUNT(*) AS build_count,
+       COALESCE(SUM(CASE WHEN final_status = 'SUCCESS' THEN 1 ELSE 0 END), 0) AS success_count,
+       COALESCE(SUM(CASE WHEN final_status = 'FAILED' THEN 1 ELSE 0 END), 0) AS failure_count
+FROM builds
+WHERE start_time >= ? AND start_time <= ?;
 
 purgeMetricSamplesOlderThan:
 DELETE FROM metric_samples WHERE timestamp < ?;

@@ -3,6 +3,9 @@ package io.github.cdsap.daemonitor.mcp
 import io.github.cdsap.daemonitor.AppContainer
 import io.github.cdsap.daemonitor.BuildInfo
 import io.github.cdsap.daemonitor.application.DaemonitorQueryService
+import io.github.cdsap.daemonitor.application.BuildHistoryEntry
+import io.github.cdsap.daemonitor.application.HistoryEntry
+import io.github.cdsap.daemonitor.application.ObservationSessionHistoryEntry
 import io.github.cdsap.daemonitor.application.ProcessSampleView
 import io.github.cdsap.daemonitor.domain.Redactor
 import io.github.cdsap.daemonitor.domain.model.Build
@@ -176,10 +179,15 @@ class DaemonitorMcpServer(
 
     private fun searchHistory(arguments: JsonObject): JsonObject {
         val query = arguments.string("query").orEmpty()
-        val builds = queries.searchHistory(query, arguments.long("limit").coerceLimit())
+        val history = queries.searchHistory(query, arguments.long("limit").coerceLimit())
         return jsonObject(
             "query" to JsonString(query),
-            "builds" to JsonArray(builds.map { it.toJson() }),
+            "history" to JsonArray(history.map { it.toJson() }),
+            // Keep the original field for clients that only understand build history.
+            "builds" to JsonArray(history.filterIsInstance<BuildHistoryEntry>().map { it.build.toJson() }),
+            "observationSessions" to JsonArray(
+                history.filterIsInstance<ObservationSessionHistoryEntry>().map { it.toJson() },
+            ),
         )
     }
 
@@ -204,6 +212,7 @@ class DaemonitorMcpServer(
     private fun Long?.coerceLimit(): Int = (this ?: DEFAULT_LIMIT).coerceIn(1, MAX_LIMIT).toInt()
 
     private fun Build.toJson(): JsonObject = jsonObject(
+        "kind" to JsonString("build"),
         "buildId" to JsonString(buildId),
         "daemonPid" to JsonNumber(daemonPid),
         "daemonIdentity" to jsonStringOrNull(daemonIdentity),
@@ -222,6 +231,40 @@ class DaemonitorMcpServer(
         "logSnippet" to jsonStringOrNull(logSnippet),
         "agent" to jsonStringOrNull(agent),
         "agentProvider" to jsonStringOrNull(agentProvider),
+    )
+
+    private fun HistoryEntry.toJson(): JsonObject = when (this) {
+        is BuildHistoryEntry -> build.toJson()
+        is ObservationSessionHistoryEntry -> toJson()
+    }
+
+    private fun ObservationSessionHistoryEntry.toJson(): JsonObject = jsonObject(
+        "kind" to JsonString("observationSession"),
+        "name" to JsonString(name),
+        "hostId" to JsonString(hostId),
+        "association" to JsonString(association),
+        "openedAtMs" to JsonNumber(startTimeMs),
+        "closedAtMs" to jsonNumberOrNull(endTimeMs),
+        "peakRssMb" to jsonNumberOrNull(peakRssMb),
+        "totalPeakRssMb" to jsonNumberOrNull(peakRssMb),
+        "builds" to jsonObject(
+            "count" to JsonNumber(buildCount),
+            "successCount" to JsonNumber(successCount),
+            "failureCount" to JsonNumber(failureCount),
+        ),
+        "processes" to JsonArray(processes.map { process ->
+            jsonObject(
+                "hostId" to JsonString(process.hostId),
+                "pid" to JsonNumber(process.pid),
+                "startTimeMs" to JsonNumber(process.startTimeMs),
+                "sampleCount" to JsonNumber(process.sampleCount),
+                "firstRssMb" to JsonNumber(process.firstRssMb),
+                "peakRssMb" to JsonNumber(process.peakRssMb),
+                "lastRssMb" to JsonNumber(process.lastRssMb),
+                "deltaRssMb" to JsonNumber(process.deltaRssMb),
+                "association" to JsonString(process.association),
+            )
+        }),
     )
 
     private fun ProcessSampleView.toJson(): JsonObject = jsonObject(

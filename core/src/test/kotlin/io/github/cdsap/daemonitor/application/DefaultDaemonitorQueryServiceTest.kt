@@ -26,8 +26,8 @@ class DefaultDaemonitorQueryServiceTest {
 
         val result = queries.searchHistory("target", limit = 50)
 
-        assertEquals(listOf("match"), result.map { it.buildId })
-        assertEquals(FinalStatus.FAILED, result.single().finalStatus)
+        assertEquals(listOf("match"), result.map { (it as BuildHistoryEntry).build.buildId })
+        assertEquals(FinalStatus.FAILED, (result.single() as BuildHistoryEntry).build.finalStatus)
     }
 
     @Test

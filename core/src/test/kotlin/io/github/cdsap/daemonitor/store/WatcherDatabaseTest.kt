@@ -10,6 +10,7 @@ import io.github.cdsap.daemonitor.domain.model.Source
 import io.github.cdsap.daemonitor.persistence.BuildRepository
 import io.github.cdsap.daemonitor.persistence.ProcessSampleRepository
 import io.github.cdsap.daemonitor.persistence.RetentionRepository
+import io.github.cdsap.daemonitor.persistence.HistoryRepository
 import io.github.cdsap.daemonitor.persistence.MetricDefinition
 import io.github.cdsap.daemonitor.persistence.MetricSample
 import io.github.cdsap.daemonitor.persistence.ProcessEvent
@@ -430,6 +431,54 @@ class WatcherDatabaseTest {
             assertTrue(builds.recent().isEmpty())
         } finally {
             database.close()
+        }
+    }
+
+    @Test
+    fun `kotlin-created database reads cored observation sessions with mixed history`(@TempDirArg tmp: Path) {
+        val path = tmp.resolve("watcher.db")
+        WatcherDatabase.open(path).close()
+        seedCoredObservation(path)
+
+        WatcherDatabase.open(path).use { database ->
+            val history = (database as HistoryRepository).searchHistory("", limit = 10)
+            assertEquals(listOf("build-1", "session-1"), history.map {
+                when (it) {
+                    is io.github.cdsap.daemonitor.application.ObservationSessionHistoryEntry -> it.name
+                    is io.github.cdsap.daemonitor.application.BuildHistoryEntry -> it.build.buildId
+                }
+            })
+            val session = history.filterIsInstance<io.github.cdsap.daemonitor.application.ObservationSessionHistoryEntry>().single()
+            assertEquals(300L, session.peakRssMb)
+            assertEquals(1L, session.successCount)
+            assertEquals(1, session.processes.single().sampleCount)
+        }
+    }
+
+    @Test
+    fun `cored-created observation tables survive kotlin migration`(@TempDirArg tmp: Path) {
+        val path = tmp.resolve("watcher.db")
+        seedCoredObservation(path, createTables = true)
+
+        WatcherDatabase.open(path).use { database ->
+            val session = database.searchHistory("session-1", 10).single()
+                as io.github.cdsap.daemonitor.application.ObservationSessionHistoryEntry
+            assertEquals("host-a", session.hostId)
+            assertEquals(300L, session.processes.single().peakRssMb)
+        }
+    }
+
+    private fun seedCoredObservation(path: Path, createTables: Boolean = false) {
+        JdbcSqliteDriver("jdbc:sqlite:${path.toAbsolutePath()}").use { driver ->
+            if (createTables) {
+                driver.execute(null, "CREATE TABLE builds (build_id TEXT PRIMARY KEY, daemon_pid INTEGER NOT NULL, daemon_identity TEXT, command_line TEXT, working_directory TEXT, project_path TEXT, start_time INTEGER NOT NULL, end_time INTEGER, duration_seconds REAL, peak_memory_mb INTEGER, avg_memory_mb INTEGER, peak_cpu_percent REAL, inferred_source TEXT NOT NULL DEFAULT 'UNKNOWN', final_status TEXT NOT NULL, log_snippet TEXT, agent TEXT, agent_provider TEXT)", 0)
+                driver.execute(null, "CREATE TABLE observation_sessions (name TEXT PRIMARY KEY NOT NULL, host_id TEXT NOT NULL, association TEXT NOT NULL, opened_at_ms INTEGER NOT NULL, closed_at_ms INTEGER, response_json TEXT)", 0)
+                driver.execute(null, "CREATE TABLE observation_session_processes (session_name TEXT NOT NULL, host_id TEXT NOT NULL, pid INTEGER NOT NULL, start_time_ms INTEGER NOT NULL, PRIMARY KEY(session_name, host_id, pid, start_time_ms), FOREIGN KEY(session_name) REFERENCES observation_sessions(name))", 0)
+                driver.execute(null, "CREATE TABLE observation_session_process_summaries (session_name TEXT NOT NULL, host_id TEXT NOT NULL, pid INTEGER NOT NULL, start_time_ms INTEGER NOT NULL, sample_count INTEGER NOT NULL, first_rss_mb INTEGER NOT NULL, peak_rss_mb INTEGER NOT NULL, last_rss_mb INTEGER NOT NULL, delta_rss_mb INTEGER NOT NULL, association TEXT NOT NULL, PRIMARY KEY(session_name, host_id, pid, start_time_ms), FOREIGN KEY(session_name) REFERENCES observation_sessions(name))", 0)
+            }
+            driver.execute(null, "INSERT INTO builds(build_id, daemon_pid, start_time, final_status) VALUES ('build-1', 7, 1500, 'SUCCESS')", 0)
+            driver.execute(null, "INSERT INTO observation_sessions(name, host_id, association, opened_at_ms, closed_at_ms) VALUES ('session-1', 'host-a', 'confirmed', 1000, 2000)", 0)
+            driver.execute(null, "INSERT INTO observation_session_process_summaries(session_name, host_id, pid, start_time_ms, sample_count, first_rss_mb, peak_rss_mb, last_rss_mb, delta_rss_mb, association) VALUES ('session-1', 'host-a', 42, 900, 1, 200, 300, 250, 50, 'confirmed')", 0)
         }
     }
 
