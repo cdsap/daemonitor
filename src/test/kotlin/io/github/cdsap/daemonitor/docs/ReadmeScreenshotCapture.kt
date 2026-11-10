@@ -46,7 +46,7 @@ import kotlin.test.Test
 @Tag("documentation")
 class ReadmeScreenshotCapture {
     private val outputDirectory = Path.of("docs", "images")
-    private val buildInfo = BuildInfo(version = "1.1.0", commit = "preview")
+    private val buildInfo = BuildInfo(version = "1.2.3", commit = "preview")
 
     @Test
     fun captureLive() = capture("live-monitor.png") {
@@ -126,20 +126,20 @@ internal object SampleUi {
     fun liveState(): LiveUiState {
         val now = System.currentTimeMillis()
         val daemon = process(
-            pid = 4821,
+            pid = 6120,
             type = ProcessType.GRADLE_DAEMON,
             project = "checkout-service",
-            rss = 2340,
-            heapUsedMb = 1200,
-            cpu = 38.0,
+            rss = 2680,
+            heapUsedMb = 1480,
+            cpu = 52.0,
             startedAt = now - 18 * 60 * 1_000,
             command = "java -Xmx4096m org.gradle.launcher.daemon.bootstrap.GradleDaemon 9.0",
         )
         val processes = listOf(
             daemon,
-            process(4914, ProcessType.GRADLE_WRAPPER, "checkout-service", 612, 220, 14.0, now - 4 * 60 * 1_000, "java org.gradle.wrapper.GradleWrapperMain test", automated = true),
-            process(4930, ProcessType.GRADLE_WORKER, "checkout-service", 768, 410, 71.0, now - 75 * 1_000, "java -Xmx1024m GradleWorkerMain 'Test Executor 2'"),
-            process(5077, ProcessType.KOTLIN_DAEMON, "design-system", 544, 300, 9.0, now - 11 * 60 * 1_000, "java -Xmx1536m org.jetbrains.kotlin.daemon.KotlinCompileDaemon"),
+            process(6204, ProcessType.GRADLE_WRAPPER, "checkout-service", 540, 190, 11.0, now - 4 * 60 * 1_000, "java org.gradle.wrapper.GradleWrapperMain test", automated = true),
+            process(6218, ProcessType.GRADLE_WORKER, "checkout-service", 920, 480, 64.0, now - 75 * 1_000, "java -Xmx1024m GradleWorkerMain 'Test Executor 2'"),
+            process(6301, ProcessType.KOTLIN_DAEMON, "design-system", 710, 360, 18.0, now - 11 * 60 * 1_000, "java -Xmx1536m org.jetbrains.kotlin.daemon.KotlinCompileDaemon"),
         )
         val endMs = 1_700_000_060_000L
         fun sample(offsetMs: Long, rssByPid: Map<Long, Long>) = RssTimelineSample(
@@ -168,10 +168,10 @@ internal object SampleUi {
             isLoading = false,
             isEmpty = false,
             rssTimeline = listOf(
-                sample(-24_000, mapOf(4821L to 1980L, 4914L to 540L, 4930L to 610L, 5077L to 480L)),
-                sample(-18_000, mapOf(4821L to 2140L, 4914L to 580L, 4930L to 690L, 5077L to 500L)),
-                sample(-12_000, mapOf(4821L to 2260L, 4914L to 600L, 4930L to 740L, 5077L to 520L)),
-                sample(-6_000, mapOf(4821L to 2310L, 4914L to 608L, 4930L to 760L, 5077L to 536L)),
+                sample(-24_000, mapOf(6120L to 2210L, 6204L to 480L, 6218L to 740L, 6301L to 620L)),
+                sample(-18_000, mapOf(6120L to 2390L, 6204L to 510L, 6218L to 820L, 6301L to 660L)),
+                sample(-12_000, mapOf(6120L to 2510L, 6204L to 525L, 6218L to 880L, 6301L to 685L)),
+                sample(-6_000, mapOf(6120L to 2610L, 6204L to 535L, 6218L to 905L, 6301L to 700L)),
                 sample(0, processes.associate { it.pid to it.rssMemoryMb }),
             ),
         )
@@ -179,10 +179,10 @@ internal object SampleUi {
 
     fun historyState(): HistoryUiState {
         val builds = listOf(
-            build("build-1042", "checkout-service", 1_782_904_930_000, 74.2, 2380, 86.0, FinalStatus.SUCCESS, Source.IDE, "Codex", "OpenAI", "> Task :checkout:test\n42 tests completed, 0 failed\nBUILD SUCCESSFUL"),
-            build("build-1041", "design-system", 1_782_904_280_000, 31.8, 1210, 64.0, FinalStatus.FAILED, Source.TERMINAL, null, null, "> Task :tokens:generate\nTokenValidationTest FAILED\nBUILD FAILED"),
-            build("build-1040", "mobile-app", 1_782_903_510_000, 128.5, 3150, 92.0, FinalStatus.INTERRUPTED, Source.IDE, "Claude Code", "Anthropic", null),
-            build("build-1039", "checkout-service", 1_782_902_820_000, 18.4, 980, 43.0, FinalStatus.COMPLETED_NO_OUTCOME, Source.TERMINAL, "Cursor", "Anysphere", null),
+            build("build-1108", "checkout-service", 1_782_904_930_000, 74.2, 2380, 86.0, FinalStatus.SUCCESS, Source.IDE, "Codex", "OpenAI", "> Task :checkout:test\n42 tests completed, 0 failed\nBUILD SUCCESSFUL"),
+            build("build-1107", "design-system", 1_782_904_280_000, 31.8, 1210, 64.0, FinalStatus.FAILED, Source.TERMINAL, null, null, "> Task :tokens:generate\nTokenValidationTest FAILED\nBUILD FAILED"),
+            build("build-1106", "mobile-app", 1_782_903_510_000, 128.5, 3150, 92.0, FinalStatus.INTERRUPTED, Source.IDE, "Claude Code", "Anthropic", null),
+            build("build-1105", "checkout-service", 1_782_902_820_000, 18.4, 980, 43.0, FinalStatus.COMPLETED_NO_OUTCOME, Source.TERMINAL, "Cursor", "Anysphere", null),
         )
         return HistoryUiState(
             builds = builds,
@@ -239,7 +239,7 @@ internal object SampleUi {
         log: String?,
     ) = Build(
         buildId = id,
-        daemonPid = 4821,
+        daemonPid = 6120,
         daemonIdentity = "sample-daemon",
         commandLine = "./gradlew test",
         workingDirectory = "$SAFE_ROOT/$project",

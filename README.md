@@ -92,7 +92,7 @@ stays `n/a` for wrappers and Gradle workers (daemons only). More detail:
 
 ### CLI (terminal)
 
-![Daemonitor CLI showing a live terminal table of Gradle-related processes with RSS, heap, CPU, and uptime](docs/images/cli-monitor.png)
+![Daemonitor CLI process details showing OS activity, JVM memory pools, and native memory metrics](docs/images/cli-monitor.png)
 
 Native full-screen TUI (`top`-style): selection, sorting, pause, resize, grouped process hierarchy,
 process details, recent build/log context, and a compact RSS trend — useful on
