@@ -24,9 +24,9 @@ func (m Model) renderDetails() string {
 		now = m.now().UnixMilli()
 	}
 	header := detailHeader(*p, now, m.detailIsEnded(), m.detailIsStale(), m.width, m.noColor)
-	// Keep the established attributes at the bottom of this pane so existing
-	// scrolling behavior still lands on the familiar process fields.
-	attributes := append(detailTelemetry(m, *p, m.width), detailAttributes(*p, m.width, now)...)
+	// Keep operator-facing process fields before the expanded telemetry and its
+	// capability matrix so the details pane opens on the most useful context.
+	attributes := append(detailAttributes(*p, m.width, now), detailTelemetry(m, *p, m.width)...)
 	gradle := p.Type == "GRADLE_DAEMON"
 	builds := []string(nil)
 	if gradle {
