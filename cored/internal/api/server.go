@@ -2,7 +2,10 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strconv"
@@ -17,6 +20,7 @@ import (
 	"github.com/cdsap/daemonitor/cored/internal/observe"
 	"github.com/cdsap/daemonitor/cored/internal/platform"
 	"github.com/cdsap/daemonitor/cored/internal/poll"
+	"github.com/cdsap/daemonitor/cored/internal/sessions"
 	"github.com/cdsap/daemonitor/cored/internal/store"
 )
 
@@ -98,6 +102,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/v1/daemon-logs", s.handleDaemonLogs)
 	mux.HandleFunc("/v1/daemon-logs/", s.handleDaemonLogTail)
 	mux.HandleFunc("/v1/builds", s.handleBuilds)
+	mux.HandleFunc("/v1/observation-sessions/open", s.handleObservationSessionOpen)
+	mux.HandleFunc("/v1/observation-sessions/close", s.handleObservationSessionClose)
 
 	srv := &http.Server{Handler: mux}
 	go func() {
@@ -151,7 +157,6 @@ func (s *Server) refresh(ctx context.Context) {
 		return
 	}
 	writeStart := time.Now()
-	_ = s.Store.InsertSnapshot(snap)
 	hostID := ""
 	if s.Collector != nil {
 		hostID = s.Collector.HostID
@@ -159,6 +164,7 @@ func (s *Server) refresh(ctx context.Context) {
 	if hostID == "" {
 		hostID = platform.LocalHostID()
 	}
+	_ = s.Store.InsertSnapshotForHost(hostID, snap)
 	_ = s.Store.ObserveProcesses(hostID, snap.SampledAtMs, snap.Processes)
 	if s.Collector != nil && s.Collector.Observe != nil {
 		size := int64(-1)
@@ -198,6 +204,100 @@ func (s *Server) refresh(ctx context.Context) {
 	s.prevActive = active
 	s.last = snap
 	s.mu.Unlock()
+}
+
+func (s *Server) handleObservationSessionOpen(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method must be POST", http.StatusMethodNotAllowed)
+		return
+	}
+	var req sessions.OpenRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		http.Error(w, "malformed session body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+	if req.Association != sessions.AssociationConfirmed && req.Association != sessions.AssociationInferred {
+		http.Error(w, "association must be confirmed or inferred", http.StatusBadRequest)
+		return
+	}
+	if req.HostID == "" {
+		req.HostID = platform.LocalHostID()
+	}
+	if len(req.Processes) == 0 {
+		s.mu.RLock()
+		for _, process := range s.last.Processes {
+			if process.StartTimeMs > 0 {
+				req.Processes = append(req.Processes, sessions.ProcessRef{HostID: req.HostID, PID: int64(process.PID), StartTimeMs: process.StartTimeMs})
+			}
+		}
+		s.mu.RUnlock()
+	}
+	for i := range req.Processes {
+		if req.Processes[i].HostID == "" {
+			req.Processes[i].HostID = req.HostID
+		}
+		if req.Processes[i].PID <= 0 || req.Processes[i].StartTimeMs <= 0 || req.Processes[i].HostID == "" {
+			http.Error(w, "each process requires host_id, positive pid, and positive start_time_ms", http.StatusBadRequest)
+			return
+		}
+	}
+	response, existing, err := s.Store.OpenObservationSession(req, time.Now().UnixMilli())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if existing {
+		writeJSON(w, response)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		return
+	}
+}
+
+func (s *Server) handleObservationSessionClose(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method must be POST", http.StatusMethodNotAllowed)
+		return
+	}
+	var req sessions.CloseRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		http.Error(w, "malformed session body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+	response, err := s.Store.CloseObservationSession(req.Name, time.Now().UnixMilli())
+	if err == sql.ErrNoRows {
+		http.Error(w, "observation session not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, response)
+}
+
+func decodeJSONBody(r *http.Request, target any) error {
+	decoder := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		return fmt.Errorf("request must contain one JSON object")
+	}
+	return nil
 }
 
 func (s *Server) refreshHost(ctx context.Context) {
