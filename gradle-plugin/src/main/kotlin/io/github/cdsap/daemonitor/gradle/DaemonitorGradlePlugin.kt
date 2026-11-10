@@ -37,39 +37,21 @@ abstract class DaemonitorObservationBuildService : org.gradle.api.services.Build
         val rootProjectPath: org.gradle.api.provider.Property<String>
     }
     private val sessionName = UUID.randomUUID().toString()
-    private var openAttempted = false
-    private var sessionOpened = false
-    private var closed = false
-    private var closeSnapshot: String? = null
-
-    init { if (parameters.enabled.get()) openOnce() }
-
-    @Synchronized private fun openOnce() {
-        if (openAttempted) return
-        openAttempted = true
-        runCatching {
-            val response = client().open(jsonObject(
+    private val lifecycle = ObservationSessionLifecycle(
+        enabled = parameters.enabled.get(),
+        open = {
+            client().open(jsonObject(
                 "name" to sessionName,
                 "association" to "confirmed",
                 "host_id" to runCatching { InetAddress.getLocalHost().hostName }.getOrNull(),
             ))
-            check(response.isSuccess) { "cored open returned HTTP ${response.status}" }
-            sessionOpened = true
-        }.onFailure { warn("observation skipped: daemonitor-cored could not be opened", it) }
-    }
+        },
+        close = { client().close(sessionName, jsonObject("name" to sessionName)) },
+        onSummary = { summary -> ObservationReportSink(Path.of(parameters.rootProjectPath.get())).writeIfPresent(summary) },
+        warn = ::warn,
+    ).also { it.openOnce() }
 
-    @Synchronized fun closeNow(): String? {
-        if (closed) return closeSnapshot
-        closed = true
-        if (!sessionOpened || !parameters.enabled.get()) return null
-        runCatching {
-            val response = client().close(sessionName, jsonObject("name" to sessionName))
-            check(response.isSuccess) { "cored close returned HTTP ${response.status}" }
-            closeSnapshot = response.body
-            ObservationReportSink(Path.of(parameters.rootProjectPath.get())).writeIfPresent(closeSnapshot)
-        }.onFailure { warn("observation close failed; build result was not changed", it) }
-        return closeSnapshot
-    }
+    fun closeNow(): String? = lifecycle.closeOnce()
     override fun close() { closeNow() }
     private fun client() = UnixObservationSessionClient(Path.of(parameters.socketPath.get()))
     private fun warn(message: String, failure: Throwable) = org.gradle.api.logging.Logging.getLogger(javaClass).warn("Daemonitor: $message. Continuing without observation.", failure)
@@ -79,5 +61,44 @@ abstract class DaemonitorObservationBuildService : org.gradle.api.services.Build
             "\"${escape(key)}\":" + when (value) { null -> "null"; is Number, is Boolean -> value.toString(); else -> "\"${escape(value.toString())}\"" }
         }
         private fun escape(value: String) = buildString { value.forEach { when (it) { '\\' -> append("\\\\"); '"' -> append("\\\""); '\n' -> append("\\n"); '\r' -> append("\\r"); '\t' -> append("\\t"); else -> append(it) } } }
+    }
+}
+
+/** Owns the one-shot cored lifecycle and keeps failed sessions out of every success sink. */
+internal class ObservationSessionLifecycle(
+    private val enabled: Boolean,
+    private val open: () -> HttpResult,
+    private val close: () -> HttpResult,
+    private val onSummary: (String) -> Unit,
+    private val warn: (String, Throwable) -> Unit,
+) {
+    private var openAttempted = false
+    private var sessionOpened = false
+    private var closed = false
+    private var closeSnapshot: String? = null
+
+    @Synchronized
+    fun openOnce() {
+        if (!enabled || openAttempted) return
+        openAttempted = true
+        runCatching {
+            val response = open()
+            check(response.isSuccess) { "cored open returned HTTP ${response.status}" }
+            sessionOpened = true
+        }.onFailure { warn("observation skipped: daemonitor-cored could not be opened", it) }
+    }
+
+    @Synchronized
+    fun closeOnce(): String? {
+        if (closed) return closeSnapshot
+        closed = true
+        if (!sessionOpened) return null
+        runCatching {
+            val response = close()
+            check(response.isSuccess) { "cored close returned HTTP ${response.status}" }
+            closeSnapshot = response.body
+            onSummary(closeSnapshot!!)
+        }.onFailure { warn("observation close failed; build result was not changed", it) }
+        return closeSnapshot
     }
 }

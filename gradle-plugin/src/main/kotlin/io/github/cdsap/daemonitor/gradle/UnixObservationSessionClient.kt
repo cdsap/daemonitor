@@ -29,11 +29,16 @@ class UnixObservationSessionClient(
     }
 
     fun open(bodyJson: String): HttpResult =
-        exchange("/v1/observation-sessions", bodyJson)
+        exchange("/v1/observation-sessions/open", bodyJson)
 
     fun close(sessionId: String, bodyJson: String = "{}"): HttpResult {
         require(sessionId.isNotBlank()) { "sessionId must not be blank" }
-        return exchange("/v1/observation-sessions/${encodePathSegment(sessionId)}/close", bodyJson)
+        val requestBody = if (bodyJson.trim() == "{}") {
+            "{\"name\":\"${escapeJson(sessionId)}\"}"
+        } else {
+            bodyJson
+        }
+        return exchange("/v1/observation-sessions/close", requestBody)
     }
 
     private fun exchange(path: String, body: String): HttpResult {
@@ -140,8 +145,19 @@ class UnixObservationSessionClient(
         return contentLength != null && raw.size - (headerEnd + 4) >= contentLength
     }
 
-    private fun encodePathSegment(value: String): String =
-        value.replace("%", "%25").replace("/", "%2F").replace("?", "%3F").replace("#", "%23")
+    private fun escapeJson(value: String): String = buildString {
+        value.forEach { character ->
+            when (character) {
+                '\\' -> append("\\\\")
+                '"' -> append("\\\"")
+                '\n' -> append("\\n")
+                '\r' -> append("\\r")
+                '\t' -> append("\\t")
+                else -> append(character)
+            }
+        }
+    }
+
 }
 
 data class HttpResult(val status: Int, val body: String) {

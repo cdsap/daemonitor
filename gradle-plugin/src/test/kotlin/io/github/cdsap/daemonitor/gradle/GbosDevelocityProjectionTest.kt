@@ -3,8 +3,37 @@ package io.github.cdsap.daemonitor.gradle
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import java.nio.file.Files
+import java.nio.file.Path
+import java.util.Comparator
 
 class GbosDevelocityProjectionTest {
+    @Test
+    fun `local report and GBOS retain the same process rows from one close`() {
+        val summaryJson = """{"name":"session-1","association":"confirmed","host_id":"host-a","processes":[{"host_id":"host-a","pid":42,"start_time_ms":100,"sample_count":3,"first_rss_mb":10,"peak_rss_mb":30,"last_rss_mb":20,"delta_rss_mb":10,"association":"confirmed"},{"host_id":"host-a","pid":43,"start_time_ms":100,"sample_count":2,"first_rss_mb":8,"peak_rss_mb":12,"last_rss_mb":9,"delta_rss_mb":1,"association":"inferred"}],"builds":{"count":1,"success_count":1,"failure_count":0}}"""
+        val project = Files.createTempDirectory("daemonitor-cross-sink-")
+        try {
+            ObservationReportSink(project).writeIfPresent(summaryJson)
+            val reportSummary = ObservationSummaryParser.parse(
+                Files.readString(project.resolve("build/daemonitor/observation-summary.json")),
+            )
+            val reportRows = reportSummary.processes.map { it.pid to it.peakRssMb }
+            val gbosRows = GbosDevelocityProjection.observations(reportSummary).map { observation ->
+                val pid = (observation.attributes["process.pid"] as io.github.cdsap.gbos.core.GbosAttributeValue.Integer).value
+                val rss = observation.measurements.first { it.name == "jvm.process.memory.rss" }.value / (1024.0 * 1024.0)
+                pid.toLong() to rss.toLong()
+            }
+
+            assertEquals(listOf(42L to 30L, 43L to 12L), reportRows)
+            assertEquals(reportRows, gbosRows)
+            assertEquals(42L, reportRows.sumOf { it.second })
+        } finally {
+            Files.walk(project).use { paths ->
+                paths.sorted(Comparator.reverseOrder()).forEach(Files::delete)
+            }
+        }
+    }
+
     @Test
     fun `phase one RSS summary becomes schema and one producer fragment per process`() {
         val summary = ObservationSummary(

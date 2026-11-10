@@ -39,10 +39,43 @@ class UnixObservationSessionClientTest {
             val client = UnixObservationSessionClient(socket, Duration.ofSeconds(2))
             assertEquals(201, client.open("{\"root_project_path\":\"/tmp/project\"}").status)
             assertEquals(200, client.close("s1", "{\"outcome\":\"success\"}").status)
-            assertTrue(requests[0].startsWith("POST /v1/observation-sessions HTTP/1.0"))
+            assertTrue(requests[0].startsWith("POST /v1/observation-sessions/open HTTP/1.0"))
             assertTrue(requests[0].contains("Content-Type: application/json"))
             assertTrue(requests[0].endsWith("{\"root_project_path\":\"/tmp/project\"}"))
-            assertTrue(requests[1].startsWith("POST /v1/observation-sessions/s1/close HTTP/1.0"))
+            assertTrue(requests[1].startsWith("POST /v1/observation-sessions/close HTTP/1.0"))
+            assertTrue(requests[1].contains("{\"outcome\":\"success\"}"))
+        } finally {
+            server.join(2_000)
+            Files.deleteIfExists(socket)
+        }
+    }
+
+    @Test
+    fun `default close body names the session for cored`() {
+        assumeUnix()
+        val socket = java.nio.file.Path.of("/tmp", "dobs-default-close-${System.nanoTime()}.sock")
+        val request = arrayOfNulls<String>(1)
+        val server = Thread {
+            ServerSocketChannel.open(StandardProtocolFamily.UNIX).use { listener ->
+                listener.bind(UnixDomainSocketAddress.of(socket))
+                listener.accept().use { channel ->
+                    readRequest(channel)
+                    val response = "HTTP/1.0 201 OK\r\nContent-Length: 2\r\n\r\n{}"
+                    channel.write(ByteBuffer.wrap(response.toByteArray()))
+                }
+                listener.accept().use { channel ->
+                    request[0] = readRequest(channel)
+                    val response = "HTTP/1.0 200 OK\r\nContent-Length: 2\r\n\r\n{}"
+                    channel.write(ByteBuffer.wrap(response.toByteArray()))
+                }
+            }
+        }.apply { isDaemon = true; start() }
+        try {
+            awaitSocket(socket)
+            val client = UnixObservationSessionClient(socket, Duration.ofSeconds(2))
+            client.open("{}")
+            client.close("session/with-unsafe-id")
+            assertTrue(request[0]!!.contains("\"name\":\"session/with-unsafe-id\""))
         } finally {
             server.join(2_000)
             Files.deleteIfExists(socket)
