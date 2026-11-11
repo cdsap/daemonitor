@@ -9,3 +9,8 @@ import io.github.cdsap.daemonitor.domain.model.Build
 interface BuildSource {
     fun recentBuilds(limit: Int = 100): List<Build>
 }
+
+/** Reads builds associated with a specific process lifetime. */
+fun interface DaemonBuildSource {
+    fun buildsForDaemon(pid: Long, startTimeMs: Long, limit: Int): List<Build>
+}

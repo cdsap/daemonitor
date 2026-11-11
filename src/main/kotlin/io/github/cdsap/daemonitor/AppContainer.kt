@@ -1,6 +1,7 @@
 package io.github.cdsap.daemonitor
 
 import io.github.cdsap.daemonitor.application.DaemonLogSource
+import io.github.cdsap.daemonitor.application.DaemonBuildSource
 import io.github.cdsap.daemonitor.application.DefaultDaemonitorQueryService
 import io.github.cdsap.daemonitor.application.MonitoringMode
 import io.github.cdsap.daemonitor.application.ProcessSource
@@ -35,6 +36,7 @@ class AppContainer(
     processSource: ProcessSource? = null,
     logSource: DaemonLogSource? = null,
     mode: MonitoringMode = MonitoringMode.Local,
+    private val daemonBuildSource: DaemonBuildSource? = null,
 ) : AutoCloseable {
     private val core = CoreContainer(
         databasePath = databasePath,
@@ -77,6 +79,7 @@ class AppContainer(
         ),
         uiDispatcher = uiDispatcher,
         clock = clock,
+        daemonBuildSource = daemonBuildSource,
     )
 
     fun createMcpServer(

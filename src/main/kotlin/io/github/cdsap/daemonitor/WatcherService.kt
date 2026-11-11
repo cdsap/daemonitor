@@ -1,5 +1,7 @@
 package io.github.cdsap.daemonitor
 
+import io.github.cdsap.daemonitor.application.DaemonBuildSource
+import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.application.DaemonLog
 import io.github.cdsap.daemonitor.application.HostContextSource
 import io.github.cdsap.daemonitor.ui.live.ContextState
@@ -38,6 +40,7 @@ class WatcherService(
     private val monitoringService: MonitoringService,
     private val uiDispatcher: CoroutineDispatcher = Dispatchers.Main,
     private val clock: () -> Long = System::currentTimeMillis,
+    private val daemonBuildSource: DaemonBuildSource? = null,
 ) {
     val liveViewModel = LiveViewModel()
     val historyViewModel = HistoryViewModel()
@@ -140,7 +143,7 @@ class WatcherService(
         latestDaemonLogs = result.daemonLogs
         val selectedTail = selectedDaemonTail(result)
         withContext(uiDispatcher) {
-            liveViewModel.onPoll(result.processes, selectedTail)
+            liveViewModel.onPoll(result.processes, selectedTail, result.daemonLogs)
         }
         if (result.buildsChanged) refreshHistory()
     }
@@ -151,7 +154,7 @@ class WatcherService(
                 latestDaemonLogs = result.daemonLogs
                 val selectedTail = selectedDaemonTail(result)
                 withContext(uiDispatcher) {
-                    liveViewModel.onPoll(result.processes, selectedTail)
+                    liveViewModel.onPoll(result.processes, selectedTail, result.daemonLogs)
                 }
                 if (result.buildsChanged) refreshHistory()
             },
@@ -167,6 +170,7 @@ class WatcherService(
     fun select(pid: Long) {
         val source = hostContextSource
         val generation = liveViewModel.select(pid, source != null) ?: return
+        val process = (liveViewModel.state.value.detail as? DetailState.Selected)?.process?.takeIf { it.pid == pid } ?: return
         if (source != null) {
             monitoringService.launchIo {
                 val result = try { ContextState.Loaded(source.capabilities()) } catch (e: CancellationException) { throw e } catch (_: Exception) { ContextState.Error }
@@ -183,6 +187,17 @@ class WatcherService(
                     if (!active) break
                     delay(30_000)
                 }
+            }
+        }
+        if (process.type == ProcessType.GRADLE_DAEMON) {
+            monitoringService.launchIo {
+                val builds = try {
+                    if (process.startTimeMs > 0) daemonBuildSource?.buildsForDaemon(pid, process.startTimeMs, 20) else null
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    null
+                }
+                withContext(uiDispatcher) { liveViewModel.onRecentBuilds(generation, process, builds) }
             }
         }
         monitoringService.launchIo {
@@ -215,6 +230,7 @@ class WatcherService(
             mcpServerFactory: () -> io.github.cdsap.daemonitor.mcp.DaemonitorMcpServer,
             uiDispatcher: CoroutineDispatcher = Dispatchers.Main,
             ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+            daemonBuildSource: DaemonBuildSource? = null,
         ): WatcherService {
             return WatcherService(
                 runtime = runtime,
@@ -228,6 +244,7 @@ class WatcherService(
                 ),
                 uiDispatcher = uiDispatcher,
                 clock = clock,
+                daemonBuildSource = daemonBuildSource,
             )
         }
     }
