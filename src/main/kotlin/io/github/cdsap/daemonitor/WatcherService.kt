@@ -134,7 +134,7 @@ class WatcherService(
         latestDaemonLogs = result.daemonLogs
         val selectedTail = selectedDaemonTail(result)
         withContext(uiDispatcher) {
-            liveViewModel.onPoll(result.processes, selectedTail)
+            liveViewModel.onPoll(result.processes, selectedTail, result.daemonLogs)
         }
         if (result.buildsChanged) refreshHistory()
     }
@@ -145,7 +145,7 @@ class WatcherService(
                 latestDaemonLogs = result.daemonLogs
                 val selectedTail = selectedDaemonTail(result)
                 withContext(uiDispatcher) {
-                    liveViewModel.onPoll(result.processes, selectedTail)
+                    liveViewModel.onPoll(result.processes, selectedTail, result.daemonLogs)
                 }
                 if (result.buildsChanged) refreshHistory()
             },

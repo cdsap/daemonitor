@@ -1,6 +1,7 @@
 package io.github.cdsap.daemonitor.ui.live
 
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
+import io.github.cdsap.daemonitor.application.DaemonLog
 
 /** Detail-panel state for the Live Monitor (U7). Three explicit states resolve the review gap. */
 sealed interface DetailState {
@@ -69,6 +70,7 @@ data class LiveUiState(
     val detail: DetailState = DetailState.NoSelection,
     val tail: List<String> = emptyList(),
     val tailState: LogTailState = LogTailState.NoSelection,
+    val daemonLog: DaemonLog? = null,
     val isLoading: Boolean = true,
     val isEmpty: Boolean = true,
     val pollError: PollError? = null,

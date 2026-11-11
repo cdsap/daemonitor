@@ -24,6 +24,8 @@ import androidx.compose.ui.test.runComposeUiTest
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.unit.dp
 import io.github.cdsap.daemonitor.domain.LiveMetricLabels
+import io.github.cdsap.daemonitor.application.DaemonLog
+import java.nio.file.Path
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.LiveJvmHeap
 import io.github.cdsap.daemonitor.domain.model.ProcessType
@@ -36,6 +38,28 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalTestApi::class)
 class LiveMonitorScreenUiTest {
+
+    @Test
+    fun `daemon log metadata displays values and explicit missing state only for Gradle daemons`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val daemon = sampleProcess()
+        var state by mutableStateOf(LiveUiState(
+            processes = listOf(daemon), detail = DetailState.Selected(daemon),
+            daemonLog = DaemonLog(daemon.pid, "8.14.3", Path.of("/tmp/daemon-4321.out.log")),
+            tailState = LogTailState.Available(listOf("tail line")), isLoading = false, isEmpty = false,
+        ))
+        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
+        onNodeWithText("Gradle version").assertExists()
+        onNodeWithText("8.14.3").assertExists()
+        onNodeWithText("/tmp/daemon-4321.out.log").assertExists()
+        onNodeWithText("tail line").assertExists()
+        state = state.copy(daemonLog = null)
+        assertEquals(2, onAllNodesWithText("Unavailable").fetchSemanticsNodes().size)
+        val worker = daemon.copy(type = ProcessType.GRADLE_WORKER)
+        state = state.copy(processes = listOf(worker), detail = DetailState.Selected(worker))
+        onNodeWithText("Gradle version").assertDoesNotExist()
+        onNodeWithText("Log path").assertDoesNotExist()
+    }
 
     private fun sampleProcess(
         pid: Long = 4321,

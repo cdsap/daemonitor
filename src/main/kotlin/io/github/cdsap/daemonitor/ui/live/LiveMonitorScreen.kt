@@ -53,6 +53,8 @@ import kotlinx.coroutines.delay
 import java.util.Locale
 import io.github.cdsap.daemonitor.domain.LiveMetricLabels
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
+import io.github.cdsap.daemonitor.domain.model.ProcessType
+import io.github.cdsap.daemonitor.application.DaemonLog
 import io.github.cdsap.daemonitor.ui.common.LocalAccentColors
 import io.github.cdsap.daemonitor.ui.common.AutomatedBadge
 import io.github.cdsap.daemonitor.ui.common.Badges
@@ -179,7 +181,12 @@ fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit, onClearSelec
                 Column(modifier = Modifier.weight(1f).fillMaxSize()) {
                     DetailCard(state.detail, state.processes, nowMs, modifier = Modifier.weight(1f).fillMaxWidth())
                     Spacer(Modifier.padding(Space.xs))
-                    LogCard(state.tailState, modifier = Modifier.weight(1f).fillMaxWidth())
+                    val process = when (val detail = state.detail) {
+                        is DetailState.Selected -> detail.process
+                        is DetailState.Ended -> detail.lastKnown
+                        DetailState.NoSelection -> null
+                    }
+                    LogCard(state.tailState, process?.type == ProcessType.GRADLE_DAEMON, state.daemonLog, modifier = Modifier.weight(1f).fillMaxWidth())
                 }
             }
         }
@@ -466,8 +473,12 @@ private fun Long?.metricBytes(): String = this?.let {
 } ?: "unavailable"
 
 @Composable
-private fun LogCard(tailState: LogTailState, modifier: Modifier = Modifier) {
+private fun LogCard(tailState: LogTailState, showMetadata: Boolean, daemonLog: DaemonLog?, modifier: Modifier = Modifier) {
     SectionCard("Daemon log", modifier) {
+        if (showMetadata) {
+            DetailRow("Gradle version", daemonLog?.gradleVersion?.takeIf { it.isNotBlank() } ?: "Unavailable")
+            DetailRow("Log path", daemonLog?.path?.toString()?.takeIf { it.isNotBlank() } ?: "Unavailable")
+        }
         when (tailState) {
             LogTailState.NoSelection -> Text("Select a process to see its daemon log.", modifier = Modifier.padding(Space.md), color = MaterialTheme.colorScheme.onSurfaceVariant)
             LogTailState.Loading -> Text("Loading daemon log…", modifier = Modifier.padding(Space.md), color = MaterialTheme.colorScheme.onSurfaceVariant)

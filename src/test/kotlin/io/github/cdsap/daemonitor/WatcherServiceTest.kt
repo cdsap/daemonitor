@@ -176,6 +176,7 @@ class WatcherServiceTest {
             assertTrue(tailCalls > tailCallsAfterPoll)
             assertEquals(listOf("immediate-tail"), service.liveViewModel.state.value.tail)
             assertEquals(LogTailState.Available(listOf("immediate-tail")), service.liveViewModel.state.value.tailState)
+            assertEquals(log, service.liveViewModel.state.value.daemonLog)
         } finally {
             service.stop()
             database.close()
