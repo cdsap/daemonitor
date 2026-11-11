@@ -32,6 +32,7 @@ class GoCoreSnapshotParserTest {
                   "cpu_total_seconds_total": 13.0,
                   "cpu_cores_used": 1.5,
                   "logical_processor_count": 8,
+                  "resource_scope": "process",
                   "max_heap_mb": 2048,
                   "min_heap_mb": 512,
                   "gc": "G1",
@@ -110,6 +111,8 @@ class GoCoreSnapshotParserTest {
         assertEquals(13.0, daemon.cpuTotalSecondsTotal)
         assertEquals(1.5, daemon.cpuCoresUsed)
         assertEquals(8L, daemon.logicalProcessorCount)
+        assertEquals("process", daemon.resourceScope)
+        assertNull(processes[1].resourceScope)
         assertEquals(2048L, daemon.maxHeapMb)
         assertEquals(512L, daemon.minHeapMb)
         assertEquals("G1", daemon.gc)

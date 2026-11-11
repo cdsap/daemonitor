@@ -13,6 +13,8 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.hasAnySibling
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -196,6 +198,29 @@ class LiveMonitorScreenUiTest {
         onNodeWithText("1.234 s").assertExists()
         onNodeWithText("GCT").assertExists()
         onNodeWithText("7.035 s").assertExists()
+    }
+
+    @Test
+    fun `process details show CPU accounting including zero and unavailable values`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val process = sampleProcess().copy(
+            cpuUserSecondsTotal = 0.0,
+            cpuSystemSecondsTotal = 2.75,
+            cpuTotalSecondsTotal = 2.75,
+            cpuCoresUsed = null,
+            resourceScope = "process",
+        )
+        val state = LiveUiState(processes = listOf(process), detail = DetailState.Selected(process), isLoading = false, isEmpty = false)
+        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
+
+        onNodeWithText("CPU user time").assertExists()
+        onNodeWithText("0.000 s").assertExists()
+        onNodeWithText("CPU system time").assertExists()
+        onNodeWithText("CPU total time").assertExists()
+        onNodeWithText("Cores used").assert(hasAnySibling(hasText("unavailable")))
+        onNodeWithText("Resource scope").assertExists()
+        onNodeWithText("process").assertExists()
+        assertEquals(2, onAllNodesWithText("2.750 s").fetchSemanticsNodes().size)
     }
 
     @Test
