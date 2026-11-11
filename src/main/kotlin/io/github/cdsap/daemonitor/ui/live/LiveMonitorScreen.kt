@@ -53,6 +53,10 @@ import kotlinx.coroutines.delay
 import java.util.Locale
 import io.github.cdsap.daemonitor.domain.LiveMetricLabels
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
+import io.github.cdsap.daemonitor.domain.model.ProcessType
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import io.github.cdsap.daemonitor.ui.common.LocalAccentColors
 import io.github.cdsap.daemonitor.ui.common.AutomatedBadge
 import io.github.cdsap.daemonitor.ui.common.Badges
@@ -177,7 +181,7 @@ fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit, onClearSelec
                 }
                 Spacer(Modifier.width(Space.lg))
                 Column(modifier = Modifier.weight(1f).fillMaxSize()) {
-                    DetailCard(state.detail, state.processes, nowMs, modifier = Modifier.weight(1f).fillMaxWidth())
+                    DetailCard(state.detail, state.processes, state.recentBuilds, nowMs, modifier = Modifier.weight(1f).fillMaxWidth())
                     Spacer(Modifier.padding(Space.xs))
                     LogCard(state.tailState, modifier = Modifier.weight(1f).fillMaxWidth())
                 }
@@ -294,6 +298,7 @@ private fun ProcessRow(
 private fun DetailCard(
     detail: DetailState,
     processes: List<GradleProcess>,
+    recentBuilds: RecentBuildsState,
     nowMs: Long,
     modifier: Modifier = Modifier,
 ) {
@@ -306,8 +311,9 @@ private fun DetailCard(
                 children = processes.filter { it.parentPid == detail.process.pid },
                 ended = false,
                 nowMs = nowMs,
+                recentBuilds = recentBuilds,
             )
-            is DetailState.Ended -> ProcessDetails(detail.lastKnown, children = emptyList(), ended = true, nowMs = nowMs)
+            is DetailState.Ended -> ProcessDetails(detail.lastKnown, children = emptyList(), ended = true, nowMs = nowMs, recentBuilds = recentBuilds)
         }
     }
 }
@@ -318,6 +324,7 @@ private fun ProcessDetails(
     children: List<GradleProcess>,
     ended: Boolean,
     nowMs: Long,
+    recentBuilds: RecentBuildsState,
 ) {
     Column(
         modifier = Modifier
@@ -338,6 +345,22 @@ private fun ProcessDetails(
             DetailSection("CHILD PROCESSES")
             Column(modifier = Modifier.testTag("child-processes")) {
                 children.forEach { child -> ChildProcessRow(child) }
+            }
+        }
+        if (p.type == ProcessType.GRADLE_DAEMON) {
+            DetailSection("Recent builds")
+            when (recentBuilds) {
+                RecentBuildsState.Loading -> Text("Loading recent builds…")
+                RecentBuildsState.Unavailable -> Text("Recent builds unavailable.")
+                is RecentBuildsState.Loaded -> if (recentBuilds.builds.isEmpty()) {
+                    Text("No recent builds for this daemon.")
+                } else {
+                    recentBuilds.builds.forEach { build ->
+                        val started = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(build.startTimeMs))
+                        val duration = build.durationSeconds?.let { String.format(Locale.ROOT, "%.1f s", it) } ?: "—"
+                        DetailRow(build.finalStatus.name.replace('_', ' '), "${build.projectPath ?: build.workingDirectory ?: "Unknown project"} · $duration · $started · ${build.inferredSource}${build.agent?.let { " / $it" } ?: ""}")
+                    }
+                }
             }
         }
         DetailSection("Memory")

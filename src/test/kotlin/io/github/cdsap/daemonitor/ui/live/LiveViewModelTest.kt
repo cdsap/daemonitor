@@ -34,6 +34,27 @@ class LiveViewModelTest {
     )
 
     @Test
+    fun `recent builds states reject stale selections and reused pids`() {
+        val vm = LiveViewModel()
+        val first = proc(1)
+        vm.onPoll(listOf(first, proc(2)))
+        vm.select(1)
+        val token = vm.selectionToken()
+        assertEquals(RecentBuildsState.Loading, vm.state.value.recentBuilds)
+        vm.onRecentBuilds(token, first, emptyList())
+        assertEquals(RecentBuildsState.Loaded(emptyList()), vm.state.value.recentBuilds)
+        vm.select(2)
+        vm.onRecentBuilds(token, first, emptyList())
+        assertEquals(RecentBuildsState.Loading, vm.state.value.recentBuilds)
+        vm.onRecentBuilds(vm.selectionToken(), proc(2), null)
+        assertEquals(RecentBuildsState.Unavailable, vm.state.value.recentBuilds)
+        vm.select(1)
+        vm.onPoll(listOf(first.copy(startTimeMs = 2)))
+        assertTrue(vm.state.value.detail is DetailState.Ended)
+        assertEquals(RecentBuildsState.Unavailable, vm.state.value.recentBuilds)
+    }
+
+    @Test
     fun `initial state is loading until first poll completes`() {
         val vm = LiveViewModel()
 
