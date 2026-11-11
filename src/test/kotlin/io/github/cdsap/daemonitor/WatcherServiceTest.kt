@@ -179,6 +179,7 @@ class WatcherServiceTest {
             assertTrue(tailCalls > tailCallsAfterPoll)
             assertEquals(listOf("immediate-tail"), service.liveViewModel.state.value.tail)
             assertEquals(LogTailState.Available(listOf("immediate-tail")), service.liveViewModel.state.value.tailState)
+            assertEquals(log, service.liveViewModel.state.value.daemonLog)
             assertEquals(listOf(Triple(42L, 1L, 20)), buildQueries)
             assertEquals(RecentBuildsState.Loaded(emptyList()), service.liveViewModel.state.value.recentBuilds)
             val other = process.copy(pid = 43, type = ProcessType.KOTLIN_DAEMON)
@@ -186,7 +187,6 @@ class WatcherServiceTest {
             service.select(43)
             advanceUntilIdle()
             assertEquals(1, buildQueries.size)
-
         } finally {
             service.stop()
             database.close()
