@@ -1,5 +1,7 @@
 package io.github.cdsap.daemonitor
 
+import io.github.cdsap.daemonitor.application.DaemonBuildSource
+import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.application.DaemonLog
 import io.github.cdsap.daemonitor.application.DaemonLogTailResult
 import io.github.cdsap.daemonitor.application.update.UpdateService
@@ -32,6 +34,7 @@ class WatcherService(
     private val monitoringService: MonitoringService,
     private val uiDispatcher: CoroutineDispatcher = Dispatchers.Main,
     private val clock: () -> Long = System::currentTimeMillis,
+    private val daemonBuildSource: DaemonBuildSource? = null,
 ) {
     val liveViewModel = LiveViewModel()
     val historyViewModel = HistoryViewModel()
@@ -160,7 +163,19 @@ class WatcherService(
 
     fun select(pid: Long) {
         liveViewModel.select(pid)
-        if (liveViewModel.state.value.detail !is DetailState.Selected) return
+        val process = (liveViewModel.state.value.detail as? DetailState.Selected)?.process?.takeIf { it.pid == pid } ?: return
+        val token = liveViewModel.selectionToken()
+        if (process.type == ProcessType.GRADLE_DAEMON) {
+            monitoringService.launchIo {
+                val builds = try {
+                    if (process.startTimeMs > 0) daemonBuildSource?.buildsForDaemon(pid, process.startTimeMs, 20) else null
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    null
+                }
+                withContext(uiDispatcher) { liveViewModel.onRecentBuilds(token, process, builds) }
+            }
+        }
         monitoringService.launchIo {
             val tail = runtime.tailFor(latestDaemonLogs, pid)
             withContext(uiDispatcher) { liveViewModel.onTail(pid, tail) }
@@ -191,6 +206,7 @@ class WatcherService(
             mcpServerFactory: () -> io.github.cdsap.daemonitor.mcp.DaemonitorMcpServer,
             uiDispatcher: CoroutineDispatcher = Dispatchers.Main,
             ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+            daemonBuildSource: DaemonBuildSource? = null,
         ): WatcherService {
             return WatcherService(
                 runtime = runtime,
@@ -204,6 +220,7 @@ class WatcherService(
                 ),
                 uiDispatcher = uiDispatcher,
                 clock = clock,
+                daemonBuildSource = daemonBuildSource,
             )
         }
     }

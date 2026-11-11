@@ -127,4 +127,5 @@ data class GradleProcess(
     val osName: String? = null,
     val osArch: String? = null,
     val activeProcessorCount: Long? = null,
+    val resourceScope: String? = null,
 )

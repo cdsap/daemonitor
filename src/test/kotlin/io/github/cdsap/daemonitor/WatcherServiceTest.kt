@@ -22,6 +22,7 @@ import io.github.cdsap.daemonitor.mcp.DaemonitorMcpServer
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
 import io.github.cdsap.daemonitor.ui.live.LogTailState
+import io.github.cdsap.daemonitor.ui.live.RecentBuildsState
 import io.github.cdsap.daemonitor.ui.settings.UpdateUiState
 import io.github.cdsap.daemonitor.update.UpdateApplier
 import io.github.cdsap.daemonitor.update.UpdateCheckResult
@@ -151,6 +152,7 @@ class WatcherServiceTest {
             builds = database,
             samples = database,
         )
+        val buildQueries = mutableListOf<Triple<Long, Long, Int>>()
         val service = WatcherService.forTests(
             runtime = runtime,
             buildRepository = database,
@@ -162,6 +164,7 @@ class WatcherServiceTest {
             },
             uiDispatcher = uiDispatcher,
             ioDispatcher = uiDispatcher,
+            daemonBuildSource = { pid, start, limit -> buildQueries += Triple(pid, start, limit); emptyList() },
         )
         try {
             service.start(backgroundScope)
@@ -177,6 +180,13 @@ class WatcherServiceTest {
             assertEquals(listOf("immediate-tail"), service.liveViewModel.state.value.tail)
             assertEquals(LogTailState.Available(listOf("immediate-tail")), service.liveViewModel.state.value.tailState)
             assertEquals(log, service.liveViewModel.state.value.daemonLog)
+            assertEquals(listOf(Triple(42L, 1L, 20)), buildQueries)
+            assertEquals(RecentBuildsState.Loaded(emptyList()), service.liveViewModel.state.value.recentBuilds)
+            val other = process.copy(pid = 43, type = ProcessType.KOTLIN_DAEMON)
+            service.liveViewModel.onPoll(listOf(other))
+            service.select(43)
+            advanceUntilIdle()
+            assertEquals(1, buildQueries.size)
         } finally {
             service.stop()
             database.close()
