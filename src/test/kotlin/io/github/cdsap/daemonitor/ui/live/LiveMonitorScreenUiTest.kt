@@ -13,9 +13,12 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.hasAnyChild
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onParent
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performTouchInput
@@ -170,6 +173,52 @@ class LiveMonitorScreenUiTest {
             LiveMetricLabels.liveHeapUsedDetail(wrapper.liveHeap, wrapper.type),
             useUnmergedTree = true,
         ).assertExists()
+    }
+
+    @Test
+    fun `process details show available and missing OS activity independently`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val process = sampleProcess().copy(
+            cpuUserSecondsTotal = 10.25,
+            cpuSystemSecondsTotal = null,
+            cpuTotalSecondsTotal = 13.0,
+            cpuCoresUsed = 0.0,
+            logicalProcessorCount = 8,
+        )
+        val state = LiveUiState(
+            processes = listOf(process),
+            detail = DetailState.Selected(process),
+            isLoading = false,
+            isEmpty = false,
+        )
+        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
+
+        listOf(
+            "CPU user time (total)" to "10.250 s",
+            "CPU system time (total)" to "unavailable",
+            "CPU time (total)" to "13.000 s",
+            "CPU cores used" to "0.000",
+            "Logical processors" to "8",
+        ).forEach { (label, value) ->
+            onNodeWithText(label, useUnmergedTree = true).onParent().assert(hasAnyChild(hasText(value)))
+        }
+    }
+
+    @Test
+    fun `missing OS activity is unavailable in ended process details`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val process = sampleProcess()
+        val state = LiveUiState(
+            detail = DetailState.Ended(process),
+            isLoading = false,
+            isEmpty = false,
+        )
+        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
+
+        listOf("CPU user time (total)", "CPU system time (total)", "CPU time (total)", "CPU cores used", "Logical processors")
+            .forEach { label ->
+                onNodeWithText(label, useUnmergedTree = true).onParent().assert(hasAnyChild(hasText("unavailable")))
+            }
     }
 
     @Test
