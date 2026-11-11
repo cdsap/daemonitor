@@ -356,6 +356,11 @@ private fun ProcessDetails(
         )
         DetailSection("CPU")
         DetailRow("CPU", LiveMetricLabels.cpuDetail(p.cpuPercent))
+        DetailRow("CPU user time", p.cpuUserSecondsTotal.activityMetric("s"))
+        DetailRow("CPU system time", p.cpuSystemSecondsTotal.activityMetric("s"))
+        DetailRow("CPU total time", p.cpuTotalSecondsTotal.activityMetric("s"))
+        DetailRow("Cores used", p.cpuCoresUsed.activityMetric())
+        DetailRow("Resource scope", p.resourceScope ?: "unavailable")
         DetailRow("Active processors", p.activeProcessorCount.metric())
 
         DetailSection("JVM")
@@ -452,6 +457,9 @@ private fun DetailSection(label: String) {
 }
 
 private fun Long?.metric(unit: String = ""): String = this?.let { if (unit.isBlank()) it.toString() else "$it $unit" } ?: "unavailable"
+
+private fun Double?.activityMetric(unit: String = ""): String =
+    this?.let { String.format(Locale.ROOT, "%.3f%s", it, if (unit.isBlank()) "" else " $unit") } ?: "unavailable"
 
 private fun Double?.gcTimeDetail(): String = this?.let { String.format(Locale.ROOT, "%.3f s", it) } ?: "—"
 
