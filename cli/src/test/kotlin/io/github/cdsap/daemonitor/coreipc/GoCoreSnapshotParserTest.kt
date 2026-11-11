@@ -47,6 +47,10 @@ class GoCoreSnapshotParserTest {
                   "heap_available": true,
                   "virtual_memory_mb": 4096,
                   "swap_memory_mb": 12,
+                  "proportional_bytes": 123,
+                  "private_committed_bytes": 0,
+                  "physical_footprint_bytes": 1048576,
+                  "peak_resident_bytes": 2097152,
                   "thread_count": 84,
                   "read_bytes": 1048576,
                   "write_bytes": 2048,
@@ -79,6 +83,8 @@ class GoCoreSnapshotParserTest {
                   "working_directory": "/Users/dev/proj",
                   "project_path": "/Users/dev/proj",
                   "rss_memory_mb": 200,
+                  "proportional_bytes": null,
+                  "physical_footprint_bytes": null,
                   "cpu_percent": null,
                   "max_heap_mb": 64,
                   "min_heap_mb": null,
@@ -134,6 +140,10 @@ class GoCoreSnapshotParserTest {
         assertEquals(1000L, live.sampledAtMs)
         assertEquals(4096L, daemon.virtualMemoryMb)
         assertEquals(12L, daemon.swapMemoryMb)
+        assertEquals(123L, daemon.proportionalBytes)
+        assertEquals(0L, daemon.privateCommittedBytes)
+        assertEquals(1048576L, daemon.physicalFootprintBytes)
+        assertEquals(2097152L, daemon.peakResidentBytes)
         assertEquals(84L, daemon.threadCount)
         assertEquals(1048576L, daemon.readBytes)
         assertEquals(2048L, daemon.writeBytes)
@@ -153,6 +163,10 @@ class GoCoreSnapshotParserTest {
         assertEquals(8L, daemon.activeProcessorCount)
 
         val wrapper = processes[1]
+        assertNull(wrapper.proportionalBytes)
+        assertNull(wrapper.privateCommittedBytes)
+        assertNull(wrapper.physicalFootprintBytes)
+        assertNull(wrapper.peakResidentBytes)
         assertEquals(ProcessType.GRADLE_WRAPPER, wrapper.type)
         assertNull(wrapper.cpuPercent)
         assertEquals(64L, wrapper.maxHeapMb)

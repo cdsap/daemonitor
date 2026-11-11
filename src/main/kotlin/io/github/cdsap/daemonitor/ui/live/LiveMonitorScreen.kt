@@ -372,6 +372,10 @@ private fun ProcessDetails(
         DetailSection("Memory")
         DetailRow("RSS", "${p.rssMemoryMb} MB")
         DetailRow("Virtual memory", p.virtualMemoryMb.metric("MB"))
+        DetailRow("Proportional (PSS)", p.proportionalBytes.metricBytes())
+        DetailRow("Private committed", p.privateCommittedBytes.metricBytes())
+        DetailRow("Physical footprint", p.physicalFootprintBytes.metricBytes())
+        DetailRow("Peak resident", p.peakResidentBytes.metricBytes())
         DetailRow("Swap", p.swapMemoryMb.metric("MB"))
         DetailRow("Heap used", LiveMetricLabels.liveHeapUsedDetail(p.liveHeap, p.type))
         DetailRow(
