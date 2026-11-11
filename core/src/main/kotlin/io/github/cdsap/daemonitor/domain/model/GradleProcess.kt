@@ -115,6 +115,10 @@ data class GradleProcess(
     // current platform or for the selected process; it is never a synthetic zero.
     val virtualMemoryMb: Long? = null,
     val swapMemoryMb: Long? = null,
+    val proportionalBytes: Long? = null,
+    val privateCommittedBytes: Long? = null,
+    val physicalFootprintBytes: Long? = null,
+    val peakResidentBytes: Long? = null,
     val threadCount: Long? = null,
     val readBytes: Long? = null,
     val writeBytes: Long? = null,
@@ -147,4 +151,5 @@ data class GradleProcess(
     val memoryPools: List<JvmMemoryPool> = emptyList(),
     val codeCache: List<JvmMemoryPool> = emptyList(),
     val jit: JvmJitMetrics? = null,
+    val resourceScope: String? = null,
 )

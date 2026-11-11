@@ -1,6 +1,7 @@
 package io.github.cdsap.daemonitor.coreipc
 
 import io.github.cdsap.daemonitor.application.DaemonLogSource
+import io.github.cdsap.daemonitor.application.DaemonBuildSource
 import io.github.cdsap.daemonitor.application.MonitoringMode
 import io.github.cdsap.daemonitor.application.ProcessSource
 import io.github.cdsap.daemonitor.platform.AppDirectories
@@ -10,6 +11,7 @@ import java.nio.file.Path
 data class GoCoreWiring(
     val processSource: ProcessSource? = null,
     val logSource: DaemonLogSource? = null,
+    val daemonBuildSource: DaemonBuildSource? = null,
     val mode: MonitoringMode = MonitoringMode.Local,
     /** Human-readable stderr/log line when Go core is active; null when JVM collector is used. */
     val banner: String? = null,
@@ -31,6 +33,7 @@ fun wireGoCore(
     return GoCoreWiring(
         processSource = GoCoreProcessSource(client),
         logSource = GoCoreDaemonLogSource(client),
+        daemonBuildSource = GoCoreBuildSource(client),
         mode = if (owns) {
             MonitoringMode.SharedCoreOwnedPersistence
         } else {
