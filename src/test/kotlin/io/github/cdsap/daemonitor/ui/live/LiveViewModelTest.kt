@@ -1,6 +1,8 @@
 package io.github.cdsap.daemonitor.ui.live
 
 import io.github.cdsap.daemonitor.application.DaemonLogTailResult
+import io.github.cdsap.daemonitor.application.DaemonLog
+import java.nio.file.Path
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import kotlin.test.Test
@@ -9,6 +11,28 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class LiveViewModelTest {
+
+    @Test
+    fun `daemon metadata follows selection and refreshed polls`() {
+        val vm = LiveViewModel()
+        val daemon = proc(1)
+        val other = proc(2).copy(type = ProcessType.KOTLIN_DAEMON)
+        val log = DaemonLog(1, "8.14.3", Path.of("/tmp/daemon-1.out.log"))
+        val otherLog = DaemonLog(2, "9.0", Path.of("/tmp/daemon-2.out.log"))
+        vm.onPoll(listOf(daemon, other), daemonLogs = listOf(log, otherLog))
+        vm.select(1)
+        assertEquals(log, vm.state.value.daemonLog)
+        vm.onPoll(listOf(daemon, other), daemonLogs = emptyList())
+        assertNull(vm.state.value.daemonLog)
+        vm.onPoll(listOf(daemon, other), daemonLogs = listOf(log, otherLog))
+        vm.select(2)
+        assertNull(vm.state.value.daemonLog)
+        vm.select(1)
+        vm.onPoll(listOf(other), daemonLogs = emptyList())
+        assertEquals(log, vm.state.value.daemonLog)
+        vm.clearSelection()
+        assertNull(vm.state.value.daemonLog)
+    }
 
     private fun proc(
         pid: Long,
@@ -32,6 +56,27 @@ class LiveViewModelTest {
             )
         },
     )
+
+    @Test
+    fun `recent builds states reject stale selections and reused pids`() {
+        val vm = LiveViewModel()
+        val first = proc(1)
+        vm.onPoll(listOf(first, proc(2)))
+        vm.select(1)
+        val token = vm.selectionToken()
+        assertEquals(RecentBuildsState.Loading, vm.state.value.recentBuilds)
+        vm.onRecentBuilds(token, first, emptyList())
+        assertEquals(RecentBuildsState.Loaded(emptyList()), vm.state.value.recentBuilds)
+        vm.select(2)
+        vm.onRecentBuilds(token, first, emptyList())
+        assertEquals(RecentBuildsState.Loading, vm.state.value.recentBuilds)
+        vm.onRecentBuilds(vm.selectionToken(), proc(2), null)
+        assertEquals(RecentBuildsState.Unavailable, vm.state.value.recentBuilds)
+        vm.select(1)
+        vm.onPoll(listOf(first.copy(startTimeMs = 2)))
+        assertTrue(vm.state.value.detail is DetailState.Ended)
+        assertEquals(RecentBuildsState.Unavailable, vm.state.value.recentBuilds)
+    }
 
     @Test
     fun `initial state is loading until first poll completes`() {

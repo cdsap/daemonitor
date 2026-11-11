@@ -41,6 +41,21 @@ class GoCoreBuildSourceTest {
     }
 
     @Test
+    fun `daemon builds use the core lifetime query`() {
+        val socket = Files.createTempFile("daemonitor-core", ".sock")
+        try {
+            val source = GoCoreBuildSource(socket) { _, path ->
+                assertEquals("/v1/builds?pid=9&start_time_ms=200&limit=20", path)
+                """{"builds": []}"""
+            }
+            assertEquals(emptyList(), source.buildsForDaemon(9, 200, 20))
+            assertFailsWith<IllegalArgumentException> { source.buildsForDaemon(9, 0, 20) }
+        } finally {
+            Files.deleteIfExists(socket)
+        }
+    }
+
+    @Test
     fun `missing socket fails clearly`() {
         val socket = Files.createTempFile("daemonitor-core-missing", ".sock")
         Files.deleteIfExists(socket)

@@ -101,6 +101,7 @@ internal object GoCoreSnapshotParser {
             cpuTotalSecondsTotal = numberField(obj, "cpu_total_seconds_total"),
             cpuCoresUsed = numberField(obj, "cpu_cores_used"),
             logicalProcessorCount = longField(obj, "logical_processor_count"),
+            resourceScope = stringField(obj, "resource_scope")?.takeIf { it.isNotBlank() },
             rssMemoryMb = rss,
             maxHeapMb = maxHeap,
             minHeapMb = minHeap,

@@ -14,10 +14,12 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.hasAnyChild
+import androidx.compose.ui.test.hasAnySibling
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onParent
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performTouchInput
@@ -26,6 +28,11 @@ import androidx.compose.ui.test.runComposeUiTest
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.unit.dp
 import io.github.cdsap.daemonitor.domain.LiveMetricLabels
+import io.github.cdsap.daemonitor.application.DaemonLog
+import java.nio.file.Path
+import io.github.cdsap.daemonitor.domain.model.Build
+import io.github.cdsap.daemonitor.domain.model.FinalStatus
+import io.github.cdsap.daemonitor.domain.model.Source
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.LiveJvmHeap
 import io.github.cdsap.daemonitor.domain.model.ProcessType
@@ -74,6 +81,28 @@ class LiveMonitorScreenUiTest {
         }
     }
 
+    fun `daemon log metadata displays values and explicit missing state only for Gradle daemons`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val daemon = sampleProcess()
+        val logPath = Path.of("/tmp/daemon-4321.out.log")
+        var state by mutableStateOf(LiveUiState(
+            processes = listOf(daemon), detail = DetailState.Selected(daemon),
+            daemonLog = DaemonLog(daemon.pid, "8.14.3", logPath),
+            tailState = LogTailState.Available(listOf("tail line")), isLoading = false, isEmpty = false,
+        ))
+        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
+        onNodeWithText("Gradle version").assertExists()
+        onNodeWithText("8.14.3").assertExists()
+        onNodeWithText(logPath.toString()).assertExists()
+        onNodeWithText("tail line").assertExists()
+        state = state.copy(daemonLog = null)
+        assertEquals(2, onAllNodesWithText("Unavailable").fetchSemanticsNodes().size)
+        val worker = daemon.copy(type = ProcessType.GRADLE_WORKER)
+        state = state.copy(processes = listOf(worker), detail = DetailState.Selected(worker))
+        onNodeWithText("Gradle version").assertDoesNotExist()
+        onNodeWithText("Log path").assertDoesNotExist()
+    }
+
     private fun sampleProcess(
         pid: Long = 4321,
         parentPid: Long = 1,
@@ -116,6 +145,27 @@ class LiveMonitorScreenUiTest {
         automated = false,
         liveHeap = liveHeap,
     )
+
+    @Test
+    fun `recent builds section distinguishes states and only appears for Gradle daemons`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val daemon = sampleProcess()
+        var state by mutableStateOf(LiveUiState(processes = listOf(daemon), detail = DetailState.Selected(daemon), recentBuilds = RecentBuildsState.Loading, isLoading = false, isEmpty = false))
+        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
+        onNodeWithText("Loading recent builds…").assertExists()
+        state = state.copy(recentBuilds = RecentBuildsState.Loaded(emptyList()))
+        onNodeWithText("No recent builds for this daemon.").assertExists()
+        val build = Build("b1", daemon.pid, null, null, null, "/project", 1_700_000_000_000, null, 12.5, null, null, null, Source.TERMINAL, FinalStatus.SUCCESS, null, agent = "agent")
+        state = state.copy(recentBuilds = RecentBuildsState.Loaded(listOf(build)))
+        onNodeWithText("SUCCESS").assertExists()
+        onNodeWithText("/project · 12.5 s", substring = true).assertExists()
+        onNodeWithText("TERMINAL / agent", substring = true).assertExists()
+        state = state.copy(recentBuilds = RecentBuildsState.Unavailable)
+        onNodeWithText("Recent builds unavailable.").assertExists()
+        val other = sampleProcess(type = ProcessType.KOTLIN_DAEMON)
+        state = state.copy(processes = listOf(other), detail = DetailState.Selected(other))
+        onNodeWithText("Recent builds").assertDoesNotExist()
+    }
 
     @Test
     fun `first render shows scanning state before the first poll`() = runComposeUiTest {
@@ -210,6 +260,52 @@ class LiveMonitorScreenUiTest {
     }
 
     @Test
+    fun `process details show available and missing OS activity independently`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val process = sampleProcess().copy(
+            cpuUserSecondsTotal = 10.25,
+            cpuSystemSecondsTotal = null,
+            cpuTotalSecondsTotal = 13.0,
+            cpuCoresUsed = 0.0,
+            logicalProcessorCount = 8,
+        )
+        val state = LiveUiState(
+            processes = listOf(process),
+            detail = DetailState.Selected(process),
+            isLoading = false,
+            isEmpty = false,
+        )
+        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
+
+        listOf(
+            "CPU user time" to "10.250 s",
+            "CPU system time" to "unavailable",
+            "CPU total time" to "13.000 s",
+            "Cores used" to "0.000",
+            "Logical processors" to "8",
+        ).forEach { (label, value) ->
+            onNodeWithText(label, useUnmergedTree = true).onParent().assert(hasAnyChild(hasText(value)))
+        }
+    }
+
+    @Test
+    fun `missing OS activity is unavailable in ended process details`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val process = sampleProcess()
+        val state = LiveUiState(
+            detail = DetailState.Ended(process),
+            isLoading = false,
+            isEmpty = false,
+        )
+        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
+
+        listOf("CPU user time", "CPU system time", "CPU total time", "Cores used", "Logical processors")
+            .forEach { label ->
+                onNodeWithText(label, useUnmergedTree = true).onParent().assert(hasAnyChild(hasText("unavailable")))
+            }
+    }
+
+    @Test
     fun `process details shows JVM and operating system metadata`() = runComposeUiTest {
         mainClock.autoAdvance = false
         val process = sampleProcess()
@@ -233,6 +329,29 @@ class LiveMonitorScreenUiTest {
         onNodeWithText("1.234 s").assertExists()
         onNodeWithText("GCT").assertExists()
         onNodeWithText("7.035 s").assertExists()
+    }
+
+    @Test
+    fun `process details show CPU accounting including zero and unavailable values`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val process = sampleProcess().copy(
+            cpuUserSecondsTotal = 0.0,
+            cpuSystemSecondsTotal = 2.75,
+            cpuTotalSecondsTotal = 2.75,
+            cpuCoresUsed = null,
+            resourceScope = "process",
+        )
+        val state = LiveUiState(processes = listOf(process), detail = DetailState.Selected(process), isLoading = false, isEmpty = false)
+        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
+
+        onNodeWithText("CPU user time").assertExists()
+        onNodeWithText("0.000 s").assertExists()
+        onNodeWithText("CPU system time").assertExists()
+        onNodeWithText("CPU total time").assertExists()
+        onNodeWithText("Cores used").assert(hasAnySibling(hasText("unavailable")))
+        onNodeWithText("Resource scope").assertExists()
+        onNodeWithText("process").assertExists()
+        assertEquals(2, onAllNodesWithText("2.750 s").fetchSemanticsNodes().size)
     }
 
     @Test
