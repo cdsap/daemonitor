@@ -13,6 +13,8 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.hasAnyChild
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -36,6 +38,41 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalTestApi::class)
 class LiveMonitorScreenUiTest {
+
+    @Test
+    fun `native memory details show measurements and unavailable values`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val process = sampleProcess().copy(
+            proportionalBytes = 123,
+            privateCommittedBytes = 0,
+            physicalFootprintBytes = 1024,
+            peakResidentBytes = 1048576,
+        )
+        var selected by mutableStateOf(process)
+        setContent {
+            WatcherTheme {
+                LiveMonitorScreen(
+                    LiveUiState(processes = listOf(selected), detail = DetailState.Selected(selected), isLoading = false, isEmpty = false),
+                    onSelect = {}, onClearSelection = {},
+                )
+            }
+        }
+
+        val rows = listOf(
+            "Proportional (PSS)" to "123 B",
+            "Private committed" to "0 B",
+            "Physical footprint" to "1.0 KB",
+            "Peak resident" to "1.0 MB",
+        )
+        rows.forEach { (label, value) ->
+            onNode(hasAnyChild(hasText(label)) and hasAnyChild(hasText(value)), useUnmergedTree = true).assertExists()
+        }
+
+        selected = sampleProcess()
+        rows.forEach { (label, _) ->
+            onNode(hasAnyChild(hasText(label)) and hasAnyChild(hasText("unavailable")), useUnmergedTree = true).assertExists()
+        }
+    }
 
     private fun sampleProcess(
         pid: Long = 4321,
