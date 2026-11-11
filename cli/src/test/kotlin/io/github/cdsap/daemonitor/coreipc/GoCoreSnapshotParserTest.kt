@@ -12,6 +12,32 @@ import kotlin.test.assertTrue
 
 class GoCoreSnapshotParserTest {
     @Test
+    fun `parses pools and jit without inventing missing values`() {
+        val process = GoCoreSnapshotParser.parseProcesses("""
+            {"processes":[{"pid":1,"type":"GRADLE_DAEMON",
+              "memory_pools":[{"name":"Eden","source":"jstat","used":{"value":0,"unit":"K"},"committed":{"value":12.5,"unit":"M"},"max":null}],
+              "code_cache":[{"name":"CodeHeap","used":{"value":2,"unit":"M"}}],
+              "jit":{"compiled_count":0,"failed_count":null,"compilation_time_seconds":1.25}}]}
+        """).single()
+        assertEquals(0.0, process.memoryPools.single().used?.value)
+        assertEquals("K", process.memoryPools.single().used?.unit)
+        assertEquals(12.5, process.memoryPools.single().committed?.value)
+        assertNull(process.memoryPools.single().max)
+        assertEquals("CodeHeap", process.codeCache.single().name)
+        assertNull(process.codeCache.single().committed)
+        assertEquals(0L, process.jit?.compiledCount)
+        assertNull(process.jit?.failedCount)
+        assertEquals(1.25, process.jit?.compilationTimeSeconds)
+
+        val empty = GoCoreSnapshotParser.parseProcesses("""
+            {"processes":[{"pid":2,"type":"JAVA_GRADLE_RELATED","memory_pools":null,
+              "code_cache":[],"jit":null}]}
+        """).single()
+        assertTrue(empty.memoryPools.isEmpty())
+        assertTrue(empty.codeCache.isEmpty())
+        assertNull(empty.jit)
+    }
+    @Test
     fun `parses rich process snapshot from go core json`() {
         val json = """
             {

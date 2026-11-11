@@ -43,6 +43,23 @@ data class LiveJvmHeap(
     }
 }
 
+data class JvmRawValue(val value: Double, val unit: String)
+
+data class JvmMemoryPool(
+    val name: String,
+    val source: String?,
+    val used: JvmRawValue?,
+    val committed: JvmRawValue?,
+    val max: JvmRawValue?,
+)
+
+data class JvmJitMetrics(
+    val compiledCount: Long?,
+    val failedCount: Long?,
+    val invalidCount: Long?,
+    val compilationTimeSeconds: Double?,
+)
+
 /**
  * Minimal, OSHI-independent view of one OS process. The OSHI adapter (ProcessCollector) maps
  * `oshi.software.os.OSProcess` onto this so the pure snapshot logic stays unit-testable.
@@ -127,4 +144,7 @@ data class GradleProcess(
     val osName: String? = null,
     val osArch: String? = null,
     val activeProcessorCount: Long? = null,
+    val memoryPools: List<JvmMemoryPool> = emptyList(),
+    val codeCache: List<JvmMemoryPool> = emptyList(),
+    val jit: JvmJitMetrics? = null,
 )

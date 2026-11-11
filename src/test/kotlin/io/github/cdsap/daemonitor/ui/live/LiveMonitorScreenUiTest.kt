@@ -25,6 +25,9 @@ import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.unit.dp
 import io.github.cdsap.daemonitor.domain.LiveMetricLabels
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
+import io.github.cdsap.daemonitor.domain.model.JvmJitMetrics
+import io.github.cdsap.daemonitor.domain.model.JvmMemoryPool
+import io.github.cdsap.daemonitor.domain.model.JvmRawValue
 import io.github.cdsap.daemonitor.domain.model.LiveJvmHeap
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.persistence.AppearancePreference
@@ -36,6 +39,35 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalTestApi::class)
 class LiveMonitorScreenUiTest {
+    @Test
+    fun `JVM pools and compilation appear only when metrics are available`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val empty = sampleProcess(type = ProcessType.JAVA_GRADLE_RELATED)
+        val populated = empty.copy(
+            memoryPools = listOf(JvmMemoryPool(
+                "Eden", "jstat", JvmRawValue(0.0, "K"), null, null,
+            )),
+            codeCache = listOf(JvmMemoryPool(
+                "CodeHeap", "jcmd", JvmRawValue(2.0, "M"), null, null,
+            )),
+            jit = JvmJitMetrics(0, null, null, 1.25),
+        )
+        var selected by mutableStateOf(empty)
+        setContent {
+            WatcherTheme {
+                LiveMonitorScreen(LiveUiState(processes = listOf(selected), detail = DetailState.Selected(selected),
+                    isLoading = false, isEmpty = false), onSelect = {}, onClearSelection = {})
+            }
+        }
+        onNodeWithText("JVM pools and compilation").assertDoesNotExist()
+        selected = populated
+        waitForIdle()
+        onNodeWithText("JVM pools and compilation").assertExists()
+        onNodeWithText("Eden").assertExists()
+        onNodeWithText("used 0.0 K · committed unavailable · max unavailable").assertExists()
+        onNodeWithText("Code cache · CodeHeap").assertExists()
+        onNodeWithText("0 compiled, 1.250 s compilation time").assertExists()
+    }
 
     private fun sampleProcess(
         pid: Long = 4321,

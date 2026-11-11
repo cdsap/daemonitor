@@ -5,6 +5,9 @@ import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.LiveJvmHeap
+import io.github.cdsap.daemonitor.domain.model.JvmJitMetrics
+import io.github.cdsap.daemonitor.domain.model.JvmMemoryPool
+import io.github.cdsap.daemonitor.domain.model.JvmRawValue
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.domain.model.Source
 import java.nio.file.Path
@@ -139,7 +142,44 @@ internal object GoCoreSnapshotParser {
             osName = stringField(obj, "os_name"),
             osArch = stringField(obj, "os_arch"),
             activeProcessorCount = longField(obj, "active_processor_count"),
+            memoryPools = parsePools(obj, "memory_pools"),
+            codeCache = parsePools(obj, "code_cache"),
+            jit = extractContainer(obj, "jit", '{', '}')?.let {
+                JvmJitMetrics(longField(it, "compiled_count"), longField(it, "failed_count"),
+                    longField(it, "invalid_count"), numberField(it, "compilation_time_seconds"))
+            },
         )
+    }
+
+    private fun parsePools(obj: String, field: String): List<JvmMemoryPool> =
+        extractContainer(obj, field, '[', ']')?.let(::splitObjects).orEmpty().map { pool ->
+            fun value(name: String): JvmRawValue? = extractContainer(pool, name, '{', '}')?.let {
+                val number = numberField(it, "value") ?: return@let null
+                val unit = stringField(it, "unit") ?: return@let null
+                JvmRawValue(number, unit)
+            }
+            JvmMemoryPool(stringField(pool, "name").orEmpty(), stringField(pool, "source"),
+                value("used"), value("committed"), value("max"))
+        }
+
+    private fun extractContainer(json: String, name: String, open: Char, close: Char): String? {
+        val match = Regex("\"${Regex.escape(name)}\"\\s*:\\s*").find(json) ?: return null
+        val start = match.range.last + 1
+        if (start >= json.length || json[start] != open) return null
+        var depth = 0
+        var inString = false
+        var escaped = false
+        for (i in start until json.length) {
+            val c = json[i]
+            if (inString) {
+                if (escaped) escaped = false else if (c == '\\') escaped = true else if (c == '"') inString = false
+            } else when (c) {
+                '"' -> inString = true
+                open -> depth++
+                close -> if (--depth == 0) return json.substring(start + 1, i)
+            }
+        }
+        return null
     }
 
     /**
@@ -204,8 +244,15 @@ internal object GoCoreSnapshotParser {
         val out = mutableListOf<String>()
         var depth = 0
         var start = -1
+        var inString = false
+        var escaped = false
         for (i in arrayBody.indices) {
+            if (inString) {
+                if (escaped) escaped = false else if (arrayBody[i] == '\\') escaped = true else if (arrayBody[i] == '"') inString = false
+                continue
+            }
             when (arrayBody[i]) {
+                '"' -> inString = true
                 '{' -> {
                     if (depth == 0) start = i
                     depth++
