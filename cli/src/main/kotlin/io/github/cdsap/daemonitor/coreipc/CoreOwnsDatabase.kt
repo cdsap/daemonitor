@@ -13,11 +13,16 @@ internal fun coreOwnsDatabase(
     defaultDatabase: Path,
     fetch: (Path, String) -> String = ::unixHttpGet,
 ): Boolean {
-    val local = localDatabase.toAbsolutePath().normalize()
     val remote = runCatching {
         GoCoreSnapshotParser.parseHealthDbPath(fetch(coreSocket, "/v1/health"))
             ?.let { Path(it).toAbsolutePath().normalize() }
     }.getOrNull()
+    return databasePathsMatch(localDatabase, defaultDatabase, remote)
+}
+
+internal fun databasePathsMatch(localDatabase: Path, defaultDatabase: Path, reportedDatabase: Path?): Boolean {
+    val local = localDatabase.toAbsolutePath().normalize()
+    val remote = reportedDatabase?.toAbsolutePath()?.normalize()
     if (remote != null) return remote == local
     return local == defaultDatabase.toAbsolutePath().normalize()
 }
