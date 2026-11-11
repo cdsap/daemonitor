@@ -1,6 +1,8 @@
 package io.github.cdsap.daemonitor.ui.live
 
 import io.github.cdsap.daemonitor.application.DaemonLogTailResult
+import io.github.cdsap.daemonitor.application.HostContext
+import io.github.cdsap.daemonitor.application.MetricCapability
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -15,6 +17,7 @@ class LiveViewModel(
     private val clockMs: () -> Long = { System.currentTimeMillis() },
     private val timelineCapacity: Int = DEFAULT_TIMELINE_CAPACITY,
 ) {
+    private var selectionGeneration = 0L
     private val _state = MutableStateFlow(LiveUiState())
     val state: StateFlow<LiveUiState> = _state.asStateFlow()
 
@@ -61,6 +64,8 @@ class LiveViewModel(
             processes = processes,
             summary = summarize(processes),
             detail = detail,
+            host = if (detail is DetailState.Ended && current.host == ContextState.Loading) ContextState.Unavailable else current.host,
+            capabilities = if (detail is DetailState.Ended && current.capabilities == ContextState.Loading) ContextState.Unavailable else current.capabilities,
             tail = when (nextTailState) {
                 is LogTailState.Available -> nextTailState.lines
                 else -> emptyList()
@@ -78,13 +83,17 @@ class LiveViewModel(
         _state.value = _state.value.copy(pollError = PollError(failedAtMs, errorType))
     }
 
-    fun select(pid: Long) {
-        val process = _state.value.processes.firstOrNull { it.pid == pid } ?: return
+    fun select(pid: Long, contextAvailable: Boolean = false): Long? {
+        val process = _state.value.processes.firstOrNull { it.pid == pid } ?: return null
+        selectionGeneration++
         _state.value = _state.value.copy(
             detail = DetailState.Selected(process),
+            host = if (contextAvailable) ContextState.Loading else ContextState.Unavailable,
+            capabilities = if (contextAvailable) ContextState.Loading else ContextState.Unavailable,
             tail = emptyList(),
             tailState = LogTailState.Loading,
         )
+        return selectionGeneration
     }
 
     fun onTail(pid: Long, result: DaemonLogTailResult) {
@@ -97,9 +106,27 @@ class LiveViewModel(
         )
     }
 
+    fun isContextSelection(generation: Long): Boolean =
+        generation == selectionGeneration && _state.value.detail is DetailState.Selected
+
+    fun onHost(generation: Long, result: ContextState<HostContext>) {
+        if (generation == selectionGeneration && _state.value.detail is DetailState.Selected) {
+            _state.value = _state.value.copy(host = result)
+        }
+    }
+
+    fun onCapabilities(generation: Long, result: ContextState<List<MetricCapability>>) {
+        if (generation == selectionGeneration && _state.value.detail is DetailState.Selected) {
+            _state.value = _state.value.copy(capabilities = result)
+        }
+    }
+
     fun clearSelection() {
+        selectionGeneration++
         _state.value = _state.value.copy(
             detail = DetailState.NoSelection,
+            host = ContextState.Unavailable,
+            capabilities = ContextState.Unavailable,
             tail = emptyList(),
             tailState = LogTailState.NoSelection,
         )
@@ -115,7 +142,7 @@ class LiveViewModel(
         when (current) {
             is DetailState.NoSelection -> DetailState.NoSelection
             is DetailState.Selected -> {
-                val live = processes.firstOrNull { it.pid == current.process.pid }
+                val live = processes.firstOrNull { it.pid == current.process.pid && it.startTimeMs == current.process.startTimeMs }
                 if (live != null) DetailState.Selected(live) else DetailState.Ended(current.process)
             }
             is DetailState.Ended -> current

@@ -173,6 +173,24 @@ class LiveMonitorScreenUiTest {
     }
 
     @Test
+    fun `process details displays host and capability availability`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val process = sampleProcess()
+        val state = LiveUiState(
+            processes = listOf(process), detail = DetailState.Selected(process), isLoading = false, isEmpty = false,
+            host = ContextState.Loaded(io.github.cdsap.daemonitor.application.HostContext(100, 8, 0.0, 1048576, 2097152)),
+            capabilities = ContextState.Loaded(listOf(
+                io.github.cdsap.daemonitor.application.MetricCapability("host.cpu.usage_percent", "available"),
+                io.github.cdsap.daemonitor.application.MetricCapability("host.cpu.other", "unsupported"),
+            )),
+        )
+        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
+        onNodeWithText("Host context").assertExists()
+        onNodeWithText("0.0%").assertExists()
+        onNodeWithText("1 / 2 available").assertExists()
+    }
+
+    @Test
     fun `process details shows JVM and operating system metadata`() = runComposeUiTest {
         mainClock.autoAdvance = false
         val process = sampleProcess()

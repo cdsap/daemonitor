@@ -1,6 +1,8 @@
 package io.github.cdsap.daemonitor
 
 import io.github.cdsap.daemonitor.application.DaemonLog
+import io.github.cdsap.daemonitor.application.HostContextSource
+import io.github.cdsap.daemonitor.ui.live.ContextState
 import io.github.cdsap.daemonitor.application.DaemonLogTailResult
 import io.github.cdsap.daemonitor.application.update.UpdateService
 import io.github.cdsap.daemonitor.persistence.BuildRepository
@@ -18,6 +20,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.CancellationException
 
 /**
  * Thin desktop facade that composes focused application services and projects results into
@@ -25,6 +30,7 @@ import kotlinx.coroutines.withContext
  */
 class WatcherService(
     private val runtime: WatcherRuntime,
+    private val hostContextSource: HostContextSource? = null,
     private val historyService: HistoryService,
     private val settingsService: SettingsService,
     private val mcpController: McpServiceController,
@@ -159,8 +165,26 @@ class WatcherService(
     }
 
     fun select(pid: Long) {
-        liveViewModel.select(pid)
-        if (liveViewModel.state.value.detail !is DetailState.Selected) return
+        val source = hostContextSource
+        val generation = liveViewModel.select(pid, source != null) ?: return
+        if (source != null) {
+            monitoringService.launchIo {
+                val result = try { ContextState.Loaded(source.capabilities()) } catch (e: CancellationException) { throw e } catch (_: Exception) { ContextState.Error }
+                withContext(uiDispatcher) { liveViewModel.onCapabilities(generation, result) }
+            }
+            monitoringService.launchIo {
+                while (isActive) {
+                    if (!withContext(uiDispatcher) { liveViewModel.isContextSelection(generation) }) break
+                    val result = try { ContextState.Loaded(source.host()) } catch (e: CancellationException) { throw e } catch (_: Exception) { ContextState.Error }
+                    val active = withContext(uiDispatcher) {
+                        liveViewModel.onHost(generation, result)
+                        liveViewModel.isContextSelection(generation)
+                    }
+                    if (!active) break
+                    delay(30_000)
+                }
+            }
+        }
         monitoringService.launchIo {
             val tail = runtime.tailFor(latestDaemonLogs, pid)
             withContext(uiDispatcher) { liveViewModel.onTail(pid, tail) }

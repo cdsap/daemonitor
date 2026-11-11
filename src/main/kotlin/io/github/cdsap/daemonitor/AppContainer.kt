@@ -65,6 +65,7 @@ class AppContainer(
         ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     ): WatcherService = WatcherService(
         runtime = runtime,
+        hostContextSource = liveProcessSource as? io.github.cdsap.daemonitor.application.HostContextSource,
         historyService = HistoryService(database),
         settingsService = settingsService,
         mcpController = McpServiceController.create(::createMcpServer),

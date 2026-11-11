@@ -1,6 +1,8 @@
 package io.github.cdsap.daemonitor.ui.live
 
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
+import io.github.cdsap.daemonitor.application.HostContext
+import io.github.cdsap.daemonitor.application.MetricCapability
 
 /** Detail-panel state for the Live Monitor (U7). Three explicit states resolve the review gap. */
 sealed interface DetailState {
@@ -62,11 +64,20 @@ data class ProcessMetricSample(
     val oldGcCount: Long? = null,
 )
 
+sealed interface ContextState<out T> {
+    data object Unavailable : ContextState<Nothing>
+    data object Loading : ContextState<Nothing>
+    data object Error : ContextState<Nothing>
+    data class Loaded<T>(val value: T) : ContextState<T>
+}
+
 /** Full immutable state the Live Monitor renders. */
 data class LiveUiState(
     val processes: List<GradleProcess> = emptyList(),
     val summary: LiveSummary = LiveSummary(0, 0, null, 0),
     val detail: DetailState = DetailState.NoSelection,
+    val host: ContextState<HostContext> = ContextState.Unavailable,
+    val capabilities: ContextState<List<MetricCapability>> = ContextState.Unavailable,
     val tail: List<String> = emptyList(),
     val tailState: LogTailState = LogTailState.NoSelection,
     val isLoading: Boolean = true,

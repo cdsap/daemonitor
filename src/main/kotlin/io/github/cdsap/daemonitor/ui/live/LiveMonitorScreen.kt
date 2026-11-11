@@ -51,6 +51,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import java.util.Locale
+import io.github.cdsap.daemonitor.application.HostContext
+import io.github.cdsap.daemonitor.application.MetricCapability
 import io.github.cdsap.daemonitor.domain.LiveMetricLabels
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.ui.common.LocalAccentColors
@@ -177,7 +179,7 @@ fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit, onClearSelec
                 }
                 Spacer(Modifier.width(Space.lg))
                 Column(modifier = Modifier.weight(1f).fillMaxSize()) {
-                    DetailCard(state.detail, state.processes, nowMs, modifier = Modifier.weight(1f).fillMaxWidth())
+                    DetailCard(state.detail, state.processes, state.host, state.capabilities, nowMs, modifier = Modifier.weight(1f).fillMaxWidth())
                     Spacer(Modifier.padding(Space.xs))
                     LogCard(state.tailState, modifier = Modifier.weight(1f).fillMaxWidth())
                 }
@@ -294,6 +296,8 @@ private fun ProcessRow(
 private fun DetailCard(
     detail: DetailState,
     processes: List<GradleProcess>,
+    host: ContextState<HostContext>,
+    capabilities: ContextState<List<MetricCapability>>,
     nowMs: Long,
     modifier: Modifier = Modifier,
 ) {
@@ -306,8 +310,9 @@ private fun DetailCard(
                 children = processes.filter { it.parentPid == detail.process.pid },
                 ended = false,
                 nowMs = nowMs,
+                host = host, capabilities = capabilities,
             )
-            is DetailState.Ended -> ProcessDetails(detail.lastKnown, children = emptyList(), ended = true, nowMs = nowMs)
+            is DetailState.Ended -> ProcessDetails(detail.lastKnown, children = emptyList(), ended = true, nowMs = nowMs, host = host, capabilities = capabilities)
         }
     }
 }
@@ -318,6 +323,8 @@ private fun ProcessDetails(
     children: List<GradleProcess>,
     ended: Boolean,
     nowMs: Long,
+    host: ContextState<HostContext>,
+    capabilities: ContextState<List<MetricCapability>>,
 ) {
     Column(
         modifier = Modifier
@@ -338,6 +345,40 @@ private fun ProcessDetails(
             DetailSection("CHILD PROCESSES")
             Column(modifier = Modifier.testTag("child-processes")) {
                 children.forEach { child -> ChildProcessRow(child) }
+            }
+        }
+        DetailSection("Host context")
+        when (host) {
+            ContextState.Unavailable -> Text("Unavailable for this collector")
+            ContextState.Loading -> Text("Loading host context…")
+            ContextState.Error -> Text("Could not load host context")
+            is ContextState.Loaded -> {
+                val h = host.value
+                val used = h.memoryUsedBytes
+                val total = h.memoryTotalBytes
+                if (listOf(h.logicalProcessors, h.cpuPercent, h.memoryUsedBytes, h.memoryTotalBytes).all { it == null }) {
+                    Text("No host measurements available")
+                } else {
+                    DetailRow("Logical processors", h.logicalProcessors?.toString() ?: "unavailable")
+                    DetailRow("Host CPU", h.cpuPercent?.let { String.format(Locale.US, "%.1f%%", it) } ?: "unavailable")
+                    DetailRow("Host memory", if (used != null && total != null) "${used / 1048576} / ${total / 1048576} MB" else "unavailable")
+                }
+                DetailRow("Sampled", h.sampledAtMs?.let { java.time.Instant.ofEpochMilli(it).toString() } ?: "unavailable")
+            }
+        }
+        var expanded by remember(p.pid, p.startTimeMs) { mutableStateOf(false) }
+        Text(if (expanded) "▾ Collection capabilities" else "▸ Collection capabilities", modifier = Modifier.clickable { expanded = !expanded }, fontWeight = FontWeight.SemiBold)
+        when (capabilities) {
+            ContextState.Unavailable -> Text("Unavailable for this collector")
+            ContextState.Loading -> Text("Loading capabilities…")
+            ContextState.Error -> Text("Could not load capabilities")
+            is ContextState.Loaded -> {
+                if (capabilities.value.isEmpty()) Text("No capabilities reported")
+                capabilities.value.groupBy { it.name.split('.').take(2).joinToString(".") }.forEach { (family, metrics) ->
+                    val available = metrics.count { it.availability == "available" }
+                    DetailRow(family, "$available / ${metrics.size} available")
+                    if (expanded) metrics.forEach { DetailRow(it.name, it.availability) }
+                }
             }
         }
         DetailSection("Memory")
