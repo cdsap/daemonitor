@@ -78,12 +78,16 @@ class WatcherDatabase private constructor(
         val heapAvailable = live?.available == true
         db.transaction {
             db.watcherQueries.upsertProcessInstance(
-                instance_id = processInstanceId(sample),
+                id = processInstanceId(sample),
+                host_id = "",
                 pid = sample.pid,
+                create_time_ms = sample.startTimeMs,
                 process_type = sample.type.name,
-                config_json = null,
-                first_observed_at = sample.startTimeMs,
-                last_observed_at = timestampMs,
+                name = null,
+                command_line = "",
+                first_observed_ms = sample.startTimeMs,
+                last_observed_ms = timestampMs,
+                disappeared_at_ms = null,
             )
             db.watcherQueries.insertSample(
             timestamp = timestampMs,
@@ -134,20 +138,28 @@ class WatcherDatabase private constructor(
 
     fun upsertProcessInstance(instance: ProcessInstance) {
         db.watcherQueries.upsertProcessInstance(
-            instance.instanceId, instance.pid, instance.processType.name, instance.configJson,
-            instance.firstObservedAtMs, instance.lastObservedAtMs,
+            id = instance.instanceId,
+            host_id = "",
+            pid = instance.pid,
+            create_time_ms = instance.firstObservedAtMs,
+            process_type = instance.processType.name,
+            name = null,
+            command_line = instance.configJson.orEmpty(),
+            first_observed_ms = instance.firstObservedAtMs,
+            last_observed_ms = instance.lastObservedAtMs,
+            disappeared_at_ms = null,
         )
     }
 
     fun processInstancesForPid(pid: Long): List<ProcessInstance> =
         db.watcherQueries.processInstancesByPid(pid).executeAsList().map {
             ProcessInstance(
-                instanceId = it.instance_id,
+                instanceId = it.id,
                 pid = it.pid,
                 processType = runCatching { ProcessType.valueOf(it.process_type) }.getOrDefault(ProcessType.UNKNOWN_GRADLE_WORKER),
-                configJson = it.config_json,
-                firstObservedAtMs = it.first_observed_at,
-                lastObservedAtMs = it.last_observed_at,
+                configJson = it.command_line.takeIf { line -> line.isNotEmpty() },
+                firstObservedAtMs = it.first_observed_ms,
+                lastObservedAtMs = it.last_observed_ms,
             )
         }
 
@@ -166,8 +178,18 @@ class WatcherDatabase private constructor(
     }
 
     fun insertProcessEvent(event: ProcessEvent) {
+        val pid = event.pid
+            ?: event.instanceId.substringBefore(':').toLongOrNull()
+            ?: 0L
         db.watcherQueries.insertProcessEvent(
-            event.instanceId, event.timestampMs, event.eventType, event.metadataJson, event.source,
+            schema_version = 1,
+            event_type = event.eventType,
+            timestamp_ms = event.timestampMs,
+            process_instance_id = event.instanceId,
+            pid = pid,
+            process_type = event.processType,
+            source = event.source,
+            metadata_json = event.metadataJson,
         )
     }
 
@@ -490,21 +512,156 @@ class WatcherDatabase private constructor(
                 "ALTER TABLE process_samples ADD COLUMN java_version TEXT",
                 "ALTER TABLE process_samples ADD COLUMN java_vendor TEXT",
                 "ALTER TABLE process_samples ADD COLUMN active_processor_count INTEGER",
-                "CREATE TABLE IF NOT EXISTS process_instances (instance_id TEXT PRIMARY KEY, pid INTEGER NOT NULL, process_type TEXT NOT NULL, config_json TEXT, first_observed_at INTEGER NOT NULL, last_observed_at INTEGER NOT NULL)",
+                "CREATE TABLE IF NOT EXISTS process_instances (id TEXT PRIMARY KEY NOT NULL, host_id TEXT NOT NULL DEFAULT '', pid INTEGER NOT NULL, create_time_ms INTEGER NOT NULL, process_type TEXT NOT NULL, name TEXT, command_line TEXT NOT NULL DEFAULT '', first_observed_ms INTEGER NOT NULL, last_observed_ms INTEGER NOT NULL, disappeared_at_ms INTEGER, UNIQUE(host_id, pid, create_time_ms))",
                 "CREATE INDEX IF NOT EXISTS process_instances_pid ON process_instances(pid)",
+                "CREATE INDEX IF NOT EXISTS process_instances_last_obs ON process_instances(last_observed_ms)",
+                "CREATE INDEX IF NOT EXISTS process_instances_alive ON process_instances(disappeared_at_ms)",
                 "CREATE TABLE IF NOT EXISTS metric_definitions (metric_id TEXT PRIMARY KEY, name TEXT NOT NULL, unit TEXT, kind TEXT NOT NULL, temporality TEXT NOT NULL, source TEXT NOT NULL, platform TEXT, UNIQUE(name, source, platform))",
                 "CREATE TABLE IF NOT EXISTS resource_scopes (scope_id TEXT PRIMARY KEY, scope_type TEXT NOT NULL, identity TEXT NOT NULL, metadata_json TEXT, first_observed_at INTEGER NOT NULL, last_observed_at INTEGER NOT NULL, UNIQUE(scope_type, identity))",
-                "CREATE TABLE IF NOT EXISTS metric_samples (sample_id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp INTEGER NOT NULL, instance_id TEXT NOT NULL REFERENCES process_instances(instance_id), scope_id TEXT REFERENCES resource_scopes(scope_id), metric_id TEXT NOT NULL REFERENCES metric_definitions(metric_id), int_value INTEGER, real_value REAL, source TEXT NOT NULL, sampled_at INTEGER NOT NULL, CHECK ((int_value IS NOT NULL AND real_value IS NULL) OR (int_value IS NULL AND real_value IS NOT NULL)))",
+                "CREATE TABLE IF NOT EXISTS metric_samples (sample_id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp INTEGER NOT NULL, instance_id TEXT NOT NULL REFERENCES process_instances(id), scope_id TEXT REFERENCES resource_scopes(scope_id), metric_id TEXT NOT NULL REFERENCES metric_definitions(metric_id), int_value INTEGER, real_value REAL, source TEXT NOT NULL, sampled_at INTEGER NOT NULL, CHECK ((int_value IS NOT NULL AND real_value IS NULL) OR (int_value IS NULL AND real_value IS NOT NULL)))",
                 "CREATE INDEX IF NOT EXISTS metric_samples_instance_metric_ts ON metric_samples(instance_id, metric_id, timestamp)",
                 "CREATE INDEX IF NOT EXISTS metric_samples_metric_ts ON metric_samples(metric_id, timestamp)",
-                "CREATE TABLE IF NOT EXISTS process_events (event_id INTEGER PRIMARY KEY AUTOINCREMENT, instance_id TEXT NOT NULL REFERENCES process_instances(instance_id), timestamp INTEGER NOT NULL, event_type TEXT NOT NULL, metadata_json TEXT, source TEXT NOT NULL)",
-                "CREATE INDEX IF NOT EXISTS process_events_instance_ts ON process_events(instance_id, timestamp)",
+                "CREATE TABLE IF NOT EXISTS process_events (id INTEGER PRIMARY KEY AUTOINCREMENT, schema_version INTEGER NOT NULL DEFAULT 1, event_type TEXT NOT NULL, timestamp_ms INTEGER NOT NULL, process_instance_id TEXT NOT NULL, pid INTEGER NOT NULL, process_type TEXT, source TEXT NOT NULL DEFAULT 'process_poll', metadata_json TEXT)",
+                "CREATE INDEX IF NOT EXISTS process_events_ts ON process_events(timestamp_ms)",
+                "CREATE INDEX IF NOT EXISTS process_events_instance_ts ON process_events(process_instance_id, timestamp_ms)",
                 "CREATE TABLE IF NOT EXISTS collection_capabilities (capability_id TEXT PRIMARY KEY, name TEXT NOT NULL, source TEXT NOT NULL, supported INTEGER NOT NULL, available INTEGER NOT NULL, details_json TEXT, updated_at INTEGER NOT NULL)",
                 "CREATE TABLE IF NOT EXISTS observation_sessions (name TEXT PRIMARY KEY NOT NULL, host_id TEXT NOT NULL, association TEXT NOT NULL, opened_at_ms INTEGER NOT NULL, closed_at_ms INTEGER, response_json TEXT)",
                 "CREATE TABLE IF NOT EXISTS observation_session_processes (session_name TEXT NOT NULL, host_id TEXT NOT NULL, pid INTEGER NOT NULL, start_time_ms INTEGER NOT NULL, PRIMARY KEY(session_name, host_id, pid, start_time_ms), FOREIGN KEY(session_name) REFERENCES observation_sessions(name))",
                 "CREATE TABLE IF NOT EXISTS observation_session_process_summaries (session_name TEXT NOT NULL, host_id TEXT NOT NULL, pid INTEGER NOT NULL, start_time_ms INTEGER NOT NULL, sample_count INTEGER NOT NULL, first_rss_mb INTEGER NOT NULL, peak_rss_mb INTEGER NOT NULL, last_rss_mb INTEGER NOT NULL, delta_rss_mb INTEGER NOT NULL, association TEXT NOT NULL, PRIMARY KEY(session_name, host_id, pid, start_time_ms), FOREIGN KEY(session_name) REFERENCES observation_sessions(name))",
                 "CREATE INDEX IF NOT EXISTS observation_sessions_opened ON observation_sessions(opened_at_ms)",
             ).forEach { sql -> runCatching { driver.execute(null, sql, 0) } }
+            migrateLegacyProcessLifecycleTables(driver)
+        }
+
+        /**
+         * Pre-#484 Kotlin created process_instances/process_events with different column names than
+         * cored. CREATE IF NOT EXISTS cannot rename them; rebuild once when the legacy shape is found.
+         */
+        private fun migrateLegacyProcessLifecycleTables(driver: JdbcSqliteDriver) {
+            val instanceCols = tableColumns(driver, "process_instances")
+            val eventCols = tableColumns(driver, "process_events")
+            val needsInstances = instanceCols.isNotEmpty() &&
+                "instance_id" in instanceCols && "id" !in instanceCols
+            val needsEvents = eventCols.isNotEmpty() &&
+                "timestamp" in eventCols && "timestamp_ms" !in eventCols
+            if (!needsInstances && !needsEvents) return
+
+            driver.execute(null, "PRAGMA foreign_keys = OFF", 0)
+            try {
+                if (needsEvents) {
+                    driver.execute(
+                        null,
+                        """
+                        CREATE TABLE process_events_cored (
+                          id INTEGER PRIMARY KEY AUTOINCREMENT,
+                          schema_version INTEGER NOT NULL DEFAULT 1,
+                          event_type TEXT NOT NULL,
+                          timestamp_ms INTEGER NOT NULL,
+                          process_instance_id TEXT NOT NULL,
+                          pid INTEGER NOT NULL,
+                          process_type TEXT,
+                          source TEXT NOT NULL DEFAULT 'process_poll',
+                          metadata_json TEXT
+                        )
+                        """.trimIndent(),
+                        0,
+                    )
+                    driver.execute(
+                        null,
+                        """
+                        INSERT INTO process_events_cored(
+                          event_type, timestamp_ms, process_instance_id, pid, process_type, source, metadata_json
+                        )
+                        SELECT event_type, timestamp, instance_id,
+                          CAST(
+                            CASE
+                              WHEN instr(instance_id, ':') > 0
+                              THEN substr(instance_id, 1, instr(instance_id, ':') - 1)
+                              ELSE '0'
+                            END AS INTEGER
+                          ),
+                          NULL, source, metadata_json
+                        FROM process_events
+                        """.trimIndent(),
+                        0,
+                    )
+                    driver.execute(null, "DROP TABLE process_events", 0)
+                    driver.execute(null, "ALTER TABLE process_events_cored RENAME TO process_events", 0)
+                    driver.execute(null, "CREATE INDEX IF NOT EXISTS process_events_ts ON process_events(timestamp_ms)", 0)
+                    driver.execute(
+                        null,
+                        "CREATE INDEX IF NOT EXISTS process_events_instance_ts ON process_events(process_instance_id, timestamp_ms)",
+                        0,
+                    )
+                }
+
+                if (needsInstances) {
+                    driver.execute(
+                        null,
+                        """
+                        CREATE TABLE process_instances_cored (
+                          id TEXT PRIMARY KEY NOT NULL,
+                          host_id TEXT NOT NULL DEFAULT '',
+                          pid INTEGER NOT NULL,
+                          create_time_ms INTEGER NOT NULL,
+                          process_type TEXT NOT NULL,
+                          name TEXT,
+                          command_line TEXT NOT NULL DEFAULT '',
+                          first_observed_ms INTEGER NOT NULL,
+                          last_observed_ms INTEGER NOT NULL,
+                          disappeared_at_ms INTEGER,
+                          UNIQUE(host_id, pid, create_time_ms)
+                        )
+                        """.trimIndent(),
+                        0,
+                    )
+                    driver.execute(
+                        null,
+                        """
+                        INSERT INTO process_instances_cored(
+                          id, host_id, pid, create_time_ms, process_type, name, command_line,
+                          first_observed_ms, last_observed_ms, disappeared_at_ms
+                        )
+                        SELECT instance_id, '', pid, first_observed_at, process_type, NULL,
+                          COALESCE(config_json, ''), first_observed_at, last_observed_at, NULL
+                        FROM process_instances
+                        """.trimIndent(),
+                        0,
+                    )
+                    driver.execute(null, "DROP TABLE process_instances", 0)
+                    driver.execute(null, "ALTER TABLE process_instances_cored RENAME TO process_instances", 0)
+                    driver.execute(null, "CREATE INDEX IF NOT EXISTS process_instances_pid ON process_instances(pid)", 0)
+                    driver.execute(
+                        null,
+                        "CREATE INDEX IF NOT EXISTS process_instances_last_obs ON process_instances(last_observed_ms)",
+                        0,
+                    )
+                    driver.execute(
+                        null,
+                        "CREATE INDEX IF NOT EXISTS process_instances_alive ON process_instances(disappeared_at_ms)",
+                        0,
+                    )
+                }
+            } finally {
+                driver.execute(null, "PRAGMA foreign_keys = ON", 0)
+            }
+        }
+
+        private fun tableColumns(driver: JdbcSqliteDriver, table: String): Set<String> {
+            val connection = driver.getConnection()
+            try {
+                return connection.createStatement().use { statement ->
+                    statement.executeQuery("PRAGMA table_info($table)").use { resultSet ->
+                        buildSet {
+                            while (resultSet.next()) {
+                                add(resultSet.getString("name"))
+                            }
+                        }
+                    }
+                }
+            } finally {
+                driver.closeConnection(connection)
+            }
         }
 
         private const val DEFAULT_QUERY_LIMIT = 50L

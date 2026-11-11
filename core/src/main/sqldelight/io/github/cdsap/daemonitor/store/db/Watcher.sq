@@ -69,16 +69,24 @@ CREATE TABLE builds (
 CREATE INDEX builds_start ON builds(start_time);
 CREATE INDEX builds_project ON builds(project_path);
 
--- Additive normalized storage. Existing process_samples/builds readers remain supported.
+-- Shared with cored. process_instances / process_events use cored column names so PreferGo
+-- desktop (and Kotlin-first DBs Go opens later) share one schema. See #484.
 CREATE TABLE process_instances (
-    instance_id TEXT PRIMARY KEY,
+    id TEXT PRIMARY KEY NOT NULL,
+    host_id TEXT NOT NULL DEFAULT '',
     pid INTEGER NOT NULL,
+    create_time_ms INTEGER NOT NULL,
     process_type TEXT NOT NULL,
-    config_json TEXT,
-    first_observed_at INTEGER NOT NULL,
-    last_observed_at INTEGER NOT NULL
+    name TEXT,
+    command_line TEXT NOT NULL DEFAULT '',
+    first_observed_ms INTEGER NOT NULL,
+    last_observed_ms INTEGER NOT NULL,
+    disappeared_at_ms INTEGER,
+    UNIQUE(host_id, pid, create_time_ms)
 );
 CREATE INDEX process_instances_pid ON process_instances(pid);
+CREATE INDEX process_instances_last_obs ON process_instances(last_observed_ms);
+CREATE INDEX process_instances_alive ON process_instances(disappeared_at_ms);
 
 CREATE TABLE metric_definitions (
     metric_id TEXT PRIMARY KEY,
@@ -104,7 +112,7 @@ CREATE TABLE resource_scopes (
 CREATE TABLE metric_samples (
     sample_id INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp INTEGER NOT NULL,
-    instance_id TEXT NOT NULL REFERENCES process_instances(instance_id),
+    instance_id TEXT NOT NULL REFERENCES process_instances(id),
     scope_id TEXT REFERENCES resource_scopes(scope_id),
     metric_id TEXT NOT NULL REFERENCES metric_definitions(metric_id),
     int_value INTEGER,
@@ -118,14 +126,18 @@ CREATE INDEX metric_samples_instance_metric_ts ON metric_samples(instance_id, me
 CREATE INDEX metric_samples_metric_ts ON metric_samples(metric_id, timestamp);
 
 CREATE TABLE process_events (
-    event_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    instance_id TEXT NOT NULL REFERENCES process_instances(instance_id),
-    timestamp INTEGER NOT NULL,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    schema_version INTEGER NOT NULL DEFAULT 1,
     event_type TEXT NOT NULL,
-    metadata_json TEXT,
-    source TEXT NOT NULL
+    timestamp_ms INTEGER NOT NULL,
+    process_instance_id TEXT NOT NULL,
+    pid INTEGER NOT NULL,
+    process_type TEXT,
+    source TEXT NOT NULL DEFAULT 'process_poll',
+    metadata_json TEXT
 );
-CREATE INDEX process_events_instance_ts ON process_events(instance_id, timestamp);
+CREATE INDEX process_events_ts ON process_events(timestamp_ms);
+CREATE INDEX process_events_instance_ts ON process_events(process_instance_id, timestamp_ms);
 
 CREATE TABLE collection_capabilities (
     capability_id TEXT PRIMARY KEY,
@@ -250,14 +262,19 @@ purgeBuildsOlderThan:
 DELETE FROM builds WHERE start_time < ?;
 
 upsertProcessInstance:
-INSERT INTO process_instances(instance_id, pid, process_type, config_json, first_observed_at, last_observed_at)
-VALUES (?, ?, ?, ?, ?, ?)
-ON CONFLICT(instance_id) DO UPDATE SET
-    last_observed_at = excluded.last_observed_at,
-    config_json = COALESCE(excluded.config_json, process_instances.config_json);
+INSERT INTO process_instances(id, host_id, pid, create_time_ms, process_type, name, command_line, first_observed_ms, last_observed_ms, disappeared_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+    last_observed_ms = excluded.last_observed_ms,
+    command_line = CASE
+        WHEN excluded.command_line = '' THEN process_instances.command_line
+        ELSE excluded.command_line
+    END,
+    name = COALESCE(excluded.name, process_instances.name),
+    disappeared_at_ms = COALESCE(excluded.disappeared_at_ms, process_instances.disappeared_at_ms);
 
 processInstancesByPid:
-SELECT * FROM process_instances WHERE pid = ? ORDER BY first_observed_at;
+SELECT * FROM process_instances WHERE pid = ? ORDER BY first_observed_ms;
 
 insertMetricDefinition:
 INSERT INTO metric_definitions(metric_id, name, unit, kind, temporality, source, platform)
@@ -271,8 +288,8 @@ INSERT INTO metric_samples(timestamp, instance_id, scope_id, metric_id, int_valu
 VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 insertProcessEvent:
-INSERT INTO process_events(instance_id, timestamp, event_type, metadata_json, source)
-VALUES (?, ?, ?, ?, ?);
+INSERT INTO process_events(schema_version, event_type, timestamp_ms, process_instance_id, pid, process_type, source, metadata_json)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 upsertResourceScope:
 INSERT INTO resource_scopes(scope_id, scope_type, identity, metadata_json, first_observed_at, last_observed_at)
@@ -331,10 +348,10 @@ purgeMetricSamplesOlderThan:
 DELETE FROM metric_samples WHERE timestamp < ?;
 
 purgeProcessEventsOlderThan:
-DELETE FROM process_events WHERE timestamp < ?;
+DELETE FROM process_events WHERE timestamp_ms < ?;
 
 purgeProcessInstancesOlderThan:
 DELETE FROM process_instances
-WHERE last_observed_at < ?
-  AND NOT EXISTS (SELECT 1 FROM metric_samples WHERE metric_samples.instance_id = process_instances.instance_id)
-  AND NOT EXISTS (SELECT 1 FROM process_events WHERE process_events.instance_id = process_instances.instance_id);
+WHERE last_observed_ms < ?
+  AND NOT EXISTS (SELECT 1 FROM metric_samples WHERE metric_samples.instance_id = process_instances.id)
+  AND NOT EXISTS (SELECT 1 FROM process_events WHERE process_events.process_instance_id = process_instances.id);
