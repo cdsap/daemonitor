@@ -26,6 +26,9 @@ import androidx.compose.ui.test.runComposeUiTest
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.unit.dp
 import io.github.cdsap.daemonitor.domain.LiveMetricLabels
+import io.github.cdsap.daemonitor.domain.model.Build
+import io.github.cdsap.daemonitor.domain.model.FinalStatus
+import io.github.cdsap.daemonitor.domain.model.Source
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.LiveJvmHeap
 import io.github.cdsap.daemonitor.domain.model.ProcessType
@@ -81,6 +84,27 @@ class LiveMonitorScreenUiTest {
         automated = false,
         liveHeap = liveHeap,
     )
+
+    @Test
+    fun `recent builds section distinguishes states and only appears for Gradle daemons`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val daemon = sampleProcess()
+        var state by mutableStateOf(LiveUiState(processes = listOf(daemon), detail = DetailState.Selected(daemon), recentBuilds = RecentBuildsState.Loading, isLoading = false, isEmpty = false))
+        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
+        onNodeWithText("Loading recent builds…").assertExists()
+        state = state.copy(recentBuilds = RecentBuildsState.Loaded(emptyList()))
+        onNodeWithText("No recent builds for this daemon.").assertExists()
+        val build = Build("b1", daemon.pid, null, null, null, "/project", 1_700_000_000_000, null, 12.5, null, null, null, Source.TERMINAL, FinalStatus.SUCCESS, null, agent = "agent")
+        state = state.copy(recentBuilds = RecentBuildsState.Loaded(listOf(build)))
+        onNodeWithText("SUCCESS").assertExists()
+        onNodeWithText("/project · 12.5 s", substring = true).assertExists()
+        onNodeWithText("TERMINAL / agent", substring = true).assertExists()
+        state = state.copy(recentBuilds = RecentBuildsState.Unavailable)
+        onNodeWithText("Recent builds unavailable.").assertExists()
+        val other = sampleProcess(type = ProcessType.KOTLIN_DAEMON)
+        state = state.copy(processes = listOf(other), detail = DetailState.Selected(other))
+        onNodeWithText("Recent builds").assertDoesNotExist()
+    }
 
     @Test
     fun `first render shows scanning state before the first poll`() = runComposeUiTest {

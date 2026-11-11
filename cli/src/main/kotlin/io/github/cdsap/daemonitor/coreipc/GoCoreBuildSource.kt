@@ -1,6 +1,7 @@
 package io.github.cdsap.daemonitor.coreipc
 
 import io.github.cdsap.daemonitor.application.BuildSource
+import io.github.cdsap.daemonitor.application.DaemonBuildSource
 import io.github.cdsap.daemonitor.domain.model.Build
 import java.nio.file.Path
 
@@ -13,10 +14,16 @@ import java.nio.file.Path
  */
 class GoCoreBuildSource internal constructor(
     private val client: GoCoreClient,
-) : BuildSource {
+) : BuildSource, DaemonBuildSource {
     constructor(socketPath: Path, fetch: (Path, String) -> String = ::unixHttpGet) : this(
         GoCoreClient(socketPath, fetch),
     )
+
+    override fun buildsForDaemon(pid: Long, startTimeMs: Long, limit: Int): List<Build> {
+        require(pid > 0 && startTimeMs > 0)
+        val body = client.get("/v1/builds?pid=$pid&start_time_ms=$startTimeMs&limit=${limit.coerceIn(1, 500)}")
+        return GoCoreSnapshotParser.parseBuilds(body)
+    }
 
     override fun recentBuilds(limit: Int): List<Build> {
         val capped = limit.coerceIn(1, 500)
