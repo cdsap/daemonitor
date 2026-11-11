@@ -1,7 +1,10 @@
 package io.github.cdsap.daemonitor.ui.live
 
 import io.github.cdsap.daemonitor.application.DaemonLogTailResult
+import io.github.cdsap.daemonitor.application.DaemonLog
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
+import io.github.cdsap.daemonitor.domain.model.ProcessType
+import io.github.cdsap.daemonitor.domain.model.Build
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,11 +18,14 @@ class LiveViewModel(
     private val clockMs: () -> Long = { System.currentTimeMillis() },
     private val timelineCapacity: Int = DEFAULT_TIMELINE_CAPACITY,
 ) {
+    private var selectionVersion = 0L
     private val _state = MutableStateFlow(LiveUiState())
     val state: StateFlow<LiveUiState> = _state.asStateFlow()
+    private var daemonLogs = emptyList<DaemonLog>()
 
     /** Apply a fresh poll result. Handles the selected→ended transition when a PID disappears. */
-    fun onPoll(processes: List<GradleProcess>, tailForSelected: DaemonLogTailResult? = null) {
+    fun onPoll(processes: List<GradleProcess>, tailForSelected: DaemonLogTailResult? = null, daemonLogs: List<DaemonLog> = emptyList()) {
+        this.daemonLogs = daemonLogs
         val current = _state.value
         val detail = nextDetail(current.detail, processes)
         val sample = RssTimelineSample(
@@ -61,6 +67,12 @@ class LiveViewModel(
             processes = processes,
             summary = summarize(processes),
             detail = detail,
+            daemonLog = when (detail) {
+                is DetailState.Selected -> logFor(detail.process)
+                is DetailState.Ended -> current.daemonLog
+                DetailState.NoSelection -> null
+            },
+            recentBuilds = if (detail is DetailState.Ended && current.recentBuilds == RecentBuildsState.Loading) RecentBuildsState.Unavailable else current.recentBuilds,
             tail = when (nextTailState) {
                 is LogTailState.Available -> nextTailState.lines
                 else -> emptyList()
@@ -80,8 +92,11 @@ class LiveViewModel(
 
     fun select(pid: Long) {
         val process = _state.value.processes.firstOrNull { it.pid == pid } ?: return
+        selectionVersion++
         _state.value = _state.value.copy(
             detail = DetailState.Selected(process),
+            daemonLog = logFor(process),
+            recentBuilds = RecentBuildsState.Loading,
             tail = emptyList(),
             tailState = LogTailState.Loading,
         )
@@ -97,9 +112,21 @@ class LiveViewModel(
         )
     }
 
+    fun selectionToken(): Long = selectionVersion
+
+    fun onRecentBuilds(token: Long, process: GradleProcess, builds: List<Build>?) {
+        val detail = _state.value.detail
+        if (token != selectionVersion || detail !is DetailState.Selected ||
+            detail.process.pid != process.pid || detail.process.startTimeMs != process.startTimeMs) return
+        _state.value = _state.value.copy(recentBuilds = builds?.let { RecentBuildsState.Loaded(it) } ?: RecentBuildsState.Unavailable)
+    }
+
     fun clearSelection() {
+        selectionVersion++
         _state.value = _state.value.copy(
             detail = DetailState.NoSelection,
+            daemonLog = null,
+            recentBuilds = RecentBuildsState.Unavailable,
             tail = emptyList(),
             tailState = LogTailState.NoSelection,
         )
@@ -111,12 +138,15 @@ class LiveViewModel(
         is DaemonLogTailResult.Error -> LogTailState.Error(errorType)
     }
 
+    private fun logFor(process: GradleProcess): DaemonLog? =
+        if (process.type == ProcessType.GRADLE_DAEMON) daemonLogs.firstOrNull { it.pid == process.pid } else null
+
     private fun nextDetail(current: DetailState, processes: List<GradleProcess>): DetailState =
         when (current) {
             is DetailState.NoSelection -> DetailState.NoSelection
             is DetailState.Selected -> {
                 val live = processes.firstOrNull { it.pid == current.process.pid }
-                if (live != null) DetailState.Selected(live) else DetailState.Ended(current.process)
+                if (live != null && live.startTimeMs == current.process.startTimeMs) DetailState.Selected(live) else DetailState.Ended(current.process)
             }
             is DetailState.Ended -> current
         }

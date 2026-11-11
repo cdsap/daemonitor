@@ -1,6 +1,8 @@
 package io.github.cdsap.daemonitor.ui.live
 
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
+import io.github.cdsap.daemonitor.application.DaemonLog
+import io.github.cdsap.daemonitor.domain.model.Build
 
 /** Detail-panel state for the Live Monitor (U7). Three explicit states resolve the review gap. */
 sealed interface DetailState {
@@ -37,6 +39,12 @@ sealed interface LogTailState {
     data class Error(val errorType: String) : LogTailState
 }
 
+sealed interface RecentBuildsState {
+    data object Loading : RecentBuildsState
+    data object Unavailable : RecentBuildsState
+    data class Loaded(val builds: List<Build>) : RecentBuildsState
+}
+
 /** One poll-time sample for the Visual tab memory timeline. */
 data class RssTimelineSample(
     val atMs: Long,
@@ -69,6 +77,8 @@ data class LiveUiState(
     val detail: DetailState = DetailState.NoSelection,
     val tail: List<String> = emptyList(),
     val tailState: LogTailState = LogTailState.NoSelection,
+    val daemonLog: DaemonLog? = null,
+    val recentBuilds: RecentBuildsState = RecentBuildsState.Unavailable,
     val isLoading: Boolean = true,
     val isEmpty: Boolean = true,
     val pollError: PollError? = null,
