@@ -389,6 +389,7 @@ private fun ProcessDetails(
         DetailRow("CPU system time", p.cpuSystemSecondsTotal.activityMetric("s"))
         DetailRow("CPU total time", p.cpuTotalSecondsTotal.activityMetric("s"))
         DetailRow("Cores used", p.cpuCoresUsed.activityMetric())
+        DetailRow("Logical processors", p.logicalProcessorCount.metric())
         DetailRow("Resource scope", p.resourceScope ?: "unavailable")
         DetailRow("Active processors", p.activeProcessorCount.metric())
 
