@@ -53,6 +53,8 @@ import kotlinx.coroutines.delay
 import java.util.Locale
 import io.github.cdsap.daemonitor.domain.LiveMetricLabels
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
+import io.github.cdsap.daemonitor.domain.model.JvmMemoryPool
+import io.github.cdsap.daemonitor.domain.model.JvmRawValue
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.application.DaemonLog
 import java.time.Instant
@@ -408,6 +410,22 @@ private fun ProcessDetails(
         DetailRow("Metaspace used", p.metaspaceUsedMb.metric("MB"))
         DetailRow("Metaspace committed", p.metaspaceCommittedMb.metric("MB"))
 
+        val pools = p.memoryPools.filter { it.used != null || it.committed != null || it.max != null }
+        val codeCache = p.codeCache.filter { it.used != null || it.committed != null || it.max != null }
+        val jit = p.jit
+        val jitParts = listOfNotNull(
+            jit?.compiledCount?.let { "$it compiled" },
+            jit?.failedCount?.let { "$it failed" },
+            jit?.invalidCount?.let { "$it invalid" },
+            jit?.compilationTimeSeconds?.let { "${it.gcTimeDetail()} compilation time" },
+        )
+        if (pools.isNotEmpty() || codeCache.isNotEmpty() || jitParts.isNotEmpty()) {
+            DetailSection("JVM pools and compilation")
+            pools.forEach { DetailRow(it.name.ifBlank { "Other pool" }, poolDetail(it)) }
+            codeCache.forEach { DetailRow("Code cache · ${it.name.ifBlank { "unnamed" }}", poolDetail(it)) }
+            if (jitParts.isNotEmpty()) DetailRow("JIT", jitParts.joinToString(", "))
+        }
+
         DetailSection("GC")
         DetailRow("Young GC", p.youngGcCount.metric("collections"))
         DetailRow("Young GC time", p.youngGcTimeMs.metric("ms"))
@@ -496,6 +514,13 @@ private fun Double?.activityMetric(unit: String = ""): String =
     this?.let { String.format(Locale.ROOT, "%.3f%s", it, if (unit.isBlank()) "" else " $unit") } ?: "unavailable"
 
 private fun Double?.gcTimeDetail(): String = this?.let { String.format(Locale.ROOT, "%.3f s", it) } ?: "—"
+
+private fun poolDetail(pool: JvmMemoryPool): String {
+    fun value(raw: JvmRawValue?): String = raw?.let {
+        "${it.value} ${it.unit}".trimEnd()
+    } ?: "unavailable"
+    return "used ${value(pool.used)} · committed ${value(pool.committed)} · max ${value(pool.max)}"
+}
 
 private fun Double?.gcTimeCompact(): String = this?.let { String.format(Locale.ROOT, "%.3f", it) } ?: "—"
 
