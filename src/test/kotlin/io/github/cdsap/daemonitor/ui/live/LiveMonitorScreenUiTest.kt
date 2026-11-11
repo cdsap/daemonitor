@@ -48,15 +48,16 @@ class LiveMonitorScreenUiTest {
     fun `daemon log metadata displays values and explicit missing state only for Gradle daemons`() = runComposeUiTest {
         mainClock.autoAdvance = false
         val daemon = sampleProcess()
+        val logPath = Path.of("/tmp/daemon-4321.out.log")
         var state by mutableStateOf(LiveUiState(
             processes = listOf(daemon), detail = DetailState.Selected(daemon),
-            daemonLog = DaemonLog(daemon.pid, "8.14.3", Path.of("/tmp/daemon-4321.out.log")),
+            daemonLog = DaemonLog(daemon.pid, "8.14.3", logPath),
             tailState = LogTailState.Available(listOf("tail line")), isLoading = false, isEmpty = false,
         ))
         setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
         onNodeWithText("Gradle version").assertExists()
         onNodeWithText("8.14.3").assertExists()
-        onNodeWithText("/tmp/daemon-4321.out.log").assertExists()
+        onNodeWithText(logPath.toString()).assertExists()
         onNodeWithText("tail line").assertExists()
         state = state.copy(daemonLog = null)
         assertEquals(2, onAllNodesWithText("Unavailable").fetchSemanticsNodes().size)
