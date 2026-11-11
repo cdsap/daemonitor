@@ -11,6 +11,18 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class GoCoreSnapshotParserTest {
+
+    fun `host preserves zero and unavailable metrics and capabilities`() {
+        val host = GoCoreSnapshotParser.parseHost("""{"sampled_at_ms": 100, "logical_processors":{"availability":"available","value":8}, "cpu_usage_percent":{"availability":"available","value":0}, "memory_used_bytes":{"availability":"unsupported","value":100}}""")
+        assertEquals(8L, host.logicalProcessors)
+        assertEquals(0.0, host.cpuPercent)
+        assertNull(host.memoryUsedBytes)
+        val caps = GoCoreSnapshotParser.parseCapabilities("""{"metrics":[{"metric_name":"host.cpu.usage_percent","availability":"available"},{"metric_name":"host.memory.swap","availability":"unsupported"}]}""")
+        assertEquals(listOf("available", "unsupported"), caps.map { it.availability })
+        assertEquals(emptyList(), GoCoreSnapshotParser.parseCapabilities("""{"metrics":[]}"""))
+        kotlin.test.assertFails { GoCoreSnapshotParser.parseCapabilities("{}") }
+    }
+
     @Test
     fun `parses pools and jit without inventing missing values`() {
         val process = GoCoreSnapshotParser.parseProcesses("""

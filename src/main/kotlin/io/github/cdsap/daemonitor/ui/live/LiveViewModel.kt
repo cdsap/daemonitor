@@ -2,6 +2,8 @@ package io.github.cdsap.daemonitor.ui.live
 
 import io.github.cdsap.daemonitor.application.DaemonLogTailResult
 import io.github.cdsap.daemonitor.application.DaemonLog
+import io.github.cdsap.daemonitor.application.HostContext
+import io.github.cdsap.daemonitor.application.MetricCapability
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.domain.model.Build
@@ -67,6 +69,8 @@ class LiveViewModel(
             processes = processes,
             summary = summarize(processes),
             detail = detail,
+            host = if (detail is DetailState.Ended && current.host == ContextState.Loading) ContextState.Unavailable else current.host,
+            capabilities = if (detail is DetailState.Ended && current.capabilities == ContextState.Loading) ContextState.Unavailable else current.capabilities,
             daemonLog = when (detail) {
                 is DetailState.Selected -> logFor(detail.process)
                 is DetailState.Ended -> current.daemonLog
@@ -90,16 +94,19 @@ class LiveViewModel(
         _state.value = _state.value.copy(pollError = PollError(failedAtMs, errorType))
     }
 
-    fun select(pid: Long) {
-        val process = _state.value.processes.firstOrNull { it.pid == pid } ?: return
+    fun select(pid: Long, contextAvailable: Boolean = false): Long? {
+        val process = _state.value.processes.firstOrNull { it.pid == pid } ?: return null
         selectionVersion++
         _state.value = _state.value.copy(
             detail = DetailState.Selected(process),
+            host = if (contextAvailable) ContextState.Loading else ContextState.Unavailable,
+            capabilities = if (contextAvailable) ContextState.Loading else ContextState.Unavailable,
             daemonLog = logFor(process),
             recentBuilds = RecentBuildsState.Loading,
             tail = emptyList(),
             tailState = LogTailState.Loading,
         )
+        return selectionVersion
     }
 
     fun onTail(pid: Long, result: DaemonLogTailResult) {
@@ -114,6 +121,21 @@ class LiveViewModel(
 
     fun selectionToken(): Long = selectionVersion
 
+    fun isContextSelection(generation: Long): Boolean =
+        generation == selectionVersion && _state.value.detail is DetailState.Selected
+
+    fun onHost(generation: Long, result: ContextState<HostContext>) {
+        if (generation == selectionVersion && _state.value.detail is DetailState.Selected) {
+            _state.value = _state.value.copy(host = result)
+        }
+    }
+
+    fun onCapabilities(generation: Long, result: ContextState<List<MetricCapability>>) {
+        if (generation == selectionVersion && _state.value.detail is DetailState.Selected) {
+            _state.value = _state.value.copy(capabilities = result)
+        }
+    }
+
     fun onRecentBuilds(token: Long, process: GradleProcess, builds: List<Build>?) {
         val detail = _state.value.detail
         if (token != selectionVersion || detail !is DetailState.Selected ||
@@ -125,6 +147,8 @@ class LiveViewModel(
         selectionVersion++
         _state.value = _state.value.copy(
             detail = DetailState.NoSelection,
+            host = ContextState.Unavailable,
+            capabilities = ContextState.Unavailable,
             daemonLog = null,
             recentBuilds = RecentBuildsState.Unavailable,
             tail = emptyList(),

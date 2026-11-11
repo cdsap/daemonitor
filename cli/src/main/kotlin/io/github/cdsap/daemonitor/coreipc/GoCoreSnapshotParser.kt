@@ -1,5 +1,7 @@
 package io.github.cdsap.daemonitor.coreipc
 
+import io.github.cdsap.daemonitor.application.HostContext
+import io.github.cdsap.daemonitor.application.MetricCapability
 import io.github.cdsap.daemonitor.application.DaemonLog
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
@@ -13,6 +15,29 @@ import io.github.cdsap.daemonitor.domain.model.Source
 import java.nio.file.Path
 
 internal object GoCoreSnapshotParser {
+    fun parseHost(json: String): HostContext {
+        require(json.trim().startsWith("{") && json.trim().endsWith("}"))
+        fun metric(name: String): Double? {
+            val obj = Regex("\"$name\"\\s*:\\s*(\\{[^{}]*})").find(json)?.groupValues?.get(1) ?: return null
+            return if (stringField(obj, "availability") == "available") numberField(obj, "value") else null
+        }
+        return HostContext(
+            numberField(json, "sampled_at_ms")?.toLong()?.takeIf { it > 0 },
+            metric("logical_processors")?.toLong(), metric("cpu_usage_percent"),
+            metric("memory_used_bytes")?.toLong(), metric("memory_total_bytes")?.toLong(),
+        )
+    }
+
+    fun parseCapabilities(json: String): List<MetricCapability> {
+        val array = extractArray(json, "metrics") ?: error("Missing capabilities metrics")
+        return splitObjects(array).map { obj ->
+            MetricCapability(
+                stringField(obj, "metric_name") ?: error("Missing metric name"),
+                stringField(obj, "availability") ?: error("Missing metric availability"),
+            )
+        }
+    }
+
     fun parseProcesses(json: String): List<GradleProcess> {
         val arrayBody = extractArray(json, "processes") ?: return emptyList()
         return splitObjects(arrayBody).mapNotNull { parseProcess(it) }

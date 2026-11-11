@@ -11,6 +11,35 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class LiveViewModelTest {
+    @Test
+    fun `context results are selection scoped and errors differ from empty host`() {
+        val vm = LiveViewModel()
+        vm.onPoll(listOf(proc(1), proc(2)))
+        val first = vm.select(1, true)!!
+        val second = vm.select(2, true)!!
+        vm.onHost(first, ContextState.Error)
+        assertEquals(ContextState.Loading, vm.state.value.host)
+        val empty = io.github.cdsap.daemonitor.application.HostContext(null, null, null, null, null)
+        vm.onHost(second, ContextState.Loaded(empty))
+        assertEquals(ContextState.Loaded(empty), vm.state.value.host)
+        vm.onCapabilities(second, ContextState.Error)
+        assertEquals(ContextState.Error, vm.state.value.capabilities)
+        vm.clearSelection()
+        vm.onHost(second, ContextState.Error)
+        assertEquals(ContextState.Unavailable, vm.state.value.host)
+    }
+
+    @Test
+    fun `reused pid ends selected incarnation and rejects late context`() {
+        val vm = LiveViewModel()
+        vm.onPoll(listOf(proc(1)))
+        val generation = vm.select(1, true)!!
+        vm.onPoll(listOf(proc(1).copy(startTimeMs = 2)))
+        assertTrue(vm.state.value.detail is DetailState.Ended)
+        vm.onHost(generation, ContextState.Error)
+        assertEquals(ContextState.Unavailable, vm.state.value.host)
+    }
+
 
     @Test
     fun `daemon metadata follows selection and refreshed polls`() {
