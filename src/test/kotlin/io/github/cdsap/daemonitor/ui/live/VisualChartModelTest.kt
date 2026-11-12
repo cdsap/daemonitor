@@ -148,6 +148,41 @@ class VisualChartModelTest {
     }
 
     @Test
+    fun `timeline chart exposes cpu series and cpu mode without inventing zeros`() {
+        val chart = VisualChartModel.timelineChart(
+            samples = listOf(
+                RssTimelineSample(
+                    atMs = 1_000,
+                    totalRssMb = 100,
+                    byPid = mapOf(1L to 100L, 2L to 50L),
+                    extendedByPid = mapOf(1L to ProcessMetricSample(cpuPercent = 24L)),
+                ),
+                RssTimelineSample(
+                    atMs = 2_000,
+                    totalRssMb = 110,
+                    byPid = mapOf(1L to 110L, 2L to 50L),
+                ),
+            ),
+            processes = listOf(
+                process(pid = 1, rss = 100, heapLimit = null, heapUsed = null),
+                process(pid = 2, rss = 50, heapLimit = null, heapUsed = null),
+            ),
+        )
+
+        val cpuSeriesId = VisualChartModel.extendedSeriesId(1, TimelineMetric.CPU)
+        val cpuSeries = chart.series.first { it.id == cpuSeriesId }
+        assertEquals(TimelineMetric.CPU, cpuSeries.metric)
+        assertEquals(24L, chart.points[0].valuesBySeriesId[cpuSeriesId])
+        assertTrue(cpuSeriesId !in chart.points[1].valuesBySeriesId)
+        assertTrue(chart.series.none { it.pid == 2L && it.metric == TimelineMetric.CPU })
+
+        val cpuMode = VisualChartModel.forMode(chart, VisualMetricMode.CPU)
+        assertTrue(cpuMode.series.none { it.isTotal })
+        assertTrue(cpuMode.series.all { it.metric == TimelineMetric.CPU })
+        assertEquals("%", VisualMetricMode.CPU.axisUnit)
+    }
+
+    @Test
     fun `timeline chart keeps only the active window`() {
         val chart = VisualChartModel.timelineChart(
             samples = listOf(

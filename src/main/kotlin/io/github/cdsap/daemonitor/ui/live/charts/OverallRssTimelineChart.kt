@@ -185,9 +185,9 @@ fun OverallRssTimelineChart(
             } else {
                 val maxMb = max(
                     1L,
-                    points.maxOf { point ->
-                        visibleSeries.maxOfOrNull { item -> point.valuesBySeriesId[item.id] ?: 0L } ?: 0L
-                    },
+                    points.flatMap { point ->
+                        visibleSeries.mapNotNull { item -> point.valuesBySeriesId[item.id] }
+                    }.maxOrNull() ?: 1L,
                 )
                 val yTicks = listOf(0L, maxMb / 2, maxMb)
                 val xLabels = listOf(
@@ -234,8 +234,8 @@ fun OverallRssTimelineChart(
                                                 } else {
                                                     index * (width / (points.size - 1).toFloat())
                                                 }
-                                                val markerYs = visibleSeries.map { item ->
-                                                    val value = point.valuesBySeriesId[item.id] ?: 0L
+                                                val markerYs = visibleSeries.mapNotNull { item ->
+                                                    val value = point.valuesBySeriesId[item.id] ?: return@mapNotNull null
                                                     val y = height - (value.toFloat() / maxMb.toFloat()) * height
                                                     seriesColors.getValue(item.id) to y
                                                 }
@@ -258,8 +258,8 @@ fun OverallRssTimelineChart(
 
                                 visibleSeries.forEach { item ->
                                     val color = seriesColors.getValue(item.id)
-                                    val path = pathFor(points, width, height, maxMb) {
-                                        (it.valuesBySeriesId[item.id] ?: 0L).toFloat()
+                                    val path = pathFor(points, width, height, maxMb) { point ->
+                                        point.valuesBySeriesId[item.id]
                                     }
                                     if (item.isTotal && item.metric == TimelineMetric.RSS) {
                                         val fillPath = Path().apply {
@@ -317,6 +317,7 @@ fun OverallRssTimelineChart(
                                     point = marker.point,
                                     series = visibleSeries,
                                     seriesColors = seriesColors,
+                                    axisUnit = axisUnit,
                                     modifier = Modifier
                                         .align(Alignment.TopStart)
                                         .offset { IntOffset(tooltipX.roundToPx(), tooltipY.roundToPx()) },
@@ -398,6 +399,7 @@ private fun HoverLegendCard(
     point: RssTimelinePoint,
     series: List<TimelineSeries>,
     seriesColors: Map<String, Color>,
+    axisUnit: String,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -418,7 +420,7 @@ private fun HoverLegendCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             series.forEach { item ->
-                val value = point.valuesBySeriesId[item.id] ?: 0L
+                val value = point.valuesBySeriesId[item.id]
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(Space.xs),
@@ -443,7 +445,11 @@ private fun HoverLegendCard(
                             },
                     )
                     Text(
-                        "${item.label} $value MB",
+                        if (value == null) {
+                            "${item.label} unavailable"
+                        } else {
+                            "${item.label} $value $axisUnit"
+                        },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -461,20 +467,35 @@ private fun nearestIndex(pointCount: Int, width: Float, x: Float): Int {
     return (x / step).roundToInt().coerceIn(0, pointCount - 1)
 }
 
-private fun pathFor(
+/**
+ * Builds a polyline that skips samples with a null value so unavailable metrics
+ * (notably CPU) do not draw fake zero troughs.
+ */
+internal fun pathFor(
     points: List<RssTimelinePoint>,
     width: Float,
     height: Float,
     maxMb: Long,
-    valueOf: (RssTimelinePoint) -> Float,
+    valueOf: (RssTimelinePoint) -> Long?,
 ): Path {
     val path = Path()
     if (points.isEmpty()) return path
     val xStep = if (points.size == 1) 0f else width / (points.size - 1).toFloat()
+    var segmentOpen = false
     points.forEachIndexed { index, point ->
+        val value = valueOf(point)
+        if (value == null) {
+            segmentOpen = false
+            return@forEachIndexed
+        }
         val x = index * xStep
-        val y = height - (valueOf(point) / maxMb.toFloat()) * height
-        if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        val y = height - (value.toFloat() / maxMb.toFloat()) * height
+        if (!segmentOpen) {
+            path.moveTo(x, y)
+            segmentOpen = true
+        } else {
+            path.lineTo(x, y)
+        }
     }
     return path
 }

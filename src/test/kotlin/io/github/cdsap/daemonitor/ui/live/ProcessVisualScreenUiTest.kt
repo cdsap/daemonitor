@@ -80,6 +80,31 @@ class ProcessVisualScreenUiTest {
     }
 
     @Test
+    fun `metric mode switch shows cpu series when samples include cpu`() = runVisualUiTest {
+        val processes = listOf(
+            process(pid = 100, type = ProcessType.GRADLE_DAEMON, project = "checkout", rss = 1024, heap = 4096, used = 700, cpu = 24.0),
+        )
+        val timeline = timelineFor(processes).map { sample ->
+            sample.copy(
+                extendedByPid = mapOf(
+                    100L to ProcessMetricSample(cpuPercent = 24L),
+                ),
+            )
+        }
+
+        setContent {
+            WatcherTheme {
+                ProcessVisualScreen(liveState(processes, timeline))
+            }
+        }
+
+        onNodeWithTag("visual-mode-cpu").performClick()
+        onNodeWithTag("visual-mode-cpu").assertExists()
+        onNodeWithText("Total RSS").assertDoesNotExist()
+        onAllNodesWithText("Gradle daemon · checkout · PID 100 · CPU").onFirst().assertExists()
+    }
+
+    @Test
     fun `selecting process strip updates selected vitals`() = runVisualUiTest {
         val processes = listOf(
             process(pid = 100, type = ProcessType.GRADLE_DAEMON, project = "checkout", rss = 1024, heap = 4096, used = 700, cpu = 24.0),
