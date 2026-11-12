@@ -45,6 +45,8 @@ data class ProcessEvent(
     val eventType: String,
     val metadataJson: String?,
     val source: String,
+    val pid: Long? = null,
+    val processType: String? = null,
 )
 
 data class ResourceScope(

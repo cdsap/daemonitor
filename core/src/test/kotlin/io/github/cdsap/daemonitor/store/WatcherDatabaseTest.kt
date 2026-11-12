@@ -435,6 +435,85 @@ class WatcherDatabaseTest {
     }
 
     @Test
+    fun `purgeOlderThan succeeds against cored process lifecycle schema`(@TempDirArg tmp: Path) {
+        val path = tmp.resolve("watcher.db")
+        WatcherDatabase.open(path).close()
+        JdbcSqliteDriver("jdbc:sqlite:${path.toAbsolutePath()}").use { driver ->
+            driver.execute(null, "DROP TABLE process_events", 0)
+            driver.execute(null, "DROP TABLE process_instances", 0)
+        }
+        seedCoredProcessLifecycle(path)
+
+        WatcherDatabase.open(path).use { db ->
+            db.purgeOlderThan(nowMs = 1 + 8L * 24 * 60 * 60 * 1000, retentionDays = 7)
+        }
+
+        JdbcSqliteDriver("jdbc:sqlite:${path.toAbsolutePath()}").use { driver ->
+            assertEquals(0L, countRows(driver, "process_events"))
+            assertEquals(0L, countRows(driver, "process_instances"))
+        }
+    }
+
+    @Test
+    fun `legacy process lifecycle tables migrate to cored column names`(@TempDirArg tmp: Path) {
+        val path = tmp.resolve("watcher.db")
+        WatcherDatabase.open(path).close()
+        JdbcSqliteDriver("jdbc:sqlite:${path.toAbsolutePath()}").use { driver ->
+            driver.execute(null, "DROP TABLE process_events", 0)
+            driver.execute(null, "DROP TABLE process_instances", 0)
+            driver.execute(
+                null,
+                """
+                CREATE TABLE process_instances (
+                  instance_id TEXT PRIMARY KEY,
+                  pid INTEGER NOT NULL,
+                  process_type TEXT NOT NULL,
+                  config_json TEXT,
+                  first_observed_at INTEGER NOT NULL,
+                  last_observed_at INTEGER NOT NULL
+                )
+                """.trimIndent(),
+                0,
+            )
+            driver.execute(
+                null,
+                """
+                CREATE TABLE process_events (
+                  event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  instance_id TEXT NOT NULL,
+                  timestamp INTEGER NOT NULL,
+                  event_type TEXT NOT NULL,
+                  metadata_json TEXT,
+                  source TEXT NOT NULL
+                )
+                """.trimIndent(),
+                0,
+            )
+            driver.execute(
+                null,
+                "INSERT INTO process_instances VALUES ('1:1', 1, 'GRADLE_DAEMON', NULL, 1, 1)",
+                0,
+            )
+            driver.execute(
+                null,
+                "INSERT INTO process_events(instance_id, timestamp, event_type, metadata_json, source) VALUES ('1:1', 1, 'started', '{}', 'test')",
+                0,
+            )
+        }
+
+        WatcherDatabase.open(path).use { db ->
+            db.purgeOlderThan(nowMs = 1 + 8L * 24 * 60 * 60 * 1000, retentionDays = 7)
+        }
+
+        JdbcSqliteDriver("jdbc:sqlite:${path.toAbsolutePath()}").use { driver ->
+            assertEquals(0L, countRows(driver, "process_events"))
+            assertEquals(0L, countRows(driver, "process_instances"))
+            assertTrue(tableColumns(driver, "process_events").contains("timestamp_ms"))
+            assertTrue(tableColumns(driver, "process_instances").contains("last_observed_ms"))
+        }
+    }
+
+    @Test
     fun `kotlin-created database reads cored observation sessions with mixed history`(@TempDirArg tmp: Path) {
         val path = tmp.resolve("watcher.db")
         WatcherDatabase.open(path).close()
@@ -468,6 +547,66 @@ class WatcherDatabaseTest {
         }
     }
 
+    private fun seedCoredProcessLifecycle(path: Path) {
+        JdbcSqliteDriver("jdbc:sqlite:${path.toAbsolutePath()}").use { driver ->
+            driver.execute(
+                null,
+                """
+                CREATE TABLE process_instances (
+                  id TEXT PRIMARY KEY NOT NULL,
+                  host_id TEXT NOT NULL DEFAULT '',
+                  pid INTEGER NOT NULL,
+                  create_time_ms INTEGER NOT NULL,
+                  process_type TEXT NOT NULL,
+                  name TEXT,
+                  command_line TEXT NOT NULL DEFAULT '',
+                  first_observed_ms INTEGER NOT NULL,
+                  last_observed_ms INTEGER NOT NULL,
+                  disappeared_at_ms INTEGER,
+                  UNIQUE(host_id, pid, create_time_ms)
+                )
+                """.trimIndent(),
+                0,
+            )
+            driver.execute(
+                null,
+                """
+                CREATE TABLE process_events (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  schema_version INTEGER NOT NULL DEFAULT 1,
+                  event_type TEXT NOT NULL,
+                  timestamp_ms INTEGER NOT NULL,
+                  process_instance_id TEXT NOT NULL,
+                  pid INTEGER NOT NULL,
+                  process_type TEXT,
+                  source TEXT NOT NULL DEFAULT 'process_poll',
+                  metadata_json TEXT
+                )
+                """.trimIndent(),
+                0,
+            )
+            driver.execute(
+                null,
+                """
+                INSERT INTO process_instances(
+                  id, host_id, pid, create_time_ms, process_type, command_line,
+                  first_observed_ms, last_observed_ms
+                ) VALUES ('host:1:1', 'host', 1, 1, 'GRADLE_DAEMON', 'java', 1, 1)
+                """.trimIndent(),
+                0,
+            )
+            driver.execute(
+                null,
+                """
+                INSERT INTO process_events(
+                  schema_version, event_type, timestamp_ms, process_instance_id, pid, process_type, source, metadata_json
+                ) VALUES (1, 'process.first_observed', 1, 'host:1:1', 1, 'GRADLE_DAEMON', 'process_poll', '{}')
+                """.trimIndent(),
+                0,
+            )
+        }
+    }
+
     private fun seedCoredObservation(path: Path, createTables: Boolean = false) {
         JdbcSqliteDriver("jdbc:sqlite:${path.toAbsolutePath()}").use { driver ->
             if (createTables) {
@@ -479,6 +618,37 @@ class WatcherDatabaseTest {
             driver.execute(null, "INSERT INTO builds(build_id, daemon_pid, start_time, final_status) VALUES ('build-1', 7, 1500, 'SUCCESS')", 0)
             driver.execute(null, "INSERT INTO observation_sessions(name, host_id, association, opened_at_ms, closed_at_ms) VALUES ('session-1', 'host-a', 'confirmed', 1000, 2000)", 0)
             driver.execute(null, "INSERT INTO observation_session_process_summaries(session_name, host_id, pid, start_time_ms, sample_count, first_rss_mb, peak_rss_mb, last_rss_mb, delta_rss_mb, association) VALUES ('session-1', 'host-a', 42, 900, 1, 200, 300, 250, 50, 'confirmed')", 0)
+        }
+    }
+
+    private fun countRows(driver: JdbcSqliteDriver, table: String): Long {
+        val connection = driver.getConnection()
+        try {
+            return connection.createStatement().use { statement ->
+                statement.executeQuery("SELECT COUNT(*) FROM $table").use { resultSet ->
+                    resultSet.next()
+                    resultSet.getLong(1)
+                }
+            }
+        } finally {
+            driver.closeConnection(connection)
+        }
+    }
+
+    private fun tableColumns(driver: JdbcSqliteDriver, table: String): Set<String> {
+        val connection = driver.getConnection()
+        try {
+            return connection.createStatement().use { statement ->
+                statement.executeQuery("PRAGMA table_info($table)").use { resultSet ->
+                    buildSet {
+                        while (resultSet.next()) {
+                            add(resultSet.getString("name"))
+                        }
+                    }
+                }
+            }
+        } finally {
+            driver.closeConnection(connection)
         }
     }
 
