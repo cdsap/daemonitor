@@ -19,7 +19,9 @@ import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.domain.model.Source
 import io.github.cdsap.daemonitor.persistence.BuildRepository
 import io.github.cdsap.daemonitor.persistence.ProcessSample
+import io.github.cdsap.daemonitor.persistence.RetainedProcessSample
 import io.github.cdsap.daemonitor.persistence.ProcessSampleRepository
+import io.github.cdsap.daemonitor.persistence.RetainedProcessSampleRepository
 import io.github.cdsap.daemonitor.persistence.RetentionRepository
 import io.github.cdsap.daemonitor.persistence.HistoryRepository
 import io.github.cdsap.daemonitor.persistence.CollectionCapability
@@ -63,6 +65,7 @@ class WatcherDatabase private constructor(
     ProcessSampleWriter,
     BuildRepository,
     ProcessSampleRepository,
+    RetainedProcessSampleRepository,
     RetentionRepository,
     HistoryRepository,
     BuildSampleProvider {
@@ -363,6 +366,48 @@ class WatcherDatabase private constructor(
     override fun findByPid(pid: Long, limit: Long): List<ProcessSample> =
         processSamplesForPid(pid, limit)
 
+    override fun samplesInRange(fromMs: Long, toMs: Long): List<RetainedProcessSample> =
+        db.watcherQueries.processSamplesInRange(fromMs, toMs) {
+                timestamp,
+                pid,
+                rssMemoryMb,
+                maxHeapMb,
+                heapUsedMb,
+                heapAvailable,
+                threadCount,
+                readBytes,
+                writeBytes,
+                minorPageFaults,
+                majorPageFaults,
+                voluntaryContextSwitches,
+                involuntaryContextSwitches,
+                openFileDescriptors,
+                metaspaceUsedMb,
+                youngGcCount,
+                oldGcCount,
+            ->
+            val heapIsAvailable = heapAvailable == 1L
+            RetainedProcessSample(
+                timestampMs = timestamp,
+                pid = pid,
+                rssMemoryMb = rssMemoryMb,
+                maxHeapMb = maxHeapMb,
+                heapUsedMb = heapUsedMb.takeIf { heapIsAvailable },
+                heapAvailable = heapIsAvailable,
+                threadCount = threadCount,
+                readBytes = readBytes,
+                writeBytes = writeBytes,
+                minorPageFaults = minorPageFaults,
+                majorPageFaults = majorPageFaults,
+                voluntaryContextSwitches = voluntaryContextSwitches,
+                involuntaryContextSwitches = involuntaryContextSwitches,
+                openFileDescriptors = openFileDescriptors,
+                metaspaceUsedMb = metaspaceUsedMb,
+                youngGcCount = youngGcCount,
+                oldGcCount = oldGcCount,
+            )
+        }.executeAsList()
+
     /** One-shot snapshot of distinct project paths for the History filter dropdown. */
     override fun distinctProjects(): List<String> =
         db.watcherQueries.distinctProjects().executeAsList()
@@ -512,6 +557,7 @@ class WatcherDatabase private constructor(
                 "ALTER TABLE process_samples ADD COLUMN java_version TEXT",
                 "ALTER TABLE process_samples ADD COLUMN java_vendor TEXT",
                 "ALTER TABLE process_samples ADD COLUMN active_processor_count INTEGER",
+                "CREATE INDEX IF NOT EXISTS process_samples_ts ON process_samples(timestamp)",
                 "CREATE TABLE IF NOT EXISTS process_instances (id TEXT PRIMARY KEY NOT NULL, host_id TEXT NOT NULL DEFAULT '', pid INTEGER NOT NULL, create_time_ms INTEGER NOT NULL, process_type TEXT NOT NULL, name TEXT, command_line TEXT NOT NULL DEFAULT '', first_observed_ms INTEGER NOT NULL, last_observed_ms INTEGER NOT NULL, disappeared_at_ms INTEGER, UNIQUE(host_id, pid, create_time_ms))",
                 "CREATE INDEX IF NOT EXISTS process_instances_pid ON process_instances(pid)",
                 "CREATE INDEX IF NOT EXISTS process_instances_last_obs ON process_instances(last_observed_ms)",

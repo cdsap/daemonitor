@@ -167,6 +167,7 @@ object VisualChartModel {
         processes: List<GradleProcess>,
         windowEndMs: Long? = null,
         windowDurationMs: Long = DEFAULT_TIMELINE_WINDOW_MS,
+        useLiveValueFallbacks: Boolean = true,
     ): RssTimelineChartData {
         val endMs = windowEndMs ?: samples.lastOrNull()?.atMs
         val visible = if (endMs == null) {
@@ -188,9 +189,10 @@ object VisualChartModel {
 
         val processSeries = orderedPids.flatMap { pid ->
             val baseLabel = liveByPid[pid]?.chartLabel() ?: "PID $pid"
-            val hasHeapLimit = visible.any { pid in it.heapLimitByPid } || liveByPid[pid]?.maxHeapMb != null
+            val hasHeapLimit = visible.any { pid in it.heapLimitByPid } ||
+                (useLiveValueFallbacks && liveByPid[pid]?.maxHeapMb != null)
             val hasHeapUsed = visible.any { pid in it.heapUsedByPid } ||
-                liveByPid[pid]?.liveHeap?.available == true
+                (useLiveValueFallbacks && liveByPid[pid]?.liveHeap?.available == true)
             buildList {
                 add(
                     TimelineSeries(
@@ -260,8 +262,9 @@ object VisualChartModel {
                 val raw = when (item.metric) {
                     TimelineMetric.RSS -> sample.byPid[pid]
                     TimelineMetric.HEAP_USED -> sample.heapUsedByPid[pid]
-                        ?: liveByPid[pid]?.liveHeap?.takeIf { it.available }?.usedMb
-                    TimelineMetric.HEAP_LIMIT -> sample.heapLimitByPid[pid] ?: liveByPid[pid]?.maxHeapMb
+                        ?: liveByPid[pid]?.liveHeap?.takeIf { useLiveValueFallbacks && it.available }?.usedMb
+                    TimelineMetric.HEAP_LIMIT -> sample.heapLimitByPid[pid]
+                        ?: liveByPid[pid]?.maxHeapMb?.takeIf { useLiveValueFallbacks }
                     else -> extendedValue(item.metric, sample.extendedByPid[pid])
                 }
                 // CPU (and other optional extended metrics) omit missing samples instead of

@@ -23,6 +23,7 @@ import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
 import io.github.cdsap.daemonitor.ui.live.LogTailState
 import io.github.cdsap.daemonitor.ui.live.RecentBuildsState
+import io.github.cdsap.daemonitor.ui.live.VisualTimeRange
 import io.github.cdsap.daemonitor.ui.settings.UpdateUiState
 import io.github.cdsap.daemonitor.update.UpdateApplier
 import io.github.cdsap.daemonitor.update.UpdateCheckResult
@@ -44,6 +45,30 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class WatcherServiceTest {
+    @Test
+    fun `visual range loads retained samples from the requested window`(@TempDir tmp: Path) = runTest {
+        val database = WatcherDatabase.open(tmp.resolve("watcher.db"))
+        val uiDispatcher = UnconfinedTestDispatcher(testScheduler)
+        database.save(sampleProcess(pid = 10, rssMb = 100), 2_600_000)
+        database.save(sampleProcess(pid = 10, rssMb = 200), 2_800_000)
+        val service = service(database, tmp, uiDispatcher = uiDispatcher, clock = { 3_600_000 }) {
+            WatcherRuntime.PollResult(emptyList(), emptyList(), buildsChanged = false)
+        }
+        try {
+            service.start(backgroundScope)
+            service.setVisualTimeRange(VisualTimeRange.FIFTEEN_MINUTES)
+            advanceUntilIdle()
+
+            val state = service.visualTimelineViewModel.state.value
+            assertEquals(VisualTimeRange.FIFTEEN_MINUTES, state.range)
+            assertEquals(listOf(2_800_000L), state.samples.map { it.atMs })
+            assertEquals(200L, state.samples.single().totalRssMb)
+        } finally {
+            service.stop()
+            database.close()
+        }
+    }
+
     @Test
     fun `failed poll records sanitized error and failure timestamp`(@TempDir tmp: Path) = runTest {
         val database = WatcherDatabase.open(tmp.resolve("watcher.db"))
@@ -298,5 +323,22 @@ class WatcherServiceTest {
         },
         uiDispatcher = uiDispatcher,
         ioDispatcher = uiDispatcher,
+        processSampleRepository = database,
+    )
+
+    private fun sampleProcess(pid: Long, rssMb: Long) = GradleProcess(
+        pid = pid,
+        parentPid = 1,
+        type = ProcessType.GRADLE_DAEMON,
+        commandLine = "java GradleDaemon",
+        workingDirectory = "/project",
+        projectPath = "/project",
+        cpuPercent = 1.0,
+        rssMemoryMb = rssMb,
+        maxHeapMb = 1024,
+        minHeapMb = null,
+        gc = "G1",
+        startTimeMs = 1,
+        status = "RUNNING",
     )
 }

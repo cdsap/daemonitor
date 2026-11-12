@@ -200,6 +200,21 @@ class VisualChartModelTest {
     }
 
     @Test
+    fun `retained timeline does not fill missing heap values from live processes`() {
+        val chart = VisualChartModel.timelineChart(
+            samples = listOf(RssTimelineSample(atMs = 1_000, totalRssMb = 100, byPid = mapOf(1L to 100L))),
+            processes = listOf(process(pid = 1, rss = 100, heapLimit = 512, heapUsed = 80)),
+            useLiveValueFallbacks = false,
+        )
+
+        assertTrue(
+            chart.series.none {
+                it.pid == 1L && (it.metric == TimelineMetric.HEAP_USED || it.metric == TimelineMetric.HEAP_LIMIT)
+            },
+        )
+    }
+
+    @Test
     fun `empty process list returns empty chart data`() {
         val data = VisualChartModel.fromProcesses(emptyList())
         assertEquals(0L, data.totalRssMb)
