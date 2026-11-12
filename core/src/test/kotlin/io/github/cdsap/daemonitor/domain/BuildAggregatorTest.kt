@@ -130,6 +130,22 @@ class BuildAggregatorTest {
     }
 
     @Test
+    fun `snippets include opening and closing markers in their respective windows`() {
+        val agg = BuildAggregator()
+        agg.onLogLine(pid, "outside", null)
+        agg.onLogLine(pid, "busy one", BusyMark(1_000))
+        agg.onLogLine(pid, "start one", start(1_010))
+        val first = agg.onLogLine(pid, "busy two", BusyMark(2_000)).single()
+        agg.onLogLine(pid, "start two", start(2_010))
+        val second = agg.onLogLine(pid, "idle two", IdleMark(3_000)).single()
+        assertEquals("busy one\nstart one", first.logSnippet)
+        assertEquals("busy two\nstart two\nidle two", second.logSnippet)
+
+        val eventsOnly = agg.onEvents(pid, listOf(BusyMark(4_000), start(4_010), IdleMark(5_000))).single()
+        assertNull(eventsOnly.logSnippet)
+    }
+
+    @Test
     fun `zero in-window samples produce null peaks (sub-poll)`() {
         val agg = BuildAggregator(sampleProvider = { _, _, _ -> emptyList() })
         val b = agg.onEvents(pid, listOf(context(0), BusyMark(1_000), start(1_010), Outcome(true, 0.3), IdleMark(1_300))).single()

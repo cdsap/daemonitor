@@ -133,7 +133,7 @@ class BuildAggregator(
 
     private class Window(
         val busyTimeMs: Long,
-        private val logSnippetLimit: LogSnippetLimit,
+        logSnippetLimit: LogSnippetLimit,
         var qualified: Boolean = false,
         var buildId: String? = null,
         var currentDir: String? = null,
@@ -141,18 +141,9 @@ class BuildAggregator(
         var outcomeSuccess: Boolean? = null,
         var outcomeDurationSeconds: Double? = null,
     ) {
-        private val logLines = ArrayDeque<String>()
-        private var logChars = 0
+        private val logSnippet = BoundedLogSnippet(logSnippetLimit)
 
-        fun appendLogLine(line: String) {
-            val boundedLine = line.takeLast(logSnippetLimit.chars)
-            logLines.addLast(boundedLine)
-            logChars += boundedLine.length + if (logLines.size > 1) 1 else 0
-            while (logLines.size > logSnippetLimit.lines || logChars > logSnippetLimit.chars) {
-                val removed = logLines.removeFirst()
-                logChars -= removed.length + if (logLines.isNotEmpty()) 1 else 0
-            }
-        }
+        fun appendLogLine(line: String) = logSnippet.append(line)
 
         fun toBuild(
             daemonPid: Long,
@@ -197,7 +188,7 @@ class BuildAggregator(
                 peakCpuPercent = cpu.maxOrNull(),
                 inferredSource = source,
                 finalStatus = status,
-                logSnippet = logLines.takeIf { it.isNotEmpty() }?.joinToString("\n"),
+                logSnippet = logSnippet.value(),
                 agent = agentAttr?.agent,
                 agentProvider = agentAttr?.provider,
             )
