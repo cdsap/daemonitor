@@ -4,12 +4,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -31,6 +33,7 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.Tab
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -186,7 +189,7 @@ fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit, onClearSelec
                 }
                 Spacer(Modifier.width(Space.lg))
                 Column(modifier = Modifier.weight(1f).fillMaxSize()) {
-                    DetailCard(state.detail, state.processes, state.host, state.capabilities, state.recentBuilds, nowMs, modifier = Modifier.weight(1f).fillMaxWidth())
+                    DetailCard(state.detail, state.processes, state.host, state.capabilities, state.recentBuilds, state.daemonLog, nowMs, modifier = Modifier.weight(2f).fillMaxWidth())
                     Spacer(Modifier.padding(Space.xs))
                     val process = when (val detail = state.detail) {
                         is DetailState.Selected -> detail.process
@@ -311,6 +314,7 @@ private fun DetailCard(
     host: ContextState<HostContext>,
     capabilities: ContextState<List<MetricCapability>>,
     recentBuilds: RecentBuildsState,
+    daemonLog: DaemonLog?,
     nowMs: Long,
     modifier: Modifier = Modifier,
 ) {
@@ -318,7 +322,7 @@ private fun DetailCard(
         when (detail) {
             is DetailState.NoSelection ->
                 Text("Select a process to see details.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
-            is DetailState.Selected -> ProcessDetails(
+            is DetailState.Selected -> ProcessDetailInspector(
                 detail.process,
                 children = processes.filter { it.parentPid == detail.process.pid },
                 ended = false,
@@ -326,8 +330,9 @@ private fun DetailCard(
                 host = host,
                 capabilities = capabilities,
                 recentBuilds = recentBuilds,
+                daemonLog = daemonLog,
             )
-            is DetailState.Ended -> ProcessDetails(
+            is DetailState.Ended -> ProcessDetailInspector(
                 detail.lastKnown,
                 children = emptyList(),
                 ended = true,
@@ -335,13 +340,19 @@ private fun DetailCard(
                 host = host,
                 capabilities = capabilities,
                 recentBuilds = recentBuilds,
+                daemonLog = daemonLog,
             )
         }
     }
 }
 
+private enum class InspectorTab(val label: String, val tag: String) {
+    OVERVIEW("Overview", "overview"), JVM("JVM", "jvm"), OS_IO("OS / I/O", "os-io"),
+    PROCESS("Process", "process"), GRADLE("Gradle", "gradle"),
+}
+
 @Composable
-private fun ProcessDetails(
+private fun ProcessDetailInspector(
     p: GradleProcess,
     children: List<GradleProcess>,
     ended: Boolean,
@@ -349,163 +360,177 @@ private fun ProcessDetails(
     host: ContextState<HostContext>,
     capabilities: ContextState<List<MetricCapability>>,
     recentBuilds: RecentBuildsState,
+    daemonLog: DaemonLog?,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .testTag("process-detail-scroll"),
-    ) {
-        if (ended) {
-            Text("● Process ended", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelLarge)
-            Spacer(Modifier.padding(Space.xs))
-        }
+    var selectedTab by remember { mutableStateOf(InspectorTab.OVERVIEW) }
+    val tabs = InspectorTab.entries.filter { it != InspectorTab.GRADLE || p.type == ProcessType.GRADLE_DAEMON }
+    val activeTab = selectedTab.takeIf { it in tabs } ?: InspectorTab.OVERVIEW
+    LaunchedEffect(activeTab) { selectedTab = activeTab }
+    Column(Modifier.fillMaxSize().testTag("process-detail-inspector")) {
         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
             ProcessTypeIcon(p.type, size = 18.dp)
-            Text("PID ${p.pid} · ${p.type.displayLabel()}", fontWeight = FontWeight.SemiBold)
+            Text("PID ${p.pid} · ${p.type.displayLabel()} · ${if (ended) "—" else formatUptime(p.startTimeMs, nowMs)}", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
+            if (ended) Text("● Process ended", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
         }
-        Spacer(Modifier.padding(Space.xs))
+        Text("RSS ${p.rssMemoryMb} MB · CPU ${LiveMetricLabels.cpuCompact(p.cpuPercent)} · Heap ${LiveMetricLabels.liveHeapUsedCompact(p.liveHeap)}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("process-detail-vitals"))
         if (children.isNotEmpty()) {
-            DetailSection("CHILD PROCESSES")
-            Column(modifier = Modifier.testTag("child-processes")) {
+            Column(Modifier.heightIn(max = 80.dp).verticalScroll(rememberScrollState()).testTag("child-processes")) {
                 children.forEach { child -> ChildProcessRow(child) }
             }
         }
-        DetailSection("Host context")
-        when (host) {
-            ContextState.Unavailable -> Text("Unavailable for this collector")
-            ContextState.Loading -> Text("Loading host context…")
-            ContextState.Error -> Text("Could not load host context")
-            is ContextState.Loaded -> {
-                val h = host.value
-                val used = h.memoryUsedBytes
-                val total = h.memoryTotalBytes
-                if (listOf(h.logicalProcessors, h.cpuPercent, h.memoryUsedBytes, h.memoryTotalBytes).all { it == null }) {
-                    Text("No host measurements available")
-                } else {
-                    DetailRow("Logical processors", h.logicalProcessors?.toString() ?: "unavailable")
-                    DetailRow("Host CPU", h.cpuPercent?.let { String.format(Locale.US, "%.1f%%", it) } ?: "unavailable")
-                    DetailRow("Host memory", if (used != null && total != null) "${used / 1048576} / ${total / 1048576} MB" else "unavailable")
-                }
-                DetailRow("Sampled", h.sampledAtMs?.let { java.time.Instant.ofEpochMilli(it).toString() } ?: "unavailable")
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+            tabs.forEach { tab ->
+                Tab(selected = activeTab == tab, onClick = { selectedTab = tab }, modifier = Modifier.testTag("process-detail-tab-${tab.tag}"), text = { Text(tab.label, maxLines = 1) })
             }
         }
-        var expanded by remember(p.pid, p.startTimeMs) { mutableStateOf(false) }
-        Text(if (expanded) "▾ Collection capabilities" else "▸ Collection capabilities", modifier = Modifier.clickable { expanded = !expanded }, fontWeight = FontWeight.SemiBold)
-        when (capabilities) {
-            ContextState.Unavailable -> Text("Unavailable for this collector")
-            ContextState.Loading -> Text("Loading capabilities…")
-            ContextState.Error -> Text("Could not load capabilities")
-            is ContextState.Loaded -> {
-                if (capabilities.value.isEmpty()) Text("No capabilities reported")
-                capabilities.value.groupBy { it.name.split('.').take(2).joinToString(".") }.forEach { (family, metrics) ->
-                    val available = metrics.count { it.availability == "available" }
-                    DetailRow(family, "$available / ${metrics.size} available")
-                    if (expanded) metrics.forEach { DetailRow(it.name, it.availability) }
+        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).testTag("process-detail-scroll")) {
+            when (activeTab) {
+                InspectorTab.OVERVIEW -> {
+                    DetailSection("Memory")
+                    DetailRow("RSS", "${p.rssMemoryMb} MB")
+                    DetailRow("Virtual memory", p.virtualMemoryMb.metric("MB"))
+                    DetailRow("Proportional (PSS)", p.proportionalBytes.metricBytes())
+                    DetailRow("Private committed", p.privateCommittedBytes.metricBytes())
+                    DetailRow("Physical footprint", p.physicalFootprintBytes.metricBytes())
+                    DetailRow("Peak resident", p.peakResidentBytes.metricBytes())
+                    DetailRow("Swap", p.swapMemoryMb.metric("MB"))
+                    DetailRow("Heap used", LiveMetricLabels.liveHeapUsedDetail(p.liveHeap, p.type))
+                    DetailRow(
+                        "Heap committed",
+                        p.liveHeap?.takeIf { it.available }?.committedMb?.let { "$it MB" } ?: LiveMetricLabels.HEAP_UNAVAILABLE_DETAIL,
+                    )
+                    DetailRow("Heap limit (-Xmx)", p.maxHeapMb?.let { "$it MB" } ?: LiveMetricLabels.HEAP_UNAVAILABLE_DETAIL)
+                    DetailRow(
+                        "Heap max (runtime)",
+                        p.liveHeap?.takeIf { it.available }?.maxMb?.let { "$it MB" } ?: LiveMetricLabels.HEAP_UNAVAILABLE_DETAIL,
+                    )
+                    DetailSection("CPU")
+                    DetailRow("CPU", LiveMetricLabels.cpuDetail(p.cpuPercent))
+                    DetailRow("CPU user time", p.cpuUserSecondsTotal.activityMetric("s"))
+                    DetailRow("CPU system time", p.cpuSystemSecondsTotal.activityMetric("s"))
+                    DetailRow("CPU total time", p.cpuTotalSecondsTotal.activityMetric("s"))
+                    DetailRow("Cores used", p.cpuCoresUsed.activityMetric())
+                    DetailRow("Logical processors", p.logicalProcessorCount.metric())
+                    DetailRow("Resource scope", p.resourceScope ?: "unavailable")
+                    DetailRow("Active processors", p.activeProcessorCount.metric())
+
                 }
-            }
-        }
-        if (p.type == ProcessType.GRADLE_DAEMON) {
-            DetailSection("Recent builds")
-            when (recentBuilds) {
-                RecentBuildsState.Loading -> Text("Loading recent builds…")
-                RecentBuildsState.Unavailable -> Text("Recent builds unavailable.")
-                is RecentBuildsState.Loaded -> if (recentBuilds.builds.isEmpty()) {
-                    Text("No recent builds for this daemon.")
-                } else {
-                    recentBuilds.builds.forEach { build ->
-                        val started = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(build.startTimeMs))
-                        val duration = build.durationSeconds?.let { String.format(Locale.ROOT, "%.1f s", it) } ?: "—"
-                        DetailRow(build.finalStatus.name.replace('_', ' '), "${build.projectPath ?: build.workingDirectory ?: "Unknown project"} · $duration · $started · ${build.inferredSource}${build.agent?.let { " / $it" } ?: ""}")
+                InspectorTab.JVM -> {
+                    DetailSection("JVM")
+                    DetailRow("Java", listOfNotNull(p.javaVersion, p.javaVendor).joinToString(" · ").ifBlank { "unavailable" })
+                    DetailRow("Java runtime", p.javaRuntimeVersion ?: "unavailable")
+                    DetailRow("Java VM", p.javaVmName ?: "unavailable")
+                    DetailRow("Java VM version", p.javaVmVersion ?: "unavailable")
+                    DetailRow("OS", p.osName ?: "unavailable")
+                    DetailRow("OS arch", p.osArch ?: "unavailable")
+                    DetailRow("GC", p.gc ?: "unavailable")
+                    DetailRow("Metaspace used", p.metaspaceUsedMb.metric("MB"))
+                    DetailRow("Metaspace committed", p.metaspaceCommittedMb.metric("MB"))
+
+                    val pools = p.memoryPools.filter { it.used != null || it.committed != null || it.max != null }
+                    val codeCache = p.codeCache.filter { it.used != null || it.committed != null || it.max != null }
+                    val jit = p.jit
+                    val jitParts = listOfNotNull(
+                        jit?.compiledCount?.let { "$it compiled" },
+                        jit?.failedCount?.let { "$it failed" },
+                        jit?.invalidCount?.let { "$it invalid" },
+                        jit?.compilationTimeSeconds?.let { "${it.gcTimeDetail()} compilation time" },
+                    )
+                    if (pools.isNotEmpty() || codeCache.isNotEmpty() || jitParts.isNotEmpty()) {
+                        DetailSection("JVM pools and compilation")
+                        pools.forEach { DetailRow(it.name.ifBlank { "Other pool" }, poolDetail(it)) }
+                        codeCache.forEach { DetailRow("Code cache · ${it.name.ifBlank { "unnamed" }}", poolDetail(it)) }
+                        if (jitParts.isNotEmpty()) DetailRow("JIT", jitParts.joinToString(", "))
+                    }
+
+                    DetailSection("GC")
+                    DetailRow("Young GC", p.youngGcCount.metric("collections"))
+                    DetailRow("Young GC time", p.youngGcTimeMs.metric("ms"))
+                    DetailRow("YGCT", p.youngGcTimeSeconds.gcTimeDetail())
+                    DetailRow("FGCT", p.fullGcTimeSeconds.gcTimeDetail())
+                    DetailRow("CGCT", p.concurrentGcTimeSeconds.gcTimeDetail())
+                    DetailRow("GCT", p.totalGcTimeSeconds.gcTimeDetail())
+                    DetailRow("Old GC", p.oldGcCount.metric("collections"))
+                    DetailRow("Old GC time", p.oldGcTimeMs.metric("ms"))
+
+                }
+                InspectorTab.OS_IO -> {
+                    DetailSection("I/O")
+                    DetailRow("Read", p.readBytes.metricBytes())
+                    DetailRow("Write", p.writeBytes.metricBytes())
+                    DetailRow("Read operations", p.readOperations.metric())
+                    DetailRow("Write operations", p.writeOperations.metric())
+                    DetailRow("Minor page faults", p.minorPageFaults.metric())
+                    DetailRow("Major page faults", p.majorPageFaults.metric())
+
+                    DetailSection("Process")
+                    DetailRow("Threads", p.threadCount.metric())
+                    DetailRow("Open file descriptors", p.openFileDescriptors.metric())
+                    DetailRow("Context switches", listOfNotNull(
+                        p.voluntaryContextSwitches?.let { "voluntary $it" },
+                        p.involuntaryContextSwitches?.let { "involuntary $it" },
+                    ).ifEmpty { listOf("unavailable") }.joinToString(", "))
+                    DetailSection("Host context")
+                    when (host) {
+                        ContextState.Unavailable -> Text("Unavailable for this collector")
+                        ContextState.Loading -> Text("Loading host context…")
+                        ContextState.Error -> Text("Could not load host context")
+                        is ContextState.Loaded -> {
+                            val h = host.value
+                            val used = h.memoryUsedBytes
+                            val total = h.memoryTotalBytes
+                            if (listOf(h.logicalProcessors, h.cpuPercent, h.memoryUsedBytes, h.memoryTotalBytes).all { it == null }) {
+                                Text("No host measurements available")
+                            } else {
+                                DetailRow("Logical processors", h.logicalProcessors?.toString() ?: "unavailable")
+                                DetailRow("Host CPU", h.cpuPercent?.let { String.format(Locale.US, "%.1f%%", it) } ?: "unavailable")
+                                DetailRow("Host memory", if (used != null && total != null) "${used / 1048576} / ${total / 1048576} MB" else "unavailable")
+                            }
+                            DetailRow("Sampled", h.sampledAtMs?.let { java.time.Instant.ofEpochMilli(it).toString() } ?: "unavailable")
+                        }
+                    }
+                    var expanded by remember(p.pid, p.startTimeMs) { mutableStateOf(false) }
+                    Text(if (expanded) "▾ Collection capabilities" else "▸ Collection capabilities", modifier = Modifier.clickable { expanded = !expanded }, fontWeight = FontWeight.SemiBold)
+                    when (capabilities) {
+                        ContextState.Unavailable -> Text("Unavailable for this collector")
+                        ContextState.Loading -> Text("Loading capabilities…")
+                        ContextState.Error -> Text("Could not load capabilities")
+                        is ContextState.Loaded -> {
+                            if (capabilities.value.isEmpty()) Text("No capabilities reported")
+                            capabilities.value.groupBy { it.name.split('.').take(2).joinToString(".") }.forEach { (family, metrics) ->
+                                val available = metrics.count { it.availability == "available" }
+                                DetailRow(family, "$available / ${metrics.size} available")
+                                if (expanded) metrics.forEach { DetailRow(it.name, it.availability) }
+                            }
+                        }
+                    }
+                }
+                InspectorTab.PROCESS -> {
+                    DetailRow("Working dir", p.workingDirectory ?: "unavailable")
+                    Spacer(Modifier.padding(Space.xs))
+                    Text("Command line", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(p.commandLine, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+                }
+                InspectorTab.GRADLE -> {
+                    DetailRow("Log path", daemonLog?.path?.toString()?.takeIf { it.isNotBlank() } ?: "unavailable")
+                    Text("Tail available in the Daemon log card", style = MaterialTheme.typography.bodySmall)
+                    DetailSection("Recent builds")
+                    when (recentBuilds) {
+                        RecentBuildsState.Loading -> Text("Loading recent builds…")
+                        RecentBuildsState.Unavailable -> Text("Recent builds unavailable.")
+                        is RecentBuildsState.Loaded -> if (recentBuilds.builds.isEmpty()) {
+                            Text("No recent builds for this daemon.")
+                        } else {
+                            recentBuilds.builds.forEach { build ->
+                                val started = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(build.startTimeMs))
+                                val duration = build.durationSeconds?.let { String.format(Locale.ROOT, "%.1f s", it) } ?: "—"
+                                DetailRow(build.finalStatus.name.replace('_', ' '), "${build.projectPath ?: build.workingDirectory ?: "Unknown project"} · $duration · $started · ${build.inferredSource}${build.agent?.let { " / $it" } ?: ""}")
+                            }
+                        }
                     }
                 }
             }
         }
-        DetailSection("Memory")
-        DetailRow("RSS", "${p.rssMemoryMb} MB")
-        DetailRow("Virtual memory", p.virtualMemoryMb.metric("MB"))
-        DetailRow("Proportional (PSS)", p.proportionalBytes.metricBytes())
-        DetailRow("Private committed", p.privateCommittedBytes.metricBytes())
-        DetailRow("Physical footprint", p.physicalFootprintBytes.metricBytes())
-        DetailRow("Peak resident", p.peakResidentBytes.metricBytes())
-        DetailRow("Swap", p.swapMemoryMb.metric("MB"))
-        DetailRow("Heap used", LiveMetricLabels.liveHeapUsedDetail(p.liveHeap, p.type))
-        DetailRow(
-            "Heap committed",
-            p.liveHeap?.takeIf { it.available }?.committedMb?.let { "$it MB" } ?: LiveMetricLabels.HEAP_UNAVAILABLE_DETAIL,
-        )
-        DetailRow("Heap limit (-Xmx)", p.maxHeapMb?.let { "$it MB" } ?: LiveMetricLabels.HEAP_UNAVAILABLE_DETAIL)
-        DetailRow(
-            "Heap max (runtime)",
-            p.liveHeap?.takeIf { it.available }?.maxMb?.let { "$it MB" } ?: LiveMetricLabels.HEAP_UNAVAILABLE_DETAIL,
-        )
-        DetailSection("CPU")
-        DetailRow("CPU", LiveMetricLabels.cpuDetail(p.cpuPercent))
-        DetailRow("CPU user time", p.cpuUserSecondsTotal.activityMetric("s"))
-        DetailRow("CPU system time", p.cpuSystemSecondsTotal.activityMetric("s"))
-        DetailRow("CPU total time", p.cpuTotalSecondsTotal.activityMetric("s"))
-        DetailRow("Cores used", p.cpuCoresUsed.activityMetric())
-        DetailRow("Logical processors", p.logicalProcessorCount.metric())
-        DetailRow("Resource scope", p.resourceScope ?: "unavailable")
-        DetailRow("Active processors", p.activeProcessorCount.metric())
-
-        DetailSection("JVM")
-        DetailRow("Java", listOfNotNull(p.javaVersion, p.javaVendor).joinToString(" · ").ifBlank { "unavailable" })
-        DetailRow("Java runtime", p.javaRuntimeVersion ?: "unavailable")
-        DetailRow("Java VM", p.javaVmName ?: "unavailable")
-        DetailRow("Java VM version", p.javaVmVersion ?: "unavailable")
-        DetailRow("OS", p.osName ?: "unavailable")
-        DetailRow("OS arch", p.osArch ?: "unavailable")
-        DetailRow("GC", p.gc ?: "unavailable")
-        DetailRow("Metaspace used", p.metaspaceUsedMb.metric("MB"))
-        DetailRow("Metaspace committed", p.metaspaceCommittedMb.metric("MB"))
-
-        val pools = p.memoryPools.filter { it.used != null || it.committed != null || it.max != null }
-        val codeCache = p.codeCache.filter { it.used != null || it.committed != null || it.max != null }
-        val jit = p.jit
-        val jitParts = listOfNotNull(
-            jit?.compiledCount?.let { "$it compiled" },
-            jit?.failedCount?.let { "$it failed" },
-            jit?.invalidCount?.let { "$it invalid" },
-            jit?.compilationTimeSeconds?.let { "${it.gcTimeDetail()} compilation time" },
-        )
-        if (pools.isNotEmpty() || codeCache.isNotEmpty() || jitParts.isNotEmpty()) {
-            DetailSection("JVM pools and compilation")
-            pools.forEach { DetailRow(it.name.ifBlank { "Other pool" }, poolDetail(it)) }
-            codeCache.forEach { DetailRow("Code cache · ${it.name.ifBlank { "unnamed" }}", poolDetail(it)) }
-            if (jitParts.isNotEmpty()) DetailRow("JIT", jitParts.joinToString(", "))
-        }
-
-        DetailSection("GC")
-        DetailRow("Young GC", p.youngGcCount.metric("collections"))
-        DetailRow("Young GC time", p.youngGcTimeMs.metric("ms"))
-        DetailRow("YGCT", p.youngGcTimeSeconds.gcTimeDetail())
-        DetailRow("FGCT", p.fullGcTimeSeconds.gcTimeDetail())
-        DetailRow("CGCT", p.concurrentGcTimeSeconds.gcTimeDetail())
-        DetailRow("GCT", p.totalGcTimeSeconds.gcTimeDetail())
-        DetailRow("Old GC", p.oldGcCount.metric("collections"))
-        DetailRow("Old GC time", p.oldGcTimeMs.metric("ms"))
-
-        DetailSection("I/O")
-        DetailRow("Read", p.readBytes.metricBytes())
-        DetailRow("Write", p.writeBytes.metricBytes())
-        DetailRow("Read operations", p.readOperations.metric())
-        DetailRow("Write operations", p.writeOperations.metric())
-        DetailRow("Minor page faults", p.minorPageFaults.metric())
-        DetailRow("Major page faults", p.majorPageFaults.metric())
-
-        DetailSection("Process")
-        DetailRow("Threads", p.threadCount.metric())
-        DetailRow("Open file descriptors", p.openFileDescriptors.metric())
-        DetailRow("Context switches", listOfNotNull(
-            p.voluntaryContextSwitches?.let { "voluntary $it" },
-            p.involuntaryContextSwitches?.let { "involuntary $it" },
-        ).ifEmpty { listOf("unavailable") }.joinToString(", "))
-        DetailRow("Uptime", if (ended) "—" else formatUptime(p.startTimeMs, nowMs))
-        DetailRow("Working dir", p.workingDirectory ?: "unavailable")
-        Spacer(Modifier.padding(Space.xs))
-        Text("Command line", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(p.commandLine, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
     }
 }
 
