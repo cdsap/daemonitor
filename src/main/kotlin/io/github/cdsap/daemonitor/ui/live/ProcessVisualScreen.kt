@@ -52,7 +52,10 @@ fun ProcessVisualScreen(
     val latestState by rememberUpdatedState(state)
     // While this tab is composed (active), keep a 30s-refreshed snapshot for the chart panels.
     var panelState by remember { mutableStateOf(state) }
-    var selectedPid by remember { mutableStateOf(state.processes.maxByOrNull { it.rssMemoryMb }?.pid) }
+    val defaultPid = state.processes.maxByOrNull { it.rssMemoryMb }?.pid
+    val liveSelectedPid = (state.detail as? DetailState.Selected)?.process?.pid
+        ?.takeIf { pid -> state.processes.any { it.pid == pid } }
+    var selectedPid by remember { mutableStateOf(liveSelectedPid ?: defaultPid) }
 
     LaunchedEffect(state.isLoading, state.isEmpty) {
         panelState = latestState

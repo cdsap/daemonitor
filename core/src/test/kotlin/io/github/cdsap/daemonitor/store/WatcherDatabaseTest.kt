@@ -332,23 +332,30 @@ class WatcherDatabaseTest {
     }
 
     @Test
-    fun `retained samples in a time range tolerate additive cored columns`(@TempDirArg tmp: Path) {
+    fun `retained samples in a time range tolerate additive cored columns`() {
+        // Avoid JUnit @TempDir: reopening SQLite after ALTER can leave Windows file locks
+        // that fail TempDir cleanup with IOException even when assertions passed.
+        val tmp = Files.createTempDirectory("daemonitor-retained-range-")
         val path = tmp.resolve("watcher.db")
-        WatcherDatabase.open(path).use { db ->
-            db.save(sample(timestampMs = 1_000, commandLine = "first").copy(pid = 11, rssMemoryMb = 100), 1_000)
-            db.save(sample(timestampMs = 2_000, commandLine = "second").copy(pid = 12, rssMemoryMb = 200), 2_000)
-            db.save(sample(timestampMs = 3_000, commandLine = "third").copy(pid = 11, rssMemoryMb = 300), 3_000)
-        }
-        JdbcSqliteDriver("jdbc:sqlite:${path.toAbsolutePath()}").use { driver ->
-            driver.execute(null, "ALTER TABLE process_samples ADD COLUMN cored_future_metric INTEGER", 0)
-        }
+        try {
+            WatcherDatabase.open(path).use { db ->
+                db.save(sample(timestampMs = 1_000, commandLine = "first").copy(pid = 11, rssMemoryMb = 100), 1_000)
+                db.save(sample(timestampMs = 2_000, commandLine = "second").copy(pid = 12, rssMemoryMb = 200), 2_000)
+                db.save(sample(timestampMs = 3_000, commandLine = "third").copy(pid = 11, rssMemoryMb = 300), 3_000)
+            }
+            JdbcSqliteDriver("jdbc:sqlite:${path.toAbsolutePath()}").use { driver ->
+                driver.execute(null, "ALTER TABLE process_samples ADD COLUMN cored_future_metric INTEGER", 0)
+            }
 
-        WatcherDatabase.open(path).use { db ->
-            val samples = db.samplesInRange(fromMs = 1_500, toMs = 3_000)
+            WatcherDatabase.open(path).use { db ->
+                val samples = db.samplesInRange(fromMs = 1_500, toMs = 3_000)
 
-            assertEquals(listOf(2_000L, 3_000L), samples.map { it.timestampMs })
-            assertEquals(listOf(12L, 11L), samples.map { it.pid })
-            assertEquals(listOf(200L, 300L), samples.map { it.rssMemoryMb })
+                assertEquals(listOf(2_000L, 3_000L), samples.map { it.timestampMs })
+                assertEquals(listOf(12L, 11L), samples.map { it.pid })
+                assertEquals(listOf(200L, 300L), samples.map { it.rssMemoryMb })
+            }
+        } finally {
+            tmp.toFile().deleteRecursively()
         }
     }
 

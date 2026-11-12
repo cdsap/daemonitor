@@ -3,8 +3,8 @@ package io.github.cdsap.daemonitor.ui.live.charts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,6 +41,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -111,18 +112,26 @@ fun OverallRssTimelineChart(
             series.id to color
         }
     }
-    val totalColor = seriesColors[chart.series.firstOrNull { it.isTotal && it.metric == TimelineMetric.RSS }?.id]
+    val points = chart.points
+    val series = chart.series
+    val totalColor = seriesColors[series.firstOrNull { it.isTotal && it.metric == TimelineMetric.RSS }?.id]
         ?: accents.info
-    val totalFill = totalColor.copy(alpha = 0.18f)
+    val emphasizedSeriesColors = remember(series, seriesColors, selectedPid) {
+        series.associate { item ->
+            val color = seriesColors.getValue(item.id)
+            item.id to color.copy(alpha = color.alpha * item.emphasis(selectedPid).alpha)
+        }
+    }
+    val totalFill = emphasizedSeriesColors[
+        series.firstOrNull { it.isTotal && it.metric == TimelineMetric.RSS }?.id
+    ]?.let { it.copy(alpha = it.alpha * 0.18f) } ?: totalColor.copy(alpha = 0.18f)
     val gridColor = MaterialTheme.colorScheme.outlineVariant
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
     val crosshairColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
-    val points = chart.points
-    val series = chart.series
     var visibleIds by remember(series.map { it.id to it.defaultVisible }) {
         mutableStateOf(series.filter { it.defaultVisible }.map { it.id }.toSet())
     }
-    var hover by remember(points, visibleIds) { mutableStateOf<HoverLegend?>(null) }
+    var hover by remember(points, visibleIds, selectedPid) { mutableStateOf<HoverLegend?>(null) }
     var plotSize by remember { mutableStateOf(IntSize.Zero) }
     val density = LocalDensity.current
     val visibleSeries = series.filter { it.id in visibleIds }
@@ -215,7 +224,7 @@ fun OverallRssTimelineChart(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .onSizeChanged { plotSize = it }
-                                    .pointerInput(points, visibleSeries, maxMb, seriesColors) {
+                                    .pointerInput(points, visibleSeries, maxMb, emphasizedSeriesColors) {
                                         awaitPointerEventScope {
                                             while (true) {
                                                 val event = awaitPointerEvent(PointerEventPass.Main)
@@ -237,7 +246,7 @@ fun OverallRssTimelineChart(
                                                 val markerYs = visibleSeries.map { item ->
                                                     val value = point.valuesBySeriesId[item.id] ?: 0L
                                                     val y = height - (value.toFloat() / maxMb.toFloat()) * height
-                                                    seriesColors.getValue(item.id) to y
+                                                    emphasizedSeriesColors.getValue(item.id) to y
                                                 }
                                                 hover = HoverLegend(point, xPx, markerYs)
                                             }
@@ -257,7 +266,7 @@ fun OverallRssTimelineChart(
                                 }
 
                                 visibleSeries.forEach { item ->
-                                    val color = seriesColors.getValue(item.id)
+                                    val color = emphasizedSeriesColors.getValue(item.id)
                                     val path = pathFor(points, width, height, maxMb) {
                                         (it.valuesBySeriesId[item.id] ?: 0L).toFloat()
                                     }
@@ -274,11 +283,7 @@ fun OverallRssTimelineChart(
                                         path,
                                         color = color,
                                         style = Stroke(
-                                            width = when {
-                                                item.isTotal && item.metric == TimelineMetric.RSS -> 2.8.dp.toPx()
-                                                item.isTotal -> 2.2.dp.toPx()
-                                                else -> 2.dp.toPx()
-                                            },
+                                            width = item.emphasis(selectedPid).strokeWidth.dp.toPx(),
                                             cap = StrokeCap.Round,
                                             join = StrokeJoin.Round,
                                             pathEffect = if (item.dashed) {
@@ -316,7 +321,7 @@ fun OverallRssTimelineChart(
                                 HoverLegendCard(
                                     point = marker.point,
                                     series = visibleSeries,
-                                    seriesColors = seriesColors,
+                                    seriesColors = emphasizedSeriesColors,
                                     modifier = Modifier
                                         .align(Alignment.TopStart)
                                         .offset { IntOffset(tooltipX.roundToPx(), tooltipY.roundToPx()) },
@@ -353,13 +358,19 @@ private fun LegendChip(
     }
     Row(
         modifier = Modifier
-            .alpha(if (visible) 1f else 0.45f)
-            .border(1.dp, border, RoundedCornerShape(Radius.sm))
+            .alpha(
+                when {
+                    !visible -> 0.3f
+                    selected -> 1f
+                    else -> 0.5f
+                },
+            )
+            .border(if (selected) 2.dp else 1.dp, border, RoundedCornerShape(Radius.sm))
             .background(
-                if (selected) color.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface,
+                if (selected) color.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surface,
                 RoundedCornerShape(Radius.sm),
             )
-            .clickable(onClick = onClick)
+            .selectable(selected = selected, role = Role.Button, onClick = onClick)
             .padding(horizontal = Space.sm, vertical = Space.xs),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.xs),
@@ -386,11 +397,28 @@ private fun LegendChip(
         Text(
             label,
             style = MaterialTheme.typography.labelSmall,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
     }
+}
+
+private data class SeriesEmphasis(
+    val alpha: Float,
+    val strokeWidth: Float,
+)
+
+private fun TimelineSeries.emphasis(selectedPid: Long?): SeriesEmphasis = when {
+    selectedPid == null -> when {
+        isTotal && metric == TimelineMetric.RSS -> SeriesEmphasis(alpha = 1f, strokeWidth = 2.8f)
+        isTotal -> SeriesEmphasis(alpha = 1f, strokeWidth = 2.2f)
+        else -> SeriesEmphasis(alpha = 1f, strokeWidth = 2f)
+    }
+    pid == selectedPid -> SeriesEmphasis(alpha = 1f, strokeWidth = 3.6f)
+    isTotal -> SeriesEmphasis(alpha = 0.35f, strokeWidth = 1.5f)
+    else -> SeriesEmphasis(alpha = 0.22f, strokeWidth = 1f)
 }
 
 @Composable
