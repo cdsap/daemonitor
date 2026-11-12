@@ -74,6 +74,10 @@ fun OverallRssTimelineChart(
     selectedPid: Long?,
     onSelectProcess: (Long) -> Unit,
     modifier: Modifier = Modifier,
+    title: String = "Memory",
+    hint: String = "Solid = RSS / heap used, dashed = heap limit (-Xmx). Click a series to show or hide it.",
+    axisUnit: String = "MB",
+    headline: String? = null,
 ) {
     val accents = LocalAccentColors.current
     val palette = remember(accents) {
@@ -132,20 +136,21 @@ fun OverallRssTimelineChart(
     val density = LocalDensity.current
     val visibleSeries = series.filter { it.id in visibleIds }
     val processCount = series.mapNotNull { it.pid }.distinct().size
-    val axisUnit = if (visibleSeries.all { it.metric in setOf(TimelineMetric.RSS, TimelineMetric.HEAP_USED, TimelineMetric.HEAP_LIMIT, TimelineMetric.METASPACE) }) "MB" else "value"
+    val resolvedHeadline = headline
+        ?: "Total $currentTotalRssMb MB RSS · $processCount processes"
 
-    SectionCard("RSS & Heap", modifier) {
+    SectionCard(title, modifier) {
         Column(
             modifier = Modifier.fillMaxSize().padding(Space.sm),
             verticalArrangement = Arrangement.spacedBy(Space.sm),
         ) {
             Text(
-                "Total $currentTotalRssMb MB RSS · $processCount processes",
+                resolvedHeadline,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                "Solid = RSS / heap used, dashed = heap limit (-Xmx). Click a series to show or hide it.",
+                hint,
                 style = MaterialTheme.typography.labelSmall,
                 color = labelColor,
             )

@@ -6,6 +6,7 @@ import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runSkikoComposeUiTest
@@ -20,7 +21,7 @@ import kotlin.test.Test
 class ProcessVisualScreenUiTest {
 
     @Test
-    fun `visual screen renders rss and heap timeline series`() = runVisualUiTest {
+    fun `visual screen renders memory mode timeline without tile strip`() = runVisualUiTest {
         val processes = listOf(
             process(pid = 100, type = ProcessType.GRADLE_DAEMON, project = "checkout", rss = 1024, heap = 4096, used = 700, cpu = 24.0),
             process(pid = 101, type = ProcessType.GRADLE_WORKER, project = "checkout", rss = 512, heap = null, used = null, cpu = 64.0),
@@ -33,7 +34,12 @@ class ProcessVisualScreenUiTest {
         }
 
         onNodeWithText("Process visualizer").assertExists()
-        onNodeWithText("RSS & Heap").assertExists()
+        onNodeWithTag("visual-dashboard").assertExists()
+        onNodeWithTag("visual-metric-mode").assertExists()
+        onNodeWithTag("visual-mode-memory").assertExists()
+        onNodeWithText("RSS & Heap").assertDoesNotExist()
+        onNodeWithText("SELECTED HEAP USED").assertDoesNotExist()
+        onNodeWithText("SELECTED HEAP LIMIT").assertDoesNotExist()
         onNodeWithText("Overall RSS").assertDoesNotExist()
         onNodeWithText("Memory by process").assertDoesNotExist()
         onNodeWithText("Process inspector").assertDoesNotExist()
@@ -45,12 +51,38 @@ class ProcessVisualScreenUiTest {
         onAllNodesWithText("Gradle daemon · checkout · PID 100 · Heap used").onFirst().assertExists()
         onAllNodesWithText("Gradle daemon · checkout · PID 100 · Heap limit").onFirst().assertExists()
         onAllNodesWithText("Gradle worker · checkout · PID 101 · RSS").onFirst().assertExists()
-        onNodeWithText("SELECTED HEAP USED").assertExists()
-        onNodeWithText("SELECTED HEAP LIMIT").assertExists()
+        onNodeWithTag("visual-selected-vitals").assertExists()
+        onNodeWithTag("visual-process-strip").assertExists()
     }
 
     @Test
-    fun `selecting timeline legend updates selected heap limit tile`() = runVisualUiTest {
+    fun `metric mode switch shows io series instead of memory totals`() = runVisualUiTest {
+        val processes = listOf(
+            process(pid = 100, type = ProcessType.GRADLE_DAEMON, project = "checkout", rss = 1024, heap = 4096, used = 700, cpu = 24.0),
+        )
+        val timeline = timelineFor(processes).map { sample ->
+            sample.copy(
+                extendedByPid = mapOf(
+                    100L to ProcessMetricSample(readBytes = 8_192, writeBytes = 1_024, threadCount = 42),
+                ),
+            )
+        }
+
+        setContent {
+            WatcherTheme {
+                ProcessVisualScreen(liveState(processes, timeline))
+            }
+        }
+
+        onNodeWithTag("visual-mode-io").performClick()
+        onNodeWithTag("visual-mode-io").assertExists()
+        onNodeWithText("Total RSS").assertDoesNotExist()
+        onAllNodesWithText("Gradle daemon · checkout · PID 100 · Read").onFirst().assertExists()
+        onAllNodesWithText("Gradle daemon · checkout · PID 100 · Write").onFirst().assertExists()
+    }
+
+    @Test
+    fun `selecting process strip updates selected vitals`() = runVisualUiTest {
         val processes = listOf(
             process(pid = 100, type = ProcessType.GRADLE_DAEMON, project = "checkout", rss = 1024, heap = 4096, used = 700, cpu = 24.0),
             process(pid = 101, type = ProcessType.KOTLIN_DAEMON, project = "design-system", rss = 768, heap = 1536, used = 400, cpu = 12.0),
@@ -63,16 +95,13 @@ class ProcessVisualScreenUiTest {
         }
 
         // Default selection is the highest-RSS process (Gradle daemon · 4096 MB limit).
-        onNodeWithText("4096 MB").assertExists()
+        onNodeWithText("PID 100 · RSS 1024 MB · Heap 700 MB · Limit 4096 MB", substring = true).assertExists()
         onAllNodesWithText("Gradle daemon · checkout · PID 100 · RSS").onFirst().assertIsSelected()
-        val kotlinRss = onAllNodesWithText("Kotlin daemon · design-system · PID 101 · RSS").onFirst()
-        kotlinRss.assertIsNotSelected()
-        kotlinRss.performClick()
-
-        onNodeWithText("1536 MB").assertExists()
-        onNodeWithText("400 MB").assertExists()
+        onAllNodesWithText("Kotlin daemon · design-system · PID 101 · RSS").onFirst().assertIsNotSelected()
+        onNodeWithTag("visual-process-101").performClick()
+        onNodeWithText("PID 101 · RSS 768 MB · Heap 400 MB · Limit 1536 MB", substring = true).assertExists()
         onAllNodesWithText("Gradle daemon · checkout · PID 100 · RSS").onFirst().assertIsNotSelected()
-        kotlinRss.assertIsSelected()
+        onAllNodesWithText("Kotlin daemon · design-system · PID 101 · RSS").onFirst().assertIsSelected()
         onNodeWithText("Process inspector").assertDoesNotExist()
     }
 
@@ -93,7 +122,7 @@ class ProcessVisualScreenUiTest {
             }
         }
 
-        onNodeWithText("1536 MB").assertExists()
+        onNodeWithText("PID 101 · RSS 768 MB · Heap 400 MB · Limit 1536 MB", substring = true).assertExists()
         onAllNodesWithText("Kotlin daemon · design-system · PID 101 · RSS").onFirst().assertIsSelected()
         onAllNodesWithText("Gradle daemon · checkout · PID 100 · RSS").onFirst().assertIsNotSelected()
     }
@@ -107,8 +136,8 @@ class ProcessVisualScreenUiTest {
         }
 
         onNodeWithText("No Gradle processes are running right now.").assertExists()
-        onNodeWithText("RSS & Heap").assertDoesNotExist()
-        onNodeWithText("Process inspector").assertDoesNotExist()
+        onNodeWithText("Memory").assertDoesNotExist()
+        onNodeWithTag("visual-dashboard").assertDoesNotExist()
     }
 
     private fun runVisualUiTest(block: androidx.compose.ui.test.SkikoComposeUiTest.() -> Unit) =
