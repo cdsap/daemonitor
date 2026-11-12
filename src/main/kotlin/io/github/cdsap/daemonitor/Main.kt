@@ -121,7 +121,12 @@ internal fun DaemonitorContent(
                     )
                 },
                 visualContent = {
-                    ProcessVisualScreen(state = liveState)
+                    val visualState by service.visualTimelineViewModel.state.collectAsState()
+                    ProcessVisualScreen(
+                        state = liveState,
+                        visualState = visualState,
+                        onTimeRange = service::setVisualTimeRange,
+                    )
                 },
                 historyContent = {
                     val historyState by service.historyViewModel.state.collectAsState()

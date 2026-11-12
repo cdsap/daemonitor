@@ -43,3 +43,24 @@ data class ProcessSample(
     val javaVendor: String? = null,
     val activeProcessorCount: Long? = null,
 )
+
+/** Schema-stable subset used for retained timeline reads from the shared Kotlin/cored database. */
+data class RetainedProcessSample(
+    val timestampMs: Long,
+    val pid: Long,
+    val rssMemoryMb: Long,
+    val maxHeapMb: Long? = null,
+    val heapUsedMb: Long? = null,
+    val heapAvailable: Boolean = false,
+    val threadCount: Long? = null,
+    val readBytes: Long? = null,
+    val writeBytes: Long? = null,
+    val minorPageFaults: Long? = null,
+    val majorPageFaults: Long? = null,
+    val voluntaryContextSwitches: Long? = null,
+    val involuntaryContextSwitches: Long? = null,
+    val openFileDescriptors: Long? = null,
+    val metaspaceUsedMb: Long? = null,
+    val youngGcCount: Long? = null,
+    val oldGcCount: Long? = null,
+)

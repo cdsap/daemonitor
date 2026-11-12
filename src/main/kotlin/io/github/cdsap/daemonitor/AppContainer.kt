@@ -80,6 +80,7 @@ class AppContainer(
         uiDispatcher = uiDispatcher,
         clock = clock,
         daemonBuildSource = daemonBuildSource,
+        processSampleRepository = database,
     )
 
     fun createMcpServer(

@@ -9,11 +9,14 @@ import io.github.cdsap.daemonitor.application.DaemonLogTailResult
 import io.github.cdsap.daemonitor.application.update.UpdateService
 import io.github.cdsap.daemonitor.persistence.BuildRepository
 import io.github.cdsap.daemonitor.persistence.RetentionRepository
+import io.github.cdsap.daemonitor.persistence.RetainedProcessSampleRepository
 import io.github.cdsap.daemonitor.persistence.SettingsRepository
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.ui.history.HistoryViewModel
 import io.github.cdsap.daemonitor.ui.live.DetailState
 import io.github.cdsap.daemonitor.ui.live.LiveViewModel
+import io.github.cdsap.daemonitor.ui.live.VisualTimeRange
+import io.github.cdsap.daemonitor.ui.live.VisualTimelineViewModel
 import io.github.cdsap.daemonitor.ui.settings.McpUiState
 import io.github.cdsap.daemonitor.ui.settings.SettingsUiState
 import io.github.cdsap.daemonitor.ui.settings.SettingsViewModel
@@ -41,8 +44,10 @@ class WatcherService(
     private val uiDispatcher: CoroutineDispatcher = Dispatchers.Main,
     private val clock: () -> Long = System::currentTimeMillis,
     private val daemonBuildSource: DaemonBuildSource? = null,
+    private val processSampleRepository: RetainedProcessSampleRepository? = null,
 ) {
     val liveViewModel = LiveViewModel()
+    val visualTimelineViewModel = VisualTimelineViewModel()
     val historyViewModel = HistoryViewModel()
 
     private val initialSettings = settingsService.load()
@@ -206,6 +211,23 @@ class WatcherService(
         }
     }
 
+    fun setVisualTimeRange(range: VisualTimeRange) {
+        val request = visualTimelineViewModel.selectRange(range) ?: return
+        val durationMs = range.durationMs ?: return
+        monitoringService.launchIo {
+            val toMs = clock()
+            val samples = try {
+                processSampleRepository?.samplesInRange(toMs - durationMs, toMs).orEmpty()
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                emptyList()
+            }
+            withContext(uiDispatcher) {
+                visualTimelineViewModel.onSamples(request, range, samples)
+            }
+        }
+    }
+
     private fun selectedDaemonTail(result: WatcherRuntime.PollResult): DaemonLogTailResult? {
         val detail = liveViewModel.state.value.detail
         val pid = when (detail) {
@@ -231,6 +253,7 @@ class WatcherService(
             uiDispatcher: CoroutineDispatcher = Dispatchers.Main,
             ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
             daemonBuildSource: DaemonBuildSource? = null,
+            processSampleRepository: RetainedProcessSampleRepository? = null,
         ): WatcherService {
             return WatcherService(
                 runtime = runtime,
@@ -245,6 +268,7 @@ class WatcherService(
                 uiDispatcher = uiDispatcher,
                 clock = clock,
                 daemonBuildSource = daemonBuildSource,
+                processSampleRepository = processSampleRepository,
             )
         }
     }

@@ -45,6 +45,7 @@ CREATE TABLE process_samples (
 );
 
 CREATE INDEX process_samples_pid_ts ON process_samples(pid, timestamp);
+CREATE INDEX process_samples_ts ON process_samples(timestamp);
 
 CREATE TABLE builds (
     build_id         TEXT PRIMARY KEY,
@@ -254,6 +255,17 @@ FROM process_samples
 WHERE pid = ?
 ORDER BY timestamp DESC
 LIMIT ?;
+
+-- Keep this projection explicit: cored may add columns to the shared table before the desktop
+-- schema knows about them, and retained Visual reads must remain safe across that drift.
+processSamplesInRange:
+SELECT timestamp, pid, rss_memory_mb, max_heap_mb, heap_used_mb, heap_available,
+       thread_count, read_bytes, write_bytes, minor_page_faults, major_page_faults,
+       voluntary_context_switches, involuntary_context_switches, open_file_descriptors,
+       metaspace_used_mb, young_gc_count, old_gc_count
+FROM process_samples
+WHERE timestamp >= ? AND timestamp <= ?
+ORDER BY timestamp ASC, pid ASC;
 
 purgeSamplesOlderThan:
 DELETE FROM process_samples WHERE timestamp < ?;
