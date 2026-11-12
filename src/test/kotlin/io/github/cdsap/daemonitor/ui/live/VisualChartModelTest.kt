@@ -123,6 +123,31 @@ class VisualChartModelTest {
     }
 
     @Test
+    fun `forMode keeps memory totals and drops io series`() {
+        val chart = VisualChartModel.timelineChart(
+            samples = listOf(
+                RssTimelineSample(
+                    atMs = 1_000,
+                    totalRssMb = 100,
+                    byPid = mapOf(1L to 100L),
+                    heapUsedByPid = mapOf(1L to 40L),
+                    heapLimitByPid = mapOf(1L to 512L),
+                    extendedByPid = mapOf(1L to ProcessMetricSample(threadCount = 24, readBytes = 4096)),
+                ),
+            ),
+            processes = listOf(process(pid = 1, rss = 100, heapLimit = 512, heapUsed = 40)),
+        )
+
+        val memory = VisualChartModel.forMode(chart, VisualMetricMode.MEMORY)
+        assertTrue(memory.series.any { it.id == VisualChartModel.TOTAL_SERIES_ID })
+        assertTrue(memory.series.none { it.metric == TimelineMetric.READ_BYTES })
+
+        val io = VisualChartModel.forMode(chart, VisualMetricMode.IO)
+        assertTrue(io.series.none { it.isTotal })
+        assertTrue(io.series.all { it.metric in setOf(TimelineMetric.READ_BYTES, TimelineMetric.WRITE_BYTES) })
+    }
+
+    @Test
     fun `timeline chart keeps only the active window`() {
         val chart = VisualChartModel.timelineChart(
             samples = listOf(
