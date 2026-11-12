@@ -1,19 +1,23 @@
 package io.github.cdsap.daemonitor.ui.live
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Memory
-import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material.icons.filled.Timeline
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -22,16 +26,18 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import io.github.cdsap.daemonitor.domain.LiveMetricLabels
+import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.ui.common.EmptyState
-import io.github.cdsap.daemonitor.ui.common.LocalAccentColors
-import io.github.cdsap.daemonitor.ui.common.ScreenHeader
 import io.github.cdsap.daemonitor.ui.common.Radius
+import io.github.cdsap.daemonitor.ui.common.ScreenHeader
 import io.github.cdsap.daemonitor.ui.common.Space
-import io.github.cdsap.daemonitor.ui.common.StatTile
 import io.github.cdsap.daemonitor.ui.live.charts.OverallRssTimelineChart
 import kotlinx.coroutines.delay
 
@@ -94,7 +100,10 @@ fun ProcessVisualScreen(
 @Composable
 private fun TimeRangeControl(selected: VisualTimeRange, onTimeRange: (VisualTimeRange) -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(start = Space.lg, end = Space.lg, bottom = Space.md),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = Space.lg, end = Space.lg, bottom = Space.md)
+            .testTag("visual-time-range"),
         horizontalArrangement = Arrangement.spacedBy(Space.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -109,6 +118,7 @@ private fun TimeRangeControl(selected: VisualTimeRange, onTimeRange: (VisualTime
                     selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
                     selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 ),
+                modifier = Modifier.testTag("visual-range-${range.name.lowercase()}"),
             )
         }
     }
@@ -134,15 +144,18 @@ private fun VisualDashboard(
         sampledPids + chartProcesses.map { it.pid }
     }
     val defaultPid = remember(samples, state.processes) {
-        state.processes.maxByOrNull { it.rssMemoryMb }?.pid ?: samples.firstOrNull()?.byPid?.keys?.firstOrNull()
+        state.processes.maxByOrNull { it.rssMemoryMb }?.pid
+            ?: samples.firstOrNull()?.byPid?.keys?.firstOrNull()
     }
     LaunchedEffect(availablePids, defaultPid) {
         if (selectedPid !in availablePids) defaultPid?.let(onSelectProcess)
     }
+    var metricMode by remember { mutableStateOf(VisualMetricMode.MEMORY) }
     val selected = state.processes.firstOrNull { it.pid == selectedPid }
+    val resolvedPid = selected?.pid ?: selectedPid ?: defaultPid
     val windowEndMs = samples.lastOrNull()?.atMs
     val windowDurationMs = range.durationMs ?: VisualChartModel.DEFAULT_TIMELINE_WINDOW_MS
-    val timelineChart = remember(samples, chartProcesses, windowEndMs, windowDurationMs) {
+    val fullChart = remember(samples, chartProcesses, windowEndMs, windowDurationMs, range) {
         VisualChartModel.timelineChart(
             samples = samples,
             processes = chartProcesses,
@@ -150,6 +163,9 @@ private fun VisualDashboard(
             windowDurationMs = windowDurationMs,
             useLiveValueFallbacks = range == VisualTimeRange.LIVE,
         )
+    }
+    val timelineChart = remember(fullChart, metricMode) {
+        VisualChartModel.forMode(fullChart, metricMode)
     }
     val selectedHeapUsed = if (range == VisualTimeRange.LIVE) {
         selected?.let { LiveMetricLabels.liveHeapUsedDetail(it.liveHeap, it.type) }
@@ -162,24 +178,123 @@ private fun VisualDashboard(
         selectedPid?.let { pid -> samples.mapNotNull { it.heapLimitByPid[pid] }.lastOrNull() }
     }?.let { "$it MB" } ?: LiveMetricLabels.HEAP_UNAVAILABLE_DETAIL
     val latestTotalRssMb = samples.lastOrNull()?.totalRssMb ?: chartData.totalRssMb
+    val modes = VisualMetricMode.entries
+    val selectedRss = selected?.rssMemoryMb
+        ?: selectedPid?.let { pid -> samples.mapNotNull { it.byPid[pid] }.lastOrNull() }
+    val headline = when (metricMode) {
+        VisualMetricMode.MEMORY ->
+            "Total $latestTotalRssMb MB RSS · ${availablePids.size} processes"
+        else ->
+            "${metricMode.chartTitle} · ${availablePids.size} processes" +
+                (resolvedPid?.let { " · selected PID $it" } ?: "")
+    }
+    val vitals = buildString {
+        append("PID ${resolvedPid ?: "—"}")
+        append(" · RSS ${selectedRss?.let { "$it MB" } ?: "—"}")
+        append(" · Heap $selectedHeapUsed")
+        append(" · Limit $selectedHeapLimit")
+    }
 
-    Column(modifier = modifier.padding(start = Space.lg, end = Space.lg, bottom = Space.lg)) {
+    Column(
+        modifier = modifier
+            .padding(start = Space.lg, end = Space.lg, bottom = Space.lg)
+            .testTag("visual-dashboard"),
+        verticalArrangement = Arrangement.spacedBy(Space.sm),
+    ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = Space.md),
-            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            StatTile("Processes", availablePids.size.toString(), Modifier.weight(1f), icon = Icons.Filled.Memory)
-            StatTile("RSS total", "$latestTotalRssMb MB", Modifier.weight(1f), icon = Icons.Filled.Storage, accent = LocalAccentColors.current.info)
-            StatTile("Selected heap used", selectedHeapUsed, Modifier.weight(1f), icon = Icons.Filled.Timeline, accent = LocalAccentColors.current.warn)
-            StatTile("Selected heap limit", selectedHeapLimit, Modifier.weight(1f), accent = LocalAccentColors.current.brand)
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.testTag("visual-metric-mode")) {
+                modes.forEachIndexed { index, mode ->
+                    SegmentedButton(
+                        selected = metricMode == mode,
+                        onClick = { metricMode = mode },
+                        shape = SegmentedButtonDefaults.itemShape(index, modes.size),
+                        modifier = Modifier.testTag("visual-mode-${mode.name.lowercase()}"),
+                    ) {
+                        Text(mode.label)
+                    }
+                }
+            }
+            Text(
+                vitals,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .padding(start = Space.md)
+                    .weight(1f, fill = false)
+                    .testTag("visual-selected-vitals"),
+            )
+        }
+
+        if (chartProcesses.isNotEmpty()) {
+            ProcessSelectionStrip(
+                processes = chartProcesses.sortedByDescending { it.rssMemoryMb },
+                selectedPid = resolvedPid,
+                onSelect = onSelectProcess,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
 
         OverallRssTimelineChart(
             chart = timelineChart,
             currentTotalRssMb = latestTotalRssMb,
-            selectedPid = selectedPid,
+            selectedPid = resolvedPid,
             onSelectProcess = onSelectProcess,
+            title = metricMode.chartTitle,
+            hint = "${metricMode.hint} Click a series to show or hide it.",
+            axisUnit = metricMode.axisUnit,
+            headline = headline,
             modifier = Modifier.weight(1f).fillMaxWidth(),
         )
+    }
+}
+
+@Composable
+private fun ProcessSelectionStrip(
+    processes: List<GradleProcess>,
+    selectedPid: Long?,
+    onSelect: (Long) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .horizontalScroll(rememberScrollState())
+            .testTag("visual-process-strip"),
+        horizontalArrangement = Arrangement.spacedBy(Space.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        processes.forEach { process ->
+            val selected = process.pid == selectedPid
+            val border = if (selected) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.outlineVariant
+            }
+            Text(
+                text = "${process.type.displayLabel()} · ${process.pid}",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .border(1.dp, border, RoundedCornerShape(Radius.sm))
+                    .background(
+                        if (selected) {
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+                        } else {
+                            MaterialTheme.colorScheme.surface
+                        },
+                        RoundedCornerShape(Radius.sm),
+                    )
+                    .clickable { onSelect(process.pid) }
+                    .padding(horizontal = Space.sm, vertical = Space.xs)
+                    .testTag("visual-process-${process.pid}"),
+            )
+        }
     }
 }

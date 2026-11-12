@@ -36,6 +36,54 @@ enum class TimelineMetric {
     OLD_GC,
 }
 
+/** First-class Visual modes — curated series per family, not legend archaeology. */
+enum class VisualMetricMode(
+    val label: String,
+    val chartTitle: String,
+    val hint: String,
+    val axisUnit: String,
+    val metrics: Set<TimelineMetric>,
+    val includeTotals: Boolean,
+) {
+    MEMORY(
+        label = "Memory",
+        chartTitle = "Memory",
+        hint = "Solid = RSS / heap used / metaspace, dashed = heap limit (-Xmx).",
+        axisUnit = "MB",
+        metrics = setOf(
+            TimelineMetric.RSS,
+            TimelineMetric.HEAP_USED,
+            TimelineMetric.HEAP_LIMIT,
+            TimelineMetric.METASPACE,
+        ),
+        includeTotals = true,
+    ),
+    IO(
+        label = "I/O",
+        chartTitle = "I/O",
+        hint = "Per-process read and write byte totals from the live window.",
+        axisUnit = "B",
+        metrics = setOf(TimelineMetric.READ_BYTES, TimelineMetric.WRITE_BYTES),
+        includeTotals = false,
+    ),
+    GC(
+        label = "GC",
+        chartTitle = "GC",
+        hint = "Young and old collection counts over the live window.",
+        axisUnit = "n",
+        metrics = setOf(TimelineMetric.YOUNG_GC, TimelineMetric.OLD_GC),
+        includeTotals = false,
+    ),
+    THREADS(
+        label = "Threads",
+        chartTitle = "Threads",
+        hint = "Thread count and open file descriptors over the live window.",
+        axisUnit = "n",
+        metrics = setOf(TimelineMetric.THREADS, TimelineMetric.OPEN_FILES),
+        includeTotals = false,
+    ),
+}
+
 data class TimelineSeries(
     val id: String,
     val label: String,
@@ -216,6 +264,18 @@ object VisualChartModel {
         }
 
         return RssTimelineChartData(series = series, points = points)
+    }
+
+    /** Keep only series that belong to [mode]; totals only when the mode allows them. */
+    fun forMode(chart: RssTimelineChartData, mode: VisualMetricMode): RssTimelineChartData {
+        val filtered = chart.series.filter { series ->
+            series.metric in mode.metrics && (mode.includeTotals || !series.isTotal)
+        }.map { series ->
+            series.copy(
+                defaultVisible = series.metric !in setOf(TimelineMetric.METASPACE, TimelineMetric.OPEN_FILES),
+            )
+        }
+        return chart.copy(series = filtered)
     }
 
     fun rssSeriesId(pid: Long): String = "pid-$pid-rss"
