@@ -2,6 +2,8 @@ package io.github.cdsap.daemonitor.ui.live
 
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
@@ -62,11 +64,38 @@ class ProcessVisualScreenUiTest {
 
         // Default selection is the highest-RSS process (Gradle daemon · 4096 MB limit).
         onNodeWithText("4096 MB").assertExists()
-        onAllNodesWithText("Kotlin daemon · design-system · PID 101 · RSS").onFirst().performClick()
+        onAllNodesWithText("Gradle daemon · checkout · PID 100 · RSS").onFirst().assertIsSelected()
+        val kotlinRss = onAllNodesWithText("Kotlin daemon · design-system · PID 101 · RSS").onFirst()
+        kotlinRss.assertIsNotSelected()
+        kotlinRss.performClick()
 
         onNodeWithText("1536 MB").assertExists()
         onNodeWithText("400 MB").assertExists()
+        onAllNodesWithText("Gradle daemon · checkout · PID 100 · RSS").onFirst().assertIsNotSelected()
+        kotlinRss.assertIsSelected()
         onNodeWithText("Process inspector").assertDoesNotExist()
+    }
+
+    @Test
+    fun `live selection is initially selected in visual`() = runVisualUiTest {
+        val processes = listOf(
+            process(pid = 100, type = ProcessType.GRADLE_DAEMON, project = "checkout", rss = 1024, heap = 4096, used = 700, cpu = 24.0),
+            process(pid = 101, type = ProcessType.KOTLIN_DAEMON, project = "design-system", rss = 768, heap = 1536, used = 400, cpu = 12.0),
+        )
+
+        setContent {
+            WatcherTheme {
+                ProcessVisualScreen(
+                    liveState(processes, timelineFor(processes)).copy(
+                        detail = DetailState.Selected(processes[1]),
+                    ),
+                )
+            }
+        }
+
+        onNodeWithText("1536 MB").assertExists()
+        onAllNodesWithText("Kotlin daemon · design-system · PID 101 · RSS").onFirst().assertIsSelected()
+        onAllNodesWithText("Gradle daemon · checkout · PID 100 · RSS").onFirst().assertIsNotSelected()
     }
 
     @Test
