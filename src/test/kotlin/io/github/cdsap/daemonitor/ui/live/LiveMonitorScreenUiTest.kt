@@ -68,6 +68,7 @@ class LiveMonitorScreenUiTest {
                     isLoading = false, isEmpty = false), onSelect = {}, onClearSelection = {})
             }
         }
+        onNodeWithTag("process-detail-tab-jvm").performClick()
         onNodeWithText("JVM pools and compilation").assertDoesNotExist()
         selected = populated
         waitForIdle()
@@ -76,6 +77,33 @@ class LiveMonitorScreenUiTest {
         onNodeWithText("used 0.0 K · committed unavailable · max unavailable").assertExists()
         onNodeWithText("Code cache · CodeHeap").assertExists()
         onNodeWithText("0 compiled, 1.250 s compilation time").assertExists()
+    }
+
+    @Test
+    fun `inspector switches categories and retains identity with daemon only tab`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val daemon = sampleProcess()
+        var state by mutableStateOf(LiveUiState(processes = listOf(daemon), detail = DetailState.Selected(daemon), isLoading = false, isEmpty = false))
+        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
+        onNodeWithTag("process-detail-vitals").assertExists()
+        onNodeWithText("Virtual memory").assertExists()
+        onNodeWithText("Working dir").assertDoesNotExist()
+        onNodeWithTag("process-detail-tab-jvm").performClick()
+        onNodeWithText("Java runtime").assertExists()
+        onNodeWithText("Virtual memory").assertDoesNotExist()
+        onNodeWithTag("process-detail-tab-os-io").performClick()
+        onNodeWithText("Threads").assertExists()
+        onNodeWithText("Read operations").assertExists()
+        onNodeWithTag("process-detail-tab-process").performClick()
+        onNodeWithText("Working dir").assertExists()
+        onNodeWithText("Command line").assertExists()
+        onNodeWithTag("process-detail-vitals").assertExists()
+        onNodeWithTag("process-detail-tab-gradle").performClick()
+        onNodeWithText("Recent builds").assertExists()
+        val worker = daemon.copy(type = ProcessType.GRADLE_WORKER)
+        state = state.copy(processes = listOf(worker), detail = DetailState.Selected(worker))
+        onNodeWithTag("process-detail-tab-gradle").assertDoesNotExist()
+        onNodeWithText("Virtual memory").assertExists()
     }
 
     @Test
@@ -149,6 +177,7 @@ class LiveMonitorScreenUiTest {
             )),
         )
         setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
+        onNodeWithTag("process-detail-tab-os-io").performClick()
         onNodeWithText("Host context").assertExists()
         onNodeWithText("0.0%").assertExists()
         onNodeWithText("1 / 2 available").assertExists()
@@ -203,6 +232,7 @@ class LiveMonitorScreenUiTest {
         val daemon = sampleProcess()
         var state by mutableStateOf(LiveUiState(processes = listOf(daemon), detail = DetailState.Selected(daemon), recentBuilds = RecentBuildsState.Loading, isLoading = false, isEmpty = false))
         setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
+        onNodeWithTag("process-detail-tab-gradle").performClick()
         onNodeWithText("Loading recent builds…").assertExists()
         state = state.copy(recentBuilds = RecentBuildsState.Loaded(emptyList()))
         onNodeWithText("No recent builds for this daemon.").assertExists()
@@ -370,7 +400,7 @@ class LiveMonitorScreenUiTest {
 
         setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
 
-        onNodeWithTag("process-detail-scroll").performTouchInput { swipeUp() }
+        onNodeWithTag("process-detail-tab-jvm").performClick()
         onNodeWithText("Java runtime").assertExists()
         onNodeWithText("Java VM").assertExists()
         onNodeWithText("Java VM version").assertExists()
@@ -576,7 +606,7 @@ class LiveMonitorScreenUiTest {
 
         setContent {
             WatcherTheme(appearance = AppearancePreference.DARK) {
-                Box(Modifier.size(width = 900.dp, height = 380.dp)) {
+                Box(Modifier.size(width = 900.dp, height = 600.dp)) {
                     LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
                 }
             }
@@ -591,6 +621,7 @@ class LiveMonitorScreenUiTest {
             range != null && range.value() > 0f
         }
 
+        onNodeWithTag("process-detail-tab-process").performClick()
         val detailPane = onNodeWithTag("process-detail-scroll")
         detailPane.assert(hasScrollableDetailContent)
         detailPane.performTouchInput { swipeUp() }
@@ -730,7 +761,7 @@ class LiveMonitorScreenUiTest {
         onNodeWithTag("peak-memory-pid-tile").assertExists().performClick()
         waitForIdle()
         assertEquals(6227L, selectedPid)
-        onNodeWithText("PID 6227 · Gradle daemon").assertExists()
+        onNodeWithText("PID 6227 · Gradle daemon", substring = true).assertExists()
     }
 
     @Test
