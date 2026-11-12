@@ -288,6 +288,24 @@ class LiveViewModelTest {
     }
 
     @Test
+    fun `poll samples cpu percent when available and omits unavailable`() {
+        val vm = LiveViewModel(clockMs = { 6_000L })
+
+        vm.onPoll(
+            listOf(
+                proc(1, rss = 100).copy(cpuPercent = 12.6),
+                proc(2, rss = 80).copy(cpuPercent = null),
+                proc(3, rss = 40).copy(cpuPercent = 0.0),
+            ),
+        )
+
+        val sample = vm.state.value.rssTimeline.single()
+        assertEquals(13L, sample.extendedByPid.getValue(1L).cpuPercent)
+        assertTrue(2L !in sample.extendedByPid)
+        assertEquals(0L, sample.extendedByPid.getValue(3L).cpuPercent)
+    }
+
+    @Test
     fun `poll samples configured heap limit and live used alongside rss`() {
         val vm = LiveViewModel(clockMs = { 5_000L })
 

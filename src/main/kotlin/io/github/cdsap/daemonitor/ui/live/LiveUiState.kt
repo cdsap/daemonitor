@@ -70,6 +70,8 @@ data class ProcessMetricSample(
     val metaspaceUsedMb: Long? = null,
     val youngGcCount: Long? = null,
     val oldGcCount: Long? = null,
+    /** Rounded process CPU percent; null means unavailable (never stored as a fake zero). */
+    val cpuPercent: Long? = null,
 )
 
 sealed interface ContextState<out T> {

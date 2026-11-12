@@ -7,6 +7,7 @@ import io.github.cdsap.daemonitor.application.MetricCapability
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.domain.model.Build
+import kotlin.math.roundToLong
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -51,6 +52,7 @@ class LiveViewModel(
                     metaspaceUsedMb = process.metaspaceUsedMb,
                     youngGcCount = process.youngGcCount,
                     oldGcCount = process.oldGcCount,
+                    cpuPercent = process.cpuPercent?.roundToLong(),
                 )
             }.filterValues { it != ProcessMetricSample() },
         )

@@ -34,6 +34,7 @@ enum class TimelineMetric {
     METASPACE,
     YOUNG_GC,
     OLD_GC,
+    CPU,
 }
 
 /** First-class Visual modes — curated series per family, not legend archaeology. */
@@ -57,6 +58,14 @@ enum class VisualMetricMode(
             TimelineMetric.METASPACE,
         ),
         includeTotals = true,
+    ),
+    CPU(
+        label = "CPU",
+        chartTitle = "CPU",
+        hint = "Per-process CPU percent from the live window. Unavailable samples stay off the chart.",
+        axisUnit = "%",
+        metrics = setOf(TimelineMetric.CPU),
+        includeTotals = false,
     ),
     IO(
         label = "I/O",
@@ -250,15 +259,21 @@ object VisualChartModel {
             values[TOTAL_HEAP_LIMIT_SERIES_ID] = sample.heapLimitByPid.values.sum()
             processSeries.forEach { item ->
                 val pid = item.pid ?: return@forEach
-                val value = when (item.metric) {
+                val raw = when (item.metric) {
                     TimelineMetric.RSS -> sample.byPid[pid]
                     TimelineMetric.HEAP_USED -> sample.heapUsedByPid[pid]
                         ?: liveByPid[pid]?.liveHeap?.takeIf { useLiveValueFallbacks && it.available }?.usedMb
                     TimelineMetric.HEAP_LIMIT -> sample.heapLimitByPid[pid]
                         ?: liveByPid[pid]?.maxHeapMb?.takeIf { useLiveValueFallbacks }
                     else -> extendedValue(item.metric, sample.extendedByPid[pid])
-                } ?: 0L
-                values[item.id] = value
+                }
+                // CPU (and other optional extended metrics) omit missing samples instead of
+                // inventing zeros; RSS always has a value for live PIDs in the poll window.
+                if (raw != null) {
+                    values[item.id] = raw
+                } else if (item.metric != TimelineMetric.CPU) {
+                    values[item.id] = 0L
+                }
             }
             RssTimelinePoint(atMs = sample.atMs, valuesBySeriesId = values)
         }
@@ -294,6 +309,7 @@ object VisualChartModel {
         Triple(TimelineMetric.METASPACE, "Metaspace", { p: ProcessMetricSample? -> p?.metaspaceUsedMb }),
         Triple(TimelineMetric.YOUNG_GC, "Young GC", { p: ProcessMetricSample? -> p?.youngGcCount }),
         Triple(TimelineMetric.OLD_GC, "Old GC", { p: ProcessMetricSample? -> p?.oldGcCount }),
+        Triple(TimelineMetric.CPU, "CPU", { p: ProcessMetricSample? -> p?.cpuPercent }),
     )
 
     private fun extendedValue(metric: TimelineMetric, sample: ProcessMetricSample?): Long? = when (metric) {
@@ -306,6 +322,7 @@ object VisualChartModel {
         TimelineMetric.METASPACE -> sample?.metaspaceUsedMb
         TimelineMetric.YOUNG_GC -> sample?.youngGcCount
         TimelineMetric.OLD_GC -> sample?.oldGcCount
+        TimelineMetric.CPU -> sample?.cpuPercent
         else -> null
     }
 
