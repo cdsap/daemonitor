@@ -140,6 +140,60 @@ class ProcessVisualScreenUiTest {
         onNodeWithTag("visual-dashboard").assertDoesNotExist()
     }
 
+    @Test
+    fun `range control switches to retained samples and preserves process selection`() = runVisualUiTest {
+        val processes = listOf(
+            process(pid = 100, type = ProcessType.GRADLE_DAEMON, project = "checkout", rss = 1024, heap = 4096, used = 700, cpu = 24.0),
+            process(pid = 101, type = ProcessType.KOTLIN_DAEMON, project = "design-system", rss = 768, heap = 1536, used = 400, cpu = 12.0),
+        )
+        val visualState = androidx.compose.runtime.mutableStateOf(VisualTimelineState())
+
+        setContent {
+            WatcherTheme {
+                ProcessVisualScreen(
+                    state = liveState(processes, timelineFor(processes)),
+                    visualState = visualState.value,
+                    onTimeRange = { range ->
+                        visualState.value = VisualTimelineState(
+                            range = range,
+                            isLoading = range != VisualTimeRange.LIVE,
+                        )
+                    },
+                )
+            }
+        }
+
+        onNodeWithTag("visual-process-101").performClick()
+        onNodeWithText("PID 101 · RSS 768 MB · Heap 400 MB · Limit 1536 MB", substring = true).assertExists()
+        onNodeWithText("15m").performClick()
+        onNodeWithText("Loading retained process samples...").assertExists()
+        visualState.value = VisualTimelineState(
+            range = VisualTimeRange.FIFTEEN_MINUTES,
+            samples = timelineFor(processes),
+        )
+
+        onNodeWithText("PID 101 · RSS 768 MB · Heap 400 MB · Limit 1536 MB", substring = true).assertExists()
+        onAllNodesWithText("Kotlin daemon · design-system · PID 101 · RSS").onFirst().assertExists()
+    }
+
+    @Test
+    fun `empty retained range shows explicit empty state`() = runVisualUiTest {
+        setContent {
+            WatcherTheme {
+                ProcessVisualScreen(
+                    state = LiveUiState(processes = emptyList(), isLoading = false, isEmpty = true),
+                    visualState = VisualTimelineState(range = VisualTimeRange.ONE_HOUR),
+                    onTimeRange = {},
+                )
+            }
+        }
+
+        onNodeWithText("Live").assertExists()
+        onNodeWithText("15m").assertExists()
+        onNodeWithText("1h").assertExists()
+        onNodeWithText("No retained process samples in the selected range.").assertExists()
+    }
+
     private fun runVisualUiTest(block: androidx.compose.ui.test.SkikoComposeUiTest.() -> Unit) =
         runSkikoComposeUiTest(Size(1400f, 900f), Density(1f)) {
             // Keep the Compose clock paused: VisualDashboard hosts a 30s refresh loop.

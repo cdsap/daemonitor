@@ -17,4 +17,11 @@ interface ProcessSampleRepository {
 
     fun recentSamples(limit: Long = BuildRepository.DEFAULT_QUERY_LIMIT): List<ProcessSample>
     fun findByPid(pid: Long, limit: Long = BuildRepository.DEFAULT_QUERY_LIMIT): List<ProcessSample>
+
+}
+
+/** Read-only port for the Visual tab's retained process timeline. */
+fun interface RetainedProcessSampleRepository {
+    /** Timeline fields for all retained processes within `[fromMs, toMs]`, oldest first. */
+    fun samplesInRange(fromMs: Long, toMs: Long): List<RetainedProcessSample>
 }
