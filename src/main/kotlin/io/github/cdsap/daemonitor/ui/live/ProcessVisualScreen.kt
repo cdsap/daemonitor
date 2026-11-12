@@ -75,9 +75,17 @@ fun ProcessVisualScreen(state: LiveUiState) {
 private fun VisualDashboard(state: LiveUiState, modifier: Modifier = Modifier) {
     val chartData = remember(state.processes) { VisualChartModel.fromProcesses(state.processes) }
     val defaultPid = remember(state.processes) { state.processes.maxByOrNull { it.rssMemoryMb }?.pid }
-    var selectedPid by remember(state.processes) { mutableStateOf(defaultPid) }
+    val liveSelectedPid = (state.detail as? DetailState.Selected)?.process?.pid
+        ?.takeIf { pid -> state.processes.any { it.pid == pid } }
+    var selectedPid by remember { mutableStateOf(liveSelectedPid ?: defaultPid) }
     var metricMode by remember { mutableStateOf(VisualMetricMode.MEMORY) }
-    val selected = state.processes.firstOrNull { it.pid == selectedPid } ?: state.processes.first()
+    val selected = state.processes.firstOrNull { it.pid == selectedPid }
+        ?: state.processes.maxByOrNull { it.rssMemoryMb }
+        ?: state.processes.first()
+    val processPids = state.processes.map { it.pid }
+    LaunchedEffect(processPids) {
+        if (selectedPid !in processPids) selectedPid = defaultPid
+    }
     val windowEndMs = state.rssTimeline.lastOrNull()?.atMs
     val fullChart = remember(state.rssTimeline, state.processes, windowEndMs) {
         VisualChartModel.timelineChart(
