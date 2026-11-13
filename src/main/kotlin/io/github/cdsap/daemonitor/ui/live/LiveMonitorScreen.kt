@@ -128,7 +128,7 @@ fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit, onClearSelec
             onSelectPeakMemoryPid = onSelect,
         )
         if (state.isLoading) {
-            EmptyState("Scanning for Gradle processes...", modifier = Modifier.weight(1f))
+            EmptyState("Scanning for Gradle and Bazel processes...", modifier = Modifier.weight(1f))
         } else if (state.isEmpty) {
             EmptyState("No Gradle processes are running right now.", modifier = Modifier.weight(1f))
         } else {

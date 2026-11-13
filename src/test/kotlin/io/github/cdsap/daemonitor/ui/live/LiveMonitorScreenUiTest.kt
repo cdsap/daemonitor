@@ -321,7 +321,7 @@ class LiveMonitorScreenUiTest {
 
         setContent { WatcherTheme { LiveMonitorScreen(LiveUiState(), onSelect = {}, onClearSelection = {}) } }
 
-        onNodeWithText("Scanning for Gradle processes...").assertExists()
+        onNodeWithText("Scanning for Gradle and Bazel processes...").assertExists()
     }
 
     @Test
