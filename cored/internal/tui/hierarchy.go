@@ -81,7 +81,7 @@ func (h processHierarchy) owner(id processIdentity, byID map[processIdentity]mod
 		}
 		seen[id] = true
 		p, ok := byID[id]
-		if ok && p.Type == "GRADLE_DAEMON" {
+		if ok && isHierarchyRootType(p.Type) {
 			return id, true
 		}
 		parent, ok := h.parents[id]
@@ -125,7 +125,7 @@ func (h *processHierarchy) rows(processes []model.Process, expandedDefault bool)
 	childrenByOwner := make(map[processIdentity][]model.Process)
 	for _, p := range processes {
 		id := identity(p)
-		if p.Type == "GRADLE_DAEMON" {
+		if isHierarchyRootType(p.Type) {
 			continue
 		}
 		if owner, ok := h.owner(id, byID); ok && owner != id {
@@ -137,7 +137,7 @@ func (h *processHierarchy) rows(processes []model.Process, expandedDefault bool)
 	grouped := make(map[processIdentity]bool)
 	groupedRoots := make(map[processIdentity]bool)
 	for _, root := range processes {
-		if root.Type != "GRADLE_DAEMON" {
+		if !isHierarchyRootType(root.Type) {
 			continue
 		}
 		rootID := identity(root)
@@ -172,4 +172,13 @@ func (h *processHierarchy) rows(processes []model.Process, expandedDefault bool)
 
 func (h *processHierarchy) setExpanded(id processIdentity, expanded bool) {
 	h.expanded[id] = expanded
+}
+
+func isHierarchyRootType(kind string) bool {
+	switch kind {
+	case "GRADLE_DAEMON", "BAZEL_SERVER":
+		return true
+	default:
+		return false
+	}
 }
