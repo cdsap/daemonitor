@@ -69,6 +69,8 @@ func TestTypeDisplayForGradleWorkerKinds(t *testing.T) {
 		want string
 	}{
 		{kind: "BAZEL_SERVER", want: "Bazel server"},
+		{kind: "BAZEL_TEST", want: "Bazel test"},
+		{kind: "BAZEL_WORKER", want: "Bazel worker"},
 		{kind: "TEST_WORKER", want: "Gradle test worker"},
 		{kind: "GRADLE_WORKER", want: "Gradle worker"},
 		{kind: "UNKNOWN_GRADLE_WORKER", want: "Unknown Gradle worker"},

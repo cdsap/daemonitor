@@ -20,6 +20,10 @@ object GradleProcessClassifier {
 
             isBazelServer(cl) -> ProcessType.BAZEL_SERVER
 
+            isBazelTest(cl) -> ProcessType.BAZEL_TEST
+
+            isBazelWorker(cl) -> ProcessType.BAZEL_WORKER
+
             isGradleWorker(cl) -> classifyGradleWorker(cl)
 
             // The wrapper JVM is usually launched as `java -jar …/gradle/wrapper/gradle-wrapper.jar`
@@ -47,6 +51,50 @@ object GradleProcessClassifier {
             (
                 Regex("""--product_name=Bazel(\s|$)""").containsMatchIn(cl) ||
                     cl.contains("--output_base=")
+                )
+
+    /**
+     * Hard argv Bazel test markers (Java/Kotlin/Go/iOS probes): JVM `BazelTestRunner` /
+     * `-Dbazel.test_suite=`, or shared `tools/test/test-setup.sh` spine (also on
+     * `process-wrapper` argv). Native sandboxed runfiles leaves need
+     * [promoteBazelNativeTest] with a `BAZEL_TEST` parent.
+     */
+    private fun isBazelTest(cl: String): Boolean =
+        cl.contains("com.google.testing.junit.runner.BazelTestRunner") ||
+            cl.contains("-Dbazel.test_suite=") ||
+            Regex("""(^|[\s/\\])tools/test/test-setup\.sh(\s|$)""").containsMatchIn(cl)
+
+    /**
+     * Argv half of a native Bazel test leaf (sandbox + `.runfiles`, not a persistent
+     * worker). Pair with a [ProcessType.BAZEL_TEST] parent via [promoteBazelNativeTest].
+     */
+    fun isBazelNativeTestCandidate(commandLine: String): Boolean {
+        if (Regex("""--persistent_worker(\s|$)""").containsMatchIn(commandLine)) return false
+        val sandboxed = Regex(
+            """(^|[\s/\\])(?:darwin|linux|processwrapper)-sandbox(/|\\)|(^|[\s/\\])sandbox(/|\\)""",
+        ).containsMatchIn(commandLine)
+        val runfiles = Regex("""\.runfiles(/|\\)""").containsMatchIn(commandLine)
+        return sandboxed && runfiles
+    }
+
+    /** Promote a native sandboxed runfiles binary when its parent is already `BAZEL_TEST`. */
+    fun promoteBazelNativeTest(commandLine: String, parentType: ProcessType?): ProcessType? =
+        if (parentType == ProcessType.BAZEL_TEST && isBazelNativeTestCandidate(commandLine)) {
+            ProcessType.BAZEL_TEST
+        } else {
+            null
+        }
+
+    /** Bazel persistent workers (JavaBuilder / Kotlin / Swift), distinct from [BAZEL_TEST]. */
+    private fun isBazelWorker(cl: String): Boolean =
+        Regex("""--persistent_worker(\s|$)""").containsMatchIn(cl) &&
+            (
+                cl.contains("JavaBuilder_deploy.jar") ||
+                    cl.contains("io.bazel.") ||
+                    cl.contains("rules_kotlin") ||
+                    cl.contains("rules_swift") ||
+                    cl.contains("_bazel_") ||
+                    cl.contains("external/rules_java")
                 )
 
     fun bazelWorkspaceDirectory(commandLine: String): String? {
