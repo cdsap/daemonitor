@@ -3,21 +3,21 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Daemonitor — Activity Monitor for Gradle and Kotlin daemons</title>
-  <meta name="description" content="Daemonitor is a local Activity Monitor for Gradle and Kotlin daemons. See active builds, CPU and memory usage, build history, and which IDE, terminal, or AI coding agent triggered each build.">
+  <title>Daemonitor — Activity Monitor for Gradle and Bazel builds</title>
+  <meta name="description" content="Daemonitor is a local Activity Monitor for Gradle and Bazel builds. See active processes, CPU and memory usage, build history, and which IDE, terminal, or AI coding agent triggered each Gradle build.">
   <meta name="theme-color" content="#E9EFEA" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#101513" media="(prefers-color-scheme: dark)">
 
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Daemonitor">
   <meta property="og:url" content="https://cdsap.github.io/daemonitor/">
-  <meta property="og:title" content="Daemonitor — Activity Monitor for Gradle and Kotlin daemons">
-  <meta property="og:description" content="Daemonitor is a local Activity Monitor for Gradle and Kotlin daemons. See active builds, CPU and memory usage, build history, and which IDE, terminal, or AI coding agent triggered each build.">
+  <meta property="og:title" content="Daemonitor — Activity Monitor for Gradle and Bazel builds">
+  <meta property="og:description" content="Daemonitor is a local Activity Monitor for Gradle and Bazel builds. See active processes, CPU and memory usage, build history, and which IDE, terminal, or AI coding agent triggered each Gradle build.">
   <meta property="og:image" content="https://cdsap.github.io/daemonitor/assets/live-monitor.png">
 
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Daemonitor — Activity Monitor for Gradle and Kotlin daemons">
-  <meta name="twitter:description" content="Daemonitor is a local Activity Monitor for Gradle and Kotlin daemons. See active builds, CPU and memory usage, build history, and which IDE, terminal, or AI coding agent triggered each build.">
+  <meta name="twitter:title" content="Daemonitor — Activity Monitor for Gradle and Bazel builds">
+  <meta name="twitter:description" content="Daemonitor is a local Activity Monitor for Gradle and Bazel builds. See active processes, CPU and memory usage, build history, and which IDE, terminal, or AI coding agent triggered each Gradle build.">
   <meta name="twitter:image" content="https://cdsap.github.io/daemonitor/assets/live-monitor.png">
 
   <link rel="icon" type="image/png" href="assets/favicon.png">
@@ -47,12 +47,13 @@
     <section class="hero" id="live-monitor" aria-labelledby="hero-heading">
       <div class="hero-copy">
         <h1 id="hero-heading">Daemonitor</h1>
-        <p class="hero-tagline">Activity Monitor for Gradle and Kotlin daemons</p>
+        <p class="hero-tagline">Activity Monitor for Gradle and Bazel builds</p>
         <p class="lede">
-          Live Monitor lists every Gradle-related JVM — daemons, wrappers, Kotlin daemons,
-          and Gradle workers — with RSS, CPU, uptime, and memory-pressure badges. See what’s
-          building now, what built recently, and whether an IDE, terminal, or coding agent
-          started it.
+          Live Monitor lists Gradle daemons, wrappers, Kotlin daemons, and workers alongside
+          Bazel servers, tests, and workers — with RSS, CPU, uptime, and memory-pressure badges.
+          See what’s building now, what built recently, and (for Gradle) whether an IDE,
+          terminal, or coding agent started it. Bazel history appears when a build already
+          emits local BEP; Daemonitor never enables BEP itself.
         </p>
         <div class="cta-row">
           <a class="button button-primary" href="https://github.com/cdsap/daemonitor/releases/latest" rel="noopener noreferrer">
@@ -68,7 +69,7 @@
           src="assets/live-monitor.png"
           width="1180"
           height="760"
-          alt="Daemonitor Live Monitor showing active Gradle daemons, wrappers, Kotlin daemons, and Gradle workers with RSS, CPU, and uptime"
+          alt="Daemonitor Live Monitor showing active Gradle and Bazel build processes with RSS, CPU, and uptime"
           fetchpriority="high"
         >
       </figure>
@@ -79,10 +80,11 @@
         <h2 id="why-heading">Why it exists</h2>
         <div class="intro-prose">
           <p>
-            IDEs, terminals, scripts, and coding agents can all start Gradle at once.
-            Daemons and workers keep using CPU and memory after the visible build window
-            closes. Daemonitor is a local Activity Monitor for those processes — RSS, CPU,
-            uptime, and retained build history — without sending data off the machine.
+            IDEs, terminals, scripts, and coding agents can all start Gradle or Bazel at once.
+            Daemons, servers, and workers keep using CPU and memory after the visible build
+            window closes. Daemonitor is a local Activity Monitor for those processes — RSS,
+            CPU, uptime, and retained build history — without sending data off the machine or
+            taking Bazel’s command lock.
           </p>
         </div>
       </div>
@@ -117,8 +119,9 @@
           <div class="split-copy">
             <h3>Build History</h3>
             <p>
-              Recent builds with duration, outcome, peak resources, invocation source, and
-              coding-agent attribution when an agent triggered the build. Searchable local history.
+              Recent Gradle builds with duration, outcome, peak resources, invocation source, and
+              coding-agent attribution when an agent triggered the build. Filter by tool for
+              opportunistic Bazel BEP rows when your builds already write them. Searchable local history.
             </p>
           </div>
           <figure class="split-visual">
@@ -162,12 +165,12 @@
               Bubble Tea TUI over SSH or on headless machines. Native Go binary; starts
               <code>daemonitor-cored</code> when needed and does not require a JDK. The desktop
               app remains a separate packaged JVM application. Press <code>v</code> to group
-              descendant workers under their daemon; <code>h</code>/<code>l</code> fold or expand
-              a group while keeping individual process rows available.
+              descendant workers under their daemon or Bazel server; <code>h</code>/<code>l</code>
+              fold or expand a group while keeping individual process rows available.
             </p>
             <ul class="plain-list">
               <li>Live process table with RSS, heap, CPU, and uptime</li>
-              <li>Grouped daemon hierarchy with fold/expand controls</li>
+              <li>Grouped Gradle daemon and Bazel server hierarchy with fold/expand controls</li>
               <li>Shares the desktop app’s local database and retention settings</li>
               <li>Install with Homebrew, or grab the release zip</li>
             </ul>
@@ -214,7 +217,7 @@ daemonitor-cli</code></pre>
         <h2 id="mcp-heading">MCP</h2>
         <p>
           Optional local, read-only MCP so compatible tools can inspect retained build history
-          and currently visible Gradle processes — without leaving the machine.
+          and currently visible Gradle and Bazel processes — without leaving the machine.
         </p>
       </div>
     </section>
@@ -283,7 +286,7 @@ daemonitor-cli</code></pre>
     <div class="footer-inner footer-line">
       <p>
         <span class="footer-brand-inline">Daemonitor</span>
-        · local Activity Monitor for Gradle and Kotlin daemons
+        · local Activity Monitor for Gradle and Bazel builds
         ·
         <a href="https://github.com/cdsap/daemonitor" rel="noopener noreferrer">GitHub</a>
         ·

@@ -4,11 +4,11 @@
 
 # Daemonitor
 
-> Activity Monitor for your Gradle daemons — what's building now, and what built recently.
+> Activity Monitor for Gradle and Bazel builds — what's building now, and what built recently.
 
-Daemonitor watches the Gradle-related JVMs on your machine: daemons, wrappers, Kotlin daemons, and
-Gradle workers. Use the **desktop app** for a full Activity Monitor UI, or the **CLI** for the same
-live view in a terminal (including over SSH).
+Daemonitor watches local build processes: Gradle daemons, wrappers, Kotlin daemons, and Gradle
+workers, plus Bazel servers, tests, and workers. Use the **desktop app** for a full Activity
+Monitor UI, or the **CLI** for the same live view in a terminal (including over SSH).
 
 Everything stays local. Command lines and logs are redacted before storage. The only outbound
 network use is GitHub Releases update checks and installer downloads you approve.
@@ -81,22 +81,23 @@ Specification: [`docs/specs/daemonitor-native-cli-tui-spec.md`](docs/specs/daemo
 
 ![Daemonitor Live monitor showing active Gradle processes, metrics, status badges, process details, MCP status, and the headless toolbar action](docs/images/live-monitor.png)
 
-- Gradle-related JVMs by type (daemon, wrapper, Kotlin daemon, Gradle worker, other)
+- Gradle JVMs by type (daemon, wrapper, Kotlin daemon, Gradle worker, other)
+- Bazel server, test, and worker processes (classified from argv — never calls `bazel info` / `dump`)
 - RSS, live heap (when Attach/JMX works), CPU, and uptime
 - Summary tiles, memory-pressure badges, and a tabbed detail panel (Overview / JVM / OS·I/O / Process / Gradle) with log tail
 - Switch to terminal collection from the toolbar when you want a lighter footprint
 
 First-poll CPU shows `…` / `sampling…` until a delta exists; `0%` means idle after that. Live heap
-stays `n/a` for wrappers and Gradle workers (daemons only). More detail:
-[JVM heap collection](docs/jvm-heap-collection.md).
+stays `n/a` for wrappers and Gradle workers (daemons / Bazel servers when the HotSpot probe works).
+More detail: [JVM heap collection](docs/jvm-heap-collection.md).
 
 ### CLI (terminal)
 
 ![Daemonitor CLI process details showing OS activity, JVM memory pools, and native memory metrics](docs/images/cli-monitor.png)
 
-Native full-screen TUI (`top`-style): selection, sorting, pause, resize, grouped process hierarchy,
-process details, recent build/log context, and a compact RSS trend — useful on
-build machines and over SSH:
+Native full-screen TUI (`top`-style): selection, sorting, pause, resize, grouped process hierarchy
+(Gradle daemons and Bazel servers as roots), process details, recent build/log context, and a
+compact RSS trend — useful on build machines and over SSH:
 
 ```bash
 daemonitor-cli
@@ -122,8 +123,13 @@ live heap, and configured `-Xmx` when known. Click the legend to hide or focus a
 
 ![Daemonitor build history showing status and source tags, agent attribution, metrics, and build details](docs/images/build-history.png)
 
-Reconstructed builds with duration, peak RSS, status, source, and coding-agent attribution when
-detectable. The native CLI supports bounded, composable investigation filters, for example
+Gradle builds are reconstructed from daemon logs (duration, peak RSS, status, source, and
+coding-agent attribution when detectable). Bazel history is **opportunistic**: if a build already
+emits Build Event Protocol (BEP) to a local file or socket Daemonitor can read, those rows appear
+in History (desktop tool filter: Gradle / Bazel) and under Bazel server details in the TUI —
+Daemonitor never enables BEP itself.
+
+The native CLI supports bounded, composable investigation filters, for example
 `daemonitor-cli builds --pid 12345 --since 1h --status FAILED --project daemonitor`. Active daemon
 history is incarnation-scoped; omitting `--pid` queries retained global history. Summaries include
 matching count, failures, average duration, and latest status. Log snippets are opt-in with
@@ -154,7 +160,8 @@ build/install/daemonitor-cli/bin/daemonitor-cli
 ```
 
 Requires **JDK 17+** to run Gradle (the build uses a Java 21 toolchain). Daemonitor needs permission
-to read your process list and Gradle daemon logs under `~/.gradle/daemon/<version>/`.
+to read your process list, Gradle daemon logs under `~/.gradle/daemon/<version>/`, and (when
+present) local Bazel BEP outputs your builds already write.
 
 ---
 
@@ -210,13 +217,16 @@ Tools: `daemonitor_search_history`, `daemonitor_builds_for_process`,
 
 ## How it works
 
-1. **Process polling** ([OSHI](https://github.com/oshi/oshi), every 2s) — RSS, CPU, uptime, JVM flags
-2. **Daemon-log parsing** — build start/end, outcome, working directory, env-var *names* for
+1. **Process polling** ([OSHI](https://github.com/oshi/oshi) / native cored, every 2s) — classify
+   Gradle and Bazel process types from argv, then sample RSS, CPU, uptime, and JVM flags
+2. **Gradle daemon-log parsing** — build start/end, outcome, working directory, env-var *names* for
    source/agent attribution
+3. **Opportunistic Bazel BEP** — when a build already writes BEP locally, ingest retained build rows
+   (zero-lock: never invokes `bazel` for observation)
 
-Builds are reconstructed from a daemon's busy→idle window matched to samples in that window, then
-stored in local SQLite and purged by retention (default 15 days, range 1–90). Lowering retention
-deletes older rows and incrementally compacts the database.
+Gradle builds are reconstructed from a daemon's busy→idle window matched to samples in that window.
+All retained builds are stored in local SQLite and purged by retention (default 15 days, range
+1–90). Lowering retention deletes older rows and incrementally compacts the database.
 
 | OS | Data directory |
 |----|----------------|
@@ -268,4 +278,5 @@ Review `docs/images/` before committing (synthetic samples only).
 is limited to GitHub Releases checks and downloads you approve. Telemetry is not uploaded by
 default; exports omit full project paths unless `--include-project-path` is explicitly requested.
 
-**Status:** Early (v1.2.4). See `requirements.md` for the original spec.
+**Status:** Early (v1.2.4; Bazel live + opportunistic BEP history targeting 1.3 packaging). See
+`requirements.md` for the original spec.
