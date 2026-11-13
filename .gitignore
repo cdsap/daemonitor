@@ -14,3 +14,4 @@ cored/.smoke-tmp/
 *.sqlite-journal
 *.sqlite-wal
 *.sqlite-shm
+.venv*/

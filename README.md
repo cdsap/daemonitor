@@ -79,7 +79,7 @@ Specification: [`docs/specs/daemonitor-native-cli-tui-spec.md`](docs/specs/daemo
 
 ### Live Monitor (desktop)
 
-![Daemonitor Live monitor showing active Gradle processes, metrics, status badges, process details, MCP status, and the headless toolbar action](docs/images/live-monitor.png)
+![Daemonitor Live monitor showing Gradle and Bazel processes, metrics, status badges, process details, MCP status, and the headless toolbar action](docs/images/live-monitor.png)
 
 - Gradle JVMs by type (daemon, wrapper, Kotlin daemon, Gradle worker, other)
 - Bazel server, test, and worker processes (classified from argv — never calls `bazel info` / `dump`)
@@ -93,7 +93,7 @@ More detail: [JVM heap collection](docs/jvm-heap-collection.md).
 
 ### CLI (terminal)
 
-![Daemonitor CLI process details showing OS activity, JVM memory pools, and native memory metrics](docs/images/cli-monitor.png)
+![Daemonitor CLI process details for a Bazel server showing OS activity, JVM memory pools, native memory, and recent BEP builds](docs/images/cli-monitor.png)
 
 Native full-screen TUI (`top`-style): selection, sorting, pause, resize, grouped process hierarchy
 (Gradle daemons and Bazel servers as roots), process details, recent build/log context, and a
@@ -114,14 +114,14 @@ Desktop apps also accept `--headless` for a similar terminal mode (JVM path).
 
 ### Visual
 
-![Daemonitor Visual tab showing Memory/CPU/I/O metric modes, time-window controls, and per-process RSS with live heap and configured heap (-Xmx) timelines](docs/images/process-visual.png)
+![Daemonitor Visual tab showing Memory/CPU/I/O metric modes, time-window controls, and per-process RSS with live heap and configured heap (-Xmx) timelines for Gradle and Bazel](docs/images/process-visual.png)
 
 Metric-family modes (Memory, CPU, I/O, GC) with live / 15m / 1h windows. Memory mode charts RSS,
 live heap, and configured `-Xmx` when known. Click the legend to hide or focus a series.
 
 ### Build history
 
-![Daemonitor build history showing status and source tags, agent attribution, metrics, and build details](docs/images/build-history.png)
+![Daemonitor build history showing Gradle and Bazel rows with status and source tags, BEP source, agent attribution, metrics, and build details](docs/images/build-history.png)
 
 Gradle builds are reconstructed from daemon logs (duration, peak RSS, status, source, and
 coding-agent attribution when detectable). Bazel history is **opportunistic**: if a build already
@@ -264,13 +264,16 @@ plugins {
 }
 ```
 
-Refresh desktop README screenshots after UI changes:
+Refresh README / site screenshots after UI changes (synthetic samples only):
 
 ```bash
 ./gradlew captureReadmeScreenshots test
+# CLI details (Bazel server fixture) → docs/images/cli-monitor.png
+cd cored && go run ./cmd/docscreenshot | python3 ../scripts/ansi_to_png.py ../docs/images/cli-monitor.png
+cp docs/images/*.png site/assets/
 ```
 
-Review `docs/images/` before committing (synthetic samples only).
+`scripts/ansi_to_png.py` needs Pillow (`python3 -m venv .venv-docs && .venv-docs/bin/pip install Pillow`).
 
 **Stack:** Kotlin · Compose for Desktop · OSHI · SQLDelight · Coroutines
 
