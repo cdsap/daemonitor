@@ -195,7 +195,7 @@ class LiveMonitorScreenUiTest {
     }
 
     @Test
-    fun `bazel server selection shows bazel label icon and detail title`() = runComposeUiTest {
+    fun `bazel server selection shows history honesty note without gradle log`() = runComposeUiTest {
         mainClock.autoAdvance = false
         val bazel = sampleProcess(
             pid = 30030,
@@ -227,8 +227,11 @@ class LiveMonitorScreenUiTest {
 
         onNodeWithText("Bazel server / Process detail").assertIsDisplayed()
         onNodeWithTag("process-type-icon-BAZEL_SERVER").assertExists()
-        onNodeWithText("Gradle version").assertDoesNotExist()
         onNodeWithText(ProcessType.BAZEL_SERVER.displayLabel(), useUnmergedTree = true).assertExists()
+        onNodeWithTag("bazel-history-note").assertIsDisplayed()
+        onNodeWithText("Bazel history").assertIsDisplayed()
+        onNodeWithText("Gradle version").assertDoesNotExist()
+        onNodeWithText("Gradle daemon log").assertDoesNotExist()
     }
 
     @Test
@@ -694,7 +697,7 @@ class LiveMonitorScreenUiTest {
         detailPane.performTouchInput { swipeUp() }
         detailPane.assert(hasScrolledDetailContent)
         onNodeWithText("UPTIME").assertIsDisplayed()
-        onNodeWithText("Daemon log").assertIsDisplayed()
+        onNodeWithText("Gradle daemon log").assertIsDisplayed()
     }
 
     @Test

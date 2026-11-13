@@ -41,7 +41,7 @@ fun PrivacyNotice(modifier: Modifier = Modifier) {
                 modifier = Modifier.size(12.dp),
             )
             Text(
-                text = "Command lines and daemon logs may contain sensitive data. Everything stays " +
+                text = "Command lines and Gradle daemon logs may contain sensitive data. Everything stays " +
                     "local on this machine; secrets are best-effort redacted before storage.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.labelSmall,

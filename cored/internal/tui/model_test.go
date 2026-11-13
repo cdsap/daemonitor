@@ -572,7 +572,7 @@ func TestDetailsRefreshKeyReloadsOpenProcess(t *testing.T) {
 }
 
 func TestDetailsHideGradleOnlyPanelsForNonDaemons(t *testing.T) {
-	for _, processType := range []string{"KOTLIN_DAEMON", "GRADLE_WORKER", "BAZEL_SERVER"} {
+	for _, processType := range []string{"KOTLIN_DAEMON", "GRADLE_WORKER"} {
 		p := model.Process{PID: 9, Type: processType, StartTimeMs: 100}
 		m := NewModel(Config{Now: fixedNow, NoColor: true})
 		m.width, m.height, m.detailsOpen, m.detailProcess = 100, 30, true, &p
@@ -587,6 +587,19 @@ func TestDetailsHideGradleOnlyPanelsForNonDaemons(t *testing.T) {
 		if !strings.Contains(body, "RESOURCE TRENDS") {
 			t.Fatalf("%s omitted resource trends: %s", processType, body)
 		}
+	}
+}
+
+func TestBazelServerEmptyBuildsHonesty(t *testing.T) {
+	p := model.Process{PID: 11, Type: "BAZEL_SERVER", StartTimeMs: 100, ProjectPath: strPtr("/tmp/ws")}
+	m := NewModel(Config{Now: fixedNow, NoColor: true})
+	m.width, m.height, m.detailsOpen, m.detailProcess = 140, 40, true, &p
+	body := m.View().Content
+	if !strings.Contains(body, "No Bazel build events found (BEP not in reach)") {
+		t.Fatalf("missing honest empty copy: %s", body)
+	}
+	if strings.Contains(body, "GRADLE LOG") || strings.Contains(body, "should be hidden") {
+		t.Fatalf("bazel details should not show gradle log: %s", body)
 	}
 }
 

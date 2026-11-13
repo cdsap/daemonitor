@@ -28,8 +28,10 @@ func (m Model) renderDetails() string {
 	// capability matrix so the details pane opens on the most useful context.
 	attributes := append(detailAttributes(*p, m.width, now), detailTelemetry(m, *p, m.width)...)
 	gradle := p.Type == "GRADLE_DAEMON"
+	bazel := p.Type == "BAZEL_SERVER"
+	showBuilds := gradle || bazel
 	builds := []string(nil)
-	if gradle {
+	if showBuilds {
 		builds = detailBuilds(m, m.width)
 	}
 	log := []string(nil)
@@ -51,7 +53,7 @@ func (m Model) renderDetails() string {
 		}
 		resource := detailResources(m, *p, resourceWidth)
 		middle := detailPanel("RESOURCE TRENDS", resource, resourceWidth, available, m.detailPaneOffset(detailPaneResources), 0, m.detailPane == detailPaneResources, m.noColor)
-		if gradle {
+		if showBuilds {
 			heights := splitDetailHeight(available, 2)
 			resourceHeight, buildHeight := heights[0], heights[1]
 			middle = joinVerticalPanes([][]string{
@@ -71,13 +73,22 @@ func (m Model) renderDetails() string {
 		activityWidth := m.width - attrWidth - 1
 		resource := detailResources(m, *p, activityWidth)
 		stack := [][]string{detailPanel("RESOURCE TRENDS", resource, activityWidth, available, m.detailPaneOffset(detailPaneResources), 0, m.detailPane == detailPaneResources, m.noColor)}
-		if gradle {
-			heights := splitDetailHeight(available, 3)
-			resourceHeight, buildHeight, logHeight := heights[0], heights[1], heights[2]
-			stack = [][]string{
-				detailPanel("RESOURCE TRENDS", resource, activityWidth, resourceHeight, m.detailPaneOffset(detailPaneResources), 0, m.detailPane == detailPaneResources, m.noColor),
-				detailPanel("RECENT BUILDS", builds, activityWidth, buildHeight, m.detailPaneOffset(detailPaneBuilds), 0, m.detailPane == detailPaneBuilds, m.noColor),
-				detailPanel("GRADLE LOG", log, activityWidth, max(1, logHeight), m.detailPaneOffset(detailPaneLog), m.detailPaneHorizontalScroll[detailPaneLog], m.detailPane == detailPaneLog, m.noColor),
+		if showBuilds {
+			if gradle {
+				heights := splitDetailHeight(available, 3)
+				resourceHeight, buildHeight, logHeight := heights[0], heights[1], heights[2]
+				stack = [][]string{
+					detailPanel("RESOURCE TRENDS", resource, activityWidth, resourceHeight, m.detailPaneOffset(detailPaneResources), 0, m.detailPane == detailPaneResources, m.noColor),
+					detailPanel("RECENT BUILDS", builds, activityWidth, buildHeight, m.detailPaneOffset(detailPaneBuilds), 0, m.detailPane == detailPaneBuilds, m.noColor),
+					detailPanel("GRADLE LOG", log, activityWidth, max(1, logHeight), m.detailPaneOffset(detailPaneLog), m.detailPaneHorizontalScroll[detailPaneLog], m.detailPane == detailPaneLog, m.noColor),
+				}
+			} else {
+				heights := splitDetailHeight(available, 2)
+				resourceHeight, buildHeight := heights[0], heights[1]
+				stack = [][]string{
+					detailPanel("RESOURCE TRENDS", resource, activityWidth, resourceHeight, m.detailPaneOffset(detailPaneResources), 0, m.detailPane == detailPaneResources, m.noColor),
+					detailPanel("RECENT BUILDS", builds, activityWidth, buildHeight, m.detailPaneOffset(detailPaneBuilds), 0, m.detailPane == detailPaneBuilds, m.noColor),
+				}
 			}
 		}
 		panes := [][]string{
@@ -499,6 +510,9 @@ func detailBuilds(m Model, width int) []string {
 		return []string{truncateWidth("Unavailable: "+oneLine(m.detailError), max(1, width-2))}
 	}
 	if len(m.detailBuilds.Builds) == 0 {
+		if m.detailProcess != nil && m.detailProcess.Type == "BAZEL_SERVER" {
+			return []string{"No Bazel build events found (BEP not in reach)."}
+		}
 		return []string{"No build history for this daemon."}
 	}
 	lines := make([]string, 0, 4)
