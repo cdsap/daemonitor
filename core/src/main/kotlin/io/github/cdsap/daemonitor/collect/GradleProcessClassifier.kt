@@ -18,6 +18,8 @@ object GradleProcessClassifier {
             cl.contains("org.jetbrains.kotlin.daemon") ||
                 cl.contains("KotlinCompileDaemon") -> ProcessType.KOTLIN_DAEMON
 
+            isBazelServer(cl) -> ProcessType.BAZEL_SERVER
+
             isGradleWorker(cl) -> classifyGradleWorker(cl)
 
             // The wrapper JVM is usually launched as `java -jar …/gradle/wrapper/gradle-wrapper.jar`
@@ -38,6 +40,21 @@ object GradleProcessClassifier {
 
     private fun containsGradlewInvocation(cl: String): Boolean =
         Regex("""(^|[\s/])gradlew(\s|$)""").containsMatchIn(cl)
+
+    /** Bazel 9.x server: `-jar …/A-server.jar` plus `--product_name=Bazel` or `--output_base=`. */
+    private fun isBazelServer(cl: String): Boolean =
+        Regex("""(^|[\s/\\])A-server\.jar["']?(\s|$)""").containsMatchIn(cl) &&
+            (
+                Regex("""--product_name=Bazel(\s|$)""").containsMatchIn(cl) ||
+                    cl.contains("--output_base=")
+                )
+
+    fun bazelWorkspaceDirectory(commandLine: String): String? {
+        val match = Regex("""--workspace_directory=(?:"([^"]+)"|'([^']+)'|([^\s]+))""")
+            .find(commandLine)
+            ?: return null
+        return match.groupValues.drop(1).firstOrNull { it.isNotEmpty() }
+    }
 
     private fun isGradleWorker(cl: String): Boolean =
         cl.contains("worker.org.gradle.process.internal.worker.GradleWorkerMain") ||

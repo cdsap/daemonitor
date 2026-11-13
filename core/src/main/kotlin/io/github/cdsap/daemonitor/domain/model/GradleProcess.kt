@@ -5,6 +5,8 @@ enum class ProcessType {
     GRADLE_DAEMON,
     GRADLE_WRAPPER,
     KOTLIN_DAEMON,
+    /** Long-lived Bazel JVM server (`A-server.jar` + product/output_base markers). */
+    BAZEL_SERVER,
     TEST_WORKER,
     GRADLE_WORKER,
     UNKNOWN_GRADLE_WORKER,

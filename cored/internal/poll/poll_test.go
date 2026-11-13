@@ -74,6 +74,43 @@ func TestClassifyParityWithKotlin(t *testing.T) {
 			in:   "node server.js",
 			want: "",
 		},
+		{
+			name: "bazel server macOS argv",
+			in: "bazel(demo) -jar /Users/dev/Library/Caches/bazel/_bazel_dev/install/abc/A-server.jar " +
+				"--output_base=/Users/dev/Library/Caches/bazel/_bazel_dev/deadbeef " +
+				"--workspace_directory=/private/tmp/ws --product_name=Bazel",
+			want: "BAZEL_SERVER",
+		},
+		{
+			name: "bazel server product_name only with jar",
+			in:   "java -jar /x/install/A-server.jar --workspace_directory=/tmp/ws --product_name=Bazel",
+			want: "BAZEL_SERVER",
+		},
+		{
+			name: "bazel server output_base without product_name",
+			in:   "java -jar /x/install/A-server.jar --output_base=/tmp/out --workspace_directory=/tmp/ws",
+			want: "BAZEL_SERVER",
+		},
+		{
+			name: "bazel server windows path separators",
+			in:   `java -jar C:\Users\dev\.cache\bazel\install\abc\A-server.jar --product_name=Bazel --workspace_directory=C:\ws`,
+			want: "BAZEL_SERVER",
+		},
+		{
+			name: "bazel server quoted jar path",
+			in:   `java -jar "/Users/dev/Library/Caches/bazel/install/abc/A-server.jar" --product_name=Bazel --workspace_directory=/tmp/ws`,
+			want: "BAZEL_SERVER",
+		},
+		{
+			name: "A-server jar without bazel markers is not bazel",
+			in:   "java -jar /opt/other/A-server.jar --config=/tmp/x",
+			want: "",
+		},
+		{
+			name: "product_name Bazelisk is not Bazel server",
+			in:   "java -jar /x/A-server.jar --product_name=Bazelisk --workspace_directory=/tmp/ws",
+			want: "",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -81,6 +118,23 @@ func TestClassifyParityWithKotlin(t *testing.T) {
 				t.Fatalf("Classify(%q)=%q want %q", tc.in, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestBazelWorkspaceDirectory(t *testing.T) {
+	in := "-jar /x/A-server.jar --workspace_directory=/private/tmp/ws --product_name=Bazel"
+	if got := poll.BazelWorkspaceDirectory(in); got != "/private/tmp/ws" {
+		t.Fatalf("got %q", got)
+	}
+	quoted := `-jar /x/A-server.jar --workspace_directory="/tmp/my ws" --product_name=Bazel`
+	if got := poll.BazelWorkspaceDirectory(quoted); got != "/tmp/my ws" {
+		t.Fatalf("quoted got %q", got)
+	}
+}
+
+func TestShouldProbeLiveHeapIncludesBazelServer(t *testing.T) {
+	if !poll.ShouldProbeLiveHeap("BAZEL_SERVER") {
+		t.Fatal("BAZEL_SERVER should be heap-probed")
 	}
 }
 

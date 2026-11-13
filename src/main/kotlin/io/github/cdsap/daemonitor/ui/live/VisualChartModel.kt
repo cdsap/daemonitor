@@ -342,6 +342,7 @@ internal fun ProcessType.displayLabel(): String = when (this) {
     ProcessType.GRADLE_DAEMON -> "Gradle daemon"
     ProcessType.GRADLE_WRAPPER -> "Gradle wrapper"
     ProcessType.KOTLIN_DAEMON -> "Kotlin daemon"
+    ProcessType.BAZEL_SERVER -> "Bazel server"
     ProcessType.TEST_WORKER -> "Gradle test worker"
     ProcessType.GRADLE_WORKER -> "Gradle worker"
     ProcessType.UNKNOWN_GRADLE_WORKER -> "Unknown Gradle worker"

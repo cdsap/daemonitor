@@ -34,6 +34,12 @@ var (
 	wrapper            = regexp.MustCompile(`org\.gradle\.wrapper\.GradleWrapperMain|gradle-wrapper\.jar|org\.gradle\.appname=gradlew|(^|[\s/])gradlew(\s|$)`)
 	javaBin            = regexp.MustCompile(`(^|[\s/])java(\s|$)`)
 	gradleRuntime      = regexp.MustCompile(`(-Dorg\.gradle\.|org\.gradle\.(launcher|process|tooling|internal|api|workers)\.|GradleWorkerMain)`)
+	// Bazel 9.x server argv: -jar …/A-server.jar plus --product_name=Bazel and/or --output_base=.
+	// Unix (/) and Windows (\) separators; optional closing quote on the jar token.
+	bazelServerJar    = regexp.MustCompile(`(^|[\s/\\])A-server\.jar["']?(?:\s|$)`)
+	// Require end-of-token after Bazel so --product_name=Bazelisk does not match.
+	bazelServerMarker = regexp.MustCompile(`--product_name=Bazel(?:\s|$)|--output_base=`)
+	bazelWorkspaceDir = regexp.MustCompile(`--workspace_directory=(?:"([^"]+)"|'([^']+)'|([^\s]+))`)
 )
 
 type priorCPU struct {
@@ -286,7 +292,14 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 			cwd = &dir
 		}
 		var project *string
-		if kind == "GRADLE_WRAPPER" && cwd != nil {
+		switch {
+		case kind == "BAZEL_SERVER":
+			if ws := BazelWorkspaceDirectory(cmdline); ws != "" {
+				project = &ws
+			} else if cwd != nil {
+				project = cwd
+			}
+		case kind == "GRADLE_WRAPPER" && cwd != nil:
 			project = cwd
 		}
 
@@ -483,7 +496,7 @@ func (c *Collector) applyJVMProbes(ctx context.Context, now int64, out []model.P
 // attachment remains optional, so a failed probe leaves OS metrics intact.
 func ShouldProbeLiveHeap(kind string) bool {
 	switch kind {
-	case "GRADLE_DAEMON", "KOTLIN_DAEMON", "TEST_WORKER", "GRADLE_WORKER", "UNKNOWN_GRADLE_WORKER", "JAVA_GRADLE_RELATED":
+	case "GRADLE_DAEMON", "KOTLIN_DAEMON", "TEST_WORKER", "GRADLE_WORKER", "UNKNOWN_GRADLE_WORKER", "JAVA_GRADLE_RELATED", "BAZEL_SERVER":
 		return true
 	default:
 		return false
@@ -573,13 +586,15 @@ func sameUID(ctx context.Context, proc *process.Process) bool {
 	return int(uids[0]) == self
 }
 
-// Classify mirrors Kotlin GradleProcessClassifier.
+// Classify mirrors Kotlin GradleProcessClassifier, plus Bazel server recognition.
 func Classify(commandLine string) string {
 	switch {
 	case gradleDaemon.MatchString(commandLine):
 		return "GRADLE_DAEMON"
 	case kotlinDaemon.MatchString(commandLine):
 		return "KOTLIN_DAEMON"
+	case bazelServerJar.MatchString(commandLine) && bazelServerMarker.MatchString(commandLine):
+		return "BAZEL_SERVER"
 	case gradleWorker.MatchString(commandLine):
 		switch {
 		case gradleTestExecutor.MatchString(commandLine):
@@ -596,6 +611,20 @@ func Classify(commandLine string) string {
 	default:
 		return ""
 	}
+}
+
+// BazelWorkspaceDirectory returns --workspace_directory= from a Bazel server argv.
+func BazelWorkspaceDirectory(commandLine string) string {
+	m := bazelWorkspaceDir.FindStringSubmatch(commandLine)
+	if len(m) < 2 {
+		return ""
+	}
+	for _, g := range m[1:] {
+		if g != "" {
+			return g
+		}
+	}
+	return ""
 }
 
 func Platform() string { return runtime.GOOS + "/" + runtime.GOARCH }

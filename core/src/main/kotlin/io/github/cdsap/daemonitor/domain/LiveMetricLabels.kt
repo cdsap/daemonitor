@@ -44,7 +44,7 @@ object LiveMetricLabels {
     }
 
     fun isLiveHeapProbedType(type: ProcessType): Boolean = when (type) {
-        ProcessType.GRADLE_DAEMON, ProcessType.KOTLIN_DAEMON -> true
+        ProcessType.GRADLE_DAEMON, ProcessType.KOTLIN_DAEMON, ProcessType.BAZEL_SERVER -> true
         else -> false
     }
 
@@ -54,6 +54,6 @@ object LiveMetricLabels {
         ProcessType.GRADLE_WORKER -> "Gradle workers"
         ProcessType.UNKNOWN_GRADLE_WORKER -> "unknown Gradle workers"
         ProcessType.JAVA_GRADLE_RELATED -> "non-daemon JVMs"
-        ProcessType.GRADLE_DAEMON, ProcessType.KOTLIN_DAEMON -> "daemons"
+        ProcessType.GRADLE_DAEMON, ProcessType.KOTLIN_DAEMON, ProcessType.BAZEL_SERVER -> "daemons"
     }
 }
