@@ -662,13 +662,13 @@ private fun BazelHistoryNoteCard(modifier: Modifier = Modifier) {
     SectionCard("Bazel history", modifier.testTag("bazel-history-note")) {
         Column {
             Text(
-                "Bazel has no Gradle daemon log. Build history appears only when your Bazel client already emits BEP — Daemonitor never enables it.",
+                "Bazel has no Gradle daemon log. When your Bazel client already emits BEP, completed builds appear under History → Bazel. Daemonitor never enables BEP.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium,
             )
             Spacer(Modifier.padding(Space.xs))
             Text(
-                "Live process metrics for Bazel servers still appear above. Bazel History lands when BEP is already in reach.",
+                "Live process metrics for Bazel servers still appear above. Without BEP in reach, History → Bazel stays empty.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
             )

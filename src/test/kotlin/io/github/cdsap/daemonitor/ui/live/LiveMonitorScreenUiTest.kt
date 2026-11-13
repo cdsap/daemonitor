@@ -230,6 +230,7 @@ class LiveMonitorScreenUiTest {
         onNodeWithText(ProcessType.BAZEL_SERVER.displayLabel(), useUnmergedTree = true).assertExists()
         onNodeWithTag("bazel-history-note").assertIsDisplayed()
         onNodeWithText("Bazel history").assertIsDisplayed()
+        onNodeWithText("completed builds appear under History → Bazel. Daemonitor never enables BEP.", substring = true).assertExists()
         onNodeWithText("Gradle version").assertDoesNotExist()
         onNodeWithText("Gradle daemon log").assertDoesNotExist()
     }
