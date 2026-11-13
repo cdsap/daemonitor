@@ -7,7 +7,7 @@ import java.util.Locale
 /**
  * Shared Live/CLI labels so unavailable, zero, and not-yet-sampled metrics stay distinct
  * (issue #186). CPU needs a prior poll for a delta sample; live heap is only probed for
- * Gradle/Kotlin daemons.
+ * Gradle/Kotlin/Bazel server daemons.
  */
 object LiveMetricLabels {
     /** Compact table/CLI CPU when no prior poll exists yet. */
