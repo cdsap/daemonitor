@@ -9,7 +9,7 @@ import io.github.cdsap.daemonitor.application.DaemonLog
 import io.github.cdsap.daemonitor.application.DaemonLogTailResult
 import io.github.cdsap.daemonitor.application.ProcessSampleWriter
 import io.github.cdsap.daemonitor.config.RetentionPolicy
-import io.github.cdsap.daemonitor.domain.BuildAggregator
+import io.github.cdsap.daemonitor.domain.BuildCorrelator
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 
 /**
@@ -23,7 +23,7 @@ class WatcherRuntime(
     logSource: DaemonLogSource,
     builds: BuildWriter,
     samples: ProcessSampleWriter,
-    aggregator: BuildAggregator,
+    aggregator: BuildCorrelator,
     mode: MonitoringMode = MonitoringMode.Local,
     retentionPolicy: RetentionPolicy = RetentionPolicy.DEFAULT,
     retentionDays: () -> Long = { RetentionPolicy.DEFAULT.defaultDays },

@@ -1,12 +1,20 @@
 package io.github.cdsap.daemonitor
 
+import io.github.cdsap.daemonitor.application.BuildWriter
+import io.github.cdsap.daemonitor.application.DaemonLog
+import io.github.cdsap.daemonitor.application.DaemonLogLine
+import io.github.cdsap.daemonitor.application.DaemonLogSource
+import io.github.cdsap.daemonitor.application.ProcessSampleWriter
 import io.github.cdsap.daemonitor.collect.DaemonLogWatcher
 import io.github.cdsap.daemonitor.collect.JvmHeapProbe
 import io.github.cdsap.daemonitor.collect.ProcessCollector
 import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.domain.BuildAggregator
+import io.github.cdsap.daemonitor.domain.BuildCorrelator
 import io.github.cdsap.daemonitor.domain.model.Build
+import io.github.cdsap.daemonitor.domain.model.BuildEvent
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
+import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.LiveJvmHeap
 import io.github.cdsap.daemonitor.domain.model.Source
 import io.github.cdsap.daemonitor.store.WatcherDatabase
@@ -26,6 +34,22 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class WatcherRuntimeTest {
+
+    @Test
+    fun `runtime accepts build correlator port`() {
+        val runtime = WatcherRuntime(
+            processSource = { emptyList() },
+            logSource = EmptyDaemonLogSource,
+            builds = NoOpBuildWriter,
+            samples = NoOpProcessSampleWriter,
+            aggregator = FakeBuildCorrelator(),
+        )
+
+        assertEquals(
+            WatcherRuntime.PollResult(emptyList(), emptyList(), buildsChanged = false),
+            runtime.pollOnce(),
+        )
+    }
 
     private fun collectorWithoutHeapAttach() = ProcessCollector(
         heapProbe = JvmHeapProbe { _, sampledAtMs -> LiveJvmHeap.unavailable(sampledAtMs) },
@@ -177,5 +201,29 @@ class WatcherRuntimeTest {
             assertFalse(runtime.pollOnce().buildsChanged)
             assertTrue(database.recent().isEmpty())
         }
+    }
+
+    private object EmptyDaemonLogSource : DaemonLogSource {
+        override fun discover() = emptyList<DaemonLog>()
+
+        override fun readNewLines(log: DaemonLog) = emptyList<DaemonLogLine>()
+
+        override fun tailFor(log: DaemonLog) = emptyList<String>()
+    }
+
+    private object NoOpBuildWriter : BuildWriter {
+        override fun save(build: Build) = Unit
+    }
+
+    private object NoOpProcessSampleWriter : ProcessSampleWriter {
+        override fun save(sample: GradleProcess, timestampMs: Long) = Unit
+    }
+
+    private class FakeBuildCorrelator : BuildCorrelator {
+        override fun onEvents(daemonPid: Long, events: List<BuildEvent>) = emptyList<Build>()
+
+        override fun onLogLine(daemonPid: Long, line: String, event: BuildEvent?) = emptyList<Build>()
+
+        override fun onDaemonGone(daemonPid: Long): Build? = null
     }
 }
