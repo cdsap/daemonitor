@@ -134,6 +134,7 @@ type BuildRecord struct {
 	EndTimeMs       *int64   `json:"end_time_ms"`
 	FinalStatus     string   `json:"final_status"`
 	InferredSource  string   `json:"inferred_source"`
+	Tool            string   `json:"tool,omitempty"`
 	Agent           string   `json:"agent"`
 	AgentProvider   string   `json:"agent_provider"`
 	ProjectPath     string   `json:"project_path"`
@@ -149,6 +150,7 @@ type BuildQuery struct {
 	PID         int64
 	Project     string
 	Status      string
+	Tool        string
 	IncludeLogs bool
 }
 
@@ -177,6 +179,9 @@ func (c *Client) BuildsFiltered(ctx context.Context, query BuildQuery) (BuildsPa
 	}
 	if query.Status != "" {
 		params.Set("status", query.Status)
+	}
+	if query.Tool != "" {
+		params.Set("tool", query.Tool)
 	}
 	if query.IncludeLogs {
 		params.Set("include_logs", "true")
