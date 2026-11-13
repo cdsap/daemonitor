@@ -190,13 +190,16 @@ fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit, onClearSelec
                 Spacer(Modifier.width(Space.lg))
                 Column(modifier = Modifier.weight(1f).fillMaxSize()) {
                     DetailCard(state.detail, state.processes, state.host, state.capabilities, state.recentBuilds, state.daemonLog, nowMs, modifier = Modifier.weight(2f).fillMaxWidth())
-                    Spacer(Modifier.padding(Space.xs))
-                    val process = when (val detail = state.detail) {
-                        is DetailState.Selected -> detail.process
-                        is DetailState.Ended -> detail.lastKnown
-                        DetailState.NoSelection -> null
+                    when {
+                        showsDaemonLogCard(state.detail) -> {
+                            Spacer(Modifier.padding(Space.xs))
+                            LogCard(state.tailState, showMetadata = true, state.daemonLog, modifier = Modifier.weight(1f).fillMaxWidth())
+                        }
+                        showsBazelHistoryNote(state.detail) -> {
+                            Spacer(Modifier.padding(Space.xs))
+                            BazelHistoryNoteCard(modifier = Modifier.weight(1f).fillMaxWidth())
+                        }
                     }
-                    LogCard(state.tailState, process?.type == ProcessType.GRADLE_DAEMON, state.daemonLog, modifier = Modifier.weight(1f).fillMaxWidth())
                 }
             }
         }
@@ -305,6 +308,18 @@ private fun ProcessRow(
             if (isDegraded(p)) Text("🔒", style = MaterialTheme.typography.bodySmall)
         }
     }
+}
+
+private fun showsDaemonLogCard(detail: DetailState): Boolean = when (detail) {
+    is DetailState.NoSelection -> true
+    is DetailState.Selected -> detail.process.type == ProcessType.GRADLE_DAEMON
+    is DetailState.Ended -> detail.lastKnown.type == ProcessType.GRADLE_DAEMON
+}
+
+private fun showsBazelHistoryNote(detail: DetailState): Boolean = when (detail) {
+    is DetailState.Selected -> detail.process.type == ProcessType.BAZEL_SERVER
+    is DetailState.Ended -> detail.lastKnown.type == ProcessType.BAZEL_SERVER
+    is DetailState.NoSelection -> false
 }
 
 private fun detailCardTitle(detail: DetailState): String = when (detail) {
@@ -527,7 +542,7 @@ private fun ProcessDetailInspector(
                 }
                 InspectorTab.GRADLE -> {
                     DetailRow("Log path", daemonLog?.path?.toString()?.takeIf { it.isNotBlank() } ?: "unavailable")
-                    Text("Tail available in the Daemon log card", style = MaterialTheme.typography.bodySmall)
+                    Text("Tail available in the Gradle daemon log card", style = MaterialTheme.typography.bodySmall)
                     DetailSection("Recent builds")
                     when (recentBuilds) {
                         RecentBuildsState.Loading -> Text("Loading recent builds…")
@@ -623,17 +638,40 @@ private fun Long?.metricBytes(): String = this?.let {
 
 @Composable
 private fun LogCard(tailState: LogTailState, showMetadata: Boolean, daemonLog: DaemonLog?, modifier: Modifier = Modifier) {
-    SectionCard("Daemon log", modifier) {
+    SectionCard("Gradle daemon log", modifier) {
         if (showMetadata) {
             DetailRow("Gradle version", daemonLog?.gradleVersion?.takeIf { it.isNotBlank() } ?: "Unavailable")
             DetailRow("Log path", daemonLog?.path?.toString()?.takeIf { it.isNotBlank() } ?: "Unavailable")
         }
         when (tailState) {
-            LogTailState.NoSelection -> Text("Select a process to see its daemon log.", modifier = Modifier.padding(Space.md), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            LogTailState.Loading -> Text("Loading daemon log…", modifier = Modifier.padding(Space.md), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            LogTailState.NoLog -> Text("No daemon log was found for this process.", modifier = Modifier.padding(Space.md), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            is LogTailState.Error -> Text("Daemon log unavailable (${tailState.errorType}).", modifier = Modifier.padding(Space.md), color = LocalAccentColors.current.warn)
+            LogTailState.NoSelection -> Text(
+                "Select a Gradle daemon to see its daemon log. History builds also come from these logs.",
+                modifier = Modifier.padding(Space.md),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            LogTailState.Loading -> Text("Loading Gradle daemon log…", modifier = Modifier.padding(Space.md), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            LogTailState.NoLog -> Text("No Gradle daemon log was found for this process.", modifier = Modifier.padding(Space.md), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            is LogTailState.Error -> Text("Gradle daemon log unavailable (${tailState.errorType}).", modifier = Modifier.padding(Space.md), color = LocalAccentColors.current.warn)
             is LogTailState.Available -> LogView(tailState.lines, modifier = Modifier.fillMaxSize(), autoScroll = true)
+        }
+    }
+}
+
+@Composable
+private fun BazelHistoryNoteCard(modifier: Modifier = Modifier) {
+    SectionCard("Bazel history", modifier.testTag("bazel-history-note")) {
+        Column {
+            Text(
+                "Bazel has no Gradle daemon log. Build history appears only when your Bazel client already emits BEP — Daemonitor never enables it.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Spacer(Modifier.padding(Space.xs))
+            Text(
+                "Live process metrics for Bazel servers still appear above. Bazel History lands when BEP is already in reach.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
     }
 }

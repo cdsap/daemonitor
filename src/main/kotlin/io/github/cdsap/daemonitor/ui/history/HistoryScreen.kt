@@ -87,7 +87,10 @@ fun HistoryScreen(state: HistoryUiState, onProject: (String?) -> Unit, onTimeRan
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Filters(state, onProject, onTimeRange)
         if (state.isEmptyResult) {
-            EmptyState("No builds match the current filters.", modifier = Modifier.weight(1f))
+            EmptyState(
+                "No Gradle builds match the current filters. History is filled from Gradle daemon logs. Bazel builds are not retained yet.",
+                modifier = Modifier.weight(1f),
+            )
         } else {
             // Request once when the table appears — filter refreshes keep keyboard focus via row clicks.
             LaunchedEffect(Unit) { listFocus.requestFocus() }
@@ -145,6 +148,12 @@ fun HistoryScreen(state: HistoryUiState, onProject: (String?) -> Unit, onTimeRan
 private fun Filters(state: HistoryUiState, onProject: (String?) -> Unit, onTimeRange: (TimeRange) -> Unit) {
     Column {
         ScreenHeader("Build history")
+        Text(
+            "History is filled from Gradle daemon logs. Bazel builds are not retained yet (BEP comes later).",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = Space.lg, end = Space.lg, bottom = Space.sm),
+        )
         Row(
             modifier = Modifier.fillMaxWidth().padding(start = Space.lg, end = Space.lg, bottom = Space.md),
             horizontalArrangement = Arrangement.spacedBy(Space.sm),

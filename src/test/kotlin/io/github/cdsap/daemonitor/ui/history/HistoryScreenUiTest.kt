@@ -80,7 +80,12 @@ class HistoryScreenUiTest {
     fun `empty result shows the empty state`() = runComposeUiTest {
         val state = HistoryUiState(builds = emptyList(), isEmptyResult = true)
         setContent { WatcherTheme { HistoryScreen(state, onProject = {}, onTimeRange = {}) } }
-        onNodeWithText("No builds match the current filters.").assertExists()
+        onNodeWithText(
+            "No Gradle builds match the current filters. History is filled from Gradle daemon logs. Bazel builds are not retained yet.",
+        ).assertExists()
+        onNodeWithText(
+            "History is filled from Gradle daemon logs. Bazel builds are not retained yet (BEP comes later).",
+        ).assertExists()
     }
 
     @Test
