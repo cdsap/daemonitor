@@ -416,7 +416,7 @@ func detailHeader(p model.Process, now int64, ended, stale bool, width int, noCo
 func detailTitle(kind string) string {
 	switch kind {
 	case "GRADLE_DAEMON":
-		return "GRADLE COMMANDER CENTER / PROCESS DETAILS"
+		return "GRADLE DAEMON / PROCESS DETAILS"
 	case "BAZEL_SERVER":
 		return "BAZEL SERVER / PROCESS DETAILS"
 	default:

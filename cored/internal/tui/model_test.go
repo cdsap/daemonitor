@@ -607,8 +607,11 @@ func TestDetailsTitleUsesBazelServerLabel(t *testing.T) {
 	gradle := model.Process{PID: 10, Type: "GRADLE_DAEMON", Name: "gradle", StartTimeMs: 100}
 	m := NewModel(Config{Now: fixedNow, NoColor: true})
 	m.width, m.height, m.detailsOpen, m.detailProcess = 120, 30, true, &gradle
-	if body := m.View().Content; !strings.Contains(body, "GRADLE COMMANDER CENTER / PROCESS DETAILS") {
+	if body := m.View().Content; !strings.Contains(body, "GRADLE DAEMON / PROCESS DETAILS") {
 		t.Fatalf("gradle title missing: %s", body)
+	}
+	if body := m.View().Content; strings.Contains(body, "GRADLE COMMANDER CENTER") {
+		t.Fatalf("gradle details still uses retired commander-center branding: %s", body)
 	}
 	bazel := model.Process{PID: 11, Type: "BAZEL_SERVER", Name: "bazel", StartTimeMs: 100, ProjectPath: strPtr("/tmp/ws")}
 	m.detailProcess = &bazel
@@ -616,7 +619,7 @@ func TestDetailsTitleUsesBazelServerLabel(t *testing.T) {
 	if !strings.Contains(body, "BAZEL SERVER / PROCESS DETAILS") {
 		t.Fatalf("bazel title missing: %s", body)
 	}
-	if strings.Contains(body, "GRADLE COMMANDER CENTER") {
+	if strings.Contains(body, "GRADLE COMMANDER CENTER") || strings.Contains(body, "GRADLE DAEMON / PROCESS DETAILS") {
 		t.Fatalf("bazel details still shows gradle title: %s", body)
 	}
 }
