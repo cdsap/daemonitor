@@ -69,7 +69,7 @@ class PublicWebsiteTest {
             "surface-block",
             "id=\"features\"",
             "Live Monitor",
-            "Memory timeline",
+            "Visual timelines",
             "id=\"cli\"",
             "CLI",
             "brew install daemonitor-cli",

@@ -31,6 +31,7 @@ import io.github.cdsap.daemonitor.ui.live.LiveMonitorScreen
 import io.github.cdsap.daemonitor.ui.live.LiveSummary
 import io.github.cdsap.daemonitor.ui.live.LogTailState
 import io.github.cdsap.daemonitor.ui.live.LiveUiState
+import io.github.cdsap.daemonitor.ui.live.ProcessMetricSample
 import io.github.cdsap.daemonitor.ui.live.ProcessVisualScreen
 import io.github.cdsap.daemonitor.ui.live.RssTimelineSample
 import io.github.cdsap.daemonitor.ui.settings.SettingsScreen
@@ -142,7 +143,7 @@ internal object SampleUi {
             process(6301, ProcessType.KOTLIN_DAEMON, "design-system", 710, 360, 18.0, now - 11 * 60 * 1_000, "java -Xmx1536m org.jetbrains.kotlin.daemon.KotlinCompileDaemon"),
         )
         val endMs = 1_700_000_060_000L
-        fun sample(offsetMs: Long, rssByPid: Map<Long, Long>) = RssTimelineSample(
+        fun sample(offsetMs: Long, rssByPid: Map<Long, Long>, cpuByPid: Map<Long, Long>) = RssTimelineSample(
             atMs = endMs + offsetMs,
             totalRssMb = rssByPid.values.sum(),
             byPid = rssByPid,
@@ -152,6 +153,7 @@ internal object SampleUi {
             heapUsedByPid = processes.mapNotNull { process ->
                 process.liveHeap?.takeIf { it.available }?.usedMb?.let { used -> process.pid to used }
             }.toMap(),
+            extendedByPid = cpuByPid.mapValues { (_, cpu) -> ProcessMetricSample(cpuPercent = cpu) },
         )
         val tail = listOf(
             "> Task :checkout:compileKotlin",
@@ -168,11 +170,31 @@ internal object SampleUi {
             isLoading = false,
             isEmpty = false,
             rssTimeline = listOf(
-                sample(-24_000, mapOf(6120L to 2210L, 6204L to 480L, 6218L to 740L, 6301L to 620L)),
-                sample(-18_000, mapOf(6120L to 2390L, 6204L to 510L, 6218L to 820L, 6301L to 660L)),
-                sample(-12_000, mapOf(6120L to 2510L, 6204L to 525L, 6218L to 880L, 6301L to 685L)),
-                sample(-6_000, mapOf(6120L to 2610L, 6204L to 535L, 6218L to 905L, 6301L to 700L)),
-                sample(0, processes.associate { it.pid to it.rssMemoryMb }),
+                sample(
+                    -24_000,
+                    mapOf(6120L to 2210L, 6204L to 480L, 6218L to 740L, 6301L to 620L),
+                    mapOf(6120L to 44L, 6204L to 8L, 6218L to 58L, 6301L to 14L),
+                ),
+                sample(
+                    -18_000,
+                    mapOf(6120L to 2390L, 6204L to 510L, 6218L to 820L, 6301L to 660L),
+                    mapOf(6120L to 48L, 6204L to 9L, 6218L to 61L, 6301L to 16L),
+                ),
+                sample(
+                    -12_000,
+                    mapOf(6120L to 2510L, 6204L to 525L, 6218L to 880L, 6301L to 685L),
+                    mapOf(6120L to 50L, 6204L to 10L, 6218L to 63L, 6301L to 17L),
+                ),
+                sample(
+                    -6_000,
+                    mapOf(6120L to 2610L, 6204L to 535L, 6218L to 905L, 6301L to 700L),
+                    mapOf(6120L to 51L, 6204L to 10L, 6218L to 64L, 6301L to 18L),
+                ),
+                sample(
+                    0,
+                    processes.associate { it.pid to it.rssMemoryMb },
+                    processes.associate { it.pid to (it.cpuPercent?.toLong() ?: 0L) },
+                ),
             ),
         )
     }

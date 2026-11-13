@@ -94,9 +94,10 @@
 
         <article class="split split-rtl" id="visual">
           <div class="split-copy">
-            <h3>Memory timeline</h3>
+            <h3>Visual timelines</h3>
             <p>
-              Rolling RSS charts next to configured heap (<code>-Xmx</code>) so concurrent
+              Memory, CPU, I/O, and GC modes with live / 15m / 1h windows. Memory mode
+              charts RSS next to live heap and configured <code>-Xmx</code> so concurrent
               Gradle processes are easy to compare.
             </p>
           </div>
@@ -106,7 +107,7 @@
               src="assets/process-visual.png"
               width="1180"
               height="760"
-              alt="Daemonitor Visual tab showing rolling RSS and configured heap timelines for concurrent Gradle processes"
+              alt="Daemonitor Visual tab showing Memory/CPU/I/O metric modes, time-window controls, and per-process RSS with live heap and configured heap timelines"
               loading="lazy"
             >
           </figure>
