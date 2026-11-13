@@ -8,5 +8,12 @@ package io.github.cdsap.daemonitor.domain.model
 enum class Source {
     TERMINAL,
     IDE,
+    BEP,
     UNKNOWN,
+}
+
+/** Build system that produced a retained History row. */
+enum class BuildTool {
+    GRADLE,
+    BAZEL,
 }

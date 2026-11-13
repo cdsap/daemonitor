@@ -143,7 +143,7 @@ func TestBuildsTableMatchesAppWatcherColumns(t *testing.T) {
 		"build_id", "daemon_pid", "daemon_identity", "command_line",
 		"working_directory", "project_path", "start_time", "end_time",
 		"duration_seconds", "peak_memory_mb", "avg_memory_mb", "peak_cpu_percent",
-		"inferred_source", "final_status", "log_snippet", "agent", "agent_provider",
+		"inferred_source", "final_status", "log_snippet", "agent", "agent_provider", "tool",
 	}
 	if len(cols) != len(want) {
 		t.Fatalf("cols=%v want=%v", cols, want)
@@ -586,3 +586,62 @@ func TestDefaultSocketPathBesideAppSupport(t *testing.T) {
 	}
 }
 
+
+func TestBuildsToolColumnDefaultsAndFilters(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "tool.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	for _, b := range []builds.Build{
+		{BuildID: "g", DaemonPID: 1, StartTimeMs: 100, InferredSource: builds.SourceTerminal, FinalStatus: builds.StatusSuccess},
+		{BuildID: "b", DaemonPID: 2, StartTimeMs: 200, InferredSource: builds.SourceBEP, FinalStatus: builds.StatusSuccess, Tool: builds.ToolBazel},
+	} {
+		if err := s.InsertBuild(b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, err := s.ListBuildsFiltered(store.BuildFilters{Tool: "bazel"}, 10)
+	if err != nil || len(rows) != 1 || rows[0].BuildID != "b" ||
+		rows[0].Tool != builds.ToolBazel || rows[0].InferredSource != builds.SourceBEP {
+		t.Fatalf("bazel rows=%+v err=%v", rows, err)
+	}
+	rows, err = s.ListBuildsFiltered(store.BuildFilters{Tool: "GRADLE"}, 10)
+	if err != nil || len(rows) != 1 || rows[0].BuildID != "g" || rows[0].Tool != builds.ToolGradle {
+		t.Fatalf("gradle rows=%+v err=%v", rows, err)
+	}
+	rows, err = s.ListBuildsFiltered(store.BuildFilters{}, 10)
+	if err != nil || len(rows) != 2 {
+		t.Fatalf("all rows=%+v err=%v", rows, err)
+	}
+}
+
+func TestMigratesBuildsWithoutToolColumn(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "pre-tool.sqlite")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+CREATE TABLE builds (
+  build_id TEXT PRIMARY KEY, daemon_pid INTEGER NOT NULL, daemon_identity TEXT, command_line TEXT,
+  working_directory TEXT, project_path TEXT, start_time INTEGER NOT NULL, end_time INTEGER,
+  duration_seconds REAL, peak_memory_mb INTEGER, avg_memory_mb INTEGER, peak_cpu_percent REAL,
+  inferred_source TEXT NOT NULL DEFAULT 'UNKNOWN', final_status TEXT NOT NULL, log_snippet TEXT,
+  agent TEXT, agent_provider TEXT
+);
+INSERT INTO builds(build_id, daemon_pid, start_time, inferred_source, final_status)
+VALUES ('pre-1', 3, 100, 'TERMINAL', 'SUCCESS');`); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	rows, err := s.ListBuildsFiltered(store.BuildFilters{Tool: "GRADLE"}, 10)
+	if err != nil || len(rows) != 1 || rows[0].BuildID != "pre-1" || rows[0].Tool != builds.ToolGradle {
+		t.Fatalf("rows=%+v err=%v", rows, err)
+	}
+}

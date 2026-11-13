@@ -13,6 +13,7 @@ import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.domain.BuildSample
 import io.github.cdsap.daemonitor.domain.BuildSampleProvider
 import io.github.cdsap.daemonitor.domain.model.Build
+import io.github.cdsap.daemonitor.domain.model.BuildTool
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
@@ -255,6 +256,7 @@ class WatcherDatabase private constructor(
             log_snippet = build.logSnippet,
             agent = build.agent,
             agent_provider = build.agentProvider,
+            tool = build.tool.name,
         )
     }
 
@@ -531,6 +533,8 @@ class WatcherDatabase private constructor(
             listOf(
                 "ALTER TABLE builds ADD COLUMN agent TEXT",
                 "ALTER TABLE builds ADD COLUMN agent_provider TEXT",
+                "ALTER TABLE builds ADD COLUMN tool TEXT NOT NULL DEFAULT 'GRADLE'",
+                "CREATE INDEX IF NOT EXISTS builds_tool ON builds(tool)",
                 "ALTER TABLE process_samples ADD COLUMN heap_used_mb INTEGER",
                 "ALTER TABLE process_samples ADD COLUMN heap_committed_mb INTEGER",
                 "ALTER TABLE process_samples ADD COLUMN heap_max_mb INTEGER",
@@ -750,6 +754,7 @@ class WatcherDatabase private constructor(
             logSnippet = log_snippet,
             agent = agent,
             agentProvider = agent_provider,
+            tool = runCatching { BuildTool.valueOf(tool) }.getOrDefault(BuildTool.GRADLE),
         )
 
         private fun Process_samples.toDomain(): ProcessSample {
