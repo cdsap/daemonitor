@@ -99,7 +99,8 @@ func (s *Store) migrate() error {
 // v4: process_samples includes optional OS and JVM observability metrics.
 // v5: process_samples includes cumulative CPU counters and interval cores used.
 // v6: process_instances + process_events for incarnation identity and lifecycle.
-const schemaVersion = 6
+// v7: builds.tool distinguishes GRADLE vs BAZEL (opportunistic BEP) rows.
+const schemaVersion = 7
 
 func (s *Store) ensureProcessSamplesAlignedWithApp() error {
 	exists, err := s.tableExists("process_samples")
@@ -353,7 +354,13 @@ func (s *Store) ensureBuildsAlignedWithApp() error {
 		return err
 	}
 	if contains(cols, "start_time_ms") {
-		return s.migrateBuildsLegacyToAppAligned()
+		if err := s.migrateBuildsLegacyToAppAligned(); err != nil {
+			return err
+		}
+		cols, err = s.tableColumns("builds")
+		if err != nil {
+			return err
+		}
 	}
 	if !contains(cols, "start_time") {
 		return s.createBuildsAppAligned()
@@ -373,6 +380,7 @@ func (s *Store) ensureBuildsAlignedWithApp() error {
 	}{
 		{"agent", `ALTER TABLE builds ADD COLUMN agent TEXT`},
 		{"agent_provider", `ALTER TABLE builds ADD COLUMN agent_provider TEXT`},
+		{"tool", `ALTER TABLE builds ADD COLUMN tool TEXT NOT NULL DEFAULT 'GRADLE'`},
 	} {
 		if contains(cols, a.col) {
 			continue
@@ -383,7 +391,8 @@ func (s *Store) ensureBuildsAlignedWithApp() error {
 	}
 	_, err = s.db.Exec(`
 CREATE INDEX IF NOT EXISTS builds_project ON builds(project_path);
-CREATE INDEX IF NOT EXISTS builds_daemon_pid ON builds(daemon_pid)`)
+CREATE INDEX IF NOT EXISTS builds_daemon_pid ON builds(daemon_pid);
+CREATE INDEX IF NOT EXISTS builds_tool ON builds(tool)`)
 	return err
 }
 
@@ -406,11 +415,13 @@ CREATE TABLE IF NOT EXISTS builds (
   final_status TEXT NOT NULL,
   log_snippet TEXT,
   agent TEXT,
-  agent_provider TEXT
+  agent_provider TEXT,
+  tool TEXT NOT NULL DEFAULT 'GRADLE'
 );
 CREATE INDEX IF NOT EXISTS builds_start ON builds(start_time);
 CREATE INDEX IF NOT EXISTS builds_project ON builds(project_path);
 CREATE INDEX IF NOT EXISTS builds_daemon_pid ON builds(daemon_pid);
+CREATE INDEX IF NOT EXISTS builds_tool ON builds(tool);
 `)
 	return err
 }
@@ -440,7 +451,8 @@ CREATE TABLE builds_v2 (
   final_status TEXT NOT NULL,
   log_snippet TEXT,
   agent TEXT,
-  agent_provider TEXT
+  agent_provider TEXT,
+  tool TEXT NOT NULL DEFAULT 'GRADLE'
 )`); err != nil {
 		return err
 	}
@@ -448,12 +460,12 @@ CREATE TABLE builds_v2 (
 INSERT INTO builds_v2(
   build_id, daemon_pid, daemon_identity, command_line, working_directory, project_path,
   start_time, end_time, duration_seconds, peak_memory_mb, avg_memory_mb, peak_cpu_percent,
-  inferred_source, final_status, log_snippet, agent, agent_provider
+  inferred_source, final_status, log_snippet, agent, agent_provider, tool
 )
 SELECT
   build_id, daemon_pid, daemon_identity, NULL, working_directory, project_path,
   start_time_ms, end_time_ms, duration_seconds, peak_memory_mb, avg_memory_mb, peak_cpu_percent,
-  inferred_source, final_status, log_snippet, agent, agent_provider
+  inferred_source, final_status, log_snippet, agent, agent_provider, 'GRADLE'
 FROM builds`); err != nil {
 		return err
 	}

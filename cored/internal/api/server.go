@@ -8,11 +8,13 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/cdsap/daemonitor/cored/internal/bep"
 	"github.com/cdsap/daemonitor/cored/internal/builds"
 	"github.com/cdsap/daemonitor/cored/internal/ipc"
 	"github.com/cdsap/daemonitor/cored/internal/logs"
@@ -33,6 +35,7 @@ type Server struct {
 	DBPath     string
 	Collector  *poll.Collector
 	Logs       *logs.Watcher
+	BEP        *bep.Watcher
 	Store      *store.Store
 	Agg        *builds.Aggregator
 	Retention  time.Duration
@@ -60,11 +63,30 @@ func NewServer(socketPath, dbPath string, interval, retention time.Duration, gra
 	if interval > 0 {
 		collector.PollInterval = interval
 	}
+	bepWatcher := bep.NewWatcher()
+	// Local/dev assist: absolute JSON BEP paths already emitted by the user,
+	// separated by the OS path-list separator (":" on Unix, ";" on Windows).
+	// Daemonitor never enables BEP itself. Example:
+	// DAEMONITOR_BEP_WATCH=/tmp/bep.json:/tmp/other.json
+	if raw := strings.TrimSpace(os.Getenv("DAEMONITOR_BEP_WATCH")); raw != "" {
+		sinks := make([]bep.Sink, 0)
+		for _, p := range filepath.SplitList(raw) {
+			p = strings.TrimSpace(p)
+			if p == "" || !filepath.IsAbs(p) {
+				continue
+			}
+			sinks = append(sinks, bep.Sink{Path: filepath.Clean(p), Format: bep.FormatJSON})
+		}
+		if len(sinks) > 0 {
+			bepWatcher.ExtraPaths = func() []bep.Sink { return sinks }
+		}
+	}
 	s := &Server{
 		SocketPath:   socketPath,
 		DBPath:       dbPath,
 		Collector:    collector,
 		Logs:         logs.NewWatcher(gradleUserHome),
+		BEP:          bepWatcher,
 		Store:        st,
 		Retention:    retention,
 		interval:     interval,
@@ -193,6 +215,14 @@ func (s *Server) refresh(ctx context.Context) {
 		}
 	}
 
+	if s.BEP != nil {
+		if closed, err := s.BEP.Poll(ctx); err == nil {
+			for _, b := range closed {
+				s.persistBEPBuild(b)
+			}
+		}
+	}
+
 	s.mu.Lock()
 	for pid := range s.prevActive {
 		if _, ok := active[pid]; !ok {
@@ -204,6 +234,44 @@ func (s *Server) refresh(ctx context.Context) {
 	s.prevActive = active
 	s.last = snap
 	s.mu.Unlock()
+}
+
+func (s *Server) persistBEPBuild(b builds.Build) {
+	if b.CommandLine != nil {
+		redacted := poll.RedactCommandLine(*b.CommandLine)
+		b.CommandLine = &redacted
+	}
+	if b.LogSnippet != "" {
+		b.LogSnippet = poll.RedactLogLine(b.LogSnippet)
+	}
+	if b.EndTimeMs != nil && s.Store != nil {
+		samples := s.Store.SamplesAsBuildSamples(b.DaemonPID, b.StartTimeMs, *b.EndTimeMs)
+		if len(samples) > 0 {
+			var peak, sum int64
+			var cpuPeak float64
+			var cpuN int
+			for _, sample := range samples {
+				if sample.RSSMemoryMB > peak {
+					peak = sample.RSSMemoryMB
+				}
+				sum += sample.RSSMemoryMB
+				if sample.CPUPercent != nil {
+					if *sample.CPUPercent > cpuPeak {
+						cpuPeak = *sample.CPUPercent
+					}
+					cpuN++
+				}
+			}
+			peakCopy := peak
+			avg := sum / int64(len(samples))
+			b.PeakMemoryMB = &peakCopy
+			b.AvgMemoryMB = &avg
+			if cpuN > 0 {
+				b.PeakCPUPercent = &cpuPeak
+			}
+		}
+	}
+	_ = s.Store.InsertBuild(b)
 }
 
 func (s *Server) handleObservationSessionOpen(w http.ResponseWriter, r *http.Request) {
@@ -523,6 +591,7 @@ func (s *Server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 	}
 	filters.Project = query.Get("project")
 	filters.Status = query.Get("status")
+	filters.Tool = query.Get("tool")
 	if rawSince := query.Get("since_ms"); rawSince != "" {
 		sinceMs, parseErr := strconv.ParseInt(rawSince, 10, 64)
 		if parseErr != nil || sinceMs < 0 {
@@ -566,14 +635,19 @@ type buildResponse struct {
 	ProjectPath     string   `json:"project_path"`
 	DurationSeconds *float64 `json:"duration_seconds"`
 	LogSnippet      string   `json:"log_snippet,omitempty"`
+	Tool            string   `json:"tool,omitempty"`
 }
 
 func newBuildResponse(b builds.Build, includeLogs bool) buildResponse {
+	tool := string(b.Tool)
+	if tool == "" {
+		tool = string(builds.ToolGradle)
+	}
 	response := buildResponse{
 		BuildID: b.BuildID, DaemonPID: b.DaemonPID, StartTimeMs: b.StartTimeMs,
 		FinalStatus: string(b.FinalStatus), InferredSource: string(b.InferredSource),
 		Agent: b.Agent, AgentProvider: b.AgentProvider, ProjectPath: b.ProjectPath,
-		DurationSeconds: b.DurationSeconds,
+		DurationSeconds: b.DurationSeconds, Tool: tool,
 	}
 	if includeLogs {
 		response.LogSnippet = b.LogSnippet

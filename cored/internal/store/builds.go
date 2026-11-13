@@ -14,6 +14,7 @@ type BuildFilters struct {
 	StartTimeMs    int64
 	Project        string
 	Status         string
+	Tool           string
 }
 
 type BuildSummary struct {
@@ -29,12 +30,16 @@ func (s *Store) InsertBuild(b builds.Build) error {
 	if b.CommandLine != nil {
 		commandLine = nullStr(*b.CommandLine)
 	}
+	tool := string(b.Tool)
+	if tool == "" {
+		tool = string(builds.ToolGradle)
+	}
 	_, err := s.db.Exec(`
 INSERT INTO builds(
   build_id, daemon_pid, daemon_identity, command_line, working_directory, project_path,
   start_time, end_time, duration_seconds, peak_memory_mb, avg_memory_mb,
-  peak_cpu_percent, inferred_source, final_status, log_snippet, agent, agent_provider
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  peak_cpu_percent, inferred_source, final_status, log_snippet, agent, agent_provider, tool
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(build_id) DO UPDATE SET
   command_line=excluded.command_line,
   end_time=excluded.end_time,
@@ -45,13 +50,14 @@ ON CONFLICT(build_id) DO UPDATE SET
   final_status=excluded.final_status,
   log_snippet=excluded.log_snippet,
   agent=excluded.agent,
-  agent_provider=excluded.agent_provider
+  agent_provider=excluded.agent_provider,
+  tool=excluded.tool
 `,
 		b.BuildID, b.DaemonPID, nullStr(b.DaemonIdentity), commandLine,
 		nullStr(b.WorkingDirectory), nullStr(b.ProjectPath),
 		b.StartTimeMs, b.EndTimeMs, b.DurationSeconds, b.PeakMemoryMB, b.AvgMemoryMB,
 		b.PeakCPUPercent, string(b.InferredSource), string(b.FinalStatus), nullStr(b.LogSnippet),
-		nullStr(b.Agent), nullStr(b.AgentProvider),
+		nullStr(b.Agent), nullStr(b.AgentProvider), tool,
 	)
 	return err
 }
@@ -86,10 +92,11 @@ func (s *Store) ListBuildsFiltered(filters BuildFilters, limit int) ([]builds.Bu
 	query := `
 SELECT build_id, daemon_pid, daemon_identity, command_line, working_directory, project_path,
        start_time, end_time, duration_seconds, peak_memory_mb, avg_memory_mb,
-       peak_cpu_percent, inferred_source, final_status, log_snippet, agent, agent_provider
+       peak_cpu_percent, inferred_source, final_status, log_snippet, agent, agent_provider,
+       COALESCE(tool, 'GRADLE')
 FROM builds
 	WHERE 1 = 1`
-	args := make([]any, 0, 4)
+	args := make([]any, 0, 5)
 	if filters.PID > 0 {
 		query += " AND daemon_pid = ?"
 		args = append(args, filters.PID)
@@ -110,6 +117,10 @@ FROM builds
 		query += " AND LOWER(final_status) = ?"
 		args = append(args, strings.ToLower(filters.Status))
 	}
+	if filters.Tool != "" {
+		query += " AND UPPER(COALESCE(tool, 'GRADLE')) = ?"
+		args = append(args, strings.ToUpper(filters.Tool))
+	}
 	query += " ORDER BY start_time DESC LIMIT ?"
 	args = append(args, limit)
 	rows, err := s.db.Query(query, args...)
@@ -121,14 +132,14 @@ FROM builds
 	out := make([]builds.Build, 0)
 	for rows.Next() {
 		var b builds.Build
-		var identity, workDir, project, snippet, agent, provider, cmd sql.NullString
+		var identity, workDir, project, snippet, agent, provider, cmd, tool sql.NullString
 		var endMs sql.NullInt64
 		var dur, peakCPU sql.NullFloat64
 		var peakMem, avgMem sql.NullInt64
 		if err := rows.Scan(
 			&b.BuildID, &b.DaemonPID, &identity, &cmd, &workDir, &project,
 			&b.StartTimeMs, &endMs, &dur, &peakMem, &avgMem,
-			&peakCPU, &b.InferredSource, &b.FinalStatus, &snippet, &agent, &provider,
+			&peakCPU, &b.InferredSource, &b.FinalStatus, &snippet, &agent, &provider, &tool,
 		); err != nil {
 			return nil, err
 		}
@@ -138,6 +149,11 @@ FROM builds
 		b.LogSnippet = snippet.String
 		b.Agent = agent.String
 		b.AgentProvider = provider.String
+		if tool.String != "" {
+			b.Tool = builds.Tool(tool.String)
+		} else {
+			b.Tool = builds.ToolGradle
+		}
 		if cmd.Valid {
 			v := cmd.String
 			b.CommandLine = &v
@@ -206,6 +222,10 @@ func buildFiltersWhere(filters BuildFilters) (string, []any) {
 	if filters.Status != "" {
 		clauses = append(clauses, "LOWER(final_status) = ?")
 		args = append(args, strings.ToLower(filters.Status))
+	}
+	if filters.Tool != "" {
+		clauses = append(clauses, "UPPER(COALESCE(tool, 'GRADLE')) = ?")
+		args = append(args, strings.ToUpper(filters.Tool))
 	}
 	if len(clauses) == 0 {
 		return "", args

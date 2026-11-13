@@ -44,6 +44,8 @@ data class Build(
     val agent: String? = null,
     /** LLM provider for the agent: a concrete name, "configurable", or "unknown"; null if no agent. */
     val agentProvider: String? = null,
+    /** GRADLE (daemon log) or BAZEL (opportunistic BEP). Defaults GRADLE for legacy rows. */
+    val tool: BuildTool = BuildTool.GRADLE,
 ) {
     val daemonIdentityConfidence: DaemonIdentityConfidence
         get() = if (daemonIdentity.isNullOrBlank()) {
