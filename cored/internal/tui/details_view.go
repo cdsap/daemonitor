@@ -532,7 +532,11 @@ func buildSummaryLines(build client.BuildRecord) []string {
 	if build.DurationSeconds != nil {
 		duration = fmt.Sprintf("%.1fs", math.Round(*build.DurationSeconds*10)/10)
 	}
-	return []string{na(build.FinalStatus), "project=" + na(build.ProjectPath), "duration=" + duration, "start=" + formatStart(build.StartTimeMs), "source=" + na(build.InferredSource), "agent=" + na(build.Agent)}
+	source := na(build.InferredSource)
+	if build.Tool != "" && !strings.EqualFold(build.Tool, "GRADLE") {
+		source = strings.ToLower(build.Tool) + "/" + source
+	}
+	return []string{na(build.FinalStatus), "project=" + na(build.ProjectPath), "duration=" + duration, "start=" + formatStart(build.StartTimeMs), "source=" + source, "agent=" + na(build.Agent)}
 }
 
 func detailLog(m Model, width int) []string {

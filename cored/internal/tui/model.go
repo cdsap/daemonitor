@@ -301,7 +301,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			if m.detailProcess != nil && !m.detailLoading {
 				m.detailLoading = true
 				m.detailError = ""
-				return m, m.fetchDetails(int64(m.detailProcess.PID), m.detailProcess.StartTimeMs)
+				return m, m.fetchDetails(*m.detailProcess)
 			}
 		}
 		return m, nil
@@ -395,7 +395,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.detailPaneScroll = [4]int{}
 			m.detailPaneScrolled = [4]bool{}
 			m.detailPaneHorizontalScroll = [4]int{}
-			return m, m.fetchDetails(int64(p.PID), p.StartTimeMs)
+			return m, m.fetchDetails(p)
 		}
 	case "?":
 		m.helpOpen = !m.helpOpen
