@@ -81,4 +81,60 @@ class GradleProcessClassifierTest {
         assertNull(GradleProcessClassifier.classify("/Applications/Safari.app/Contents/MacOS/Safari"))
         assertNull(GradleProcessClassifier.classify("node server.js"))
     }
+
+    @Test
+    fun `classifies bazel server from A-server jar and product_name`() {
+        val cl = "java -jar /x/install/A-server.jar --workspace_directory=/tmp/ws --product_name=Bazel"
+        assertEquals(ProcessType.BAZEL_SERVER, GradleProcessClassifier.classify(cl))
+        assertEquals("/tmp/ws", GradleProcessClassifier.bazelWorkspaceDirectory(cl))
+    }
+
+    @Test
+    fun `rejects Bazelisk product_name as bazel server`() {
+        assertNull(
+            GradleProcessClassifier.classify(
+                "java -jar /x/A-server.jar --product_name=Bazelisk --workspace_directory=/tmp/ws",
+            ),
+        )
+    }
+
+    @Test
+    fun `classifies bazel test and worker markers`() {
+        assertEquals(
+            ProcessType.BAZEL_TEST,
+            GradleProcessClassifier.classify(
+                "java -Dbazel.test_suite=demo.SlowTest com.google.testing.junit.runner.BazelTestRunner",
+            ),
+        )
+        assertEquals(
+            ProcessType.BAZEL_TEST,
+            GradleProcessClassifier.classify("bash external/bazel_tools/tools/test/test-setup.sh ./SlowTest"),
+        )
+        assertEquals(
+            ProcessType.BAZEL_WORKER,
+            GradleProcessClassifier.classify(
+                "java -jar /x/_bazel_dev/JavaBuilder_deploy.jar --persistent_worker",
+            ),
+        )
+        assertEquals(
+            ProcessType.BAZEL_WORKER,
+            GradleProcessClassifier.classify(
+                "/path/external/rules_swift+/tools/worker/worker swiftc --persistent_worker",
+            ),
+        )
+        assertNull(GradleProcessClassifier.classify("java -jar /opt/other/tool.jar --persistent_worker"))
+    }
+
+    @Test
+    fun `native bazel test leaf requires BAZEL_TEST parent`() {
+        val native = "/Users/dev/Library/Caches/bazel/_bazel_dev/hash/sandbox/darwin-sandbox/11/execroot/_main/" +
+            "bazel-out/darwin_arm64-fastbuild/bin/slow_test_/slow_test.runfiles/_main/slow_test_/slow_test"
+        assertNull(GradleProcessClassifier.classify(native))
+        assertEquals(
+            ProcessType.BAZEL_TEST,
+            GradleProcessClassifier.promoteBazelNativeTest(native, ProcessType.BAZEL_TEST),
+        )
+        assertNull(GradleProcessClassifier.promoteBazelNativeTest(native, ProcessType.BAZEL_SERVER))
+        assertNull(GradleProcessClassifier.promoteBazelNativeTest(native, null))
+    }
 }

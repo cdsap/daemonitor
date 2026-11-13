@@ -23,8 +23,9 @@ object ProcessSnapshotBuilder {
         prior: PriorSample?,
         sampleWallClockMs: Long,
         logicalProcessorCount: Int,
+        typeOverride: ProcessType? = null,
     ): GradleProcess? {
-        val type = GradleProcessClassifier.classify(info.commandLine) ?: return null
+        val type = typeOverride ?: GradleProcessClassifier.classify(info.commandLine) ?: return null
         val jvm = JvmArgParser.parse(info.commandLine)
         val cwd = info.workingDirectory.ifBlank { null }
 
@@ -34,9 +35,14 @@ object ProcessSnapshotBuilder {
             type = type,
             commandLine = Redactor.redactCommandLine(info.commandLine),
             workingDirectory = cwd,
-            // Wrapper processes execute in the requested build directory. Daemon and worker
-            // working directories are runtime infrastructure and do not identify a project.
-            projectPath = cwd.takeIf { type == ProcessType.GRADLE_WRAPPER },
+            // Wrapper cwd is the build directory. Bazel servers expose workspace via argv.
+            // Daemon/worker working directories are runtime infrastructure.
+            projectPath = when (type) {
+                ProcessType.BAZEL_SERVER ->
+                    GradleProcessClassifier.bazelWorkspaceDirectory(info.commandLine) ?: cwd
+                ProcessType.GRADLE_WRAPPER -> cwd
+                else -> null
+            },
             cpuPercent = computeCpuPercent(info, prior, sampleWallClockMs, logicalProcessorCount),
             rssMemoryMb = info.rssBytes / (1024 * 1024),
             maxHeapMb = jvm.maxHeapMb,
