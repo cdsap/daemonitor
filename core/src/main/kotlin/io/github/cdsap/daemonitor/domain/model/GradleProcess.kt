@@ -7,6 +7,14 @@ enum class ProcessType {
     KOTLIN_DAEMON,
     /** Long-lived Bazel JVM server (`A-server.jar` + product/output_base markers). */
     BAZEL_SERVER,
+    /**
+     * Bazel test action: `BazelTestRunner` / `-Dbazel.test_suite=`, `tools/test/test-setup.sh`
+     * (also on `process-wrapper` argv), or a sandboxed `.runfiles` native test binary
+     * whose parent is already [BAZEL_TEST].
+     */
+    BAZEL_TEST,
+    /** Bazel persistent worker (`--persistent_worker`, e.g. JavaBuilder / Kotlin / Swift). */
+    BAZEL_WORKER,
     TEST_WORKER,
     GRADLE_WORKER,
     UNKNOWN_GRADLE_WORKER,

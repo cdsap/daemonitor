@@ -44,7 +44,14 @@ object LiveMetricLabels {
     }
 
     fun isLiveHeapProbedType(type: ProcessType): Boolean = when (type) {
-        ProcessType.GRADLE_DAEMON, ProcessType.KOTLIN_DAEMON, ProcessType.BAZEL_SERVER -> true
+        // Matches cored poll.ShouldProbeLiveHeap for Bazel + daemon JVMs. Gradle workers stay
+        // unprobed on the Desktop Attach path (issue #159) even though cored may probe them.
+        ProcessType.GRADLE_DAEMON,
+        ProcessType.KOTLIN_DAEMON,
+        ProcessType.BAZEL_SERVER,
+        ProcessType.BAZEL_TEST,
+        ProcessType.BAZEL_WORKER,
+        -> true
         else -> false
     }
 
@@ -54,6 +61,11 @@ object LiveMetricLabels {
         ProcessType.GRADLE_WORKER -> "Gradle workers"
         ProcessType.UNKNOWN_GRADLE_WORKER -> "unknown Gradle workers"
         ProcessType.JAVA_GRADLE_RELATED -> "non-daemon JVMs"
-        ProcessType.GRADLE_DAEMON, ProcessType.KOTLIN_DAEMON, ProcessType.BAZEL_SERVER -> "daemons"
+        ProcessType.GRADLE_DAEMON,
+        ProcessType.KOTLIN_DAEMON,
+        ProcessType.BAZEL_SERVER,
+        ProcessType.BAZEL_TEST,
+        ProcessType.BAZEL_WORKER,
+        -> "daemons"
     }
 }

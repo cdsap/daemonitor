@@ -40,6 +40,16 @@ var (
 	// Require end-of-token after Bazel so --product_name=Bazelisk does not match.
 	bazelServerMarker = regexp.MustCompile(`--product_name=Bazel(?:\s|$)|--output_base=`)
 	bazelWorkspaceDir = regexp.MustCompile(`--workspace_directory=(?:"([^"]+)"|'([^']+)'|([^\s]+))`)
+	// Test-action markers (Java/Kotlin/Go/iOS probes): BazelTestRunner / -Dbazel.test_suite= ;
+	// tools/test/test-setup.sh (also on process-wrapper argv). Native/iOS runfiles leaves use
+	// sandbox+.runfiles only when the parent is already BAZEL_TEST (see PromoteBazelNativeTest).
+	bazelTestRunner = regexp.MustCompile(`com\.google\.testing\.junit\.runner\.BazelTestRunner|-Dbazel\.test_suite=`)
+	bazelTestSetup  = regexp.MustCompile(`(^|[\s/\\])tools/test/test-setup\.sh(?:\s|$)`)
+	bazelSandbox    = regexp.MustCompile(`(^|[\s/\\])(?:darwin|linux|processwrapper)-sandbox(?:/|\\)|(^|[\s/\\])sandbox(?:/|\\)`)
+	bazelRunfiles   = regexp.MustCompile(`\.runfiles(?:/|\\)`)
+	// Persistent workers (JavaBuilder / Kotlin / Swift), not the test process.
+	bazelPersistentWorker = regexp.MustCompile(`--persistent_worker(?:\s|$)`)
+	bazelWorkerMarker     = regexp.MustCompile(`JavaBuilder_deploy\.jar|io\.bazel\.|rules_kotlin|rules_swift|_bazel_|external/rules_java`)
 )
 
 type priorCPU struct {
@@ -149,6 +159,28 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 		hostID = platform.LocalHostID()
 	}
 
+	// Pass 0: hard argv classification index so native Bazel test leaves can be
+	// ancestry-gated (parent must already be BAZEL_TEST / test-setup spine).
+	kindByPID := make(map[int32]string, 8)
+	for _, pid := range pids {
+		select {
+		case <-ctx.Done():
+			return model.Snapshot{}, ctx.Err()
+		default:
+		}
+		p, err := process.NewProcessWithContext(ctx, pid)
+		if err != nil {
+			continue
+		}
+		cmdline, err := p.CmdlineWithContext(ctx)
+		if err != nil || cmdline == "" {
+			continue
+		}
+		if kind := Classify(cmdline); kind != "" {
+			kindByPID[pid] = kind
+		}
+	}
+
 	// Pass 1: discovery + OS metrics only. JVM probes must not delay this path.
 	for _, pid := range pids {
 		select {
@@ -167,7 +199,14 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 		}
 		kind := Classify(cmdline)
 		if kind == "" {
-			continue
+			ppid, err := p.PpidWithContext(ctx)
+			if err != nil {
+				continue
+			}
+			kind = PromoteBazelNativeTest(cmdline, kindByPID[ppid])
+			if kind == "" {
+				continue
+			}
 		}
 		seenPIDs[pid] = struct{}{}
 
@@ -496,7 +535,7 @@ func (c *Collector) applyJVMProbes(ctx context.Context, now int64, out []model.P
 // attachment remains optional, so a failed probe leaves OS metrics intact.
 func ShouldProbeLiveHeap(kind string) bool {
 	switch kind {
-	case "GRADLE_DAEMON", "KOTLIN_DAEMON", "TEST_WORKER", "GRADLE_WORKER", "UNKNOWN_GRADLE_WORKER", "JAVA_GRADLE_RELATED", "BAZEL_SERVER":
+	case "GRADLE_DAEMON", "KOTLIN_DAEMON", "TEST_WORKER", "GRADLE_WORKER", "UNKNOWN_GRADLE_WORKER", "JAVA_GRADLE_RELATED", "BAZEL_SERVER", "BAZEL_TEST", "BAZEL_WORKER":
 		return true
 	default:
 		return false
@@ -586,7 +625,7 @@ func sameUID(ctx context.Context, proc *process.Process) bool {
 	return int(uids[0]) == self
 }
 
-// Classify mirrors Kotlin GradleProcessClassifier, plus Bazel server recognition.
+// Classify mirrors Kotlin GradleProcessClassifier, plus Bazel server / test / worker recognition.
 func Classify(commandLine string) string {
 	switch {
 	case gradleDaemon.MatchString(commandLine):
@@ -595,6 +634,10 @@ func Classify(commandLine string) string {
 		return "KOTLIN_DAEMON"
 	case bazelServerJar.MatchString(commandLine) && bazelServerMarker.MatchString(commandLine):
 		return "BAZEL_SERVER"
+	case isBazelTest(commandLine):
+		return "BAZEL_TEST"
+	case isBazelWorker(commandLine):
+		return "BAZEL_WORKER"
 	case gradleWorker.MatchString(commandLine):
 		switch {
 		case gradleTestExecutor.MatchString(commandLine):
@@ -611,6 +654,32 @@ func Classify(commandLine string) string {
 	default:
 		return ""
 	}
+}
+
+func isBazelTest(commandLine string) bool {
+	return bazelTestRunner.MatchString(commandLine) || bazelTestSetup.MatchString(commandLine)
+}
+
+// IsBazelNativeTestCandidate is the argv half of a native Bazel test leaf (sandbox +
+// .runfiles, not a persistent worker). Must be paired with a BAZEL_TEST parent.
+func IsBazelNativeTestCandidate(commandLine string) bool {
+	return !bazelPersistentWorker.MatchString(commandLine) &&
+		bazelSandbox.MatchString(commandLine) &&
+		bazelRunfiles.MatchString(commandLine)
+}
+
+// PromoteBazelNativeTest returns BAZEL_TEST when cmdline looks like a sandboxed
+// runfiles test binary and its parent is already classified as BAZEL_TEST
+// (typically tools/test/test-setup.sh). Argv alone is not enough.
+func PromoteBazelNativeTest(commandLine, parentKind string) string {
+	if parentKind == "BAZEL_TEST" && IsBazelNativeTestCandidate(commandLine) {
+		return "BAZEL_TEST"
+	}
+	return ""
+}
+
+func isBazelWorker(commandLine string) bool {
+	return bazelPersistentWorker.MatchString(commandLine) && bazelWorkerMarker.MatchString(commandLine)
 }
 
 // BazelWorkspaceDirectory returns --workspace_directory= from a Bazel server argv.

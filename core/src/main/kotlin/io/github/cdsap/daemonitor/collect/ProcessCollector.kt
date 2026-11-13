@@ -1,6 +1,7 @@
 package io.github.cdsap.daemonitor.collect
 
 import io.github.cdsap.daemonitor.application.ProcessSource
+import io.github.cdsap.daemonitor.domain.LiveMetricLabels
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.LiveJvmHeap
 import io.github.cdsap.daemonitor.domain.model.PriorSample
@@ -54,21 +55,35 @@ class ProcessCollector internal constructor(
         val now = clock()
         val seen = mutableSetOf<ProcessIdentity>()
         val result = mutableListOf<GradleProcess>()
+        val infos = enumerateProcesses()
+        // Hard argv types first so native Bazel test leaves can require a BAZEL_TEST parent.
+        val hardTypeByPid = infos.mapNotNull { info ->
+            GradleProcessClassifier.classify(info.commandLine)?.let { info.pid to it }
+        }.toMap()
 
-        for (info in enumerateProcesses()) {
+        for (info in infos) {
             val key = ProcessIdentity(info.pid, info.startTimeMs)
             seen += key
             val prior = priorSamples[key]
             // Classify before any heap attachment (issue #168).
-            val snapshot = ProcessSnapshotBuilder.build(info, prior, now, logicalProcessors)
+            val type = hardTypeByPid[info.pid]
+                ?: GradleProcessClassifier.promoteBazelNativeTest(
+                    info.commandLine,
+                    hardTypeByPid[info.parentPid],
+                )
+            val snapshot = if (type != null) {
+                ProcessSnapshotBuilder.build(info, prior, now, logicalProcessors, typeOverride = type)
+            } else {
+                null
+            }
             priorSamples[key] = PriorSample(info.cpuTimeMs, now)
             if (snapshot != null) {
                 // Live heap is orthogonal to RSS / -Xmx; probe failures stay unavailable (not zero).
-                // Scope Attach/JMX to daemon JVMs (issue #159); wrappers/workers stay unavailable.
-                val liveHeap = when (snapshot.type) {
-                    ProcessType.GRADLE_DAEMON, ProcessType.KOTLIN_DAEMON ->
-                        heapUsageCollector.read(info.pid, info.startTimeMs, now)
-                    else -> LiveJvmHeap.unavailable(now)
+                // Keep in sync with poll.ShouldProbeLiveHeap / LiveMetricLabels.isLiveHeapProbedType.
+                val liveHeap = if (LiveMetricLabels.isLiveHeapProbedType(snapshot.type)) {
+                    heapUsageCollector.read(info.pid, info.startTimeMs, now)
+                } else {
+                    LiveJvmHeap.unavailable(now)
                 }
                 result += snapshot.copy(liveHeap = liveHeap)
             }
