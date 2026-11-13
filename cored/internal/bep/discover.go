@@ -1,6 +1,7 @@
 package bep
 
 import (
+	posixpath "path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -102,6 +103,11 @@ func resolvePath(path, cwd string) (string, bool) {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return "", false
+	}
+	// Bazel clients advertise POSIX absolute paths even when Daemonitor runs on
+	// Windows; filepath.IsAbs("/tmp/x") is false there, so keep slash-absolute form.
+	if strings.HasPrefix(path, "/") {
+		return posixpath.Clean(path), true
 	}
 	if filepath.IsAbs(path) {
 		return filepath.Clean(path), true
