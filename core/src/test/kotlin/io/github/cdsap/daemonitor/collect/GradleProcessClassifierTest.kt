@@ -81,4 +81,20 @@ class GradleProcessClassifierTest {
         assertNull(GradleProcessClassifier.classify("/Applications/Safari.app/Contents/MacOS/Safari"))
         assertNull(GradleProcessClassifier.classify("node server.js"))
     }
+
+    @Test
+    fun `classifies bazel server from A-server jar and product_name`() {
+        val cl = "java -jar /x/install/A-server.jar --workspace_directory=/tmp/ws --product_name=Bazel"
+        assertEquals(ProcessType.BAZEL_SERVER, GradleProcessClassifier.classify(cl))
+        assertEquals("/tmp/ws", GradleProcessClassifier.bazelWorkspaceDirectory(cl))
+    }
+
+    @Test
+    fun `rejects Bazelisk product_name as bazel server`() {
+        assertNull(
+            GradleProcessClassifier.classify(
+                "java -jar /x/A-server.jar --product_name=Bazelisk --workspace_directory=/tmp/ws",
+            ),
+        )
+    }
 }

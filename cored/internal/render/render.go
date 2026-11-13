@@ -457,6 +457,8 @@ func TypeDisplay(t string) string {
 	switch t {
 	case "GRADLE_DAEMON":
 		return "Gradle daemon"
+	case "BAZEL_SERVER":
+		return "Bazel server"
 	case "GRADLE_WRAPPER":
 		return "Gradle wrapper"
 	case "KOTLIN_DAEMON":
