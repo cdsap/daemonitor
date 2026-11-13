@@ -645,7 +645,7 @@ func (m *Model) expandSelectedGroup() {
 
 func (m *Model) setAllGroups(expanded bool) {
 	for _, p := range m.processes {
-		if p.Type == "GRADLE_DAEMON" {
+		if isHierarchyRootType(p.Type) {
 			m.hierarchy.setExpanded(identity(p), expanded)
 		}
 	}
