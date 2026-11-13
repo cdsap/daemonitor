@@ -572,7 +572,7 @@ func TestDetailsRefreshKeyReloadsOpenProcess(t *testing.T) {
 }
 
 func TestDetailsHideGradleOnlyPanelsForNonDaemons(t *testing.T) {
-	for _, processType := range []string{"KOTLIN_DAEMON", "GRADLE_WORKER"} {
+	for _, processType := range []string{"KOTLIN_DAEMON", "GRADLE_WORKER", "BAZEL_SERVER"} {
 		p := model.Process{PID: 9, Type: processType, StartTimeMs: 100}
 		m := NewModel(Config{Now: fixedNow, NoColor: true})
 		m.width, m.height, m.detailsOpen, m.detailProcess = 100, 30, true, &p
@@ -587,6 +587,24 @@ func TestDetailsHideGradleOnlyPanelsForNonDaemons(t *testing.T) {
 		if !strings.Contains(body, "RESOURCE TRENDS") {
 			t.Fatalf("%s omitted resource trends: %s", processType, body)
 		}
+	}
+}
+
+func TestDetailsTitleUsesBazelServerLabel(t *testing.T) {
+	gradle := model.Process{PID: 10, Type: "GRADLE_DAEMON", Name: "gradle", StartTimeMs: 100}
+	m := NewModel(Config{Now: fixedNow, NoColor: true})
+	m.width, m.height, m.detailsOpen, m.detailProcess = 120, 30, true, &gradle
+	if body := m.View().Content; !strings.Contains(body, "GRADLE COMMANDER CENTER / PROCESS DETAILS") {
+		t.Fatalf("gradle title missing: %s", body)
+	}
+	bazel := model.Process{PID: 11, Type: "BAZEL_SERVER", Name: "bazel", StartTimeMs: 100, ProjectPath: strPtr("/tmp/ws")}
+	m.detailProcess = &bazel
+	body := m.View().Content
+	if !strings.Contains(body, "BAZEL SERVER / PROCESS DETAILS") {
+		t.Fatalf("bazel title missing: %s", body)
+	}
+	if strings.Contains(body, "GRADLE COMMANDER CENTER") {
+		t.Fatalf("bazel details still shows gradle title: %s", body)
 	}
 }
 

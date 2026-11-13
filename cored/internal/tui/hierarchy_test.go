@@ -29,6 +29,19 @@ func TestHierarchyAggregatesDaemonAndDescendantsOnce(t *testing.T) {
 	}
 }
 
+func TestHierarchyTreatsBazelServerAsGroupRoot(t *testing.T) {
+	root := model.Process{PID: 300, StartTimeMs: 10, Type: "BAZEL_SERVER", RSSMemoryMB: 200, CPUPercent: floatPtr(5)}
+	child := model.Process{PID: 301, ParentPID: 300, StartTimeMs: 11, Type: "JAVA_GRADLE_RELATED", RSSMemoryMB: 50, CPUPercent: floatPtr(2)}
+	h := newProcessHierarchy()
+	rows := h.rows([]model.Process{root, child}, true)
+	if len(rows) != 2 || !rows[0].groupRoot || rows[0].children != 1 {
+		t.Fatalf("bazel root rows=%+v", rows)
+	}
+	if rows[0].process.RSSMemoryMB != 250 {
+		t.Fatalf("aggregate RSS=%d want 250", rows[0].process.RSSMemoryMB)
+	}
+}
+
 func TestHierarchyPreservesOwnershipAcrossReparenting(t *testing.T) {
 	root := model.Process{PID: 100, StartTimeMs: 10, Type: "GRADLE_DAEMON"}
 	worker := model.Process{PID: 101, ParentPID: 100, StartTimeMs: 11, Type: "GRADLE_WORKER"}
@@ -76,6 +89,29 @@ func TestGroupedViewControlsAndDetailsUseSelectedProcess(t *testing.T) {
 	m = next.(Model)
 	if len(m.displayRows) != 2 {
 		t.Fatalf("expand all rows=%+v", m.displayRows)
+	}
+}
+
+func TestGroupedViewCollapseExpandAllIncludesBazelRoots(t *testing.T) {
+	m := NewModel(Config{Now: fixedNow, NoColor: true})
+	m.applySnapshot(model.Snapshot{SampledAtMs: 1, Processes: []model.Process{
+		{PID: 300, StartTimeMs: 10, Type: "BAZEL_SERVER", RSSMemoryMB: 200},
+		{PID: 301, ParentPID: 300, StartTimeMs: 11, Type: "JAVA_GRADLE_RELATED", RSSMemoryMB: 40},
+	}})
+	next, _ := m.Update(key('v'))
+	m = next.(Model)
+	if !m.groupedView || !m.displayRows[0].groupRoot || m.displayRows[0].process.Type != "BAZEL_SERVER" {
+		t.Fatalf("bazel grouped view not enabled: %+v", m.displayRows)
+	}
+	next, _ = m.Update(key('C'))
+	m = next.(Model)
+	if len(m.displayRows) != 1 || m.displayRows[0].process.PID != 300 {
+		t.Fatalf("collapse all should keep bazel root only: %+v", m.displayRows)
+	}
+	next, _ = m.Update(key('E'))
+	m = next.(Model)
+	if len(m.displayRows) != 2 {
+		t.Fatalf("expand all should restore bazel child: %+v", m.displayRows)
 	}
 }
 
