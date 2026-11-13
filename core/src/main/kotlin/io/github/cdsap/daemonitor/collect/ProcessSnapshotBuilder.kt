@@ -23,8 +23,9 @@ object ProcessSnapshotBuilder {
         prior: PriorSample?,
         sampleWallClockMs: Long,
         logicalProcessorCount: Int,
+        typeOverride: ProcessType? = null,
     ): GradleProcess? {
-        val type = GradleProcessClassifier.classify(info.commandLine) ?: return null
+        val type = typeOverride ?: GradleProcessClassifier.classify(info.commandLine) ?: return null
         val jvm = JvmArgParser.parse(info.commandLine)
         val cwd = info.workingDirectory.ifBlank { null }
 

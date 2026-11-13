@@ -99,4 +99,77 @@ class ProcessCollectorTest {
         assertEquals(ProcessType.GRADLE_WRAPPER, processes.single().type)
         assertTrue(probe.probedPids.isEmpty(), "wrappers must not trigger Attach/JMX")
     }
+
+    @Test
+    fun `bazel test and worker invoke heap collection`() {
+        val probe = RecordingHeapProbe()
+        val collector = ProcessCollector(
+            clock = { 2_000L },
+            heapProbe = probe,
+            logicalProcessors = 8,
+            enumerateProcesses = {
+                listOf(
+                    CollectorFakeProcess(
+                        pid = 201,
+                        commandLine =
+                            "java -Dbazel.test_suite=demo.SlowTest " +
+                                "com.google.testing.junit.runner.BazelTestRunner",
+                    ),
+                    CollectorFakeProcess(
+                        pid = 202,
+                        commandLine =
+                            "java -jar /x/_bazel_dev/JavaBuilder_deploy.jar --persistent_worker",
+                    ),
+                )
+            },
+        )
+
+        val processes = collector.currentProcesses()
+
+        assertEquals(
+            listOf(ProcessType.BAZEL_TEST, ProcessType.BAZEL_WORKER),
+            processes.map { it.type },
+        )
+        assertEquals(listOf(201L, 202L), probe.probedPids)
+    }
+
+    @Test
+    fun `native bazel test leaf requires BAZEL_TEST parent`() {
+        val probe = RecordingHeapProbe()
+        val native =
+            "/Users/dev/Library/Caches/bazel/_bazel_dev/hash/sandbox/darwin-sandbox/11/execroot/_main/" +
+                "bazel-out/bin/slow_test_/slow_test.runfiles/_main/slow_test_/slow_test"
+        val collector = ProcessCollector(
+            clock = { 2_000L },
+            heapProbe = probe,
+            logicalProcessors = 8,
+            enumerateProcesses = {
+                listOf(
+                    CollectorFakeProcess(
+                        pid = 10,
+                        parentPid = 1,
+                        commandLine = "bash external/bazel_tools/tools/test/test-setup.sh ./slow_test",
+                    ),
+                    CollectorFakeProcess(
+                        pid = 11,
+                        parentPid = 10,
+                        commandLine = native,
+                    ),
+                    CollectorFakeProcess(
+                        pid = 12,
+                        parentPid = 1,
+                        commandLine = native,
+                    ),
+                )
+            },
+        )
+
+        val processes = collector.currentProcesses()
+
+        assertEquals(
+            listOf(ProcessType.BAZEL_TEST, ProcessType.BAZEL_TEST),
+            processes.map { it.type },
+        )
+        assertEquals(listOf(10L, 11L), processes.map { it.pid })
+    }
 }

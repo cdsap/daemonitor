@@ -18,11 +18,14 @@ class UnixObservationSessionClientTest {
     @Test
     fun `open and close send JSON POST requests over the socket`() {
         assumeUnix()
-        val socket = java.nio.file.Path.of("/tmp", "dobs-${System.nanoTime()}.sock")
+        val socket = Files.createTempDirectory("daemonitor-observation-").resolve("client.sock")
+        Files.deleteIfExists(socket)
         val requests = mutableListOf<String>()
+        val ready = CountDownLatch(1)
         val server = Thread {
             ServerSocketChannel.open(StandardProtocolFamily.UNIX).use { listener ->
                 listener.bind(UnixDomainSocketAddress.of(socket))
+                ready.countDown()
                 repeat(2) { index ->
                     listener.accept().use { channel ->
                         val request = readRequest(channel)
@@ -35,7 +38,7 @@ class UnixObservationSessionClientTest {
             }
         }.apply { isDaemon = true; start() }
         try {
-            awaitSocket(socket)
+            awaitReady(ready, socket)
             val client = UnixObservationSessionClient(socket, Duration.ofSeconds(2))
             assertEquals(201, client.open("{\"root_project_path\":\"/tmp/project\"}").status)
             assertEquals(200, client.close("s1", "{\"outcome\":\"success\"}").status)
@@ -53,11 +56,14 @@ class UnixObservationSessionClientTest {
     @Test
     fun `default close body names the session for cored`() {
         assumeUnix()
-        val socket = java.nio.file.Path.of("/tmp", "dobs-default-close-${System.nanoTime()}.sock")
+        val socket = Files.createTempDirectory("daemonitor-observation-").resolve("default-close.sock")
+        Files.deleteIfExists(socket)
         val request = arrayOfNulls<String>(1)
+        val ready = CountDownLatch(1)
         val server = Thread {
             ServerSocketChannel.open(StandardProtocolFamily.UNIX).use { listener ->
                 listener.bind(UnixDomainSocketAddress.of(socket))
+                ready.countDown()
                 listener.accept().use { channel ->
                     readRequest(channel)
                     val response = "HTTP/1.0 201 OK\r\nContent-Length: 2\r\n\r\n{}"
@@ -71,7 +77,7 @@ class UnixObservationSessionClientTest {
             }
         }.apply { isDaemon = true; start() }
         try {
-            awaitSocket(socket)
+            awaitReady(ready, socket)
             val client = UnixObservationSessionClient(socket, Duration.ofSeconds(2))
             client.open("{}")
             client.close("session/with-unsafe-id")
@@ -94,11 +100,14 @@ class UnixObservationSessionClientTest {
     @Test
     fun `slow server is bounded by the client timeout`() {
         assumeUnix()
-        val socket = java.nio.file.Path.of("/tmp", "dobs-timeout-${System.nanoTime()}.sock")
+        val socket = Files.createTempDirectory("daemonitor-observation-").resolve("timeout.sock")
+        Files.deleteIfExists(socket)
         val accepted = CountDownLatch(1)
+        val ready = CountDownLatch(1)
         val server = Thread {
             ServerSocketChannel.open(StandardProtocolFamily.UNIX).use { listener ->
                 listener.bind(UnixDomainSocketAddress.of(socket))
+                ready.countDown()
                 listener.accept().use {
                     accepted.countDown()
                     Thread.sleep(5_000)
@@ -106,7 +115,7 @@ class UnixObservationSessionClientTest {
             }
         }.apply { isDaemon = true; start() }
         try {
-            awaitSocket(socket)
+            awaitReady(ready, socket)
             val started = System.nanoTime()
             assertFailsWith<ObservationClientException> {
                 UnixObservationSessionClient(socket, Duration.ofMillis(200)).open("{}")
@@ -136,9 +145,8 @@ class UnixObservationSessionClientTest {
         return output.toString()
     }
 
-    private fun awaitSocket(socket: java.nio.file.Path) {
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
-        while (!Files.exists(socket) && System.nanoTime() < deadline) Thread.sleep(10)
+    private fun awaitReady(ready: CountDownLatch, socket: java.nio.file.Path) {
+        assertTrue(ready.await(2, TimeUnit.SECONDS), "test server did not bind")
         assertTrue(Files.exists(socket), "test socket was not created")
     }
 }
