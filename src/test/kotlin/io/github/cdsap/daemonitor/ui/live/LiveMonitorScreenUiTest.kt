@@ -10,6 +10,9 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
@@ -88,7 +91,11 @@ class LiveMonitorScreenUiTest {
         onNodeWithTag("process-detail-vitals").assertExists()
         onNodeWithText("Virtual memory").assertExists()
         onNodeWithText("Working dir").assertDoesNotExist()
+        onNodeWithTag("process-detail-tab-overview").assertIsSelected()
+        onNodeWithTag("process-detail-tab-jvm").assertIsNotSelected()
         onNodeWithTag("process-detail-tab-jvm").performClick()
+        onNodeWithTag("process-detail-tab-jvm").assertIsSelected()
+        onNodeWithTag("process-detail-tab-overview").assertIsNotSelected()
         onNodeWithText("Java runtime").assertExists()
         onNodeWithText("Virtual memory").assertDoesNotExist()
         onNodeWithTag("process-detail-tab-os-io").performClick()
@@ -104,6 +111,29 @@ class LiveMonitorScreenUiTest {
         state = state.copy(processes = listOf(worker), detail = DetailState.Selected(worker))
         onNodeWithTag("process-detail-tab-gradle").assertDoesNotExist()
         onNodeWithText("Virtual memory").assertExists()
+    }
+
+    @Test
+    fun `inspector keeps selected tab across live metric updates for the same pid`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val first = sampleProcess(pid = 42, rssMemoryMb = 256)
+        var state by mutableStateOf(
+            LiveUiState(processes = listOf(first), detail = DetailState.Selected(first), isLoading = false, isEmpty = false),
+        )
+        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
+
+        onNodeWithTag("process-detail-tab-jvm").performClick()
+        onNodeWithTag("process-detail-tab-jvm").assertIsSelected()
+        onNodeWithText("Java runtime").assertExists()
+
+        val refreshed = first.copy(rssMemoryMb = 512, cpuPercent = 18.0)
+        state = state.copy(processes = listOf(refreshed), detail = DetailState.Selected(refreshed))
+        waitForIdle()
+
+        onNodeWithTag("process-detail-tab-jvm").assertIsSelected()
+        onNodeWithTag("process-detail-tab-overview").assertIsNotSelected()
+        onNodeWithText("Java runtime").assertExists()
+        onNodeWithTag("process-detail-vitals").assertTextEquals("RSS 512 MB · CPU 18% · Heap n/a")
     }
 
     @Test
