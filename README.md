@@ -34,7 +34,7 @@ Grab the installer for your OS from
 | Linux | `.deb` | `.tar.gz` standalone image |
 
 Asset names include the CPU architecture (`x64` or `arm64`), for example
-`Daemonitor-1.2.3-macos-arm64.dmg`. No project-local Gradle setup is required.
+`Daemonitor-1.2.4-macos-arm64.dmg`. No project-local Gradle setup is required.
 
 On Linux, prefer the `.deb` for installs and the `.tar.gz` for writable standalone updates. See
 [Linux Update Distribution](docs/linux-update-distribution.md).
@@ -83,7 +83,7 @@ Specification: [`docs/specs/daemonitor-native-cli-tui-spec.md`](docs/specs/daemo
 
 - Gradle-related JVMs by type (daemon, wrapper, Kotlin daemon, Gradle worker, other)
 - RSS, live heap (when Attach/JMX works), CPU, and uptime
-- Summary tiles, memory-pressure badges, and a detail panel with log tail
+- Summary tiles, memory-pressure badges, and a tabbed detail panel (Overview / JVM / OS·I/O / Process / Gradle) with log tail
 - Switch to terminal collection from the toolbar when you want a lighter footprint
 
 First-poll CPU shows `…` / `sampling…` until a delta exists; `0%` means idle after that. Live heap
@@ -113,10 +113,10 @@ Desktop apps also accept `--headless` for a similar terminal mode (JVM path).
 
 ### Visual
 
-![Daemonitor Visual tab showing per-process RSS, live heap used, and configured heap (-Xmx) timelines](docs/images/process-visual.png)
+![Daemonitor Visual tab showing Memory/CPU/I/O metric modes, time-window controls, and per-process RSS with live heap and configured heap (-Xmx) timelines](docs/images/process-visual.png)
 
-Rolling RSS / live-heap timelines with configured `-Xmx` when known. Click the legend to hide or
-focus a series.
+Metric-family modes (Memory, CPU, I/O, GC) with live / 15m / 1h windows. Memory mode charts RSS,
+live heap, and configured `-Xmx` when known. Click the legend to hide or focus a series.
 
 ### Build history
 
@@ -258,4 +258,4 @@ Review `docs/images/` before committing (synthetic samples only).
 is limited to GitHub Releases checks and downloads you approve. Telemetry is not uploaded by
 default; exports omit full project paths unless `--include-project-path` is explicitly requested.
 
-**Status:** Early (v1.2.3). See `requirements.md` for the original spec.
+**Status:** Early (v1.2.4). See `requirements.md` for the original spec.
