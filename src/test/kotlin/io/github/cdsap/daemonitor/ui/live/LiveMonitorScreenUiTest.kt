@@ -195,6 +195,43 @@ class LiveMonitorScreenUiTest {
     }
 
     @Test
+    fun `bazel server selection shows bazel label icon and detail title`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val bazel = sampleProcess(
+            pid = 30030,
+            type = ProcessType.BAZEL_SERVER,
+            commandLine = "java -jar /x/A-server.jar --product_name=Bazel --workspace_directory=/tmp/ws",
+            projectPath = "/tmp/ws",
+            maxHeapMb = null,
+            gc = null,
+        )
+        val state = LiveUiState(
+            processes = listOf(bazel),
+            summary = LiveSummary(
+                activeProcessCount = 1,
+                totalRssMb = 1024,
+                highestMemoryPid = 30030,
+                activeProjectCount = 1,
+            ),
+            detail = DetailState.Selected(bazel),
+            isLoading = false,
+            isEmpty = false,
+        )
+        setContent {
+            WatcherTheme(appearance = AppearancePreference.DARK) {
+                Box(Modifier.size(width = 900.dp, height = 380.dp)) {
+                    LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+                }
+            }
+        }
+
+        onNodeWithText("Bazel server / Process detail").assertIsDisplayed()
+        onNodeWithTag("process-type-icon-BAZEL_SERVER").assertExists()
+        onNodeWithText("Gradle version").assertDoesNotExist()
+        onNodeWithText(ProcessType.BAZEL_SERVER.displayLabel(), useUnmergedTree = true).assertExists()
+    }
+
+    @Test
     fun `process details displays host and capability availability`() = runComposeUiTest {
         mainClock.autoAdvance = false
         val process = sampleProcess()
