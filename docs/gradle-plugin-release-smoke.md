@@ -1,7 +1,25 @@
-# Gradle plugin 0.1.0 release smoke
+# Gradle plugin release smoke
 
-Run this smoke when publishing `io.github.cdsap.daemonitor` 0.1.0. It exercises the
-real `daemonitor-cored` 1.2.4 process and the pinned Develocity Gradle plugin 4.6.1.
+Publish `io.github.cdsap.daemonitor` from `:gradle-plugin` (currently **0.1.0**) whenever a
+product tag ships plugin changes. The artifact line is independent of app/cored `1.2.x`, but
+**cutting a Daemonitor GitHub Release must include a deliberate plugin version decision**
+(bump in `gradle-plugin/build.gradle.kts` when the plugin changed; leave unchanged only when
+the portal already has that version and no plugin delta shipped).
+
+## Automated publish
+
+1. Tag `vX.Y.Z` → `.github/workflows/release.yml` builds native assets, then job
+   `publish-gradle-plugin` runs `:gradle-plugin:publishPlugins` using
+   `GRADLE_PUBLISH_KEY` / `GRADLE_PUBLISH_SECRET`.
+2. Backfill / republish from an existing tag:
+   Actions → **Publish Gradle plugin** → Run workflow → ref `vX.Y.Z`.
+
+Reject SNAPSHOT versions; Portal rejects re-publishing an identical version.
+
+## Manual smoke (before or right after Portal publish)
+
+Exercises real `daemonitor-cored` matching the product tag and pinned Develocity Gradle plugin
+**4.6.1**.
 
 1. Start cored with a temporary socket and database:
 
