@@ -134,6 +134,7 @@ internal fun DaemonitorContent(
                         state = historyState,
                         onProject = service.historyViewModel::setProject,
                         onTimeRange = service.historyViewModel::setTimeRange,
+                        onTool = service.historyViewModel::setTool,
                     )
                 },
                 settingsContent = {

@@ -96,7 +96,7 @@ fun StatusPill(status: FinalStatus, modifier: Modifier = Modifier) {
 
 private data class StatusStyle(val fg: Color, val bg: Color, val label: String, val glyph: String)
 
-/** Subtle pill for the inferred build source (terminal / IDE / unknown), with a matching icon. */
+/** Subtle pill for the inferred build source (terminal / IDE / BEP / unknown), with a matching icon. */
 @Composable
 fun SourcePill(source: Source, modifier: Modifier = Modifier) {
     val style = when (source) {

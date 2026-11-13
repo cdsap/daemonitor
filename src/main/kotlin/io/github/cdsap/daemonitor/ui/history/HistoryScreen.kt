@@ -48,6 +48,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.cdsap.daemonitor.domain.model.Build
+import io.github.cdsap.daemonitor.domain.model.BuildTool
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.domain.model.Source
 import io.github.cdsap.daemonitor.ui.common.Cell
@@ -80,15 +81,27 @@ private val COLS = listOf(
 )
 
 @Composable
-fun HistoryScreen(state: HistoryUiState, onProject: (String?) -> Unit, onTimeRange: (TimeRange) -> Unit) {
+fun HistoryScreen(
+    state: HistoryUiState,
+    onProject: (String?) -> Unit,
+    onTimeRange: (TimeRange) -> Unit,
+    onTool: (ToolFilter) -> Unit = {},
+) {
     var selected by remember { mutableStateOf<Build?>(null) }
     val listFocus = remember { FocusRequester() }
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Filters(state, onProject, onTimeRange)
+        Filters(state, onProject, onTimeRange, onTool)
         if (state.isEmptyResult) {
             EmptyState(
-                "No Gradle builds match the current filters. History is filled from Gradle daemon logs. Bazel builds are not retained yet.",
+                when (state.filter.tool) {
+                    ToolFilter.BAZEL ->
+                        "No Bazel builds match the current filters. Bazel history appears only when a client already emits BEP (Daemonitor never enables it)."
+                    ToolFilter.GRADLE ->
+                        "No Gradle builds match the current filters. History is filled from Gradle daemon logs."
+                    ToolFilter.ALL ->
+                        "No builds match the current filters. Gradle rows come from daemon logs; Bazel rows appear only when BEP is already in reach."
+                },
                 modifier = Modifier.weight(1f),
             )
         } else {
@@ -135,7 +148,13 @@ fun HistoryScreen(state: HistoryUiState, onProject: (String?) -> Unit, onTimeRan
                     }
                 }
                 Spacer(Modifier.width(Space.lg))
-                SectionCard("Build detail", modifier = Modifier.weight(1f).fillMaxSize()) {
+                SectionCard(
+                    when (selected?.tool) {
+                        BuildTool.BAZEL -> "Bazel build detail"
+                        else -> "Gradle build detail"
+                    },
+                    modifier = Modifier.weight(1f).fillMaxSize(),
+                ) {
                     HistoryDetail(selected)
                 }
             }
@@ -145,11 +164,16 @@ fun HistoryScreen(state: HistoryUiState, onProject: (String?) -> Unit, onTimeRan
 }
 
 @Composable
-private fun Filters(state: HistoryUiState, onProject: (String?) -> Unit, onTimeRange: (TimeRange) -> Unit) {
+private fun Filters(
+    state: HistoryUiState,
+    onProject: (String?) -> Unit,
+    onTimeRange: (TimeRange) -> Unit,
+    onTool: (ToolFilter) -> Unit,
+) {
     Column {
         ScreenHeader("Build history")
         Text(
-            "History is filled from Gradle daemon logs. Bazel builds are not retained yet (BEP comes later).",
+            "Gradle from daemon logs; Bazel only when the client already emits BEP (Daemonitor never enables it).",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = Space.lg, end = Space.lg, bottom = Space.sm),
@@ -159,6 +183,20 @@ private fun Filters(state: HistoryUiState, onProject: (String?) -> Unit, onTimeR
             horizontalArrangement = Arrangement.spacedBy(Space.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            Text("TOOL", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            ToolFilter.entries.forEach { tool ->
+                FilterChip(
+                    selected = state.filter.tool == tool,
+                    onClick = { onTool(tool) },
+                    label = { Text(tool.label) },
+                    shape = RoundedCornerShape(Radius.sm),
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    ),
+                )
+            }
+            Spacer(Modifier.width(Space.sm))
             Text("RANGE", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             TimeRange.entries.forEach { range ->
                 FilterChip(
@@ -184,7 +222,15 @@ private fun ProjectDropdown(projects: List<String>, selected: String?, onProject
     var expanded by remember { mutableStateOf(false) }
     AssistChip(
         onClick = { expanded = true },
-        label = { Text(selected?.substringAfterLast('/')?.let { "Project: $it" } ?: "All projects") },
+        label = {
+            Text(
+                selected
+                    ?.substringAfterLast('/')
+                    ?.substringAfterLast('\\')
+                    ?.let { "Project: $it" }
+                    ?: "All projects",
+            )
+        },
         shape = RoundedCornerShape(Radius.sm),
     )
     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -210,11 +256,21 @@ private fun BuildRow(b: Build, selected: Boolean, onSelect: () -> Unit) {
     ) {
         CellSlot(COLS[0]) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
-                ProcessTypeIcon(ProcessType.GRADLE_DAEMON, size = 15.dp)
+                ProcessTypeIcon(
+                    when (b.tool) {
+                        BuildTool.BAZEL -> ProcessType.BAZEL_SERVER
+                        BuildTool.GRADLE -> ProcessType.GRADLE_DAEMON
+                    },
+                    size = 15.dp,
+                )
                 Text(formatTime(b.startTimeMs), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
-        Cell(b.projectPath?.substringAfterLast('/') ?: "—", COLS[1], muted = b.projectPath == null)
+        Cell(
+            b.projectPath?.substringAfterLast('/')?.substringAfterLast('\\') ?: "—",
+            COLS[1],
+            muted = b.projectPath == null,
+        )
         Cell(formatDuration(b.durationSeconds), COLS[2])
         Cell(b.peakMemoryMb?.let { "$it MB" } ?: "not sampled", COLS[3], muted = b.peakMemoryMb == null)
         CellSlot(COLS[4]) { StatusPill(b.finalStatus) }
@@ -248,10 +304,19 @@ private fun HistoryDetail(build: Build?) {
         return
     }
     val agent = build.displayAgent()
+    val bazel = build.tool == BuildTool.BAZEL
     Column(modifier = Modifier.fillMaxSize()) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-            ProcessTypeIcon(ProcessType.GRADLE_DAEMON, size = 18.dp)
-            Text("Build ${build.buildId}", fontWeight = FontWeight.SemiBold, maxLines = 1, modifier = Modifier.weight(1f, fill = false))
+            ProcessTypeIcon(
+                if (bazel) ProcessType.BAZEL_SERVER else ProcessType.GRADLE_DAEMON,
+                size = 18.dp,
+            )
+            Text(
+                if (bazel) "Bazel build ${build.buildId}" else "Gradle build ${build.buildId}",
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                modifier = Modifier.weight(1f, fill = false),
+            )
             StatusPill(build.finalStatus)
         }
         Spacer(Modifier.padding(Space.xs))
@@ -261,20 +326,46 @@ private fun HistoryDetail(build: Build?) {
         DetailRow("Avg memory", build.avgMemoryMb?.let { "$it MB" } ?: "not sampled (<2s)")
         DetailRow("Peak CPU", build.peakCpuPercent?.let { "%.0f%%".format(it) } ?: "not sampled (<2s)")
         DetailRow("Source", build.inferredSource.name.lowercase())
-        DetailRow("Agent", agent ?: "not detected")
-        DetailRow("LLM provider", agent?.let { build.agentProvider ?: "unknown" } ?: "—")
+        DetailRow("Tool", build.tool.name.lowercase())
+        if (!bazel) {
+            DetailRow("Agent", agent ?: "not detected")
+            DetailRow("LLM provider", agent?.let { build.agentProvider ?: "unknown" } ?: "—")
+        }
         Spacer(Modifier.padding(Space.xs))
-        Text(
-            "Build log excerpt — captured during the build window",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = Space.xs),
-        )
-        val snippet = build.logSnippet
-        if (snippet.isNullOrBlank()) {
-            Text("No log captured for this build window.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+        if (bazel) {
+            Text(
+                "Retained from opportunistic BEP (client already emitting events). No Gradle daemon log for Bazel.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = Space.xs),
+            )
+            val snippet = build.logSnippet
+            if (snippet.isNullOrBlank()) {
+                Text(
+                    "No failure snippet retained for this Bazel build.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            } else {
+                LogView(snippet.lines(), modifier = Modifier.weight(1f).fillMaxWidth(), autoScroll = false)
+            }
         } else {
-            LogView(snippet.lines(), modifier = Modifier.weight(1f).fillMaxWidth(), autoScroll = false)
+            Text(
+                "Gradle daemon log excerpt — captured during the build window",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = Space.xs),
+            )
+            val snippet = build.logSnippet
+            if (snippet.isNullOrBlank()) {
+                Text(
+                    "No Gradle daemon log captured for this build window.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            } else {
+                LogView(snippet.lines(), modifier = Modifier.weight(1f).fillMaxWidth(), autoScroll = false)
+            }
         }
     }
 }

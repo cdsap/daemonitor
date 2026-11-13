@@ -43,9 +43,19 @@ class HistoryViewModel(private val now: () -> Long = System::currentTimeMillis) 
         recompute()
     }
 
+    fun setTool(tool: ToolFilter) {
+        _state.value = _state.value.copy(filter = _state.value.filter.copy(tool = tool))
+        recompute()
+    }
+
     private fun recompute() {
         val filter = _state.value.filter
-        val filtered = HistoryFilters.apply(allBuilds, filter.projectPath, filter.timeRange.cutoffMs(now()))
+        val filtered = HistoryFilters.apply(
+            allBuilds,
+            filter.projectPath,
+            filter.timeRange.cutoffMs(now()),
+            filter.tool,
+        )
         _state.value = _state.value.copy(
             builds = filtered,
             isEmptyResult = filtered.isEmpty(),
