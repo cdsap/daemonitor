@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -32,8 +31,9 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Text
 import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -362,7 +362,7 @@ private fun ProcessDetailInspector(
     recentBuilds: RecentBuildsState,
     daemonLog: DaemonLog?,
 ) {
-    var selectedTab by remember { mutableStateOf(InspectorTab.OVERVIEW) }
+    var selectedTab by remember(p.pid) { mutableStateOf(InspectorTab.OVERVIEW) }
     val tabs = InspectorTab.entries.filter { it != InspectorTab.GRADLE || p.type == ProcessType.GRADLE_DAEMON }
     val activeTab = selectedTab.takeIf { it in tabs } ?: InspectorTab.OVERVIEW
     LaunchedEffect(activeTab) { selectedTab = activeTab }
@@ -378,9 +378,17 @@ private fun ProcessDetailInspector(
                 children.forEach { child -> ChildProcessRow(child) }
             }
         }
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+        TabRow(
+            selectedTabIndex = tabs.indexOf(activeTab).coerceAtLeast(0),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
             tabs.forEach { tab ->
-                Tab(selected = activeTab == tab, onClick = { selectedTab = tab }, modifier = Modifier.testTag("process-detail-tab-${tab.tag}"), text = { Text(tab.label, maxLines = 1) })
+                Tab(
+                    selected = activeTab == tab,
+                    onClick = { selectedTab = tab },
+                    modifier = Modifier.testTag("process-detail-tab-${tab.tag}"),
+                    text = { Text(tab.label, maxLines = 1) },
+                )
             }
         }
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).testTag("process-detail-scroll")) {
