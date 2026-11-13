@@ -11,6 +11,14 @@ import kotlin.test.assertTrue
 class VisualChartModelTest {
 
     @Test
+    fun `live type labels and detail titles include bazel server`() {
+        assertEquals("Bazel server", ProcessType.BAZEL_SERVER.displayLabel())
+        assertEquals("Bazel server / Process detail", ProcessType.BAZEL_SERVER.detailPanelTitle())
+        assertEquals("Gradle daemon / Process detail", ProcessType.GRADLE_DAEMON.detailPanelTitle())
+        assertEquals("Process detail", ProcessType.GRADLE_WORKER.detailPanelTitle())
+    }
+
+    @Test
     fun `bars expose rss live used and optional heap limit with shared scale`() {
         val data = VisualChartModel.fromProcesses(
             listOf(

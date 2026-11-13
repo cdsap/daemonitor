@@ -50,6 +50,21 @@ class LiveProcessGroupingTest {
     }
 
     @Test
+    fun `grouped rows treat bazel server as hierarchy root`() {
+        val bazel = process(pid = 500, parentPid = 1, type = ProcessType.BAZEL_SERVER, rss = 800, cpu = 5.0)
+        val child = process(pid = 501, parentPid = bazel.pid, type = ProcessType.JAVA_GRADLE_RELATED, rss = 200, cpu = 1.0)
+
+        val rows = groupedLiveProcessRows(listOf(bazel, child))
+
+        assertEquals(2, rows.size)
+        assertEquals(true, rows.first().isGroupRoot)
+        assertEquals(ProcessType.BAZEL_SERVER, rows.first().process.type)
+        assertEquals(1_000L, rows.first().process.rssMemoryMb)
+        assertEquals(bazel.pid, rows.first().targetPid)
+        assertEquals(child.pid, rows[1].targetPid)
+    }
+
+    @Test
     fun `grouped rows leave leaves unchanged and keep missing cpu unavailable`() {
         val leaf = process(pid = 10, parentPid = 1, type = ProcessType.GRADLE_WORKER, rss = 42, cpu = null)
 
