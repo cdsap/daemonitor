@@ -116,6 +116,11 @@ class ReleaseMetadataTest {
         assertTrue(workflow.contains(":gradle-plugin:publishPlugins"), workflow)
         assertTrue(workflow.contains("GRADLE_PUBLISH_KEY"), workflow)
         assertTrue(workflow.contains("GRADLE_PUBLISH_SECRET"), workflow)
+        assertTrue(workflow.contains("-x :gradle-plugin:test"), workflow)
+        assertTrue(
+            workflow.contains("Plugin Portal credentials missing; skipping publish"),
+            workflow,
+        )
         val assetsJob = workflow.indexOf("name: Publish release assets and metadata")
         val pluginJob = workflow.indexOf("name: Publish Gradle plugin to Plugin Portal")
         assertTrue(assetsJob >= 0 && pluginJob > assetsJob, workflow)
