@@ -101,6 +101,47 @@ func TestInsertHistoryAndPurge(t *testing.T) {
 	}
 }
 
+func TestPurgeOlderThanDeletesOldBuilds(t *testing.T) {
+	dir := t.TempDir()
+	s, err := store.Open(filepath.Join(dir, "builds-purge.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	now := time.Now().UnixMilli()
+	oldStart := now - int64((48 * time.Hour).Milliseconds())
+	keepStart := now - int64((1 * time.Hour).Milliseconds())
+	secret := "bazel build //:app --token=super-secret"
+	if err := s.InsertBuild(builds.Build{
+		BuildID: "old-bep", DaemonPID: 9, StartTimeMs: oldStart, FinalStatus: builds.StatusSuccess,
+		Tool: builds.ToolBazel, InferredSource: builds.SourceBEP, CommandLine: &secret,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.InsertBuild(builds.Build{
+		BuildID: "keep-bep", DaemonPID: 9, StartTimeMs: keepStart, FinalStatus: builds.StatusSuccess,
+		Tool: builds.ToolBazel, InferredSource: builds.SourceBEP,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	deleted, err := s.PurgeOlderThan(24 * time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted < 1 {
+		t.Fatalf("expected builds purge rows, deleted=%d", deleted)
+	}
+	rows, err := s.ListBuilds(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].BuildID != "keep-bep" {
+		t.Fatalf("after purge builds=%+v", rows)
+	}
+}
+
 func TestOpenRestrictsDatabasePermissions(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX file modes are not enforced on Windows")

@@ -619,7 +619,15 @@ func (s *Store) PurgeOlderThan(retention time.Duration) (int64, error) {
 	if err != nil {
 		return n + evN, err
 	}
-	return n + evN + instN, nil
+	buildsRes, err := s.db.Exec(`DELETE FROM builds WHERE start_time < ?`, cutoff)
+	if err != nil {
+		return n + evN + instN, err
+	}
+	buildsN, err := buildsRes.RowsAffected()
+	if err != nil {
+		return n + evN + instN, err
+	}
+	return n + evN + instN + buildsN, nil
 }
 
 func (s *Store) History(sinceMs int64, limit int) ([]model.Process, error) {
