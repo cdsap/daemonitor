@@ -405,3 +405,69 @@ func getBuilds(t *testing.T, client *http.Client, query string) buildsPayload {
 	}
 	return payload
 }
+
+func TestBEPWatchIngestsBazelBuildsAndFiltersByTool(t *testing.T) {
+	bepPath := filepath.Join(t.TempDir(), "bep.ndjson")
+	body := `{"started":{"uuid":"bep-api-1","startTimeMillis":"1700000000000","command":"build","workingDirectory":"/work/app","workspaceDirectory":"/work/app","serverPid":"4242"}}` + "\n" +
+		`{"finished":{"overallSuccess":true,"exitCode":{"name":"SUCCESS","code":0},"finishTimeMillis":"1700000003000"}}` + "\n"
+	if err := os.WriteFile(bepPath, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DAEMONITOR_BEP_WATCH", bepPath)
+
+	socket := ipc.TempEndpoint(t, "bep")
+	db := filepath.Join(t.TempDir(), "core.sqlite")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	srv, err := api.NewServer(socket, db, 50*time.Millisecond, time.Hour, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.Store.InsertBuild(builds.Build{
+		BuildID: "gradle-1", DaemonPID: 9, StartTimeMs: 1, InferredSource: builds.SourceTerminal,
+		FinalStatus: builds.StatusSuccess,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Run(ctx) }()
+	client := &http.Client{
+		Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return ipc.Default.Dial(ctx, socket)
+		}},
+		Timeout: 3 * time.Second,
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	var payload buildsPayload
+	for {
+		resp, err := client.Get("http://daemonitor/v1/builds?tool=bazel")
+		if err == nil {
+			_ = json.NewDecoder(resp.Body).Decode(&payload)
+			_ = resp.Body.Close()
+			if payload.Count == 1 {
+				break
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("bazel build never ingested: payload=%+v err=%v", payload, err)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	got := payload.Builds[0]
+	if got.BuildID != "bep-api-1" || got.Tool != builds.ToolBazel || got.InferredSource != builds.SourceBEP || got.FinalStatus != builds.StatusSuccess {
+		t.Fatalf("build=%+v", got)
+	}
+	gradle := getBuilds(t, client, "?tool=GRADLE")
+	if gradle.Count != 1 || gradle.Builds[0].BuildID != "gradle-1" || gradle.Builds[0].Tool != builds.ToolGradle {
+		t.Fatalf("gradle payload=%+v", gradle)
+	}
+	if all := getBuilds(t, client, ""); all.Count != 2 {
+		t.Fatalf("all payload=%+v", all)
+	}
+	cancel()
+	select {
+	case <-errCh:
+	case <-time.After(3 * time.Second):
+		t.Fatal("server did not shut down")
+	}
+}

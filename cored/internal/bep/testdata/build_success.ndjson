@@ -1,0 +1,3 @@
+{"id":{"started":{}},"started":{"uuid":"11111111-aaaa-bbbb-cccc-000000000001","startTimeMillis":"1700000000000","buildToolVersion":"7.4.0","command":"build","workingDirectory":"/work/app","workspaceDirectory":"/work/app","serverPid":"4242"}}
+{"id":{"progress":{}},"progress":{"stderr":"INFO: Analyzed target //app:bin"}}
+{"id":{"buildFinished":{}},"finished":{"overallSuccess":true,"exitCode":{"name":"SUCCESS","code":0},"finishTimeMillis":"1700000012500"}}

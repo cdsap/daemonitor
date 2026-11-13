@@ -6,7 +6,16 @@ type Source string
 const (
 	SourceTerminal Source = "TERMINAL"
 	SourceIDE      Source = "IDE"
+	SourceBEP      Source = "BEP"
 	SourceUnknown  Source = "UNKNOWN"
+)
+
+// Tool is the build system that produced a retained build row.
+type Tool string
+
+const (
+	ToolGradle Tool = "GRADLE"
+	ToolBazel  Tool = "BAZEL"
 )
 
 // FinalStatus is the final state of a build invocation (U5).
@@ -38,6 +47,9 @@ type Build struct {
 	LogSnippet       string      `json:"log_snippet,omitempty"`
 	Agent            string      `json:"agent,omitempty"`
 	AgentProvider    string      `json:"agent_provider,omitempty"`
+	// Tool distinguishes Gradle daemon-log builds from opportunistic Bazel BEP rows.
+	// Empty / omitted means GRADLE for backward compatibility with existing rows.
+	Tool Tool `json:"tool,omitempty"`
 }
 
 // Sample is one RSS/CPU observation for peak calculation.
