@@ -128,7 +128,7 @@ fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit, onClearSelec
             onSelectPeakMemoryPid = onSelect,
         )
         if (state.isLoading) {
-            EmptyState("Scanning for Gradle processes...", modifier = Modifier.weight(1f))
+            EmptyState("Scanning for Gradle and Bazel processes...", modifier = Modifier.weight(1f))
         } else if (state.isEmpty) {
             EmptyState("No Gradle processes are running right now.", modifier = Modifier.weight(1f))
         } else {
@@ -307,6 +307,12 @@ private fun ProcessRow(
     }
 }
 
+private fun detailCardTitle(detail: DetailState): String = when (detail) {
+    is DetailState.Selected -> detail.process.type.detailPanelTitle()
+    is DetailState.Ended -> detail.lastKnown.type.detailPanelTitle()
+    is DetailState.NoSelection -> "Process detail"
+}
+
 @Composable
 private fun DetailCard(
     detail: DetailState,
@@ -318,7 +324,7 @@ private fun DetailCard(
     nowMs: Long,
     modifier: Modifier = Modifier,
 ) {
-    SectionCard("Process detail", modifier) {
+    SectionCard(detailCardTitle(detail), modifier) {
         when (detail) {
             is DetailState.NoSelection ->
                 Text("Select a process to see details.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)

@@ -57,6 +57,11 @@ class LiveMetricLabelsTest {
         )
         assertTrue(LiveMetricLabels.isLiveHeapProbedType(ProcessType.GRADLE_DAEMON))
         assertTrue(LiveMetricLabels.isLiveHeapProbedType(ProcessType.KOTLIN_DAEMON))
+        assertTrue(LiveMetricLabels.isLiveHeapProbedType(ProcessType.BAZEL_SERVER))
+        assertEquals(
+            "unavailable",
+            LiveMetricLabels.liveHeapUsedDetail(LiveJvmHeap.unavailable(1L), ProcessType.BAZEL_SERVER),
+        )
         assertFalse(LiveMetricLabels.isLiveHeapProbedType(ProcessType.GRADLE_WRAPPER))
         assertFalse(LiveMetricLabels.isLiveHeapProbedType(ProcessType.GRADLE_WORKER))
     }

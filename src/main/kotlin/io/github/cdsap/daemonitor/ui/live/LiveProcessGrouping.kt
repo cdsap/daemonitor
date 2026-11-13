@@ -12,12 +12,15 @@ internal data class LiveProcessRow(
     val groupChildCount: Int = 0,
 )
 
+private fun ProcessType.isHierarchyRoot(): Boolean =
+    this == ProcessType.GRADLE_DAEMON || this == ProcessType.BAZEL_SERVER
+
 /**
  * Builds the desktop equivalent of the TUI's grouped view.
  *
- * Gradle daemon rows include the RSS and CPU of all descendants present in the current snapshot;
- * the child rows remain selectable through their original PIDs. Processes with no daemon
- * ancestor remain ordinary rows.
+ * Gradle daemon and Bazel server rows include the RSS and CPU of all descendants present in
+ * the current snapshot; the child rows remain selectable through their original PIDs.
+ * Processes with no hierarchy-root ancestor remain ordinary rows.
  */
 internal fun groupedLiveProcessRows(processes: List<GradleProcess>): List<LiveProcessRow> {
     val childrenByParent = processes.groupBy { it.parentPid }
@@ -33,7 +36,7 @@ internal fun groupedLiveProcessRows(processes: List<GradleProcess>): List<LivePr
             childrenByParent[parentPid]
                 .orEmpty()
                 .asSequence()
-                .filter { it.pid !in visited && it.type != ProcessType.GRADLE_DAEMON }
+                .filter { it.pid !in visited && !it.type.isHierarchyRoot() }
                 .sortedBy { it.pid }
                 .forEach { child ->
                     visited += child.pid
@@ -46,7 +49,7 @@ internal fun groupedLiveProcessRows(processes: List<GradleProcess>): List<LivePr
         return result
     }
 
-    processes.filter { it.type == ProcessType.GRADLE_DAEMON }.forEach { root ->
+    processes.filter { it.type.isHierarchyRoot() }.forEach { root ->
         val children = descendants(root.pid)
         if (children.isEmpty()) return@forEach
 
