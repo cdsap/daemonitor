@@ -102,6 +102,29 @@ class ReleaseMetadataTest {
     }
 
     @Test
+    fun `release workflow publishes the Gradle plugin after native assets`() {
+        val workflow = Path.of(".github/workflows/release.yml").readText()
+        val pluginBuild = Path.of("gradle-plugin/build.gradle.kts").readText()
+        val backfill = Path.of(".github/workflows/publish-gradle-plugin.yml").readText()
+
+        assertTrue(pluginBuild.contains("id(\"com.gradle.plugin-publish\")"), pluginBuild)
+        assertTrue(pluginBuild.contains("version = \"0.1.0\""), pluginBuild)
+        assertTrue(pluginBuild.contains("id = \"io.github.cdsap.daemonitor\""), pluginBuild)
+        assertTrue(pluginBuild.contains("printGradlePluginVersion"), pluginBuild)
+
+        assertTrue(workflow.contains("name: Publish Gradle plugin to Plugin Portal"), workflow)
+        assertTrue(workflow.contains(":gradle-plugin:publishPlugins"), workflow)
+        assertTrue(workflow.contains("GRADLE_PUBLISH_KEY"), workflow)
+        assertTrue(workflow.contains("GRADLE_PUBLISH_SECRET"), workflow)
+        val assetsJob = workflow.indexOf("name: Publish release assets and metadata")
+        val pluginJob = workflow.indexOf("name: Publish Gradle plugin to Plugin Portal")
+        assertTrue(assetsJob >= 0 && pluginJob > assetsJob, workflow)
+
+        assertTrue(backfill.contains("workflow_dispatch"), backfill)
+        assertTrue(backfill.contains(":gradle-plugin:publishPlugins"), backfill)
+    }
+
+    @Test
     fun `Windows CLI packaging passes an explicit archive path to PowerShell`() {
         val script = Path.of("cored/scripts/package-native-cli.sh").readText()
 

@@ -3,6 +3,8 @@
 Each tag-triggered GitHub Release publishes metadata so clients can check version info and verify
 downloads before staging or opening installers. The desktop app uses that to fetch the right
 artifact, verify it, then either stage **Restart and Update** or hand off to the OS installer.
+The same tag job also publishes the Gradle plugin (`io.github.cdsap.daemonitor`, version in
+`gradle-plugin/build.gradle.kts`) to the Plugin Portal after native assets are uploaded.
 
 ## Release assets
 

@@ -241,8 +241,18 @@ Cursor, Codex, Gemini CLI, Aider. Ambient variables from Daemonitor's own proces
 ```
 
 Tag releases publish installers, per-platform `daemonitor-cli-*-<os>-<arch>.zip`, standalone
-`daemonitor-cored-*` binaries, `latest.json`, `update.json`, and checksums. See
-[docs/update-metadata.md](docs/update-metadata.md).
+`daemonitor-cored-*` binaries, `latest.json`, `update.json`, and checksums, and also publish the
+Gradle plugin `io.github.cdsap.daemonitor` (independent version in `gradle-plugin/build.gradle.kts`)
+to the [Plugin Portal](https://plugins.gradle.org/plugin/io.github.cdsap.daemonitor). See
+[docs/update-metadata.md](docs/update-metadata.md) and
+[docs/gradle-plugin-release-smoke.md](docs/gradle-plugin-release-smoke.md).
+
+```kotlin
+// settings.gradle.kts
+plugins {
+    id("io.github.cdsap.daemonitor") version "0.1.0"
+}
+```
 
 Refresh desktop README screenshots after UI changes:
 
