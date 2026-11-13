@@ -97,7 +97,7 @@ func (m Model) renderTable() string {
 	b.WriteString("\n")
 
 	if len(m.processes) == 0 && m.connected {
-		b.WriteString("No Gradle-related processes are currently running.\nWaiting for activity…\n")
+		b.WriteString("No build-related processes are currently running.\nWaiting for activity…\n")
 	} else if len(m.processes) == 0 && !m.connected {
 		b.WriteString("Waiting for daemonitor-cored…\n")
 	} else {
@@ -174,7 +174,7 @@ func (m Model) renderTable() string {
 func groupSummary(children, projectWidth int) string {
 	const projectRoom = 16
 	for _, text := range []string{
-		fmt.Sprintf("  (%d children; includes daemon)", children),
+		fmt.Sprintf("  (%d children; includes root)", children),
 		fmt.Sprintf("  +%d children", children),
 	} {
 		if projectWidth-terminalansi.StringWidth(text) >= projectRoom {

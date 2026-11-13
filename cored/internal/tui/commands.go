@@ -74,38 +74,49 @@ func (m Model) fetchSnapshot() tea.Cmd {
 	}
 }
 
-func (m Model) fetchDetails(pid, startMs int64) tea.Cmd {
+func (m Model) fetchDetails(p model.Process) tea.Cmd {
 	if m.client == nil {
 		return nil
 	}
 	c := m.client
+	pid := int64(p.PID)
+	startMs := p.StartTimeMs
+	gradleDaemon := p.Type == "GRADLE_DAEMON"
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		var logMeta *logs.DaemonLog
 		var history model.History
 		var builds client.BuildsPayload
-		list, err := c.DaemonLogs(ctx)
-		if err == nil {
-			for i := range list {
-				if list[i].PID == pid {
-					logMeta = &list[i]
-					break
+		var buildsErr error
+		var tail *logs.Tail
+		var detailErr error
+		if gradleDaemon {
+			list, err := c.DaemonLogs(ctx)
+			if err == nil {
+				for i := range list {
+					if list[i].PID == pid {
+						logMeta = &list[i]
+						break
+					}
 				}
 			}
+			tailResult, err := c.DaemonLogTail(ctx, pid)
+			if err != nil {
+				detailErr = err
+			} else {
+				tail = &tailResult
+			}
+			builds, buildsErr = c.BuildsForDaemon(ctx, pid, startMs, 20)
 		}
-		tail, tailErr := c.DaemonLogTail(ctx, pid)
 		history, _ = c.History(ctx, time.Now().Add(-30*time.Minute).UnixMilli(), 500)
-		builds, buildsErr := c.BuildsForDaemon(ctx, pid, startMs, 20)
 		host, hostErr := c.Host(ctx)
 		capabilities, capabilitiesErr := c.Capabilities(ctx)
-		msg := detailsLoadedMsg{pid: pid, startMs: startMs, log: logMeta, history: history.Processes, builds: builds, buildsErr: buildsErr, host: compactHostMetrics(host), hostErr: hostErr, capabilities: capabilities, capabilitiesErr: capabilitiesErr}
-		if tailErr != nil {
-			msg.err = tailErr
-			return msg
+		return detailsLoadedMsg{
+			pid: pid, startMs: startMs, log: logMeta, tail: tail, history: history.Processes,
+			builds: builds, buildsErr: buildsErr, host: compactHostMetrics(host), hostErr: hostErr,
+			capabilities: capabilities, capabilitiesErr: capabilitiesErr, err: detailErr,
 		}
-		msg.tail = &tail
-		return msg
 	}
 }
 

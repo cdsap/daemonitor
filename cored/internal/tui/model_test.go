@@ -273,7 +273,7 @@ func TestGoldenEmptyAndDetails(t *testing.T) {
 	m.lastUpdated = fixed
 	m.applySnapshot(model.Snapshot{SampledAtMs: fixed.UnixMilli(), Processes: nil})
 	body := m.View().Content
-	if !strings.Contains(body, "No Gradle-related processes") {
+	if !strings.Contains(body, "No build-related processes") {
 		t.Fatalf("empty state missing: %s", body)
 	}
 
@@ -571,8 +571,30 @@ func TestDetailsRefreshKeyReloadsOpenProcess(t *testing.T) {
 	}
 }
 
+func TestDetailsTitleForBazelAndGradle(t *testing.T) {
+	gradle := model.Process{PID: 9, Type: "GRADLE_DAEMON", StartTimeMs: 100}
+	m := NewModel(Config{Now: fixedNow, NoColor: true})
+	m.width, m.height, m.detailsOpen, m.detailProcess = 120, 30, true, &gradle
+	if body := m.View().Content; !strings.Contains(body, "GRADLE COMMANDER CENTER / PROCESS DETAILS") {
+		t.Fatalf("gradle details title missing: %s", body)
+	}
+
+	bazel := model.Process{PID: 11, Type: "BAZEL_SERVER", Name: "bazel", StartTimeMs: 100, ProjectPath: strPtr("/tmp/ws")}
+	m.detailProcess = &bazel
+	body := m.View().Content
+	if !strings.Contains(body, "BAZEL SERVER / PROCESS DETAILS") {
+		t.Fatalf("bazel details title missing: %s", body)
+	}
+	if strings.Contains(body, "GRADLE COMMANDER CENTER") {
+		t.Fatalf("bazel details still uses gradle commander title: %s", body)
+	}
+	if strings.Contains(body, "RECENT BUILDS") || strings.Contains(body, "GRADLE LOG") {
+		t.Fatalf("bazel details leaked gradle-only panels: %s", body)
+	}
+}
+
 func TestDetailsHideGradleOnlyPanelsForNonDaemons(t *testing.T) {
-	for _, processType := range []string{"KOTLIN_DAEMON", "GRADLE_WORKER"} {
+	for _, processType := range []string{"KOTLIN_DAEMON", "GRADLE_WORKER", "BAZEL_SERVER"} {
 		p := model.Process{PID: 9, Type: processType, StartTimeMs: 100}
 		m := NewModel(Config{Now: fixedNow, NoColor: true})
 		m.width, m.height, m.detailsOpen, m.detailProcess = 100, 30, true, &p

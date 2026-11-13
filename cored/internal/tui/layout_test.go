@@ -110,7 +110,7 @@ func TestGroupedRowsAlignAndKeepSelectionMarker(t *testing.T) {
 		t.Fatalf("group root row truncated at 120 columns: %q", root)
 	}
 
-	for w, want := range map[int]string{150: "+2 children", 200: "(2 children; includes daemon)"} {
+	for w, want := range map[int]string{150: "+2 children", 200: "(2 children; includes root)"} {
 		m.width = w
 		if root := lineWith(t, plainLines(m), "43122"); !strings.Contains(root, want) || strings.Contains(root, "…") {
 			t.Fatalf("width %d: group summary=%q want %q", w, root, want)

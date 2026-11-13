@@ -372,6 +372,17 @@ func (m Model) detailIsStale() bool {
 	return m.sampledAt > 0 && m.detailProcess.SampledAtMs > 0 && m.sampledAt > m.detailProcess.SampledAtMs
 }
 
+func detailTitle(kind string) string {
+	switch kind {
+	case "GRADLE_DAEMON":
+		return "GRADLE COMMANDER CENTER / PROCESS DETAILS"
+	case "BAZEL_SERVER":
+		return "BAZEL SERVER / PROCESS DETAILS"
+	default:
+		return "PROCESS DETAILS"
+	}
+}
+
 func detailHeader(p model.Process, now int64, ended, stale bool, width int, noColor bool) string {
 	state := na(p.Status)
 	if ended {
@@ -391,7 +402,7 @@ func detailHeader(p model.Process, now int64, ended, stale bool, width int, noCo
 		segments = append(segments, project)
 	}
 	segments = append(segments, "GC "+render.GCText(p.GC), "uptime "+render.Uptime(p.StartTimeMs, now), na(p.Name))
-	title := "GRADLE COMMANDER CENTER / PROCESS DETAILS"
+	title := detailTitle(p.Type)
 	line := fitSegments(append([]string{title}, segments...), "  ·  ", max(1, width))
 	if !strings.Contains(line, "pid ") {
 		line = fitSegments(append([]string{"PROCESS DETAILS"}, segments...), "  ·  ", max(1, width))
