@@ -33,7 +33,7 @@ class AppScaffoldUiTest {
         setContent {
             WatcherTheme {
                 AppScaffold(
-                    buildInfo = BuildInfo(version = "1.2.3", commit = "abc1234"),
+                    buildInfo = BuildInfo(version = "1.2.4", commit = "abc1234"),
                     liveContent = { Text("Live") },
                     historyContent = { Text("History") },
                     settingsContent = { Text("Settings") },
@@ -41,7 +41,7 @@ class AppScaffoldUiTest {
             }
         }
 
-        onNodeWithText("v1.2.3 · abc1234").assertExists()
+        onNodeWithText("v1.2.4 · abc1234").assertExists()
     }
 
     @Test
