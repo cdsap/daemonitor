@@ -28,6 +28,26 @@
       });
   }
 
+  const tabs = [...document.querySelectorAll(".aspect-tabs [role='tab']")];
+  const copyEl = document.getElementById("aspect-copy");
+  if (tabs.length && copyEl) {
+    const activate = (tab) => {
+      tabs.forEach((t) => {
+        const on = t === tab;
+        t.setAttribute("aria-selected", String(on));
+        const panel = document.getElementById(t.getAttribute("aria-controls"));
+        if (panel) panel.hidden = !on;
+      });
+      const text = tab.dataset.copy || "";
+      const i = text.indexOf(" — ");
+      copyEl.innerHTML =
+        i > 0
+          ? `<strong>${text.slice(0, i)}</strong>${text.slice(i)}`
+          : text;
+    };
+    tabs.forEach((tab) => tab.addEventListener("click", () => activate(tab)));
+  }
+
   function detectPlatform(userAgent, platformHint) {
     const haystack = `${userAgent} ${platformHint}`.toLowerCase();
     if (/windows|win32|win64/.test(haystack)) return "windows";

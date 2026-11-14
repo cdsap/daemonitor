@@ -2,25 +2,26 @@
  * Hallmark · genre: modern-minimal · macrostructure: Split Studio · theme: custom daemon teal
  * nav: N9 · footer: Ft2 · enrichment: none · contrast: pass (40-41) · mobile: pass (34, 49, 50-57)
  */
+/* Docs-tool home (jqlang.org / Cosmo DNA) + IBM Plex; cli.html shares tokens. */
 :root {
   color-scheme: light dark;
 
-  --color-paper: #e9efea;
-  --color-paper-2: #f7faf8;
-  --color-paper-3: #dfe7e1;
-  --color-ink: #111714;
-  --color-ink-2: #4f5d55;
-  --color-rule: #b8c4bd;
-  --color-rule-soft: #d3ddd6;
-  --color-accent: #28735f;
-  --color-accent-strong: #00695c;
-  --color-accent-soft: #d9eeea;
+  --color-paper: #ffffff;
+  --color-paper-2: #f8f9fa;
+  --color-paper-3: #e9ecef;
+  --color-ink: #373a3c;
+  --color-ink-2: #6c757d;
+  --color-rule: #dee2e6;
+  --color-rule-soft: #e9ecef;
+  --color-accent: #2780e3;
+  --color-accent-strong: #1a6dcc;
+  --color-accent-soft: #e8f1fb;
   --color-accent-ink: #ffffff;
-  --color-focus: #2c5d9b;
-  --color-shadow: rgba(17, 23, 20, 0.12);
-  --color-header: rgba(233, 239, 234, 0.92);
-  --color-code-bg: #111714;
-  --color-code-ink: #e8ece8;
+  --color-focus: #1a6dcc;
+  --color-shadow: rgba(55, 58, 60, 0.12);
+  --color-header: rgba(248, 249, 250, 0.94);
+  --color-code-bg: #212529;
+  --color-code-ink: #e9ecef;
 
   --font-body: "IBM Plex Sans", system-ui, sans-serif;
   --font-display: "IBM Plex Sans", system-ui, sans-serif;
@@ -47,22 +48,22 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --color-paper: #101513;
-    --color-paper-2: #171d1a;
-    --color-paper-3: #222b27;
-    --color-ink: #e8ece8;
-    --color-ink-2: #b8c5be;
-    --color-rule: #5f6e66;
-    --color-rule-soft: #334039;
-    --color-accent: #80d5c4;
-    --color-accent-strong: #a1f2df;
-    --color-accent-soft: #173f38;
-    --color-accent-ink: #00382f;
-    --color-focus: #a9c7f5;
-    --color-shadow: rgba(0, 0, 0, 0.4);
-    --color-header: rgba(16, 21, 19, 0.92);
-    --color-code-bg: #0a0e0c;
-    --color-code-ink: #e8ece8;
+    --color-paper: #212529;
+    --color-paper-2: #2b3035;
+    --color-paper-3: #343a40;
+    --color-ink: #e9ecef;
+    --color-ink-2: #adb5bd;
+    --color-rule: #495057;
+    --color-rule-soft: #343a40;
+    --color-accent: #4c9aed;
+    --color-accent-strong: #6eb0f5;
+    --color-accent-soft: #1a3348;
+    --color-accent-ink: #0b1520;
+    --color-focus: #6eb0f5;
+    --color-shadow: rgba(0, 0, 0, 0.45);
+    --color-header: rgba(43, 48, 53, 0.94);
+    --color-code-bg: #16191c;
+    --color-code-ink: #e9ecef;
   }
 }
 
@@ -823,5 +824,216 @@ kbd {
 
   .footer-line a {
     white-space: normal;
+  }
+}
+
+/* —— Home: jqlang-format layout —— */
+.home-main {
+  width: min(100% - var(--space-lg), 960px);
+  margin-inline: auto;
+  padding: var(--space-md) 0 var(--space-2xl);
+}
+
+.jq-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-lg);
+  align-items: center;
+  padding: var(--space-md) 0 var(--space-sm);
+}
+
+.jq-hero-mark {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: var(--space-sm);
+}
+
+.jq-hero-mark img {
+  width: min(220px, 70%);
+  height: auto;
+}
+
+.jq-hero-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-sm);
+}
+
+.jq-promise {
+  margin: 0;
+  max-width: 16em;
+  font-size: clamp(1.2rem, 2.4vw, 1.55rem);
+  font-weight: 600;
+  line-height: 1.35;
+  font-style: normal;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.jq-hero .cta-row {
+  justify-content: center;
+}
+
+.jq-hero .platforms {
+  margin: 0;
+  color: var(--color-ink-2);
+  font-size: 0.92rem;
+}
+
+.jq-prose {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-md);
+  margin: var(--space-lg) 0 var(--space-md);
+}
+
+.jq-prose p {
+  margin: 0;
+}
+
+.jq-center {
+  text-align: center;
+  margin: var(--space-md) 0 var(--space-lg);
+  color: var(--color-ink-2);
+}
+
+.page-home .surfaces .section-inner {
+  width: 100%;
+}
+
+.page-home .surface-head {
+  margin-bottom: var(--space-sm);
+}
+
+.aspect-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 1.1rem;
+  border-bottom: 1px solid var(--color-rule);
+  margin-bottom: var(--space-xs);
+}
+
+.aspect-tabs button {
+  appearance: none;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 0.35rem 0.1rem 0.5rem;
+  color: var(--color-ink-2);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.aspect-tabs button:hover {
+  color: var(--color-ink);
+}
+
+.aspect-tabs button[aria-selected="true"] {
+  color: var(--color-accent-strong);
+  border-bottom-color: var(--color-accent);
+}
+
+.aspect-tabs button:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 3px;
+}
+
+.aspect-copy {
+  min-height: 2.6em;
+  margin: 0 0 var(--space-sm);
+  color: var(--color-ink-2);
+}
+
+.aspect-copy strong {
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.aspect-panels {
+  display: block;
+}
+
+.aspect-panels .panel[hidden] {
+  display: none;
+}
+
+.shot {
+  margin: 0;
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-paper-2);
+}
+
+.shot .screenshot {
+  width: 100%;
+  background: #000;
+}
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-md);
+  margin-top: var(--space-lg);
+  padding-top: var(--space-lg);
+  border-top: 1px solid var(--color-rule);
+}
+
+.feature-grid h3 {
+  margin: 0 0 var(--space-2xs);
+  font-size: 1.05rem;
+  font-style: normal;
+}
+
+.feature-grid p {
+  margin: 0;
+  color: var(--color-ink-2);
+  font-size: 0.95rem;
+}
+
+.page-home .cli-section,
+.page-home .privacy,
+.page-home .mcp-section,
+.page-home .download {
+  margin-top: var(--space-lg);
+  padding-top: var(--space-lg);
+  border-top: 1px solid var(--color-rule);
+}
+
+.page-home .cli-section .section-inner,
+.page-home .privacy .section-inner,
+.page-home .mcp-section .section-inner,
+.page-home .download .section-inner {
+  width: 100%;
+}
+
+.plain-list {
+  margin: var(--space-sm) 0;
+  padding-left: 1.2rem;
+}
+
+.plain-list li {
+  margin: 0.25rem 0;
+}
+
+.feature-footnote {
+  color: var(--color-ink-2);
+  font-size: 0.92rem;
+}
+
+@media (max-width: 768px) {
+  .jq-hero {
+    grid-template-columns: minmax(0, 1fr);
+    text-align: center;
+  }
+
+  .jq-prose,
+  .feature-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
