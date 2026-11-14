@@ -6,6 +6,7 @@ import io.github.cdsap.daemonitor.application.MonitoringMode
 import io.github.cdsap.daemonitor.application.ProcessSource
 import io.github.cdsap.daemonitor.platform.AppDirectories
 import java.nio.file.Path
+import kotlin.io.path.Path
 
 /** Result of wiring optional `--core-socket` sources into CoreContainer / AppContainer. */
 data class GoCoreWiring(
@@ -28,8 +29,11 @@ fun wireGoCore(
     fetch: (Path, String) -> String = ::unixHttpGet,
 ): GoCoreWiring {
     if (coreSocket == null) return GoCoreWiring()
-    val owns = coreOwnsDatabase(coreSocket, databasePath, defaultDatabase, fetch)
     val client = GoCoreClient(coreSocket, fetch)
+    val reportedDatabase = runCatching {
+        GoCoreSnapshotParser.parseHealthDbPath(client.get("/v1/health"))?.let(::Path)
+    }.getOrNull()
+    val owns = coreOwnsDatabase(databasePath, defaultDatabase, reportedDatabase)
     return GoCoreWiring(
         processSource = GoCoreProcessSource(client),
         logSource = GoCoreDaemonLogSource(client),
