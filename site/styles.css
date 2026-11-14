@@ -827,11 +827,45 @@ kbd {
   }
 }
 
-/* —— Home: jqlang-format layout —— */
+/* —— Home: jqlang-format layout (overrides legacy marketing CSS) —— */
+.page-home .site-header .header-inner {
+  width: min(100% - var(--space-lg), 960px);
+}
+
 .home-main {
   width: min(100% - var(--space-lg), 960px);
   margin-inline: auto;
-  padding: var(--space-md) 0 var(--space-2xl);
+  padding: var(--space-md) 0 var(--space-xl);
+}
+
+.page-home .section {
+  padding: 0;
+  border-top: 0;
+  margin: var(--space-lg) 0 0;
+  padding-top: var(--space-lg);
+  border-top: 1px solid var(--color-rule);
+}
+
+.page-home .section-inner,
+.page-home .surfaces .section-inner,
+.page-home .cli-section .section-inner,
+.page-home .privacy .section-inner,
+.page-home .mcp-section .section-inner,
+.page-home .download .section-inner {
+  width: 100%;
+  margin: 0;
+}
+
+.page-home .button-secondary {
+  color: var(--color-accent-strong);
+  border-color: var(--color-accent);
+  background: transparent;
+}
+
+.page-home .button-secondary:hover {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+  border-color: var(--color-accent-strong);
 }
 
 .jq-hero {
@@ -875,6 +909,7 @@ kbd {
 
 .jq-hero .cta-row {
   justify-content: center;
+  margin-top: 0;
 }
 
 .jq-hero .platforms {
@@ -892,20 +927,52 @@ kbd {
 
 .jq-prose p {
   margin: 0;
+  font-size: 1rem;
+  line-height: 1.55;
 }
 
 .jq-center {
   text-align: center;
-  margin: var(--space-md) 0 var(--space-lg);
+  margin: var(--space-md) 0 0;
   color: var(--color-ink-2);
-}
-
-.page-home .surfaces .section-inner {
-  width: 100%;
+  max-width: none;
 }
 
 .page-home .surface-head {
+  display: block;
   margin-bottom: var(--space-sm);
+}
+
+.page-home .surface-head h2 {
+  margin: 0 0 var(--space-2xs);
+  font-size: 1.35rem;
+  letter-spacing: -0.01em;
+}
+
+.page-home .surface-head .section-lede {
+  margin: 0;
+  max-width: none;
+}
+
+/* Kill legacy 2-col marketing grid on the aspect switcher */
+.page-home .surface-grid.aspect-panels,
+.page-home .aspect-panels {
+  display: block !important;
+  grid-template-columns: none;
+  gap: 0;
+}
+
+.page-home .aspect-panels .surface-block,
+.page-home .aspect-panels .panel {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  min-width: 0;
+}
+
+.page-home .aspect-panels .panel[hidden] {
+  display: none !important;
 }
 
 .aspect-tabs {
@@ -954,14 +1021,6 @@ kbd {
   font-weight: 600;
 }
 
-.aspect-panels {
-  display: block;
-}
-
-.aspect-panels .panel[hidden] {
-  display: none;
-}
-
 .shot {
   margin: 0;
   border: 1px solid var(--color-rule);
@@ -972,16 +1031,25 @@ kbd {
 
 .shot .screenshot {
   width: 100%;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
   background: #000;
+}
+
+.page-home .features {
+  margin-top: var(--space-md);
+  padding-top: var(--space-md);
+  border-top: 0;
 }
 
 .feature-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-md);
-  margin-top: var(--space-lg);
-  padding-top: var(--space-lg);
-  border-top: 1px solid var(--color-rule);
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 
 .feature-grid h3 {
@@ -996,20 +1064,26 @@ kbd {
   font-size: 0.95rem;
 }
 
-.page-home .cli-section,
-.page-home .privacy,
-.page-home .mcp-section,
-.page-home .download {
-  margin-top: var(--space-lg);
-  padding-top: var(--space-lg);
-  border-top: 1px solid var(--color-rule);
+.page-home .privacy-layout,
+.page-home .download-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: var(--space-lg);
+  align-items: start;
 }
 
-.page-home .cli-section .section-inner,
-.page-home .privacy .section-inner,
-.page-home .mcp-section .section-inner,
-.page-home .download .section-inner {
-  width: 100%;
+.page-home .privacy-layout .section-lede,
+.page-home .download-layout .section-lede {
+  max-width: none;
+}
+
+.page-home .mcp-layout p {
+  max-width: 60ch;
+  color: var(--color-ink-2);
+}
+
+.page-home .site-footer .footer-inner {
+  width: min(100% - var(--space-lg), 960px);
 }
 
 .plain-list {
@@ -1033,7 +1107,19 @@ kbd {
   }
 
   .jq-prose,
-  .feature-grid {
+  .feature-grid,
+  .page-home .privacy-layout,
+  .page-home .download-layout {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .page-home .cta-row {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .page-home .cta-row .button {
+    width: auto;
   }
 }
