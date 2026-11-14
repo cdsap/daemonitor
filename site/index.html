@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Daemonitor — Activity Monitor for Gradle and Bazel builds</title>
   <meta name="description" content="Daemonitor is a local Activity Monitor for Gradle and Bazel builds. See active processes, CPU and memory usage, build history, and which IDE, terminal, or AI coding agent triggered each Gradle build.">
-  <meta name="theme-color" content="#E9EFEA" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#101513" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f8f9fa" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#212529" media="(prefers-color-scheme: dark)">
 
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Daemonitor">
@@ -27,7 +27,7 @@
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
-<body>
+<body class="page-home">
   <a class="skip-link" href="#main">Skip to content</a>
 
   <header class="site-header" id="top">
@@ -37,24 +37,23 @@
         <span>Daemonitor</span>
       </a>
       <nav class="site-nav" aria-label="Primary">
+        <a class="nav-quiet" href="cli.html">CLI</a>
+        <a class="nav-quiet" href="#download">Download</a>
         <a class="nav-quiet" href="https://github.com/cdsap/daemonitor" rel="noopener noreferrer">GitHub</a>
-        <a class="button button-primary button-compact" href="#download">Download</a>
+        <a class="button button-primary button-compact" href="https://github.com/cdsap/daemonitor/releases/latest" rel="noopener noreferrer">Releases</a>
       </nav>
     </div>
   </header>
 
-  <main id="main">
-    <section class="hero" id="live-monitor" aria-labelledby="hero-heading">
-      <div class="hero-copy">
-        <h1 id="hero-heading">Daemonitor</h1>
-        <p class="hero-tagline">Activity Monitor for Gradle and Bazel builds</p>
-        <p class="lede">
-          Live Monitor lists Gradle daemons, wrappers, Kotlin daemons, and workers alongside
-          Bazel servers, tests, and workers — with RSS, CPU, uptime, and memory-pressure badges.
-          See what’s building now, what built recently, and (for Gradle) whether an IDE,
-          terminal, or coding agent started it. Bazel history appears when a build already
-          emits local BEP; Daemonitor never enables BEP itself.
-        </p>
+  <main id="main" class="home-main">
+    <section class="jq-hero" aria-labelledby="promise">
+      <div class="jq-hero-mark">
+        <img src="assets/icon-192.png" width="280" height="280" alt="Daemonitor">
+      </div>
+      <div class="jq-hero-copy">
+        <h1 id="promise" class="jq-promise">
+          Daemonitor is a local Activity Monitor for Gradle and Bazel builds.
+        </h1>
         <div class="cta-row">
           <a class="button button-primary" href="https://github.com/cdsap/daemonitor/releases/latest" rel="noopener noreferrer">
             Download desktop app
@@ -63,134 +62,166 @@
         </div>
         <p class="platforms">macOS · Windows · Linux</p>
       </div>
-      <figure class="hero-visual">
-        <img
-          class="screenshot"
-          src="assets/live-monitor.png"
-          width="1180"
-          height="760"
-          alt="Daemonitor Live Monitor showing Gradle and Bazel processes with RSS, CPU, uptime, and detail panel"
-          fetchpriority="high"
-        >
-      </figure>
     </section>
 
-    <section class="section intro" id="why" aria-labelledby="why-heading">
-      <div class="section-inner intro-layout">
-        <h2 id="why-heading">Why it exists</h2>
-        <div class="intro-prose">
-          <p>
-            IDEs, terminals, scripts, and coding agents can all start Gradle or Bazel at once.
-            Daemons, servers, and workers keep using CPU and memory after the visible build
-            window closes. Daemonitor is a local Activity Monitor for those processes — RSS,
-            CPU, uptime, and retained build history — without sending data off the machine or
-            taking Bazel’s command lock.
-          </p>
-        </div>
-      </div>
+    <section class="jq-prose" aria-label="About">
+      <p>
+        Daemonitor is like Activity Monitor for local build processes — Gradle daemons,
+        wrappers, Kotlin daemons, and workers alongside Bazel servers, tests, and workers —
+        with RSS, CPU, heap, and uptime on the machine where the build runs.
+      </p>
+      <p>
+        Live observation is zero-lock for Bazel (never calls <code>bazel info</code> /
+        <code>dump</code>). The CLI is a Native Go binary with no JDK; the desktop app is a
+        separate packaged JVM application for the same local core. History stays in SQLite
+        on your disk.
+      </p>
+      <p>
+        Gradle history comes from daemon logs (including IDE or agent source). Bazel history
+        is opportunistic when a build already emits local BEP — Daemonitor never enables BEP itself.
+        Laptop or SSH; no cloud account.
+      </p>
     </section>
 
-    <section class="section features" id="features" aria-labelledby="features-heading">
-      <div class="section-inner">
-        <h2 id="features-heading" class="sr-only">What Daemonitor shows</h2>
-
-        <article class="split split-rtl" id="visual">
-          <div class="split-copy">
-            <h3>Visual timelines</h3>
-            <p>
-              Memory, CPU, I/O, and GC modes with live / 15m / 1h windows. Memory mode
-              charts RSS next to live heap and configured <code>-Xmx</code> so concurrent
-              Gradle processes are easy to compare.
-            </p>
-          </div>
-          <figure class="split-visual">
-            <img
-              class="screenshot"
-              src="assets/process-visual.png"
-              width="1180"
-              height="760"
-              alt="Daemonitor Visual tab showing Memory/CPU/I/O timelines for concurrent Gradle and Bazel processes"
-              loading="lazy"
-            >
-          </figure>
-        </article>
-
-        <article class="split split-ltr" id="build-history">
-          <div class="split-copy">
-            <h3>Build History</h3>
-            <p>
-              Recent Gradle builds with duration, outcome, peak resources, invocation source, and
-              coding-agent attribution when an agent triggered the build. Filter by tool for
-              opportunistic Bazel BEP rows when your builds already write them. Searchable local history.
-            </p>
-          </div>
-          <figure class="split-visual">
-            <img
-              class="screenshot"
-              src="assets/build-history.png"
-              width="1180"
-              height="760"
-              alt="Daemonitor Build History listing Gradle and Bazel rows with outcomes, BEP source tags, and peak resources"
-              loading="lazy"
-            >
-          </figure>
-        </article>
-      </div>
-    </section>
+    <p class="jq-center">
+      Go read the <a href="cli.html">CLI options</a> for more, or grab packages from
+      <a href="https://github.com/cdsap/daemonitor/releases/latest" rel="noopener noreferrer">GitHub Releases</a>.
+      Gradle and Bazel share Live Monitor, Visual timelines, Build History, and the CLI hierarchy.
+    </p>
 
     <section class="section surfaces" id="surfaces" aria-labelledby="surfaces-heading">
       <div class="section-inner">
         <div class="surface-head">
           <h2 id="surfaces-heading">Desktop app and CLI</h2>
           <p class="section-lede">
-            Same local process data, two surfaces: a packaged desktop app, or a native
-            terminal client for SSH and build machines.
+            Same local process data across every surface: CLI, desktop Live Monitor,
+            Visual timelines, and Build History.
           </p>
         </div>
 
-        <div class="surface-grid">
-          <article class="surface-block">
-            <h3>Desktop</h3>
-            <p>
-              Live processes, memory timelines, and retained history in a packaged app for
-              macOS, Windows, and Linux.
-            </p>
-            <a class="text-link" href="https://github.com/cdsap/daemonitor/releases/latest" rel="noopener noreferrer">
-              Get the desktop app →
-            </a>
-          </article>
-          <article class="surface-block" id="cli">
-            <h3>CLI</h3>
-            <p>
-              Bubble Tea TUI over SSH or on headless machines. Native Go binary; starts
-              <code>daemonitor-cored</code> when needed and does not require a JDK. The desktop
-              app remains a separate packaged JVM application. Press <code>v</code> to group
-              descendant workers under their daemon or Bazel server; <code>h</code>/<code>l</code>
-              fold or expand a group while keeping individual process rows available.
-            </p>
-            <ul class="plain-list">
-              <li>Live process table with RSS, heap, CPU, and uptime</li>
-              <li>Grouped Gradle daemon and Bazel server hierarchy with fold/expand controls</li>
-              <li>Shares the desktop app’s local database and retention settings</li>
-              <li>Install with Homebrew, or grab the release zip</li>
-            </ul>
-            <pre class="install-snippet" tabindex="0"><code>brew tap cdsap/tap
-brew install daemonitor-cli
-daemonitor-cli</code></pre>
-            <p class="feature-footnote">
-              No JDK required. Flag reference: <a href="cli.html">CLI options</a>.
-            </p>
-            <figure class="cli-shot">
+        <div class="aspect-tabs" role="tablist" aria-label="Surfaces">
+          <button type="button" role="tab" id="tab-cli" aria-selected="true" aria-controls="panel-cli"
+            data-copy="CLI — live process table for Gradle and Bazel. Bubble Tea TUI; No JDK required; works over SSH.">CLI</button>
+          <button type="button" role="tab" id="tab-desktop" aria-selected="false" aria-controls="panel-desktop"
+            data-copy="Desktop Live Monitor — Gradle JVMs and Bazel servers, tests, and workers in one table.">Desktop</button>
+          <button type="button" role="tab" id="tab-visual" aria-selected="false" aria-controls="panel-visual"
+            data-copy="Visual timelines — Memory / CPU / I/O / GC for concurrent Gradle and Bazel processes.">Visual</button>
+          <button type="button" role="tab" id="tab-history" aria-selected="false" aria-controls="panel-history"
+            data-copy="Build History — Gradle from daemon logs; Bazel BEP rows when already emitted; filter by tool.">History</button>
+        </div>
+        <p class="aspect-copy" id="aspect-copy" aria-live="polite">
+          <strong>CLI</strong> — live process table for Gradle and Bazel. Bubble Tea TUI; No JDK required; works over SSH.
+        </p>
+
+        <div class="surface-grid aspect-panels">
+          <article class="surface-block panel" id="panel-cli" role="tabpanel" aria-labelledby="tab-cli">
+            <h3 class="sr-only">CLI</h3>
+            <figure class="shot">
               <img
                 class="screenshot"
                 src="assets/cli-monitor.png"
                 width="860"
                 height="466"
-                alt="Daemonitor CLI process details for a Bazel server showing OS activity, JVM pools, and recent BEP builds"
+                alt="Daemonitor CLI process table showing Gradle and Bazel processes with RSS, CPU, and uptime"
+                fetchpriority="high"
+              >
+            </figure>
+          </article>
+          <article class="surface-block panel" id="panel-desktop" role="tabpanel" aria-labelledby="tab-desktop" hidden>
+            <h3 class="sr-only">Desktop Live Monitor</h3>
+            <figure class="shot">
+              <img
+                class="screenshot"
+                src="assets/live-monitor.png"
+                width="1180"
+                height="760"
+                alt="Daemonitor Live Monitor showing Gradle and Bazel processes with RSS, CPU, uptime, and detail panel"
                 loading="lazy"
               >
             </figure>
           </article>
+          <article class="surface-block panel" id="panel-visual" role="tabpanel" aria-labelledby="tab-visual" hidden>
+            <h3 class="sr-only">Visual timelines</h3>
+            <figure class="shot">
+              <img
+                class="screenshot"
+                src="assets/process-visual.png"
+                width="1180"
+                height="760"
+                alt="Daemonitor Visual tab showing Memory/CPU/I/O timelines for concurrent Gradle and Bazel processes"
+                loading="lazy"
+              >
+            </figure>
+          </article>
+          <article class="surface-block panel" id="panel-history" role="tabpanel" aria-labelledby="tab-history" hidden>
+            <h3 class="sr-only">Build History</h3>
+            <figure class="shot">
+              <img
+                class="screenshot"
+                src="assets/build-history.png"
+                width="1180"
+                height="760"
+                alt="Daemonitor Build History listing Gradle and Bazel rows with outcomes, BEP source tags, and peak resources"
+                loading="lazy"
+              >
+            </figure>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section features" id="features" aria-labelledby="features-heading">
+      <div class="section-inner feature-grid">
+        <h2 id="features-heading" class="sr-only">What Daemonitor shows</h2>
+        <article>
+          <h3>Live Monitor</h3>
+          <p>
+            Desktop Live Monitor lists Gradle daemons, wrappers, Kotlin daemons, and workers
+            alongside Bazel servers, tests, and workers — with RSS, CPU, uptime, and
+            memory-pressure badges.
+          </p>
+        </article>
+        <article>
+          <h3>Visual timelines</h3>
+          <p>
+            Memory, CPU, I/O, and GC modes with live / 15m / 1h windows so concurrent Gradle
+            and Bazel processes are easy to compare.
+          </p>
+        </article>
+        <article>
+          <h3>Build History</h3>
+          <p>
+            Recent Gradle builds with duration, outcome, peak resources, and coding-agent
+            attribution. Filter by tool for opportunistic Bazel BEP rows when your builds
+            already write them.
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section cli-section" id="cli" aria-labelledby="cli-heading">
+      <div class="section-inner cli-layout">
+        <div>
+          <h2 id="cli-heading">CLI</h2>
+          <p class="section-lede">
+            Bubble Tea TUI over SSH or on headless machines. Native Go binary; starts
+            <code>daemonitor-cored</code> when needed and does not require a JDK. The desktop
+            app remains a separate packaged JVM application. Press <code>v</code> to group
+            descendant workers under their daemon or Bazel server; <code>h</code>/<code>l</code>
+            fold or expand a group while keeping individual process rows available.
+          </p>
+          <ul class="plain-list">
+            <li>Live process table with RSS, heap, CPU, and uptime</li>
+            <li>Grouped Gradle daemon and Bazel server hierarchy with fold/expand controls</li>
+            <li>Shares the desktop app’s local database and retention settings</li>
+            <li>Install with Homebrew, or grab the release zip</li>
+          </ul>
+          <pre class="install-snippet" tabindex="0"><code>brew tap cdsap/tap
+brew install daemonitor-cli
+daemonitor-cli</code></pre>
+          <p class="feature-footnote">
+            No JDK required. Flag reference: <a href="cli.html">CLI options</a>.
+          </p>
         </div>
       </div>
     </section>

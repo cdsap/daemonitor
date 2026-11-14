@@ -93,7 +93,7 @@ More detail: [JVM heap collection](docs/jvm-heap-collection.md).
 
 ### CLI (terminal)
 
-![Daemonitor CLI process details for a Bazel server showing OS activity, JVM memory pools, native memory, and recent BEP builds](docs/images/cli-monitor.png)
+![Daemonitor CLI process table showing Gradle and Bazel processes with RSS, CPU, and uptime](docs/images/cli-monitor.png)
 
 Native full-screen TUI (`top`-style): selection, sorting, pause, resize, grouped process hierarchy
 (Gradle daemons and Bazel servers as roots), process details, recent build/log context, and a
@@ -268,7 +268,7 @@ Refresh README / site screenshots after UI changes (synthetic samples only):
 
 ```bash
 ./gradlew captureReadmeScreenshots test
-# CLI details (Bazel server fixture) → docs/images/cli-monitor.png
+# CLI process table (Gradle + Bazel fixture) → docs/images/cli-monitor.png
 cd cored && go run ./cmd/docscreenshot | python3 ../scripts/ansi_to_png.py ../docs/images/cli-monitor.png
 cp docs/images/*.png site/assets/
 ```

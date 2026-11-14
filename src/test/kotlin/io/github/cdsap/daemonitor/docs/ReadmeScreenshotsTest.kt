@@ -39,7 +39,7 @@ class ReadmeScreenshotsTest {
         assertEquals(466, tuiImage.height)
         assertTrue(
             readme.contains(
-                "![Daemonitor CLI process details for a Bazel server showing OS activity, JVM memory pools, native memory, and recent BEP builds](docs/images/cli-monitor.png)",
+                "![Daemonitor CLI process table showing Gradle and Bazel processes with RSS, CPU, and uptime](docs/images/cli-monitor.png)",
             ),
         )
     }
