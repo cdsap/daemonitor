@@ -10,9 +10,9 @@ plugins {
 }
 
 group = "io.github.cdsap.daemonitor"
-version = "1.2.4"
+version = "1.3.0"
 
-val nativePackageVersion = "1.2.4"
+val nativePackageVersion = "1.3.0"
 val nativeVersionLdflags =
     "-s -w -X github.com/cdsap/daemonitor/cored/internal/api.Version=$nativePackageVersion"
 

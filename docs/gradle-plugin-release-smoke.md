@@ -1,10 +1,13 @@
 # Gradle plugin release smoke
 
 Publish `io.github.cdsap.daemonitor` from `:gradle-plugin` (currently **0.1.0**) whenever a
-product tag ships plugin changes. The artifact line is independent of app/cored `1.2.x`, but
+product tag ships plugin changes. The artifact line is independent of app/cored `1.3.x`, but
 **cutting a Daemonitor GitHub Release must include a deliberate plugin version decision**
 (bump in `gradle-plugin/build.gradle.kts` when the plugin changed; leave unchanged only when
 the portal already has that version and no plugin delta shipped).
+
+For **v1.3.0**, keep plugin **0.1.0** (no plugin delta). Portal credentials were still
+missing at prep time — expect soft-skip on tag unless `GRADLE_PUBLISH_*` secrets are set.
 
 ## Automated publish
 
