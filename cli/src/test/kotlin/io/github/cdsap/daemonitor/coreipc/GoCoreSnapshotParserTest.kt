@@ -12,6 +12,28 @@ import kotlin.test.assertTrue
 
 class GoCoreSnapshotParserTest {
 
+    @Test
+    fun `parses complete health snapshot`() {
+        val health = GoCoreSnapshotParser.parseHealth(
+            """{"status":"ok","db_path":"/tmp/watcher.db","retention_ms":2592000000,"pid":4242}""",
+        )
+
+        assertEquals("/tmp/watcher.db", health.databasePath)
+        assertEquals(2_592_000_000L, health.retentionMs)
+        assertEquals(4_242L, health.pid)
+    }
+
+    @Test
+    fun `keeps missing and invalid optional health fields nullable`() {
+        val partial = GoCoreSnapshotParser.parseHealth(
+            """{"status":"ok","db_path":"","retention_ms":"invalid"}""",
+        )
+
+        assertNull(partial.databasePath)
+        assertNull(partial.retentionMs)
+        assertNull(partial.pid)
+    }
+
     fun `host preserves zero and unavailable metrics and capabilities`() {
         val host = GoCoreSnapshotParser.parseHost("""{"sampled_at_ms": 100, "logical_processors":{"availability":"available","value":8}, "cpu_usage_percent":{"availability":"available","value":0}, "memory_used_bytes":{"availability":"unsupported","value":100}}""")
         assertEquals(8L, host.logicalProcessors)

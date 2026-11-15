@@ -56,17 +56,12 @@ internal object GoCoreSnapshotParser {
         return splitObjects(arrayBody).mapNotNull { parseBuild(it) }
     }
 
-    /** Absolute DB path from `/v1/health` (`db_path`), or null when absent. */
-    fun parseHealthDbPath(json: String): String? =
-        stringField(json, "db_path")?.takeIf { it.isNotBlank() }
-
-    /** Effective retention window from `/v1/health` (`retention_ms`), or null when absent. */
-    fun parseHealthRetentionMs(json: String): Long? =
-        numberField(json, "retention_ms")?.toLong()
-
-    /** Cored process id from `/v1/health` (`pid`), or null when absent. */
-    fun parseHealthPid(json: String): Long? =
-        numberField(json, "pid")?.toLong()
+    fun parseHealth(json: String): GoCoreHealthSnapshot =
+        GoCoreHealthSnapshot(
+            databasePath = stringField(json, "db_path")?.takeIf { it.isNotBlank() },
+            retentionMs = numberField(json, "retention_ms")?.toLong(),
+            pid = numberField(json, "pid")?.toLong(),
+        )
 
     private fun parseBuild(obj: String): Build? {
         val buildId = stringField(obj, "build_id") ?: return null

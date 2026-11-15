@@ -71,17 +71,17 @@ fun resolveGoCore(
 
     if (isGoCoreHealthy(socket, fetch)) {
         val healthBody = runCatching { fetch(socket, "/v1/health") }.getOrNull()
-        val actualRetentionMs = healthBody?.let { GoCoreSnapshotParser.parseHealthRetentionMs(it) }
+        val health = healthBody?.let(GoCoreSnapshotParser::parseHealth)
+        val actualRetentionMs = health?.retentionMs
         if (actualRetentionMs == expectedRetentionMs) {
             return GoCoreResolveResult(wireGoCore(socket, databasePath, defaultDatabase, fetch))
         }
-        val pid = healthBody?.let { GoCoreSnapshotParser.parseHealthPid(it) }
         error.println(
             "daemonitor-cored retention mismatch" +
                 " (running=${actualRetentionMs?.let { "${it}ms" } ?: "unknown"}," +
                 " settings=${days}d); restarting…",
         )
-        stopCore(socket, pid)
+        stopCore(socket, health?.pid)
         waitForGoCoreStopped(socket, fetch, waitHealthyMs)
     }
 
