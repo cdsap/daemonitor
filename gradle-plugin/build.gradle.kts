@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "io.github.cdsap.daemonitor"
-// Independent artifact line from product/cored (1.2.x). Bump this when cutting a
+// Independent artifact line from product/cored (1.3.x). Bump this when cutting a
 // product release that ships plugin changes; tag release publishes to Plugin Portal.
 version = "0.1.0"
 
@@ -31,7 +31,8 @@ gradlePlugin {
             displayName = "Daemonitor"
             description =
                 "Build-observation sessions against daemonitor-cored with local report and optional GBOS / Develocity projection"
-            tags = listOf("daemonitor", "gradle", "observability", "develocity", "gbos")
+            // Portal forbids the tags "gradle" and "plugin".
+            tags = listOf("daemonitor", "observability", "develocity", "gbos", "build")
         }
     }
 }
