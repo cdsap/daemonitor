@@ -35,9 +35,31 @@ func TestFindCoredBinaryEmpty(t *testing.T) {
 func TestCoredArgsPropagatesGradleUserHome(t *testing.T) {
 	t.Setenv("GRADLE_USER_HOME", filepath.Join(t.TempDir(), "custom-gradle"))
 	args := coredArgs("/tmp/core.sock", "/tmp/watcher.db")
-	want := []string{"-socket", "/tmp/core.sock", "-db", "/tmp/watcher.db", "-gradle-user-home", os.Getenv("GRADLE_USER_HOME")}
+	want := []string{
+		"-socket", "/tmp/core.sock",
+		"-db", "/tmp/watcher.db",
+		"-retention", defaultRetention.String(),
+		"-gradle-user-home", os.Getenv("GRADLE_USER_HOME"),
+	}
 	if strings.Join(args, "\x00") != strings.Join(want, "\x00") {
 		t.Fatalf("args=%v want %v", args, want)
+	}
+}
+
+func TestCoredArgsIncludesDefaultRetention(t *testing.T) {
+	t.Setenv("GRADLE_USER_HOME", "")
+	args := coredArgs("/tmp/core.sock", "/tmp/watcher.db")
+	found := false
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == "-retention" {
+			found = true
+			if args[i+1] != defaultRetention.String() {
+				t.Fatalf("retention=%q want %q", args[i+1], defaultRetention.String())
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("missing -retention in %v", args)
 	}
 }
 

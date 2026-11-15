@@ -159,6 +159,8 @@ type Health struct {
 	Socket      string `json:"socket"`
 	SampleCount int64  `json:"sample_count"`
 	DBPath      string `json:"db_path,omitempty"`
+	RetentionMs int64  `json:"retention_ms"`
+	PID         int    `json:"pid"`
 }
 
 // Capabilities is the `/v1/capabilities` response body.

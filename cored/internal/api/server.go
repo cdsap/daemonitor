@@ -27,7 +27,7 @@ import (
 )
 
 // Version is overridden by release builds with Go's -ldflags -X option.
-var Version = "1.3.0"
+var Version = "1.3.1"
 
 // Server exposes a tiny HTTP API over local IPC (Unix socket or Windows named pipe).
 type Server struct {
@@ -384,6 +384,8 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 		Socket:      s.SocketPath,
 		SampleCount: n,
 		DBPath:      s.DBPath,
+		RetentionMs: s.Retention.Milliseconds(),
+		PID:         os.Getpid(),
 	})
 }
 

@@ -60,6 +60,14 @@ internal object GoCoreSnapshotParser {
     fun parseHealthDbPath(json: String): String? =
         stringField(json, "db_path")?.takeIf { it.isNotBlank() }
 
+    /** Effective retention window from `/v1/health` (`retention_ms`), or null when absent. */
+    fun parseHealthRetentionMs(json: String): Long? =
+        numberField(json, "retention_ms")?.toLong()
+
+    /** Cored process id from `/v1/health` (`pid`), or null when absent. */
+    fun parseHealthPid(json: String): Long? =
+        numberField(json, "pid")?.toLong()
+
     private fun parseBuild(obj: String): Build? {
         val buildId = stringField(obj, "build_id") ?: return null
         val daemonPid = numberField(obj, "daemon_pid")?.toLong() ?: return null
