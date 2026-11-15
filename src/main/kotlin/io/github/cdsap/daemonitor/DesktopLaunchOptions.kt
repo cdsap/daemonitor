@@ -1,9 +1,11 @@
 package io.github.cdsap.daemonitor
 
+import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.coreipc.GoCorePreference
 import io.github.cdsap.daemonitor.coreipc.GoCoreResolveResult
 import io.github.cdsap.daemonitor.coreipc.resolveGoCore as resolveGoCoreSession
 import io.github.cdsap.daemonitor.platform.AppDirectories
+import io.github.cdsap.daemonitor.store.SettingsStore
 import java.io.PrintStream
 import java.nio.file.Path
 
@@ -23,8 +25,17 @@ data class DesktopLaunchOptions(
         else -> GoCorePreference.PreferGo
     }
 
-    fun resolveCore(error: PrintStream = System.err): GoCoreResolveResult =
-        resolveGoCoreSession(goCorePreference(), resolveDatabasePath(), error = error)
+    fun resolveCore(error: PrintStream = System.err): GoCoreResolveResult {
+        val retentionDays = RetentionPolicy.DEFAULT.clamp(
+            SettingsStore(AppDirectories.system.settingsPath).load().retentionDays,
+        )
+        return resolveGoCoreSession(
+            goCorePreference(),
+            resolveDatabasePath(),
+            retentionDays = retentionDays,
+            error = error,
+        )
+    }
 
     fun openContainer(resolved: GoCoreResolveResult): AppContainer {
         val wiring = resolved.wiring

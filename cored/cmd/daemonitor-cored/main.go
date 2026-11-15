@@ -20,7 +20,7 @@ func main() {
 	socket := flag.String("socket", defaultSock, "Local IPC endpoint (Unix socket path or Windows named pipe)")
 	dbPath := flag.String("db", defaultDB, "SQLite database path (defaults to app watcher.db)")
 	interval := flag.Duration("interval", 2*time.Second, "process poll interval")
-	retention := flag.Duration("retention", 24*time.Hour, "sample retention window")
+	retention := flag.Duration("retention", 15*24*time.Hour, "sample and build retention window")
 	gradleHome := flag.String("gradle-user-home", "", "Gradle user home (default: ~/.gradle)")
 	flag.Parse()
 

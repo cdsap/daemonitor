@@ -68,6 +68,12 @@ func TestServerHealthAndProcessesOverUnixSocket(t *testing.T) {
 	if health.Status != "ok" {
 		t.Fatalf("health=%+v", health)
 	}
+	if health.RetentionMs != time.Hour.Milliseconds() {
+		t.Fatalf("retention_ms=%d want %d", health.RetentionMs, time.Hour.Milliseconds())
+	}
+	if health.PID <= 0 {
+		t.Fatalf("pid=%d", health.PID)
+	}
 
 	capResp, err := client.Get("http://daemonitor/v1/capabilities")
 	if err != nil {

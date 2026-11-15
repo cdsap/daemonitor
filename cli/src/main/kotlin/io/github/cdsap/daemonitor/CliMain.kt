@@ -7,6 +7,8 @@ import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.coreipc.GoCorePreference
 import io.github.cdsap.daemonitor.coreipc.GoCoreUnavailableException
 import io.github.cdsap.daemonitor.coreipc.resolveGoCore
+import io.github.cdsap.daemonitor.platform.AppDirectories
+import io.github.cdsap.daemonitor.store.SettingsStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -39,13 +41,22 @@ internal object CliLauncher {
         }
 
         val databasePath =
-            options.databasePath ?: io.github.cdsap.daemonitor.platform.AppDirectories.system.databasePath
+            options.databasePath ?: AppDirectories.system.databasePath
         val preference = when {
             options.jvmCollector -> GoCorePreference.JvmCollector
             options.coreSocket != null -> GoCorePreference.ExplicitSocket(options.coreSocket)
             else -> GoCorePreference.PreferGo
         }
-        val resolved = resolveGoCore(preference, databasePath, error = error)
+        val retentionDays = RetentionPolicy.DEFAULT.clamp(
+            options.retentionDays
+                ?: SettingsStore(AppDirectories.system.settingsPath).load().retentionDays,
+        )
+        val resolved = resolveGoCore(
+            preference,
+            databasePath,
+            retentionDays = retentionDays,
+            error = error,
+        )
         resolved.wiring.banner?.let(error::println)
 
         return CoreContainer(

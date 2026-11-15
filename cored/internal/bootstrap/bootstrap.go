@@ -141,8 +141,10 @@ func FindCoredBinary() (string, error) {
 	return "", fmt.Errorf("%s not found", name)
 }
 
+const defaultRetention = 15 * 24 * time.Hour
+
 func coredArgs(socket, db string) []string {
-	args := []string{"-socket", socket, "-db", db}
+	args := []string{"-socket", socket, "-db", db, "-retention", defaultRetention.String()}
 	if gradleHome := os.Getenv("GRADLE_USER_HOME"); gradleHome != "" {
 		args = append(args, "-gradle-user-home", gradleHome)
 	}

@@ -1,5 +1,6 @@
 package io.github.cdsap.daemonitor.coreipc
 
+import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.platform.AppDirectories
 import java.io.PrintStream
 import java.nio.file.Files
@@ -35,16 +36,22 @@ data class GoCoreResolveResult(
  * - [GoCorePreference.ExplicitSocket] → require that socket (start cored if binary found; else fail soft
  *   only when health never comes up — callers that need hard-fail can check [GoCoreWiring.processSource]).
  * - [GoCorePreference.PreferGo] → default app socket; start cored if needed; JVM fallback on failure.
+ *
+ * [retentionDays] is clamped with [RetentionPolicy.DEFAULT] and passed as `-retention` when starting
+ * (or restarting) cored. When a healthy cored reports a different `retention_ms` (or omits it),
+ * PreferGo/ExplicitSocket restarts that process so the user's Settings window is preserved.
  */
 fun resolveGoCore(
     preference: GoCorePreference,
     databasePath: Path,
+    retentionDays: Long = RetentionPolicy.DEFAULT.defaultDays,
     defaultDatabase: Path = AppDirectories.system.databasePath,
     defaultSocket: Path = AppDirectories.system.coreSocketPath,
     error: PrintStream = System.err,
     fetch: (Path, String) -> String = ::unixHttpGet,
     findBinary: () -> Path? = ::findDaemonitorCoredBinary,
-    startCore: (binary: Path, socket: Path, db: Path) -> Boolean = ::startDaemonitorCored,
+    startCore: (binary: Path, socket: Path, db: Path, retentionDays: Long) -> Boolean = ::startDaemonitorCored,
+    stopCore: (socket: Path, pid: Long?) -> Boolean = ::stopDaemonitorCored,
     waitHealthyMs: Long = 5_000L,
 ): GoCoreResolveResult {
     when (preference) {
@@ -59,9 +66,23 @@ fun resolveGoCore(
         else -> defaultSocket
     }
     val requireCore = preference is GoCorePreference.ExplicitSocket
+    val days = RetentionPolicy.DEFAULT.clamp(retentionDays)
+    val expectedRetentionMs = days * RetentionPolicy.MILLIS_PER_DAY
 
     if (isGoCoreHealthy(socket, fetch)) {
-        return GoCoreResolveResult(wireGoCore(socket, databasePath, defaultDatabase, fetch))
+        val healthBody = runCatching { fetch(socket, "/v1/health") }.getOrNull()
+        val actualRetentionMs = healthBody?.let { GoCoreSnapshotParser.parseHealthRetentionMs(it) }
+        if (actualRetentionMs == expectedRetentionMs) {
+            return GoCoreResolveResult(wireGoCore(socket, databasePath, defaultDatabase, fetch))
+        }
+        val pid = healthBody?.let { GoCoreSnapshotParser.parseHealthPid(it) }
+        error.println(
+            "daemonitor-cored retention mismatch" +
+                " (running=${actualRetentionMs?.let { "${it}ms" } ?: "unknown"}," +
+                " settings=${days}d); restarting…",
+        )
+        stopCore(socket, pid)
+        waitForGoCoreStopped(socket, fetch, waitHealthyMs)
     }
 
     val binary = findBinary()
@@ -69,7 +90,7 @@ fun resolveGoCore(
     if (binary != null) {
         Files.createDirectories(socket.parent)
         error.println("Starting daemonitor-cored ($binary)…")
-        started = startCore(binary, socket, databasePath)
+        started = startCore(binary, socket, databasePath, days)
         if (started && waitForGoCoreHealthy(socket, fetch, waitHealthyMs)) {
             return GoCoreResolveResult(wireGoCore(socket, databasePath, defaultDatabase, fetch), startedCore = true)
         }
@@ -114,6 +135,19 @@ internal fun waitForGoCoreHealthy(
         Thread.sleep(50)
     }
     return isGoCoreHealthy(socket, fetch)
+}
+
+internal fun waitForGoCoreStopped(
+    socket: Path,
+    fetch: (Path, String) -> String,
+    timeoutMs: Long,
+): Boolean {
+    val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs)
+    while (System.nanoTime() < deadline) {
+        if (!isGoCoreHealthy(socket, fetch)) return true
+        Thread.sleep(50)
+    }
+    return !isGoCoreHealthy(socket, fetch)
 }
 
 /** Host-arch binary name for the current OS. */
@@ -164,16 +198,50 @@ private fun pathLookup(name: String): List<Path> {
         .map { Path(it).resolve(name) }
 }
 
-internal fun startDaemonitorCored(binary: Path, socket: Path, database: Path): Boolean {
+internal fun startDaemonitorCored(
+    binary: Path,
+    socket: Path,
+    database: Path,
+    retentionDays: Long,
+): Boolean {
+    val days = RetentionPolicy.DEFAULT.clamp(retentionDays)
     return runCatching {
         val builder = ProcessBuilder(
             binary.toAbsolutePath().toString(),
             "-socket", socket.toAbsolutePath().toString(),
             "-db", database.toAbsolutePath().toString(),
+            "-retention", "${days * 24}h",
         )
         builder.redirectOutput(ProcessBuilder.Redirect.DISCARD)
         builder.redirectError(ProcessBuilder.Redirect.DISCARD)
         builder.start()
         true
     }.getOrDefault(false)
+}
+
+/**
+ * Stop a running `daemonitor-cored` for [socket].
+ *
+ * Prefers [pid] from `/v1/health` when present; otherwise matches process command lines that
+ * include both `daemonitor-cored` and the socket path.
+ */
+internal fun stopDaemonitorCored(socket: Path, pid: Long?): Boolean {
+    var stopped = false
+    if (pid != null && pid > 0) {
+        ProcessHandle.of(pid).ifPresent { handle ->
+            handle.destroy()
+            stopped = true
+        }
+    }
+    val socketAbs = socket.toAbsolutePath().toString()
+    ProcessHandle.allProcesses().forEach { handle ->
+        val cmd = handle.info().commandLine().orElseGet {
+            handle.info().command().orElse("")
+        }
+        if (cmd.contains("daemonitor-cored") && cmd.contains(socketAbs)) {
+            handle.destroy()
+            stopped = true
+        }
+    }
+    return stopped
 }
