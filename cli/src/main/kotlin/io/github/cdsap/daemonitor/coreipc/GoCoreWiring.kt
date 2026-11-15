@@ -31,7 +31,7 @@ fun wireGoCore(
     if (coreSocket == null) return GoCoreWiring()
     val client = GoCoreClient(coreSocket, fetch)
     val reportedDatabase = runCatching {
-        GoCoreSnapshotParser.parseHealthDbPath(client.get("/v1/health"))?.let(::Path)
+        GoCoreSnapshotParser.parseHealth(client.get("/v1/health")).databasePath?.let(::Path)
     }.getOrNull()
     val owns = coreOwnsDatabase(databasePath, defaultDatabase, reportedDatabase)
     return GoCoreWiring(
