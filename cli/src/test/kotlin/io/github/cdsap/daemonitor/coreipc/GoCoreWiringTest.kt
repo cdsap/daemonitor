@@ -55,6 +55,24 @@ class GoCoreWiringTest {
     }
 
     @Test
+    fun `missing health db path falls back to the default database`() {
+        val socket = Files.createTempFile("go-core-wiring", ".sock")
+        val default = Path("/tmp/Daemonitor/watcher.db").toAbsolutePath().normalize()
+        try {
+            val wiring = wireGoCore(
+                coreSocket = socket,
+                databasePath = default,
+                defaultDatabase = default,
+                fetch = { _, _ -> """{"status":"ok"}""" },
+            )
+
+            assertTrue(wiring.mode is MonitoringMode.SharedCoreOwnedPersistence)
+        } finally {
+            socket.deleteIfExists()
+        }
+    }
+
+    @Test
     fun `supplied transport is used by health and every wired source`() {
         val socket = Files.createTempFile("go-core-wiring", ".sock")
         val paths = mutableListOf<String>()
