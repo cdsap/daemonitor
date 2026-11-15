@@ -193,7 +193,8 @@
           <p>
             Recent Gradle builds with duration, outcome, peak resources, and coding-agent
             attribution. Filter by tool for opportunistic Bazel BEP rows when your builds
-            already write them.
+            already write them. Retention follows Settings (default 15 days); PreferGo keeps
+            that window on <code>daemonitor-cored</code>.
           </p>
         </article>
       </div>
@@ -213,7 +214,7 @@
           <ul class="plain-list">
             <li>Live process table with RSS, heap, CPU, and uptime</li>
             <li>Grouped Gradle daemon and Bazel server hierarchy with fold/expand controls</li>
-            <li>Shares the desktop app’s local database and retention settings</li>
+            <li>Shares the desktop app’s local database and Settings retention window</li>
             <li>Install with Homebrew, or grab the release zip</li>
           </ul>
           <pre class="install-snippet" tabindex="0"><code>brew tap cdsap/tap
@@ -236,7 +237,7 @@ daemonitor-cli</code></pre>
         </div>
         <ul class="privacy-list">
           <li><strong>No telemetry</strong> — nothing is phoned home about your builds or machine.</li>
-          <li><strong>Local SQLite storage</strong> — history lives in a database on your computer.</li>
+          <li><strong>Local SQLite storage</strong> — history lives in a database on your computer; retention is set in Settings (default 15 days).</li>
           <li><strong>Best-effort redaction</strong> — command lines and logs are redacted before storage.</li>
           <li><strong>Local read-only MCP</strong> — agent access stays on localhost and cannot mutate builds.</li>
         </ul>
@@ -258,7 +259,7 @@ daemonitor-cli</code></pre>
         <div>
           <h2 id="download-heading">Download</h2>
           <p class="section-lede">
-            Desktop packages for macOS, Windows, and Linux. CLI via Homebrew or the release zip.
+            Desktop packages for macOS, Windows, and Linux (v1.3.1). CLI via Homebrew or the release zip.
           </p>
           <p class="release-note" id="release-note" hidden></p>
         </div>

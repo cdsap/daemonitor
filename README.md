@@ -129,6 +129,10 @@ emits Build Event Protocol (BEP) to a local file or socket Daemonitor can read, 
 in History (desktop tool filter: Gradle / Bazel) and under Bazel server details in the TUI —
 Daemonitor never enables BEP itself.
 
+History retention follows **Settings** (default 15 days, range 1–90). Desktop PreferGo and the CLI
+start `daemonitor-cored` with that window and restart it if a running core still has a different
+one — so upgrades keep the retention you already chose.
+
 The native CLI supports bounded, composable investigation filters, for example
 `daemonitor-cli builds --pid 12345 --since 1h --status FAILED --project daemonitor`. Active daemon
 history is incarnation-scoped; omitting `--pid` queries retained global history. Summaries include
@@ -225,8 +229,10 @@ Tools: `daemonitor_search_history`, `daemonitor_builds_for_process`,
    (zero-lock: never invokes `bazel` for observation)
 
 Gradle builds are reconstructed from a daemon's busy→idle window matched to samples in that window.
-All retained builds are stored in local SQLite and purged by retention (default 15 days, range
-1–90). Lowering retention deletes older rows and incrementally compacts the database.
+All retained builds are stored in local SQLite and purged by retention from **Settings** (default
+15 days, range 1–90). PreferGo / CLI pass that window to `daemonitor-cored` (exposed as
+`retention_ms` on `/v1/health`). Lowering retention deletes older rows and incrementally
+compacts the database.
 
 | OS | Data directory |
 |----|----------------|
@@ -281,5 +287,5 @@ cp docs/images/*.png site/assets/
 is limited to GitHub Releases checks and downloads you approve. Telemetry is not uploaded by
 default; exports omit full project paths unless `--include-project-path` is explicitly requested.
 
-**Status:** Early (v1.3.1 — Gradle + Bazel live observation; opportunistic Bazel BEP history). See
-`requirements.md` for the original spec.
+**Status:** Early (v1.3.1 — Gradle + Bazel live observation; opportunistic Bazel BEP history;
+PreferGo History retention follows Settings). See `requirements.md` for the original spec.
