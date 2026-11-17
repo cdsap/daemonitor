@@ -299,7 +299,9 @@ func (s *Server) handleObservationSessionOpen(w http.ResponseWriter, r *http.Req
 		s.mu.RLock()
 		for _, process := range s.last.Processes {
 			if process.StartTimeMs > 0 {
-				req.Processes = append(req.Processes, sessions.ProcessRef{HostID: req.HostID, PID: int64(process.PID), StartTimeMs: process.StartTimeMs})
+				req.Processes = append(req.Processes, sessions.ProcessRef{
+					HostID: req.HostID, PID: int64(process.PID), StartTimeMs: process.StartTimeMs, ProcessType: process.Type,
+				})
 			}
 		}
 		s.mu.RUnlock()

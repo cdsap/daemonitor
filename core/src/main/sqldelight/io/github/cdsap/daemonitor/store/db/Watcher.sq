@@ -168,6 +168,7 @@ CREATE TABLE observation_session_processes (
     host_id TEXT NOT NULL,
     pid INTEGER NOT NULL,
     start_time_ms INTEGER NOT NULL,
+    process_type TEXT NOT NULL DEFAULT '',
     PRIMARY KEY(session_name, host_id, pid, start_time_ms),
     FOREIGN KEY(session_name) REFERENCES observation_sessions(name)
 );
@@ -177,6 +178,7 @@ CREATE TABLE observation_session_process_summaries (
     host_id TEXT NOT NULL,
     pid INTEGER NOT NULL,
     start_time_ms INTEGER NOT NULL,
+    process_type TEXT NOT NULL DEFAULT '',
     sample_count INTEGER NOT NULL,
     first_rss_mb INTEGER NOT NULL,
     peak_rss_mb INTEGER NOT NULL,

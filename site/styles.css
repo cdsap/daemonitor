@@ -851,6 +851,7 @@ kbd {
 .page-home .cli-section .section-inner,
 .page-home .privacy .section-inner,
 .page-home .mcp-section .section-inner,
+.page-home .plugin-section .section-inner,
 .page-home .download .section-inner {
   width: 100%;
   margin: 0;

@@ -85,6 +85,11 @@ class PublicWebsiteTest {
             "Build History",
             "id=\"mcp\"",
             "MCP",
+            "id=\"gradle-plugin\"",
+            "Gradle plugin",
+            "Why a plugin",
+            "observation session",
+            "io.github.cdsap.daemonitor",
             "id=\"privacy\"",
             "Privacy",
             "No telemetry",
@@ -100,6 +105,15 @@ class PublicWebsiteTest {
         ).forEach { required ->
             assertTrue(indexHtml.contains(required), "index.html should include: $required")
         }
+
+        assertTrue(
+            readme.contains("### Gradle plugin"),
+            "README should document why the Gradle plugin exists",
+        )
+        assertTrue(
+            readme.contains("per-build"),
+            "README Gradle plugin section should state the per-build purpose",
+        )
 
         assertFalse(
             indexHtml.contains("feature-kicker"),

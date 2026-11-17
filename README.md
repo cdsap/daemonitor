@@ -73,6 +73,31 @@ daemonitor-cli health
 Full flag reference: [CLI options on the website](https://cdsap.github.io/daemonitor/cli.html).
 Specification: [`docs/specs/daemonitor-native-cli-tui-spec.md`](docs/specs/daemonitor-native-cli-tui-spec.md).
 
+### Gradle plugin
+
+The desktop app and CLI show **live** Gradle/Bazel processes. They do not mark which samples
+belong to a **specific** Gradle build—so CI and headless runs have no per-build process
+summary unless something opens a session around that invocation.
+
+The [Gradle plugin](https://plugins.gradle.org/plugin/io.github.cdsap.daemonitor)
+(`io.github.cdsap.daemonitor`) does that: it opens a named observation session on a running
+`daemonitor-cored` at build start, closes it at the end, and publishes one window summary
+(local `build/daemonitor/observation-summary.json`, optional GBOS / Develocity custom values,
+MCP-searchable retention). Apply it when you need build-scoped RSS/heap/GC for that Gradle
+run. Skip it if you only use Daemonitor interactively.
+
+```kotlin
+// settings.gradle.kts
+plugins {
+    id("io.github.cdsap.daemonitor") version "0.1.0"
+}
+```
+
+Requires reachable `daemonitor-cored` (or `-Pdaemonitor.cored.socket=…`). Missing cored →
+warning only; the build still succeeds. Details:
+[gradle-plugin/README.md](gradle-plugin/README.md) ·
+[website](https://cdsap.github.io/daemonitor/#gradle-plugin).
+
 ---
 
 ## What you get
@@ -260,15 +285,9 @@ Tag releases publish installers, per-platform `daemonitor-cli-*-<os>-<arch>.zip`
 `daemonitor-cored-*` binaries, `latest.json`, `update.json`, and checksums, and also publish the
 Gradle plugin `io.github.cdsap.daemonitor` (independent version in `gradle-plugin/build.gradle.kts`)
 to the [Plugin Portal](https://plugins.gradle.org/plugin/io.github.cdsap.daemonitor). See
-[docs/update-metadata.md](docs/update-metadata.md) and
-[docs/gradle-plugin-release-smoke.md](docs/gradle-plugin-release-smoke.md).
-
-```kotlin
-// settings.gradle.kts
-plugins {
-    id("io.github.cdsap.daemonitor") version "0.1.0"
-}
-```
+[docs/update-metadata.md](docs/update-metadata.md),
+[docs/gradle-plugin-release-smoke.md](docs/gradle-plugin-release-smoke.md), and
+[gradle-plugin/README.md](gradle-plugin/README.md).
 
 Refresh README / site screenshots after UI changes (synthetic samples only):
 

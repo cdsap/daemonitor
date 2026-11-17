@@ -22,7 +22,8 @@ publishing {
 }
 
 gradlePlugin {
-    website = "https://github.com/cdsap/daemonitor"
+    // Portal reviewers: why this plugin exists is documented on the site and in gradle-plugin/README.md.
+    website = "https://cdsap.github.io/daemonitor/#gradle-plugin"
     vcsUrl = "https://github.com/cdsap/daemonitor.git"
     plugins {
         create("daemonitor") {
@@ -30,7 +31,7 @@ gradlePlugin {
             implementationClass = "io.github.cdsap.daemonitor.gradle.DaemonitorGradlePlugin"
             displayName = "Daemonitor"
             description =
-                "Build-observation sessions against daemonitor-cored with local report and optional GBOS / Develocity projection"
+                "Marks each Gradle build as a daemonitor-cored observation window so CI/local runs get per-build process RSS/heap/GC (local report + optional GBOS/Develocity)—not only live desktop/CLI monitoring"
             // Portal forbids the tags "gradle" and "plugin".
             tags = listOf("daemonitor", "observability", "develocity", "gbos", "build")
         }

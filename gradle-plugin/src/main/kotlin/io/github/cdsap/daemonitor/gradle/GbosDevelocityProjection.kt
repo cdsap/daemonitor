@@ -29,14 +29,33 @@ internal object GbosDevelocityProjection {
         aggregationScope = "entity",
         attributes = mapOf(
             "process.pid" to GbosAttributeValue.Integer(process.pid),
-            "jvm.process.role" to GbosAttributeValue.Text("gradle-daemon"),
+            "jvm.process.role" to GbosAttributeValue.Text(processRole(process.processType)),
+            "process.type" to GbosAttributeValue.Text(process.processType.ifBlank { "UNKNOWN" }),
             "process.association" to GbosAttributeValue.Text(process.association),
         ),
-        measurements = listOf(
-            GbosMeasurement("jvm.process.memory.rss", process.peakRssMb * 1024.0 * 1024.0, "By", "max"),
-            GbosMeasurement("jvm.process.memory.rss.first", process.firstRssMb * 1024.0 * 1024.0, "By", "first"),
-            GbosMeasurement("jvm.process.memory.rss.last", process.lastRssMb * 1024.0 * 1024.0, "By", "last"),
-            GbosMeasurement("jvm.process.memory.rss.delta", process.deltaRssMb * 1024.0 * 1024.0, "By", "last"),
-        ),
+        measurements = buildList {
+            add(GbosMeasurement("jvm.process.memory.rss", process.peakRssMb * 1024.0 * 1024.0, "By", "max"))
+            add(GbosMeasurement("jvm.process.memory.rss.first", process.firstRssMb * 1024.0 * 1024.0, "By", "first"))
+            add(GbosMeasurement("jvm.process.memory.rss.last", process.lastRssMb * 1024.0 * 1024.0, "By", "last"))
+            add(GbosMeasurement("jvm.process.memory.rss.delta", process.deltaRssMb * 1024.0 * 1024.0, "By", "last"))
+            process.peakHeapUsedMb?.let { add(GbosMeasurement("jvm.memory.heap.used", it * 1024.0 * 1024.0, "By", "max")) }
+            process.firstHeapUsedMb?.let { add(GbosMeasurement("jvm.memory.heap.used.first", it * 1024.0 * 1024.0, "By", "first")) }
+            process.lastHeapUsedMb?.let { add(GbosMeasurement("jvm.memory.heap.used.last", it * 1024.0 * 1024.0, "By", "last")) }
+            process.deltaHeapUsedMb?.let { add(GbosMeasurement("jvm.memory.heap.used.delta", it * 1024.0 * 1024.0, "By", "last")) }
+            process.peakMetaspaceUsedMb?.let { add(GbosMeasurement("jvm.memory.metaspace.used", it * 1024.0 * 1024.0, "By", "max")) }
+            process.deltaMetaspaceUsedMb?.let { add(GbosMeasurement("jvm.memory.metaspace.used.delta", it * 1024.0 * 1024.0, "By", "last")) }
+            process.deltaYoungGcCount?.let { add(GbosMeasurement("jvm.gc.young.count.delta", it.toDouble(), "1", "last")) }
+            process.deltaTotalGcCount?.let { add(GbosMeasurement("jvm.gc.total.count.delta", it.toDouble(), "1", "last")) }
+            process.deltaYoungGcTimeMs?.let { add(GbosMeasurement("jvm.gc.young.time.delta", it / 1000.0, "s", "last")) }
+            process.deltaOldGcTimeMs?.let { add(GbosMeasurement("jvm.gc.old.time.delta", it / 1000.0, "s", "last")) }
+        },
     )
+
+    internal fun processRole(processType: String): String = when (processType) {
+        "GRADLE_DAEMON" -> "gradle-daemon"
+        "KOTLIN_DAEMON" -> "kotlin-daemon"
+        "GRADLE_WORKER" -> "gradle-worker"
+        "GRADLE_CLIENT" -> "gradle-client"
+        else -> processType.ifBlank { "unknown" }.lowercase().replace('_', '-')
+    }
 }

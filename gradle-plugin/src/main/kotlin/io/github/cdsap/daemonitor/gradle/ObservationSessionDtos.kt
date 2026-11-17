@@ -20,6 +20,29 @@ data class ProcessRssSummary(
     val lastRssMb: Long,
     val deltaRssMb: Long,
     val association: String,
+    val processType: String = "",
+    val firstSampleAtMs: Long? = null,
+    val lastSampleAtMs: Long? = null,
+    val firstHeapUsedMb: Long? = null,
+    val peakHeapUsedMb: Long? = null,
+    val lastHeapUsedMb: Long? = null,
+    val deltaHeapUsedMb: Long? = null,
+    val firstMetaspaceUsedMb: Long? = null,
+    val peakMetaspaceUsedMb: Long? = null,
+    val lastMetaspaceUsedMb: Long? = null,
+    val deltaMetaspaceUsedMb: Long? = null,
+    val firstYoungGcCount: Long? = null,
+    val lastYoungGcCount: Long? = null,
+    val deltaYoungGcCount: Long? = null,
+    val firstTotalGcCount: Long? = null,
+    val lastTotalGcCount: Long? = null,
+    val deltaTotalGcCount: Long? = null,
+    val firstYoungGcTimeMs: Long? = null,
+    val lastYoungGcTimeMs: Long? = null,
+    val deltaYoungGcTimeMs: Long? = null,
+    val firstOldGcTimeMs: Long? = null,
+    val lastOldGcTimeMs: Long? = null,
+    val deltaOldGcTimeMs: Long? = null,
 )
 
 internal object ObservationSummaryParser {
@@ -30,6 +53,8 @@ internal object ObservationSummaryParser {
                 ?: ""
         fun number(name: String, source: String = json): Long =
             Regex("\\\"$name\\\"\\s*:\\s*(-?\\d+)").find(source)?.groupValues?.get(1)?.toLongOrNull() ?: 0
+        fun optionalNumber(name: String, source: String): Long? =
+            Regex("\\\"$name\\\"\\s*:\\s*(-?\\d+)").find(source)?.groupValues?.get(1)?.toLongOrNull()
         val processBody = Regex("\\\"processes\\\"\\s*:\\s*\\[(.*)]\\s*,\\s*\\\"builds\\\"", RegexOption.DOT_MATCHES_ALL)
             .find(json)?.groupValues?.get(1).orEmpty()
         val processes = Regex("\\{(.*?)\\}", RegexOption.DOT_MATCHES_ALL).findAll(processBody).map { match ->
@@ -39,6 +64,29 @@ internal object ObservationSummaryParser {
                 sampleCount = number("sample_count", body).toInt(), firstRssMb = number("first_rss_mb", body),
                 peakRssMb = number("peak_rss_mb", body), lastRssMb = number("last_rss_mb", body),
                 deltaRssMb = number("delta_rss_mb", body), association = string("association", body),
+                processType = string("process_type", body),
+                firstSampleAtMs = optionalNumber("first_sample_at_ms", body),
+                lastSampleAtMs = optionalNumber("last_sample_at_ms", body),
+                firstHeapUsedMb = optionalNumber("first_heap_used_mb", body),
+                peakHeapUsedMb = optionalNumber("peak_heap_used_mb", body),
+                lastHeapUsedMb = optionalNumber("last_heap_used_mb", body),
+                deltaHeapUsedMb = optionalNumber("delta_heap_used_mb", body),
+                firstMetaspaceUsedMb = optionalNumber("first_metaspace_used_mb", body),
+                peakMetaspaceUsedMb = optionalNumber("peak_metaspace_used_mb", body),
+                lastMetaspaceUsedMb = optionalNumber("last_metaspace_used_mb", body),
+                deltaMetaspaceUsedMb = optionalNumber("delta_metaspace_used_mb", body),
+                firstYoungGcCount = optionalNumber("first_young_gc_count", body),
+                lastYoungGcCount = optionalNumber("last_young_gc_count", body),
+                deltaYoungGcCount = optionalNumber("delta_young_gc_count", body),
+                firstTotalGcCount = optionalNumber("first_total_gc_count", body),
+                lastTotalGcCount = optionalNumber("last_total_gc_count", body),
+                deltaTotalGcCount = optionalNumber("delta_total_gc_count", body),
+                firstYoungGcTimeMs = optionalNumber("first_young_gc_time_ms", body),
+                lastYoungGcTimeMs = optionalNumber("last_young_gc_time_ms", body),
+                deltaYoungGcTimeMs = optionalNumber("delta_young_gc_time_ms", body),
+                firstOldGcTimeMs = optionalNumber("first_old_gc_time_ms", body),
+                lastOldGcTimeMs = optionalNumber("last_old_gc_time_ms", body),
+                deltaOldGcTimeMs = optionalNumber("delta_old_gc_time_ms", body),
             )
         }.toList()
         val builds = Regex("\\\"builds\\\"\\s*:\\s*\\{(.*?)\\}", RegexOption.DOT_MATCHES_ALL).find(json)?.value.orEmpty()

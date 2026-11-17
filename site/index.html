@@ -38,6 +38,7 @@
       </a>
       <nav class="site-nav" aria-label="Primary">
         <a class="nav-quiet" href="cli.html">CLI</a>
+        <a class="nav-quiet" href="#gradle-plugin">Gradle plugin</a>
         <a class="nav-quiet" href="#download">Download</a>
         <a class="nav-quiet" href="https://github.com/cdsap/daemonitor" rel="noopener noreferrer">GitHub</a>
         <a class="button button-primary button-compact" href="https://github.com/cdsap/daemonitor/releases/latest" rel="noopener noreferrer">Releases</a>
@@ -250,6 +251,34 @@ daemonitor-cli</code></pre>
         <p>
           Optional local, read-only MCP so compatible tools can inspect retained build history
           and currently visible Gradle and Bazel processes — without leaving the machine.
+        </p>
+      </div>
+    </section>
+
+    <section class="section plugin-section" id="gradle-plugin" aria-labelledby="gradle-plugin-heading">
+      <div class="section-inner mcp-layout">
+        <h2 id="gradle-plugin-heading">Gradle plugin</h2>
+        <p class="section-lede">
+          Why a plugin: desktop and CLI show live processes; they do not mark which samples
+          belong to <strong>this</strong> Gradle build. The plugin opens and closes a
+          <code>daemonitor-cored</code> observation session around the build so CI and local
+          runs get a per-build process summary.
+        </p>
+        <p>
+          Use <code>io.github.cdsap.daemonitor</code> when you need build-scoped RSS / heap / GC
+          (local report under <code>build/daemonitor/</code>, optional GBOS / Develocity custom
+          values). Skip it if you only watch builds interactively with the app or
+          <code>daemonitor-cli</code>.
+        </p>
+        <pre><code>plugins {
+    id("io.github.cdsap.daemonitor") version "0.1.0"
+}</code></pre>
+        <p>
+          Requires a reachable <code>daemonitor-cored</code>. Missing cored skips measurement
+          with a warning; the Gradle build still succeeds. Full write-up:
+          <a href="https://github.com/cdsap/daemonitor/blob/main/gradle-plugin/README.md">gradle-plugin/README.md</a>
+          ·
+          <a href="https://plugins.gradle.org/plugin/io.github.cdsap.daemonitor" rel="noopener noreferrer">Plugin Portal</a>.
         </p>
       </div>
     </section>

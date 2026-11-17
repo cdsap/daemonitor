@@ -339,6 +339,7 @@ class WatcherDatabase private constructor(
                 lastRssMb = it.last_rss_mb,
                 deltaRssMb = it.delta_rss_mb,
                 association = it.association,
+                processType = it.process_type,
             )
         }
         return ObservationSessionHistoryEntry(
@@ -576,9 +577,11 @@ class WatcherDatabase private constructor(
                 "CREATE INDEX IF NOT EXISTS process_events_instance_ts ON process_events(process_instance_id, timestamp_ms)",
                 "CREATE TABLE IF NOT EXISTS collection_capabilities (capability_id TEXT PRIMARY KEY, name TEXT NOT NULL, source TEXT NOT NULL, supported INTEGER NOT NULL, available INTEGER NOT NULL, details_json TEXT, updated_at INTEGER NOT NULL)",
                 "CREATE TABLE IF NOT EXISTS observation_sessions (name TEXT PRIMARY KEY NOT NULL, host_id TEXT NOT NULL, association TEXT NOT NULL, opened_at_ms INTEGER NOT NULL, closed_at_ms INTEGER, response_json TEXT)",
-                "CREATE TABLE IF NOT EXISTS observation_session_processes (session_name TEXT NOT NULL, host_id TEXT NOT NULL, pid INTEGER NOT NULL, start_time_ms INTEGER NOT NULL, PRIMARY KEY(session_name, host_id, pid, start_time_ms), FOREIGN KEY(session_name) REFERENCES observation_sessions(name))",
-                "CREATE TABLE IF NOT EXISTS observation_session_process_summaries (session_name TEXT NOT NULL, host_id TEXT NOT NULL, pid INTEGER NOT NULL, start_time_ms INTEGER NOT NULL, sample_count INTEGER NOT NULL, first_rss_mb INTEGER NOT NULL, peak_rss_mb INTEGER NOT NULL, last_rss_mb INTEGER NOT NULL, delta_rss_mb INTEGER NOT NULL, association TEXT NOT NULL, PRIMARY KEY(session_name, host_id, pid, start_time_ms), FOREIGN KEY(session_name) REFERENCES observation_sessions(name))",
+                "CREATE TABLE IF NOT EXISTS observation_session_processes (session_name TEXT NOT NULL, host_id TEXT NOT NULL, pid INTEGER NOT NULL, start_time_ms INTEGER NOT NULL, process_type TEXT NOT NULL DEFAULT '', PRIMARY KEY(session_name, host_id, pid, start_time_ms), FOREIGN KEY(session_name) REFERENCES observation_sessions(name))",
+                "CREATE TABLE IF NOT EXISTS observation_session_process_summaries (session_name TEXT NOT NULL, host_id TEXT NOT NULL, pid INTEGER NOT NULL, start_time_ms INTEGER NOT NULL, process_type TEXT NOT NULL DEFAULT '', sample_count INTEGER NOT NULL, first_rss_mb INTEGER NOT NULL, peak_rss_mb INTEGER NOT NULL, last_rss_mb INTEGER NOT NULL, delta_rss_mb INTEGER NOT NULL, association TEXT NOT NULL, PRIMARY KEY(session_name, host_id, pid, start_time_ms), FOREIGN KEY(session_name) REFERENCES observation_sessions(name))",
                 "CREATE INDEX IF NOT EXISTS observation_sessions_opened ON observation_sessions(opened_at_ms)",
+                "ALTER TABLE observation_session_processes ADD COLUMN process_type TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE observation_session_process_summaries ADD COLUMN process_type TEXT NOT NULL DEFAULT ''",
             ).forEach { sql -> runCatching { driver.execute(null, sql, 0) } }
             migrateLegacyProcessLifecycleTables(driver)
         }

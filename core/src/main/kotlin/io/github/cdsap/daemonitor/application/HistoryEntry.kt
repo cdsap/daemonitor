@@ -35,4 +35,5 @@ data class ObservationProcessSummary(
     val lastRssMb: Long,
     val deltaRssMb: Long,
     val association: String,
+    val processType: String = "",
 )

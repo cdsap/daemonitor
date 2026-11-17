@@ -17,10 +17,16 @@ func TestObservationSessionSummarizesOneIncarnationAndIsIdempotent(t *testing.T)
 	}
 	defer s.Close()
 
-	ref := sessions.ProcessRef{HostID: "host-a", PID: 42, StartTimeMs: 100}
-	other := model.Process{PID: 42, StartTimeMs: 200, RSSMemoryMB: 999, Status: "R"}
+	ref := sessions.ProcessRef{HostID: "host-a", PID: 42, StartTimeMs: 100, ProcessType: "GRADLE_DAEMON"}
+	other := model.Process{PID: 42, StartTimeMs: 200, Type: "KOTLIN_DAEMON", RSSMemoryMB: 999, Status: "R"}
+	heap := map[int64]int64{110: 50, 120: 80, 130: 70}
+	young := map[int64]int64{110: 2, 120: 2, 130: 5}
 	for at, rss := range map[int64]int64{110: 10, 120: 30, 130: 20} {
-		if err := s.InsertSnapshotForHost(ref.HostID, model.Snapshot{SampledAtMs: at, Processes: []model.Process{{PID: 42, StartTimeMs: 100, RSSMemoryMB: rss, Status: "R"}, other}}); err != nil {
+		h, y := heap[at], young[at]
+		if err := s.InsertSnapshotForHost(ref.HostID, model.Snapshot{SampledAtMs: at, Processes: []model.Process{
+			{PID: 42, StartTimeMs: 100, Type: "GRADLE_DAEMON", RSSMemoryMB: rss, Status: "R", HeapUsedMB: &h, YoungGCCount: &y, TotalGCCount: &y},
+			other,
+		}}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -47,8 +53,19 @@ func TestObservationSessionSummarizesOneIncarnationAndIsIdempotent(t *testing.T)
 		t.Fatalf("processes=%+v", closed.Processes)
 	}
 	got := closed.Processes[0]
-	if got.FirstRSSMB != 10 || got.PeakRSSMB != 30 || got.LastRSSMB != 20 || got.DeltaRSSMB != 10 || got.SampleCount != 3 {
+	if got.FirstRSSMB != 10 || got.PeakRSSMB != 30 || got.LastRSSMB != 20 || got.DeltaRSSMB != 10 || got.SampleCount != 3 || got.ProcessType != "GRADLE_DAEMON" {
 		t.Fatalf("rss=%+v", got)
+	}
+	if got.FirstHeapUsedMB == nil || *got.FirstHeapUsedMB != 50 || got.PeakHeapUsedMB == nil || *got.PeakHeapUsedMB != 80 ||
+		got.LastHeapUsedMB == nil || *got.LastHeapUsedMB != 70 || got.DeltaHeapUsedMB == nil || *got.DeltaHeapUsedMB != 20 {
+		t.Fatalf("heap=%+v", got)
+	}
+	if got.FirstYoungGCCount == nil || *got.FirstYoungGCCount != 2 || got.LastYoungGCCount == nil || *got.LastYoungGCCount != 5 ||
+		got.DeltaYoungGCCount == nil || *got.DeltaYoungGCCount != 3 {
+		t.Fatalf("gc=%+v", got)
+	}
+	if got.FirstSampleAtMs != 110 || got.LastSampleAtMs != 130 {
+		t.Fatalf("sample_at=%+v", got)
 	}
 	if closed.Builds.Count != 2 || closed.Builds.SuccessCount != 1 || closed.Builds.FailureCount != 1 {
 		t.Fatalf("builds=%+v", closed.Builds)

@@ -74,7 +74,7 @@ class DaemonitorMcpServerTest {
         java.sql.DriverManager.getConnection("jdbc:sqlite:${path.toAbsolutePath()}").use { connection ->
             connection.createStatement().use { statement ->
                 statement.executeUpdate("INSERT INTO observation_sessions(name, host_id, association, opened_at_ms, closed_at_ms) VALUES ('session-1', 'host-a', 'confirmed', 1000, 2000)")
-                statement.executeUpdate("INSERT INTO observation_session_process_summaries(session_name, host_id, pid, start_time_ms, sample_count, first_rss_mb, peak_rss_mb, last_rss_mb, delta_rss_mb, association) VALUES ('session-1', 'host-a', 42, 900, 3, 200, 300, 250, 50, 'confirmed')")
+                statement.executeUpdate("INSERT INTO observation_session_process_summaries(session_name, host_id, pid, start_time_ms, process_type, sample_count, first_rss_mb, peak_rss_mb, last_rss_mb, delta_rss_mb, association) VALUES ('session-1', 'host-a', 42, 900, 'GRADLE_DAEMON', 3, 200, 300, 250, 50, 'confirmed')")
             }
         }
         val server = DaemonitorMcpServer(queryService(WatcherDatabase.open(path), emptyList()))
