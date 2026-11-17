@@ -27,11 +27,16 @@ class DaemonitorGradlePlugin : Plugin<Settings> {
                 spec.parameters.rootProjectPath.convention(settings.rootDir.absolutePath)
             }
 
-        // Keep the service alive across the build and open the session on the first task.
+        // Open as soon as projects are loaded so the observation window covers the build,
+        // not only the brief gap between the first task action and close.
+        gradle.projectsLoaded {
+            service.get()
+        }
+
+        // Keep the service alive for the whole execution graph.
         gradle.beforeProject { project ->
             project.tasks.configureEach { task ->
                 task.usesService(service)
-                task.doFirst { service.get() }
             }
         }
 
