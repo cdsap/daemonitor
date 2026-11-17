@@ -43,6 +43,7 @@ dependencies {
     compileOnly("com.gradle:develocity-gradle-plugin:4.6.1")
     implementation("io.github.cdsap:build-observability-core:0.0.7")
     testImplementation(kotlin("test"))
+    testImplementation(gradleTestKit())
     testImplementation("com.gradle:develocity-gradle-plugin:4.6.1")
 }
 

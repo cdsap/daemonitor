@@ -10,8 +10,9 @@ product tag ships plugin changes. The artifact line is independent of app/cored 
 (bump in `gradle-plugin/build.gradle.kts` when the plugin changed; leave unchanged only when
 the portal already has that version and no plugin delta shipped).
 
-For **v1.3.2**, publish plugin **0.1.1** (observation summary depth + Portal “why”
-docs). Requires `GRADLE_PUBLISH_*` secrets on the tag workflow.
+**0.1.1** is a Settings plugin (`Plugin<Settings>`) — apply in `settings.gradle.kts` only.
+First Portal publish (not yet released): use the tag workflow or Portal backfill action;
+requires `GRADLE_PUBLISH_*`.
 
 ## Automated publish
 

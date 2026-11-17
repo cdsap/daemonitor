@@ -270,9 +270,11 @@ daemonitor-cli</code></pre>
           values). Skip it if you only watch builds interactively with the app or
           <code>daemonitor-cli</code>.
         </p>
-        <pre><code>plugins {
+        <pre><code>// settings.gradle.kts
+plugins {
     id("io.github.cdsap.daemonitor") version "0.1.1"
 }</code></pre>
+
         <p>
           Requires a reachable <code>daemonitor-cored</code>. Missing cored skips measurement
           with a warning; the Gradle build still succeeds. Full write-up:

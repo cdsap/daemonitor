@@ -87,11 +87,12 @@ MCP-searchable retention). Apply it when you need build-scoped RSS/heap/GC for t
 run. Skip it if you only use Daemonitor interactively.
 
 ```kotlin
-// settings.gradle.kts
+// settings.gradle.kts — Settings plugin (apply here, not in build.gradle.kts)
 plugins {
     id("io.github.cdsap.daemonitor") version "0.1.1"
 }
 ```
+
 
 Requires reachable `daemonitor-cored` (or `-Pdaemonitor.cored.socket=…`). Missing cored →
 warning only; the build still succeeds. Details:
