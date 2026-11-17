@@ -257,6 +257,7 @@ class DaemonitorMcpServer(
                 "hostId" to JsonString(process.hostId),
                 "pid" to JsonNumber(process.pid),
                 "startTimeMs" to JsonNumber(process.startTimeMs),
+                "processType" to JsonString(process.processType),
                 "sampleCount" to JsonNumber(process.sampleCount),
                 "firstRssMb" to JsonNumber(process.firstRssMb),
                 "peakRssMb" to JsonNumber(process.peakRssMb),

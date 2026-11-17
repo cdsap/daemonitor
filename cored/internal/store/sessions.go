@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS observation_session_processes (
   host_id TEXT NOT NULL,
   pid INTEGER NOT NULL,
   start_time_ms INTEGER NOT NULL,
+  process_type TEXT NOT NULL DEFAULT '',
   PRIMARY KEY(session_name, host_id, pid, start_time_ms),
   FOREIGN KEY(session_name) REFERENCES observation_sessions(name)
 );
@@ -31,6 +32,7 @@ CREATE TABLE IF NOT EXISTS observation_session_process_summaries (
   host_id TEXT NOT NULL,
   pid INTEGER NOT NULL,
   start_time_ms INTEGER NOT NULL,
+  process_type TEXT NOT NULL DEFAULT '',
   sample_count INTEGER NOT NULL,
   first_rss_mb INTEGER NOT NULL,
   peak_rss_mb INTEGER NOT NULL,
@@ -41,7 +43,22 @@ CREATE TABLE IF NOT EXISTS observation_session_process_summaries (
   FOREIGN KEY(session_name) REFERENCES observation_sessions(name)
 );
 `)
-	return err
+	if err != nil {
+		return err
+	}
+	for _, table := range []string{"observation_session_processes", "observation_session_process_summaries"} {
+		cols, err := s.tableColumns(table)
+		if err != nil {
+			return err
+		}
+		if contains(cols, "process_type") {
+			continue
+		}
+		if _, err := s.db.Exec(`ALTER TABLE ` + table + ` ADD COLUMN process_type TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) OpenObservationSession(req sessions.OpenRequest, openedAtMs int64) (sessions.Response, bool, error) {
@@ -66,7 +83,7 @@ func (s *Store) OpenObservationSession(req sessions.OpenRequest, openedAtMs int6
 		return sessions.Response{}, false, err
 	}
 	for _, ref := range req.Processes {
-		if _, err := s.db.Exec(`INSERT INTO observation_session_processes(session_name, host_id, pid, start_time_ms) VALUES (?, ?, ?, ?)`, req.Name, ref.HostID, ref.PID, ref.StartTimeMs); err != nil {
+		if _, err := s.db.Exec(`INSERT INTO observation_session_processes(session_name, host_id, pid, start_time_ms, process_type) VALUES (?, ?, ?, ?, ?)`, req.Name, ref.HostID, ref.PID, ref.StartTimeMs, ref.ProcessType); err != nil {
 			return sessions.Response{}, false, err
 		}
 	}
@@ -87,7 +104,7 @@ func (s *Store) CloseObservationSession(name string, closedAtMs int64) (sessions
 		}
 		return response, nil
 	}
-	rows, err := s.db.Query(`SELECT host_id, pid, start_time_ms FROM observation_session_processes WHERE session_name=? ORDER BY host_id, pid, start_time_ms`, name)
+	rows, err := s.db.Query(`SELECT host_id, pid, start_time_ms, COALESCE(process_type, '') FROM observation_session_processes WHERE session_name=? ORDER BY host_id, pid, start_time_ms`, name)
 	if err != nil {
 		return sessions.Response{}, err
 	}
@@ -96,7 +113,7 @@ func (s *Store) CloseObservationSession(name string, closedAtMs int64) (sessions
 	refs := make([]sessions.ProcessRef, 0)
 	for rows.Next() {
 		var ref sessions.ProcessRef
-		if err := rows.Scan(&ref.HostID, &ref.PID, &ref.StartTimeMs); err != nil {
+		if err := rows.Scan(&ref.HostID, &ref.PID, &ref.StartTimeMs, &ref.ProcessType); err != nil {
 			return sessions.Response{}, err
 		}
 		refs = append(refs, ref)
@@ -108,6 +125,13 @@ func (s *Store) CloseObservationSession(name string, closedAtMs int64) (sessions
 		return sessions.Response{}, err
 	}
 	for _, ref := range refs {
+		if ref.ProcessType == "" {
+			processType, err := s.sessionProcessType(ref)
+			if err != nil {
+				return sessions.Response{}, err
+			}
+			ref.ProcessType = processType
+		}
 		samples, err := s.sessionSamples(ref, openedAt, closedAtMs)
 		if err != nil {
 			return sessions.Response{}, err
@@ -123,7 +147,7 @@ func (s *Store) CloseObservationSession(name string, closedAtMs int64) (sessions
 	response.Builds = sessions.BuildTotals{Count: total, SuccessCount: success, FailureCount: failure}
 	response.ClosedAtMs = &closedAtMs
 	for _, summary := range response.Processes {
-		if _, err := s.db.Exec(`INSERT INTO observation_session_process_summaries(session_name, host_id, pid, start_time_ms, sample_count, first_rss_mb, peak_rss_mb, last_rss_mb, delta_rss_mb, association) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, name, summary.HostID, summary.PID, summary.StartTimeMs, summary.SampleCount, summary.FirstRSSMB, summary.PeakRSSMB, summary.LastRSSMB, summary.DeltaRSSMB, summary.Association); err != nil {
+		if _, err := s.db.Exec(`INSERT INTO observation_session_process_summaries(session_name, host_id, pid, start_time_ms, process_type, sample_count, first_rss_mb, peak_rss_mb, last_rss_mb, delta_rss_mb, association) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, name, summary.HostID, summary.PID, summary.StartTimeMs, summary.ProcessType, summary.SampleCount, summary.FirstRSSMB, summary.PeakRSSMB, summary.LastRSSMB, summary.DeltaRSSMB, summary.Association); err != nil {
 			return sessions.Response{}, err
 		}
 	}
@@ -138,7 +162,14 @@ func (s *Store) CloseObservationSession(name string, closedAtMs int64) (sessions
 }
 
 func (s *Store) sessionSamples(ref sessions.ProcessRef, fromMs, toMs int64) ([]sessions.Sample, error) {
-	rows, err := s.db.Query(`SELECT timestamp, rss_memory_mb FROM process_samples WHERE host_id=? AND pid=? AND start_time_ms=? AND timestamp >= ? AND timestamp <= ? ORDER BY timestamp ASC`, ref.HostID, ref.PID, ref.StartTimeMs, fromMs, toMs)
+	rows, err := s.db.Query(`
+SELECT timestamp, rss_memory_mb,
+       heap_used_mb, metaspace_used_mb,
+       young_gc_count, total_gc_count,
+       young_gc_time_ms, old_gc_time_ms
+FROM process_samples
+WHERE host_id=? AND pid=? AND start_time_ms=? AND timestamp >= ? AND timestamp <= ?
+ORDER BY timestamp ASC`, ref.HostID, ref.PID, ref.StartTimeMs, fromMs, toMs)
 	if err != nil {
 		return nil, err
 	}
@@ -146,10 +177,45 @@ func (s *Store) sessionSamples(ref sessions.ProcessRef, fromMs, toMs int64) ([]s
 	result := make([]sessions.Sample, 0)
 	for rows.Next() {
 		var sample sessions.Sample
-		if err := rows.Scan(&sample.AtMs, &sample.RSS); err != nil {
+		var heap, metaspace, youngCount, totalCount, youngTime, oldTime sql.NullInt64
+		if err := rows.Scan(
+			&sample.AtMs, &sample.RSS,
+			&heap, &metaspace,
+			&youngCount, &totalCount,
+			&youngTime, &oldTime,
+		); err != nil {
 			return nil, err
 		}
+		sample.HeapUsedMB = nullInt64Ptr(heap)
+		sample.MetaspaceUsedMB = nullInt64Ptr(metaspace)
+		sample.YoungGCCount = nullInt64Ptr(youngCount)
+		sample.TotalGCCount = nullInt64Ptr(totalCount)
+		sample.YoungGCTimeMs = nullInt64Ptr(youngTime)
+		sample.OldGCTimeMs = nullInt64Ptr(oldTime)
 		result = append(result, sample)
 	}
 	return result, rows.Err()
+}
+
+func nullInt64Ptr(v sql.NullInt64) *int64 {
+	if !v.Valid {
+		return nil
+	}
+	x := v.Int64
+	return &x
+}
+
+func (s *Store) sessionProcessType(ref sessions.ProcessRef) (string, error) {
+	var processType string
+	err := s.db.QueryRow(
+		`SELECT process_type FROM process_samples WHERE host_id=? AND pid=? AND start_time_ms=? AND process_type != '' ORDER BY timestamp DESC LIMIT 1`,
+		ref.HostID, ref.PID, ref.StartTimeMs,
+	).Scan(&processType)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return processType, nil
 }

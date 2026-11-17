@@ -10,7 +10,7 @@ import java.util.Comparator
 class GbosDevelocityProjectionTest {
     @Test
     fun `local report and GBOS retain the same process rows from one close`() {
-        val summaryJson = """{"name":"session-1","association":"confirmed","host_id":"host-a","processes":[{"host_id":"host-a","pid":42,"start_time_ms":100,"sample_count":3,"first_rss_mb":10,"peak_rss_mb":30,"last_rss_mb":20,"delta_rss_mb":10,"association":"confirmed"},{"host_id":"host-a","pid":43,"start_time_ms":100,"sample_count":2,"first_rss_mb":8,"peak_rss_mb":12,"last_rss_mb":9,"delta_rss_mb":1,"association":"inferred"}],"builds":{"count":1,"success_count":1,"failure_count":0}}"""
+        val summaryJson = """{"name":"session-1","association":"confirmed","host_id":"host-a","processes":[{"host_id":"host-a","pid":42,"start_time_ms":100,"process_type":"GRADLE_DAEMON","sample_count":3,"first_rss_mb":10,"peak_rss_mb":30,"last_rss_mb":20,"delta_rss_mb":10,"association":"confirmed"},{"host_id":"host-a","pid":43,"start_time_ms":100,"process_type":"KOTLIN_DAEMON","sample_count":2,"first_rss_mb":8,"peak_rss_mb":12,"last_rss_mb":9,"delta_rss_mb":1,"association":"inferred"}],"builds":{"count":1,"success_count":1,"failure_count":0}}"""
         val project = Files.createTempDirectory("daemonitor-cross-sink-")
         try {
             ObservationReportSink(project).writeIfPresent(summaryJson)
@@ -41,8 +41,8 @@ class GbosDevelocityProjectionTest {
             association = "confirmed",
             hostId = "host-a",
             processes = listOf(
-                ProcessRssSummary("host-a", 42, 100, 3, 10, 30, 20, 10, "confirmed"),
-                ProcessRssSummary("host-a", 43, 100, 2, 8, 12, 9, 1, "inferred"),
+                ProcessRssSummary("host-a", 42, 100, 3, 10, 30, 20, 10, "confirmed", "GRADLE_DAEMON"),
+                ProcessRssSummary("host-a", 43, 100, 2, 8, 12, 9, 1, "inferred", "KOTLIN_DAEMON"),
             ),
             buildsCount = 1,
             buildsSuccessCount = 1,
@@ -55,16 +55,24 @@ class GbosDevelocityProjectionTest {
         val fragments = values.filter { it.first == GbosDevelocityProjection.OBSERVATION_KEY }.map { it.second }
         assertEquals(2, fragments.size)
         assertTrue(fragments[0].contains("\"process.pid\":42"))
+        assertTrue(fragments[0].contains("\"jvm.process.role\":\"gradle-daemon\""))
+        assertTrue(fragments[0].contains("\"process.type\":\"GRADLE_DAEMON\""))
         assertTrue(fragments[0].contains("\"jvm.process.memory.rss\""))
         assertTrue(fragments[1].contains("\"process.pid\":43"))
+        assertTrue(fragments[1].contains("\"jvm.process.role\":\"kotlin-daemon\""))
     }
 
     @Test
     fun `cored close response parser retains phase one RSS values`() {
-        val json = """{"name":"s","association":"confirmed","host_id":"h","processes":[{"host_id":"h","pid":7,"start_time_ms":11,"sample_count":3,"first_rss_mb":10,"peak_rss_mb":30,"last_rss_mb":20,"delta_rss_mb":10,"association":"confirmed"}],"builds":{"count":1,"success_count":1,"failure_count":0}}"""
+        val json = """{"name":"s","association":"confirmed","host_id":"h","processes":[{"host_id":"h","pid":7,"start_time_ms":11,"process_type":"KOTLIN_DAEMON","first_sample_at_ms":11,"last_sample_at_ms":40,"sample_count":3,"first_rss_mb":10,"peak_rss_mb":30,"last_rss_mb":20,"delta_rss_mb":10,"first_heap_used_mb":50,"peak_heap_used_mb":80,"last_heap_used_mb":70,"delta_heap_used_mb":20,"first_young_gc_count":2,"last_young_gc_count":5,"delta_young_gc_count":3,"association":"confirmed"}],"builds":{"count":1,"success_count":1,"failure_count":0}}"""
         val process = ObservationSummaryParser.parse(json).processes.single()
         assertEquals(7, process.pid)
         assertEquals(30, process.peakRssMb)
         assertEquals(10, process.deltaRssMb)
+        assertEquals("KOTLIN_DAEMON", process.processType)
+        assertEquals(50L, process.firstHeapUsedMb)
+        assertEquals(80L, process.peakHeapUsedMb)
+        assertEquals(3L, process.deltaYoungGcCount)
+        assertEquals(11L, process.firstSampleAtMs)
     }
 }
