@@ -1,5 +1,9 @@
 # Gradle plugin release smoke
 
+**Why the plugin exists** (Portal review): [gradle-plugin/README.md](../gradle-plugin/README.md),
+root [README.md](../README.md) “Gradle plugin”, and
+https://cdsap.github.io/daemonitor/#gradle-plugin.
+
 Publish `io.github.cdsap.daemonitor` from `:gradle-plugin` (currently **0.1.0**) whenever a
 product tag ships plugin changes. The artifact line is independent of app/cored `1.3.x`, but
 **cutting a Daemonitor GitHub Release must include a deliberate plugin version decision**
