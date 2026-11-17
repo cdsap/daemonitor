@@ -44,6 +44,12 @@ internal fun MonitoringMode.buildProcessingMode(
     retentionPolicy: RetentionPolicy,
     retentionDays: () -> Long,
     clock: () -> Long,
+    /**
+     * Read-only snapshot of retained builds already persisted by the shared core (PreferGo).
+     * Used only by [MonitoringMode.SharedCoreOwnedPersistence] so Desktop History can refresh
+     * when cored inserts a finished build into the shared SQLite database.
+     */
+    retainedBuilds: () -> List<Build> = { emptyList() },
 ): BuildProcessingMode = when (this) {
     MonitoringMode.Local -> LocalBuildProcessingMode(
         buildSaver = RetentionAwareBuildSaver(
@@ -63,7 +69,7 @@ internal fun MonitoringMode.buildProcessingMode(
             clock = clock,
         ),
     )
-    MonitoringMode.SharedCoreOwnedPersistence -> CoreOwnedBuildProcessingMode
+    MonitoringMode.SharedCoreOwnedPersistence -> CoreOwnedBuildProcessingMode(retainedBuilds)
 }
 
 private class RetentionAwareBuildSaver(
@@ -149,12 +155,29 @@ private class RemoteBuildProcessingMode(
     }
 }
 
-private object CoreOwnedBuildProcessingMode : BuildProcessingMode {
+/**
+ * PreferGo / shared-DB mode: cored owns inserts, so this runtime must not re-aggregate or
+ * HTTP-import builds. It only fingerprints the shared retained-build table so poll results can
+ * signal [PollMonitoring.PollResult.buildsChanged] when History (and Live recent builds) should
+ * re-read the same persistence path.
+ */
+private class CoreOwnedBuildProcessingMode(
+    private val retainedBuilds: () -> List<Build>,
+) : BuildProcessingMode {
     override val persistsSamples = false
+    private var lastFingerprint = emptyMap<String, String>()
 
     override fun process(
         logs: List<DaemonLog>,
         activeDaemonPids: Set<Long>,
         readNewLines: (DaemonLog) -> List<ParsedDaemonLogLine>,
-    ) = false
+    ): Boolean {
+        val fingerprint = linkedMapOf<String, String>()
+        for (build in retainedBuilds()) {
+            fingerprint[build.buildId] = build.finalStatus.name
+        }
+        val changed = fingerprint != lastFingerprint
+        lastFingerprint = fingerprint
+        return changed
+    }
 }
