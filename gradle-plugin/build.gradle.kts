@@ -33,7 +33,7 @@ gradlePlugin {
             description =
                 "Marks each Gradle build as a daemonitor-cored observation window so CI/local runs get per-build process RSS/heap/GC (local report + optional GBOS/Develocity)—not only live desktop/CLI monitoring"
             // Portal forbids the tags "gradle" and "plugin".
-            tags = listOf("daemonitor", "observability", "develocity", "gbos", "build")
+            tags = listOf("daemonitor", "observability", "gbos", "build")
         }
     }
 }
