@@ -9,7 +9,7 @@ import io.github.cdsap.gbos.core.GbosProducer
 internal object GbosDevelocityProjection {
     const val SCHEMA_VERSION = "1.0.0"
     const val PRODUCER_NAME = "daemonitor"
-    const val PRODUCER_VERSION = "0.1.0"
+    const val PRODUCER_VERSION = "0.1.1"
     const val NAMESPACE = "gbos.v1.producer.daemonitor"
     const val OBSERVATION_KEY = "$NAMESPACE.observation"
 

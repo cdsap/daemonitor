@@ -33,7 +33,7 @@ You do **not** need the plugin for interactive Activity Monitor use of the deskt
 ```kotlin
 // settings.gradle.kts
 plugins {
-    id("io.github.cdsap.daemonitor") version "0.1.0"
+    id("io.github.cdsap.daemonitor") version "0.1.1"
 }
 ```
 

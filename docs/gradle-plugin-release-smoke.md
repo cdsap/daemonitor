@@ -4,14 +4,14 @@
 root [README.md](../README.md) “Gradle plugin”, and
 https://cdsap.github.io/daemonitor/#gradle-plugin.
 
-Publish `io.github.cdsap.daemonitor` from `:gradle-plugin` (currently **0.1.0**) whenever a
+Publish `io.github.cdsap.daemonitor` from `:gradle-plugin` (currently **0.1.1**) whenever a
 product tag ships plugin changes. The artifact line is independent of app/cored `1.3.x`, but
 **cutting a Daemonitor GitHub Release must include a deliberate plugin version decision**
 (bump in `gradle-plugin/build.gradle.kts` when the plugin changed; leave unchanged only when
 the portal already has that version and no plugin delta shipped).
 
-For **v1.3.0**, keep plugin **0.1.0** (no plugin delta). Portal credentials were still
-missing at prep time — expect soft-skip on tag unless `GRADLE_PUBLISH_*` secrets are set.
+For **v1.3.2**, publish plugin **0.1.1** (observation summary depth + Portal “why”
+docs). Requires `GRADLE_PUBLISH_*` secrets on the tag workflow.
 
 ## Automated publish
 
