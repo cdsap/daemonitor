@@ -14,3 +14,17 @@ PID searches therefore remain useful for historical data, but clients must inspe
 confidence field before combining rows. Daemon identities and confidence metadata do not
 change the existing redaction boundary: command lines and log snippets are still redacted
 before persistence and JSON exposure.
+
+## Live recent builds and Desktop History
+
+Under PreferGo (default Desktop / CLI), `daemonitor-cored` owns writes to the shared SQLite
+`builds` table. Desktop **History** and Live daemon-scoped **recent builds** both read that
+same retained-build persistence path:
+
+- History: `HistoryService` → `BuildRepository.recent()` on the shared database.
+- Live recent builds / CLI `builds --pid` / `GET /v1/builds`: cored queries the same table
+  (Desktop uses `DaemonBuildSource` over the core socket).
+
+When cored inserts a finished build, PreferGo polling fingerprints the shared table and sets
+`buildsChanged`. Desktop then refreshes History and, if a Gradle daemon is selected, reloads
+Live recent builds within one poll cycle—without leaving History or reselecting the process.

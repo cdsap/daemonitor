@@ -380,6 +380,50 @@ class PollMonitoringTest {
         assertTrue(samples.saved.isEmpty())
         assertTrue(builds.saved.isEmpty())
         assertFalse(result.buildsChanged)
+        assertTrue(logSource.readCalls.isEmpty())
+    }
+
+    @Test
+    fun `shared core owned persistence signals buildsChanged when retained SQL history grows`() {
+        val retained = mutableListOf<Build>()
+        val monitoring = PollMonitoring(
+            processSource = FakeProcessSource(listOf(gradleDaemon(pid = 7))),
+            logSource = FakeDaemonLogSource(emptyList()),
+            samples = RecordingSampleWriter(),
+            retentionPolicy = RetentionPolicy.DEFAULT,
+            buildProcessingMode = MonitoringMode.SharedCoreOwnedPersistence.buildProcessingMode(
+                builds = RecordingBuildWriter(),
+                aggregator = BuildAggregator(),
+                retentionPolicy = RetentionPolicy.DEFAULT,
+                retentionDays = { RetentionPolicy.DEFAULT.defaultDays },
+                clock = { 5_000 },
+                retainedBuilds = { retained.toList() },
+            ),
+            clock = { 5_000 },
+        )
+
+        assertFalse(monitoring.pollOnce().buildsChanged)
+
+        retained += Build(
+            buildId = "live-finish-1",
+            daemonPid = 7,
+            daemonIdentity = "uid-7",
+            commandLine = null,
+            workingDirectory = "/project",
+            projectPath = "/project",
+            startTimeMs = 4_000,
+            endTimeMs = 4_500,
+            durationSeconds = 0.5,
+            peakMemoryMb = null,
+            avgMemoryMb = null,
+            peakCpuPercent = null,
+            inferredSource = Source.TERMINAL,
+            finalStatus = FinalStatus.SUCCESS,
+            logSnippet = null,
+        )
+
+        assertTrue(monitoring.pollOnce().buildsChanged)
+        assertFalse(monitoring.pollOnce().buildsChanged)
     }
 
     private fun gradleDaemon(pid: Long) = GradleProcess(

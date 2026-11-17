@@ -2,6 +2,7 @@ package io.github.cdsap.daemonitor.application
 
 import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.domain.BuildCorrelator
+import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 
@@ -30,6 +31,7 @@ class PollMonitoring(
         retentionPolicy: RetentionPolicy,
         retentionDays: () -> Long = { retentionPolicy.defaultDays },
         clock: () -> Long = System::currentTimeMillis,
+        retainedBuilds: () -> List<Build> = { emptyList() },
     ) : this(
         processSource = processSource,
         logSource = logSource,
@@ -40,6 +42,7 @@ class PollMonitoring(
             retentionPolicy = retentionPolicy,
             retentionDays = retentionDays,
             clock = clock,
+            retainedBuilds = retainedBuilds,
         ),
         retentionPolicy = retentionPolicy,
         clock = clock,

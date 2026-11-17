@@ -16,8 +16,11 @@ import io.github.cdsap.daemonitor.collect.DaemonLogWatcher
 import io.github.cdsap.daemonitor.collect.ProcessCollector
 import io.github.cdsap.daemonitor.config.MonitoringConfig
 import io.github.cdsap.daemonitor.domain.BuildAggregator
+import io.github.cdsap.daemonitor.domain.model.Build
+import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
+import io.github.cdsap.daemonitor.domain.model.Source
 import io.github.cdsap.daemonitor.mcp.DaemonitorMcpServer
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.store.WatcherDatabase
@@ -219,6 +222,82 @@ class WatcherServiceTest {
     }
 
     @Test
+    fun `buildsChanged refreshes History and selected Live recent builds`(@TempDir tmp: Path) = runTest {
+        val database = WatcherDatabase.open(tmp.resolve("watcher.db"))
+        val uiDispatcher = UnconfinedTestDispatcher(testScheduler)
+        val process = sampleProcess(pid = 42, rssMb = 512)
+        // HistoryViewModel filters by wall-clock time range; keep the fixture inside the default window.
+        val finished = retainedBuild(
+            buildId = "live-finish",
+            pid = 42,
+            startMs = System.currentTimeMillis() - 1_000,
+        )
+        var daemonQueries = 0
+        var pendingFinishedBuild = false
+        val service = WatcherService.forTests(
+            runtime = WatcherRuntime(
+                processSource = ProcessSource { listOf(process) },
+                logSource = DaemonLogWatcher(),
+                aggregator = BuildAggregator(
+                    sampleProvider = database::samplesInWindow,
+                    ambientEnvNames = emptySet(),
+                    logSnippetLimit = with(MonitoringConfig.DEFAULT.logSnippetLimit) {
+                        BuildAggregator.LogSnippetLimit(lines = lines, chars = chars)
+                    },
+                ),
+                builds = database,
+                samples = database,
+            ),
+            buildRepository = database,
+            retentionRepository = database,
+            settingsRepository = SettingsStore(tmp.resolve("settings.properties")),
+            pollAction = {
+                val changed = pendingFinishedBuild
+                if (pendingFinishedBuild) {
+                    database.save(finished)
+                    pendingFinishedBuild = false
+                }
+                WatcherRuntime.PollResult(
+                    processes = listOf(process),
+                    daemonLogs = emptyList(),
+                    buildsChanged = changed,
+                )
+            },
+            mcpServerFactory = {
+                DaemonitorMcpServer(DefaultDaemonitorQueryService(database, database, ProcessSource { emptyList() }))
+            },
+            uiDispatcher = uiDispatcher,
+            ioDispatcher = uiDispatcher,
+            daemonBuildSource = { _, _, _ ->
+                daemonQueries += 1
+                database.findByDaemon(42, 20)
+            },
+        )
+        try {
+            service.start(backgroundScope)
+            advanceUntilIdle()
+            service.select(42)
+            advanceUntilIdle()
+            assertEquals(1, daemonQueries)
+            assertEquals(RecentBuildsState.Loaded(emptyList()), service.liveViewModel.state.value.recentBuilds)
+            assertTrue(service.historyViewModel.state.value.builds.none { it.buildId == "live-finish" })
+
+            pendingFinishedBuild = true
+            service.pollOnce()
+            advanceUntilIdle()
+
+            assertEquals(listOf("live-finish"), service.historyViewModel.state.value.builds.map { it.buildId })
+            assertTrue(daemonQueries >= 2)
+            val recent = service.liveViewModel.state.value.recentBuilds
+            assertTrue(recent is RecentBuildsState.Loaded)
+            assertEquals(listOf("live-finish"), recent.builds.map { it.buildId })
+        } finally {
+            service.stop()
+            database.close()
+        }
+    }
+
+    @Test
     fun `starting service checks for updates`(@TempDir tmp: Path) = runTest {
         val database = WatcherDatabase.open(tmp.resolve("watcher.db"))
         val uiDispatcher = UnconfinedTestDispatcher(testScheduler)
@@ -340,5 +419,23 @@ class WatcherServiceTest {
         gc = "G1",
         startTimeMs = 1,
         status = "RUNNING",
+    )
+
+    private fun retainedBuild(buildId: String, pid: Long, startMs: Long) = Build(
+        buildId = buildId,
+        daemonPid = pid,
+        daemonIdentity = "uid-$pid",
+        commandLine = null,
+        workingDirectory = "/project",
+        projectPath = "/project",
+        startTimeMs = startMs,
+        endTimeMs = startMs + 500,
+        durationSeconds = 0.5,
+        peakMemoryMb = null,
+        avgMemoryMb = null,
+        peakCpuPercent = null,
+        inferredSource = Source.TERMINAL,
+        finalStatus = FinalStatus.SUCCESS,
+        logSnippet = null,
     )
 }

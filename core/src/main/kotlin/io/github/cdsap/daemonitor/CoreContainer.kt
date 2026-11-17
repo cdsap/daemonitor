@@ -47,6 +47,8 @@ class CoreContainer(
         retentionPolicy = RetentionPolicy.DEFAULT,
         retentionDays = { settingsStore.load().retentionDays },
         clock = clock,
+        // PreferGo: cored writes builds into this shared DB; fingerprint changes drive History refresh.
+        retainedBuilds = { database.recent() },
     )
 
     override fun close() {

@@ -1,18 +1,19 @@
 package io.github.cdsap.daemonitor
 
 import io.github.cdsap.daemonitor.application.DaemonBuildSource
-import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.application.DaemonLog
-import io.github.cdsap.daemonitor.application.HostContextSource
-import io.github.cdsap.daemonitor.ui.live.ContextState
 import io.github.cdsap.daemonitor.application.DaemonLogTailResult
+import io.github.cdsap.daemonitor.application.HostContextSource
 import io.github.cdsap.daemonitor.application.update.UpdateService
+import io.github.cdsap.daemonitor.domain.model.GradleProcess
+import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.persistence.BuildRepository
 import io.github.cdsap.daemonitor.persistence.RetentionRepository
 import io.github.cdsap.daemonitor.persistence.RetainedProcessSampleRepository
 import io.github.cdsap.daemonitor.persistence.SettingsRepository
 import io.github.cdsap.daemonitor.store.SettingsStore
 import io.github.cdsap.daemonitor.ui.history.HistoryViewModel
+import io.github.cdsap.daemonitor.ui.live.ContextState
 import io.github.cdsap.daemonitor.ui.live.DetailState
 import io.github.cdsap.daemonitor.ui.live.LiveViewModel
 import io.github.cdsap.daemonitor.ui.live.VisualTimeRange
@@ -20,14 +21,14 @@ import io.github.cdsap.daemonitor.ui.live.VisualTimelineViewModel
 import io.github.cdsap.daemonitor.ui.settings.McpUiState
 import io.github.cdsap.daemonitor.ui.settings.SettingsUiState
 import io.github.cdsap.daemonitor.ui.settings.SettingsViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withContext
 
 /**
  * Thin desktop facade that composes focused application services and projects results into
@@ -150,7 +151,10 @@ class WatcherService(
         withContext(uiDispatcher) {
             liveViewModel.onPoll(result.processes, selectedTail, result.daemonLogs)
         }
-        if (result.buildsChanged) refreshHistory()
+        if (result.buildsChanged) {
+            refreshHistory()
+            refreshSelectedRecentBuilds()
+        }
     }
 
     internal suspend fun pollSafely() {
@@ -161,7 +165,10 @@ class WatcherService(
                 withContext(uiDispatcher) {
                     liveViewModel.onPoll(result.processes, selectedTail, result.daemonLogs)
                 }
-                if (result.buildsChanged) refreshHistory()
+                if (result.buildsChanged) {
+                    refreshHistory()
+                    refreshSelectedRecentBuilds()
+                }
             },
             onFailure = { error ->
                 val errorType = error::class.simpleName ?: "UnknownError"
@@ -194,20 +201,33 @@ class WatcherService(
                 }
             }
         }
-        if (process.type == ProcessType.GRADLE_DAEMON) {
-            monitoringService.launchIo {
-                val builds = try {
-                    if (process.startTimeMs > 0) daemonBuildSource?.buildsForDaemon(pid, process.startTimeMs, 20) else null
-                } catch (e: Exception) {
-                    if (e is kotlinx.coroutines.CancellationException) throw e
-                    null
-                }
-                withContext(uiDispatcher) { liveViewModel.onRecentBuilds(generation, process, builds) }
-            }
-        }
+        loadRecentBuilds(generation, process)
         monitoringService.launchIo {
             val tail = runtime.tailFor(latestDaemonLogs, pid)
             withContext(uiDispatcher) { liveViewModel.onTail(pid, tail) }
+        }
+    }
+
+    /** Re-read daemon-scoped recent builds after a shared-core finish (same DB History uses). */
+    private fun refreshSelectedRecentBuilds() {
+        val detail = liveViewModel.state.value.detail as? DetailState.Selected ?: return
+        loadRecentBuilds(liveViewModel.selectionToken(), detail.process)
+    }
+
+    private fun loadRecentBuilds(generation: Long, process: GradleProcess) {
+        if (process.type != ProcessType.GRADLE_DAEMON) return
+        monitoringService.launchIo {
+            val builds = try {
+                if (process.startTimeMs > 0) {
+                    daemonBuildSource?.buildsForDaemon(process.pid, process.startTimeMs, 20)
+                } else {
+                    null
+                }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                null
+            }
+            withContext(uiDispatcher) { liveViewModel.onRecentBuilds(generation, process, builds) }
         }
     }
 
