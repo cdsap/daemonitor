@@ -28,9 +28,13 @@ class DaemonitorGradlePlugin : Plugin<Settings> {
             }
 
         // Open as soon as projects are loaded so the observation window covers the build,
-        // not only the brief gap between the first task action and close.
+        // not only the brief gap between the first task action and close. Capture the
+        // instance: Develocity buildFinished can run after Gradle has already closed shared
+        // services, and a fresh service.get() would open/close an empty session B that
+        // overwrites the real summary and publishes empty gbos observation values.
+        var observation: DaemonitorObservationBuildService? = null
         gradle.projectsLoaded {
-            service.get()
+            observation = service.get()
         }
 
         // Keep the service alive for the whole execution graph.
@@ -41,7 +45,8 @@ class DaemonitorGradlePlugin : Plugin<Settings> {
         }
 
         gradle.projectsEvaluated {
-            DevelocitySink.register(gradle.rootProject) { service.get().closeNow() }
+            val session = observation ?: service.get()
+            DevelocitySink.register(gradle.rootProject) { session.closeNow() }
         }
     }
 
