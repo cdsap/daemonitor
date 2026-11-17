@@ -4,13 +4,13 @@
 root [README.md](../README.md) “Gradle plugin”, and
 https://cdsap.github.io/daemonitor/#gradle-plugin.
 
-Publish `io.github.cdsap.daemonitor` from `:gradle-plugin` (currently **0.1.2**) whenever a
+Publish `io.github.cdsap.daemonitor` from `:gradle-plugin` (currently **0.1.1**) whenever a
 product tag ships plugin changes. The artifact line is independent of app/cored `1.3.x`, but
 **cutting a Daemonitor GitHub Release must include a deliberate plugin version decision**
 (bump in `gradle-plugin/build.gradle.kts` when the plugin changed; leave unchanged only when
 the portal already has that version and no plugin delta shipped).
 
-**0.1.2** is a Settings plugin (`Plugin<Settings>`) — apply in `settings.gradle.kts` only.
+**0.1.1** is a Settings plugin (`Plugin<Settings>`) — apply in `settings.gradle.kts` only.
 Publish via tag workflow or the Portal backfill action; requires `GRADLE_PUBLISH_*`.
 
 ## Automated publish

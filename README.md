@@ -89,7 +89,7 @@ run. Skip it if you only use Daemonitor interactively.
 ```kotlin
 // settings.gradle.kts — Settings plugin (apply here, not in build.gradle.kts)
 plugins {
-    id("io.github.cdsap.daemonitor") version "0.1.2"
+    id("io.github.cdsap.daemonitor") version "0.1.1"
 }
 ```
 
