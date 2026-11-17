@@ -48,7 +48,14 @@ dependencies {
 }
 
 kotlin { jvmToolchain(21) }
-tasks.test { useJUnitPlatform() }
+tasks.test {
+    useJUnitPlatform()
+    // Optional E2E: ./gradlew :gradle-plugin:test -Pdaemonitor.cored.binary=$PWD/build/cored/daemonitor-cored
+    val coredBinary = findProperty("daemonitor.cored.binary")?.toString().orEmpty()
+    if (coredBinary.isNotBlank()) {
+        systemProperty("daemonitor.cored.binary", coredBinary)
+    }
+}
 
 tasks.register("printGradlePluginVersion") {
     description = "Prints the Gradle plugin version for release/CI checks"
