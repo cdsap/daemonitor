@@ -46,7 +46,8 @@ class DaemonitorGradlePlugin : Plugin<Settings> {
 
         gradle.projectsEvaluated {
             val session = observation ?: service.get()
-            DevelocitySink.register(gradle.rootProject) { session.closeNow() }
+            // Close the captured instance — never service.get() inside the callback.
+            DevelocitySink.register(gradle.rootProject, ObservationClose.callback(session))
         }
     }
 
@@ -134,6 +135,17 @@ abstract class DaemonitorObservationBuildService :
                 }
             }
     }
+}
+
+/**
+ * Supplies Develocity (or any late buildFinished hook) with a close that targets the
+ * observation BuildService opened for this build — not a fresh Provider.get().
+ */
+internal object ObservationClose {
+    fun callback(session: DaemonitorObservationBuildService): () -> String? = { session.closeNow() }
+
+    /** Unit-testable form: same capture rule against [ObservationSessionLifecycle]. */
+    fun callback(lifecycle: ObservationSessionLifecycle): () -> String? = { lifecycle.closeOnce() }
 }
 
 /** Owns the one-shot cored lifecycle and keeps failed sessions out of every success sink. */
