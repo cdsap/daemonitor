@@ -11,8 +11,8 @@ product tag ships plugin changes. The artifact line is independent of app/cored 
 the portal already has that version and no plugin delta shipped).
 
 **0.1.1** is a Settings plugin (`Plugin<Settings>`) — apply in `settings.gradle.kts` only.
-First Portal publish (not yet released): use the tag workflow or Portal backfill action;
-requires `GRADLE_PUBLISH_*`.
+First Portal publish ships with product tag **v1.3.2** (Settings + Develocity GBOS
+fixes from #562–#564). Requires `GRADLE_PUBLISH_*`.
 
 ## Automated publish
 
