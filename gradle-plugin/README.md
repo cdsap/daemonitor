@@ -31,11 +31,12 @@ You do **not** need the plugin for interactive Activity Monitor use of the deskt
 ## Apply
 
 ```kotlin
-// settings.gradle.kts
+// settings.gradle.kts — Settings plugin (apply here, not in build.gradle.kts)
 plugins {
-    id("io.github.cdsap.daemonitor") version "0.1.1"
+    id("io.github.cdsap.daemonitor") version "0.1.2"
 }
 ```
+
 
 Single GBOS switch (default **on**):
 

@@ -108,7 +108,7 @@ class ReleaseMetadataTest {
         val backfill = Path.of(".github/workflows/publish-gradle-plugin.yml").readText()
 
         assertTrue(pluginBuild.contains("id(\"com.gradle.plugin-publish\")"), pluginBuild)
-        assertTrue(pluginBuild.contains("version = \"0.1.1\""), pluginBuild)
+        assertTrue(pluginBuild.contains("version = \"0.1.2\""), pluginBuild)
         assertTrue(pluginBuild.contains("id = \"io.github.cdsap.daemonitor\""), pluginBuild)
         assertTrue(pluginBuild.contains("printGradlePluginVersion"), pluginBuild)
 
