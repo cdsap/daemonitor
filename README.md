@@ -34,7 +34,7 @@ Grab the installer for your OS from
 | Linux | `.deb` | `.tar.gz` standalone image |
 
 Asset names include the CPU architecture (`x64` or `arm64`), for example
-`Daemonitor-1.3.1-macos-arm64.dmg`. No project-local Gradle setup is required.
+`Daemonitor-1.3.2-macos-arm64.dmg`. No project-local Gradle setup is required.
 
 On Linux, prefer the `.deb` for installs and the `.tar.gz` for writable standalone updates. See
 [Linux Update Distribution](docs/linux-update-distribution.md).
@@ -89,7 +89,7 @@ run. Skip it if you only use Daemonitor interactively.
 ```kotlin
 // settings.gradle.kts
 plugins {
-    id("io.github.cdsap.daemonitor") version "0.1.0"
+    id("io.github.cdsap.daemonitor") version "0.1.1"
 }
 ```
 
@@ -306,5 +306,5 @@ cp docs/images/*.png site/assets/
 is limited to GitHub Releases checks and downloads you approve. Telemetry is not uploaded by
 default; exports omit full project paths unless `--include-project-path` is explicitly requested.
 
-**Status:** Early (v1.3.1 — Gradle + Bazel live observation; opportunistic Bazel BEP history;
+**Status:** Early (v1.3.2 — Gradle + Bazel live observation; opportunistic Bazel BEP history;
 PreferGo History retention follows Settings). See `requirements.md` for the original spec.
