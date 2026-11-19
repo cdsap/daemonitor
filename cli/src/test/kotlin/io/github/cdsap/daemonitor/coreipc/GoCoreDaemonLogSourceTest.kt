@@ -66,10 +66,7 @@ class GoCoreDaemonLogSourceTest {
                 {"pid":9,"gradle_version":"8.10","path":"/tmp/daemon-9.out.log","lines":["one","two"]}
             """.trimIndent(),
         )
-        val socket = kotlin.io.path.createTempFile(prefix = "go-core-log-", suffix = ".sock")
-        val source = GoCoreDaemonLogSource(socketPath = socket) { _, path ->
-            responses.getValue(path)
-        }
+        val source = GoCoreDaemonLogSource(GoCoreIpc(responses::getValue))
 
         val logs = source.discover()
         assertEquals(1, logs.size)
@@ -85,8 +82,7 @@ class GoCoreDaemonLogSourceTest {
 
     @Test
     fun `tail fetch failures are exposed to the caller`() {
-        val socket = kotlin.io.path.createTempFile(prefix = "go-core-log-", suffix = ".sock")
-        val source = GoCoreDaemonLogSource(socketPath = socket) { _, _ -> error("socket unavailable") }
+        val source = GoCoreDaemonLogSource(GoCoreIpc { error("socket unavailable") })
         val log = DaemonLog(pid = 9, gradleVersion = "8.10", path = Path.of("/tmp/daemon-9.out.log"))
 
         assertFailsWith<IllegalStateException> { source.tailFor(log) }

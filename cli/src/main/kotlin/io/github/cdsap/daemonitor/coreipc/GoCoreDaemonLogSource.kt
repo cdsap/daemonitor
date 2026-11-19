@@ -16,7 +16,7 @@ import java.nio.file.Path
  * PIDs, so large `~/.gradle/daemon` discovers do not HTTP-tail every historical log (#221).
  */
 class GoCoreDaemonLogSource internal constructor(
-    private val client: GoCoreClient,
+    private val client: GoCoreIpc,
 ) : DaemonLogSource {
     constructor(socketPath: Path, fetch: (Path, String) -> String = ::unixHttpGet) : this(
         GoCoreClient(socketPath, fetch),
