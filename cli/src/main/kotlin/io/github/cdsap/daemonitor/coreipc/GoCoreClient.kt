@@ -13,12 +13,16 @@ import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.exists
 
+internal fun interface GoCoreIpc {
+    fun get(path: String): String
+}
+
 /** Shared Go-core IPC transport for endpoint-specific application adapters. */
 internal class GoCoreClient(
     private val socketPath: Path,
     private val fetch: (Path, String) -> String = ::unixHttpGet,
-) {
-    fun get(path: String): String {
+) : GoCoreIpc {
+    override fun get(path: String): String {
         requireGoCoreSocket(socketPath)
         return fetch(socketPath, path)
     }

@@ -13,7 +13,7 @@ import java.nio.file.Path
  * re-aggregation is skipped and confirmed builds are imported from the Go spike DB.
  */
 class GoCoreBuildSource internal constructor(
-    private val client: GoCoreClient,
+    private val client: GoCoreIpc,
 ) : BuildSource, DaemonBuildSource {
     constructor(socketPath: Path, fetch: (Path, String) -> String = ::unixHttpGet) : this(
         GoCoreClient(socketPath, fetch),

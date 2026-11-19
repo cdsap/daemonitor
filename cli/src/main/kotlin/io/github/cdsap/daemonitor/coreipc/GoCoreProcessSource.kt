@@ -13,7 +13,7 @@ import java.nio.file.Path
  * daemons (see `cored/internal/heap`). Wrappers and workers stay unavailable.
  */
 class GoCoreProcessSource internal constructor(
-    private val client: GoCoreClient,
+    private val client: GoCoreIpc,
 ) : ProcessSource, HostContextSource {
     constructor(socketPath: Path, fetch: (Path, String) -> String = ::unixHttpGet) : this(
         GoCoreClient(socketPath, fetch),

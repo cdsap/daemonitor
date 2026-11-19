@@ -4,30 +4,9 @@ import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 class GoCoreClientTest {
-    @Test
-    fun `host context requests use separate endpoints`() {
-        val socket = Files.createTempFile("daemonitor-context", ".sock")
-        try {
-            val paths = mutableListOf<String>()
-            val source = GoCoreProcessSource(socket) { _, path ->
-                paths += path
-                when (path) {
-                    "/v1/host" -> """{"sampled_at_ms":1}"""
-                    "/v1/capabilities" -> """{"metrics":[]}"""
-                    else -> error("unexpected endpoint")
-                }
-            }
-            assertEquals(emptyList(), paths)
-            source.host()
-            source.capabilities()
-            assertEquals(listOf("/v1/host", "/v1/capabilities"), paths)
-        } finally {
-            Files.deleteIfExists(socket)
-        }
-    }
-
     @Test
     fun `fetches endpoint through the shared client`() {
         val socket = Files.createTempFile("daemonitor-core-client", ".sock")
@@ -46,6 +25,23 @@ class GoCoreClientTest {
         Files.deleteIfExists(socket)
         val client = GoCoreClient(socket) { _, _ -> error("should not fetch") }
 
-        assertFailsWith<GoCoreUnavailableException> { client.get("/v1/health") }
+        val error = assertFailsWith<GoCoreUnavailableException> { client.get("/v1/health") }
+        assertTrue(error.message!!.contains("socket not found"))
+        assertTrue(error.message!!.contains("daemonitor-cored"))
+    }
+
+    @Test
+    fun `stale socket file fails as unreachable`() {
+        val socket = Files.createTempFile("daemonitor-core-stale", ".sock")
+        try {
+            // Regular file is not a listening AF_UNIX server — connect must fail clearly.
+            val error = assertFailsWith<GoCoreUnavailableException> {
+                unixHttpGet(socket, "/v1/health")
+            }
+            assertTrue(error.message!!.contains("unreachable") || error.message!!.contains("stale"))
+            assertTrue(error.message!!.contains(socket.toString()))
+        } finally {
+            Files.deleteIfExists(socket)
+        }
     }
 }
