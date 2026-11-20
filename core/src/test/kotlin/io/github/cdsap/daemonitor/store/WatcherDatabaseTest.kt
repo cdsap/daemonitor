@@ -1,6 +1,7 @@
 package io.github.cdsap.daemonitor.store
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import io.github.cdsap.daemonitor.application.ProcessSampleQuery
 import io.github.cdsap.daemonitor.domain.BuildSample
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
@@ -422,6 +423,7 @@ class WatcherDatabaseTest {
         try {
             val builds: BuildRepository = database
             val samples: ProcessSampleRepository = database
+            val sampleQueries: ProcessSampleQuery = database
             val retention: RetentionRepository = database
 
             samples.save(
@@ -452,8 +454,14 @@ class WatcherDatabaseTest {
                 listOf(BuildSample(rssMemoryMb = 400, cpuPercent = 1.0)),
                 samples.samples(11, fromMs = 0, toMs = 10_000),
             )
-            assertEquals(1, samples.findByPid(11, limit = 10).size)
-            assertEquals(1, samples.recentSamples(limit = 10).size)
+            val queriedSample = sampleQueries.findByPid(11, limit = 10).single()
+            assertEquals(11L, queriedSample.pid)
+            assertEquals(ProcessType.GRADLE_DAEMON, queriedSample.processType)
+            assertEquals("java GradleDaemon", queriedSample.commandLine)
+            assertEquals("/repo", queriedSample.projectPath)
+            assertEquals(400L, queriedSample.rssMemoryMb)
+            assertEquals(1024L, queriedSample.maxHeapMb)
+            assertEquals(listOf(queriedSample), sampleQueries.recentSamples(limit = 10))
 
             retention.purgeOlderThan(nowMs = 5_000 + 8L * 24 * 60 * 60 * 1000, retentionDays = 7)
             assertTrue(builds.recent().isEmpty())

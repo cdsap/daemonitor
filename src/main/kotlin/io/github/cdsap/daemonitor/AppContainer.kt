@@ -5,6 +5,7 @@ import io.github.cdsap.daemonitor.application.DaemonBuildSource
 import io.github.cdsap.daemonitor.application.DefaultDaemonitorQueryService
 import io.github.cdsap.daemonitor.application.MonitoringMode
 import io.github.cdsap.daemonitor.application.ProcessSource
+import io.github.cdsap.daemonitor.application.ProcessSampleQuery
 import io.github.cdsap.daemonitor.application.update.UpdateService
 import io.github.cdsap.daemonitor.config.MonitoringConfig
 import io.github.cdsap.daemonitor.domain.BuildAggregator
@@ -13,7 +14,6 @@ import io.github.cdsap.daemonitor.distribution.DistributionChannel
 import io.github.cdsap.daemonitor.infrastructure.update.updateServiceForDistribution
 import io.github.cdsap.daemonitor.mcp.DaemonitorMcpServer
 import io.github.cdsap.daemonitor.persistence.BuildRepository
-import io.github.cdsap.daemonitor.persistence.ProcessSampleRepository
 import io.github.cdsap.daemonitor.persistence.RetentionRepository
 import io.github.cdsap.daemonitor.platform.AppDirectories
 import io.github.cdsap.daemonitor.store.SettingsStore
@@ -87,7 +87,7 @@ class AppContainer(
         currentProcessesProvider: () -> List<GradleProcess> = { liveProcessSource.currentProcesses() },
     ): DaemonitorMcpServer {
         val builds: BuildRepository = database
-        val samples: ProcessSampleRepository = database
+        val samples: ProcessSampleQuery = database
         return DaemonitorMcpServer(
             DefaultDaemonitorQueryService(
                 builds = builds,
