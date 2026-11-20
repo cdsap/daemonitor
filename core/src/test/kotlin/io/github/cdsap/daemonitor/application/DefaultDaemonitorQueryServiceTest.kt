@@ -1,14 +1,11 @@
 package io.github.cdsap.daemonitor.application
 
-import io.github.cdsap.daemonitor.domain.BuildSample
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.domain.model.Source
 import io.github.cdsap.daemonitor.persistence.BuildRepository
-import io.github.cdsap.daemonitor.persistence.ProcessSample
-import io.github.cdsap.daemonitor.persistence.ProcessSampleRepository
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -22,7 +19,7 @@ class DefaultDaemonitorQueryServiceTest {
                 build("match", 2_000, project = "/repo/target", status = FinalStatus.FAILED),
             ),
         )
-        val queries = DefaultDaemonitorQueryService(builds, FakeProcessSampleRepository(), ProcessSource { emptyList() })
+        val queries = DefaultDaemonitorQueryService(builds, FakeProcessSampleQuery(), ProcessSource { emptyList() })
 
         val result = queries.searchHistory("target", limit = 50)
 
@@ -33,7 +30,7 @@ class DefaultDaemonitorQueryServiceTest {
     @Test
     fun `buildsForProcess matches pid builds and samples`() {
         val builds = FakeBuildRepository(listOf(build("b1", 3_000, pid = 42, project = "/repo/target")))
-        val samples = FakeProcessSampleRepository(
+        val samples = FakeProcessSampleQuery(
             listOf(
                 processSample(
                     pid = 42,
@@ -62,7 +59,7 @@ class DefaultDaemonitorQueryServiceTest {
     @Test
     fun `buildsForProcess text match filters recent samples`() {
         val builds = FakeBuildRepository(listOf(build("keep", 4_000, project = "/repo/target")))
-        val samples = FakeProcessSampleRepository(
+        val samples = FakeProcessSampleQuery(
             listOf(
                 processSample(pid = 10, project = "/repo/target", timestampMs = 4_100),
                 processSample(pid = 11, project = "/repo/other", timestampMs = 4_200),
@@ -81,7 +78,7 @@ class DefaultDaemonitorQueryServiceTest {
         val process = gradleProcess(pid = 99, project = "/repo", type = ProcessType.KOTLIN_DAEMON)
         val queries = DefaultDaemonitorQueryService(
             FakeBuildRepository(),
-            FakeProcessSampleRepository(),
+            FakeProcessSampleQuery(),
             ProcessSource { listOf(process) },
         )
 
@@ -91,7 +88,7 @@ class DefaultDaemonitorQueryServiceTest {
     @Test
     fun `query limits are bounded before repository calls`() {
         val builds = FakeBuildRepository()
-        val samples = FakeProcessSampleRepository()
+        val samples = FakeProcessSampleQuery()
         val queries = DefaultDaemonitorQueryService(builds, samples, ProcessSource { emptyList() })
 
         queries.searchHistory("", limit = 0)
@@ -162,7 +159,7 @@ class DefaultDaemonitorQueryServiceTest {
         cpuPercent: Double? = 1.0,
         rssMemoryMb: Long = 256,
         maxHeapMb: Long? = 1024,
-    ) = ProcessSample(
+    ) = ProcessSampleView(
         timestampMs = timestampMs,
         pid = pid,
         parentPid = parentPid,
@@ -206,23 +203,18 @@ class DefaultDaemonitorQueryServiceTest {
         override fun distinctProjects(): List<String> = error("not used")
     }
 
-    private class FakeProcessSampleRepository(
-        private val stored: List<ProcessSample> = emptyList(),
-    ) : ProcessSampleRepository {
+    private class FakeProcessSampleQuery(
+        private val stored: List<ProcessSampleView> = emptyList(),
+    ) : ProcessSampleQuery {
         var lastFindByPidLimit: Long? = null
         var lastRecentSamplesLimit: Long? = null
 
-        override fun save(sample: GradleProcess, timestampMs: Long) = error("not used")
-
-        override fun samples(pid: Long, fromMs: Long, toMs: Long): List<BuildSample> =
-            error("not used")
-
-        override fun recentSamples(limit: Long): List<ProcessSample> {
+        override fun recentSamples(limit: Long): List<ProcessSampleView> {
             lastRecentSamplesLimit = limit
             return stored.sortedByDescending { it.timestampMs }.take(limit.toInt())
         }
 
-        override fun findByPid(pid: Long, limit: Long): List<ProcessSample> {
+        override fun findByPid(pid: Long, limit: Long): List<ProcessSampleView> {
             lastFindByPidLimit = limit
             return stored.filter { it.pid == pid }.take(limit.toInt())
         }

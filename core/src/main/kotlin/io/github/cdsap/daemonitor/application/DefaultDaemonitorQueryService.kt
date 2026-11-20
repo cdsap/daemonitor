@@ -3,8 +3,6 @@ package io.github.cdsap.daemonitor.application
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.persistence.BuildRepository
-import io.github.cdsap.daemonitor.persistence.ProcessSample
-import io.github.cdsap.daemonitor.persistence.ProcessSampleRepository
 import io.github.cdsap.daemonitor.persistence.HistoryRepository
 
 /**
@@ -13,7 +11,7 @@ import io.github.cdsap.daemonitor.persistence.HistoryRepository
  */
 class DefaultDaemonitorQueryService(
     private val builds: BuildRepository,
-    private val samples: ProcessSampleRepository,
+    private val samples: ProcessSampleQuery,
     private val processSource: ProcessSource,
     private val history: HistoryRepository = (builds as? HistoryRepository) ?: object : HistoryRepository {
         override fun searchHistory(query: String, limit: Long): List<HistoryEntry> =
@@ -40,7 +38,7 @@ class DefaultDaemonitorQueryService(
                     sample.projectPath?.contains(process, ignoreCase = true) == true ||
                     sample.processType.name.contains(process, ignoreCase = true)
             }.take(safeLimit.toInt())
-        }.map { it.toView() }
+        }
         return ProcessBuildResult(
             process = process,
             matchedBuilds = matchedBuilds,
@@ -49,25 +47,6 @@ class DefaultDaemonitorQueryService(
     }
 
     override fun currentProcesses(): List<GradleProcess> = processSource.currentProcesses()
-
-    private fun ProcessSample.toView() = ProcessSampleView(
-        timestampMs = timestampMs,
-        pid = pid,
-        parentPid = parentPid,
-        processType = processType,
-        commandLine = commandLine,
-        workingDirectory = workingDirectory,
-        projectPath = projectPath,
-        cpuPercent = cpuPercent,
-        rssMemoryMb = rssMemoryMb,
-        maxHeapMb = maxHeapMb,
-        status = status,
-        heapUsedMb = heapUsedMb,
-        heapCommittedMb = heapCommittedMb,
-        heapMaxMb = heapMaxMb,
-        heapSampledAtMs = heapSampledAtMs,
-        heapAvailable = heapAvailable,
-    )
 
     private fun Int.coerceQueryLimit(): Long = toLong().coerceIn(1, MAX_LIMIT)
 

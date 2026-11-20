@@ -8,6 +8,8 @@ import io.github.cdsap.daemonitor.application.BuildHistoryEntry
 import io.github.cdsap.daemonitor.application.HistoryEntry
 import io.github.cdsap.daemonitor.application.ObservationProcessSummary
 import io.github.cdsap.daemonitor.application.ObservationSessionHistoryEntry
+import io.github.cdsap.daemonitor.application.ProcessSampleQuery
+import io.github.cdsap.daemonitor.application.ProcessSampleView
 import io.github.cdsap.daemonitor.application.ProcessSampleWriter
 import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.domain.BuildSample
@@ -66,6 +68,7 @@ class WatcherDatabase private constructor(
     ProcessSampleWriter,
     BuildRepository,
     ProcessSampleRepository,
+    ProcessSampleQuery,
     RetainedProcessSampleRepository,
     RetentionRepository,
     HistoryRepository,
@@ -359,15 +362,17 @@ class WatcherDatabase private constructor(
         db.watcherQueries.recentProcessSamples(limit.coerceQueryLimit()).executeAsList()
             .map { it.toDomain() }
 
-    override fun recentSamples(limit: Long): List<ProcessSample> =
-        recentProcessSamples(limit)
+    override fun recentSamples(limit: Long): List<ProcessSampleView> =
+        db.watcherQueries.recentProcessSamples(limit.coerceQueryLimit()).executeAsList()
+            .map { it.toView() }
 
     fun processSamplesForPid(pid: Long, limit: Long = DEFAULT_QUERY_LIMIT): List<ProcessSample> =
         db.watcherQueries.processSamplesForPid(pid, limit.coerceQueryLimit()).executeAsList()
             .map { it.toDomain() }
 
-    override fun findByPid(pid: Long, limit: Long): List<ProcessSample> =
-        processSamplesForPid(pid, limit)
+    override fun findByPid(pid: Long, limit: Long): List<ProcessSampleView> =
+        db.watcherQueries.processSamplesForPid(pid, limit.coerceQueryLimit()).executeAsList()
+            .map { it.toView() }
 
     override fun samplesInRange(fromMs: Long, toMs: Long): List<RetainedProcessSample> =
         db.watcherQueries.processSamplesInRange(fromMs, toMs) {
@@ -801,6 +806,29 @@ class WatcherDatabase private constructor(
                 javaVersion = java_version,
                 javaVendor = java_vendor,
                 activeProcessorCount = active_processor_count,
+            )
+        }
+
+        private fun Process_samples.toView(): ProcessSampleView {
+            val available = heap_available == 1L
+            return ProcessSampleView(
+                timestampMs = timestamp,
+                pid = pid,
+                parentPid = parent_pid,
+                processType = runCatching { ProcessType.valueOf(process_type) }
+                    .getOrDefault(ProcessType.JAVA_GRADLE_RELATED),
+                commandLine = command_line,
+                workingDirectory = working_directory,
+                projectPath = project_path,
+                cpuPercent = cpu_percent,
+                rssMemoryMb = rss_memory_mb,
+                maxHeapMb = max_heap_mb,
+                status = status,
+                heapUsedMb = heap_used_mb.takeIf { available },
+                heapCommittedMb = heap_committed_mb.takeIf { available },
+                heapMaxMb = heap_max_mb.takeIf { available },
+                heapSampledAtMs = heap_sampled_at_ms,
+                heapAvailable = available,
             )
         }
     }
