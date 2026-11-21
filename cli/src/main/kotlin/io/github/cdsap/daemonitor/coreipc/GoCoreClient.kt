@@ -58,13 +58,7 @@ internal fun unixHttpGet(
             val request = "GET $path HTTP/1.0\r\nHost: localhost\r\nAccept: application/json\r\n\r\n"
             writeFully(channel, ByteBuffer.wrap(request.toByteArray(StandardCharsets.US_ASCII)), timeoutMs)
             val text = readUntilEof(channel, timeoutMs)
-            val split = text.indexOf("\r\n\r\n")
-            require(split >= 0) { "Go core returned a malformed HTTP response" }
-            val statusLine = text.lineSequence().firstOrNull().orEmpty()
-            require(statusLine.contains(" 200 ") || statusLine.endsWith(" 200")) {
-                "Go core request failed: $statusLine"
-            }
-            text.substring(split + 4)
+            parseGoCoreHttpResponse(text)
         }
     } catch (e: GoCoreUnavailableException) {
         throw e
@@ -86,6 +80,16 @@ internal fun unixHttpGet(
             e,
         )
     }
+}
+
+internal fun parseGoCoreHttpResponse(text: String): String {
+    val split = text.indexOf("\r\n\r\n")
+    require(split >= 0) { "Go core returned a malformed HTTP response" }
+    val statusLine = text.lineSequence().firstOrNull().orEmpty()
+    require(statusLine.contains(" 200 ") || statusLine.endsWith(" 200")) {
+        "Go core request failed: $statusLine"
+    }
+    return text.substring(split + 4)
 }
 
 private fun writeFully(channel: SocketChannel, buffer: ByteBuffer, timeoutMs: Int) {
