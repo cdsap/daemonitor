@@ -1,15 +1,22 @@
 package io.github.cdsap.daemonitor.coreipc
 
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
+import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import org.junit.jupiter.api.io.TempDir
 
 class GoCoreBuildSourceTest {
+    @TempDir
+    lateinit var tempDir: Path
+
     @Test
     fun `recentBuilds fetches and parses go core builds`() {
         val source = GoCoreBuildSource(
-            GoCoreIpc { path ->
+            GoCoreClient(Files.createFile(tempDir.resolve("cored.sock"))) { socket, path ->
+                assertEquals(tempDir.resolve("cored.sock"), socket)
                 assertEquals("/v1/builds?limit=50", path)
                 """
                 {
@@ -36,7 +43,8 @@ class GoCoreBuildSourceTest {
     @Test
     fun `daemon builds use the core lifetime query`() {
         val source = GoCoreBuildSource(
-            GoCoreIpc { path ->
+            GoCoreClient(Files.createFile(tempDir.resolve("cored.sock"))) { socket, path ->
+                assertEquals(tempDir.resolve("cored.sock"), socket)
                 assertEquals("/v1/builds?pid=9&start_time_ms=200&limit=20", path)
                 """{"builds": []}"""
             },

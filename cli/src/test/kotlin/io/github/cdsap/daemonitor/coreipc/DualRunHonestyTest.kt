@@ -40,7 +40,7 @@ class DualRunHonestyTest {
         Thread.sleep(2_100)
 
         val jvm = collector.poll().associateBy { it.pid }
-        val go = GoCoreProcessSource(socket).currentProcesses().associateBy { it.pid }
+        val go = GoCoreProcessSource(GoCoreClient(socket)).currentProcesses().associateBy { it.pid }
 
         val jvmDaemons = jvm.values.filter { it.type == ProcessType.GRADLE_DAEMON }.map { it.pid }.toSet()
         val goDaemons = go.values.filter { it.type == ProcessType.GRADLE_DAEMON }.map { it.pid }.toSet()

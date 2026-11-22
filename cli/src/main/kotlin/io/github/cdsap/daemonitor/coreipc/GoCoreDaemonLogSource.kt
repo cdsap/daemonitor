@@ -3,7 +3,6 @@ package io.github.cdsap.daemonitor.coreipc
 import io.github.cdsap.daemonitor.application.DaemonLog
 import io.github.cdsap.daemonitor.application.DaemonLogLine
 import io.github.cdsap.daemonitor.application.DaemonLogSource
-import java.nio.file.Path
 
 /**
  * Experimental [DaemonLogSource] that reads `/v1/daemon-logs` from `daemonitor-cored`
@@ -16,12 +15,8 @@ import java.nio.file.Path
  * PIDs, so large `~/.gradle/daemon` discovers do not HTTP-tail every historical log (#221).
  */
 class GoCoreDaemonLogSource internal constructor(
-    private val client: GoCoreIpc,
+    private val client: GoCoreClient,
 ) : DaemonLogSource {
-    constructor(socketPath: Path, fetch: (Path, String) -> String = ::unixHttpGet) : this(
-        GoCoreClient(socketPath, fetch),
-    )
-
     private val tailTracker = GoCoreLogTailTracker()
 
     override fun discover(): List<DaemonLog> {

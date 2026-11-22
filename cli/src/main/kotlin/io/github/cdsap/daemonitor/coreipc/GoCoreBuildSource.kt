@@ -3,7 +3,6 @@ package io.github.cdsap.daemonitor.coreipc
 import io.github.cdsap.daemonitor.application.BuildSource
 import io.github.cdsap.daemonitor.application.DaemonBuildSource
 import io.github.cdsap.daemonitor.domain.model.Build
-import java.nio.file.Path
 
 /**
  * Experimental [BuildSource] that reads `GET /v1/builds` from `daemonitor-cored`
@@ -13,12 +12,8 @@ import java.nio.file.Path
  * re-aggregation is skipped and confirmed builds are imported from the Go spike DB.
  */
 class GoCoreBuildSource internal constructor(
-    private val client: GoCoreIpc,
+    private val client: GoCoreClient,
 ) : BuildSource, DaemonBuildSource {
-    constructor(socketPath: Path, fetch: (Path, String) -> String = ::unixHttpGet) : this(
-        GoCoreClient(socketPath, fetch),
-    )
-
     override fun buildsForDaemon(pid: Long, startTimeMs: Long, limit: Int): List<Build> {
         require(pid > 0 && startTimeMs > 0)
         val body = client.get("/v1/builds?pid=$pid&start_time_ms=$startTimeMs&limit=${limit.coerceIn(1, 500)}")

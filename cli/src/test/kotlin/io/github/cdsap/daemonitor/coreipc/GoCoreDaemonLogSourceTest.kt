@@ -1,13 +1,18 @@
 package io.github.cdsap.daemonitor.coreipc
 
 import io.github.cdsap.daemonitor.application.DaemonLog
+import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
+import org.junit.jupiter.api.io.TempDir
 
 class GoCoreDaemonLogSourceTest {
+    @TempDir
+    lateinit var tempDir: Path
+
     @Test
     fun `parses daemon log discovery from go core json`() {
         val json = """
@@ -66,7 +71,12 @@ class GoCoreDaemonLogSourceTest {
                 {"pid":9,"gradle_version":"8.10","path":"/tmp/daemon-9.out.log","lines":["one","two"]}
             """.trimIndent(),
         )
-        val source = GoCoreDaemonLogSource(GoCoreIpc(responses::getValue))
+        val source = GoCoreDaemonLogSource(
+            GoCoreClient(Files.createFile(tempDir.resolve("cored.sock"))) { socket, path ->
+                assertEquals(tempDir.resolve("cored.sock"), socket)
+                responses.getValue(path)
+            },
+        )
 
         val logs = source.discover()
         assertEquals(1, logs.size)
@@ -82,7 +92,9 @@ class GoCoreDaemonLogSourceTest {
 
     @Test
     fun `tail fetch failures are exposed to the caller`() {
-        val source = GoCoreDaemonLogSource(GoCoreIpc { error("socket unavailable") })
+        val source = GoCoreDaemonLogSource(
+            GoCoreClient(Files.createFile(tempDir.resolve("cored.sock"))) { _, _ -> error("socket unavailable") },
+        )
         val log = DaemonLog(pid = 9, gradleVersion = "8.10", path = Path.of("/tmp/daemon-9.out.log"))
 
         assertFailsWith<IllegalStateException> { source.tailFor(log) }
