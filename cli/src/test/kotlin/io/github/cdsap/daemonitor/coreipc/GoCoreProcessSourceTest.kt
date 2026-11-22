@@ -1,14 +1,21 @@
 package io.github.cdsap.daemonitor.coreipc
 
+import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import org.junit.jupiter.api.io.TempDir
 
 class GoCoreProcessSourceTest {
+    @TempDir
+    lateinit var tempDir: Path
+
     @Test
     fun `host context requests use separate endpoints`() {
         val paths = mutableListOf<String>()
         val source = GoCoreProcessSource(
-            GoCoreIpc { path ->
+            GoCoreClient(Files.createFile(tempDir.resolve("cored.sock"))) { socket, path ->
+                assertEquals(tempDir.resolve("cored.sock"), socket)
                 paths += path
                 when (path) {
                     "/v1/host" -> """{"sampled_at_ms":1}"""
@@ -27,7 +34,8 @@ class GoCoreProcessSourceTest {
     @Test
     fun `current processes fetches and parses go core processes`() {
         val source = GoCoreProcessSource(
-            GoCoreIpc { path ->
+            GoCoreClient(Files.createFile(tempDir.resolve("cored.sock"))) { socket, path ->
+                assertEquals(tempDir.resolve("cored.sock"), socket)
                 assertEquals("/v1/processes", path)
                 """{"processes":[{"pid":7,"type":"GRADLE_DAEMON"}]}"""
             },
