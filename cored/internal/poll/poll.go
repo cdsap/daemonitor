@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"regexp"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,7 +23,6 @@ type pendingJVM struct {
 	idx     int
 	proc    *process.Process
 	pid     int32
-	kind    string
 	startMs int64
 }
 
@@ -110,6 +111,7 @@ func NewCollector() *Collector {
 	prober := heap.NewProber()
 	prober.CacheTTL = cadences.JVMHeapGC
 	prober.EnableAdvancedTelemetry = true
+	prober.TargetJDKDir = bazelTargetJDKDir
 	return &Collector{
 		priors:                make(map[incarnationKey]priorCPU),
 		proportional:          make(map[int32]int64),
@@ -394,8 +396,12 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 			ResourceScope:              platMetrics.ResourceScope,
 			Resource:                   platMetrics.Resource,
 		})
-		if ShouldProbeLiveHeap(kind) {
-			jvmJobs = append(jvmJobs, pendingJVM{idx: idx, proc: p, pid: pid, kind: kind, startMs: startMs})
+		executable := ""
+		if kind == "BAZEL_WORKER" || kind == "BAZEL_TEST" {
+			executable, _ = p.ExeWithContext(ctx)
+		}
+		if ShouldProbeLiveHeap(kind, executable) {
+			jvmJobs = append(jvmJobs, pendingJVM{idx: idx, proc: p, pid: pid, startMs: startMs})
 		}
 	}
 
@@ -495,7 +501,7 @@ func (c *Collector) applyJVMProbes(ctx context.Context, now int64, out []model.P
 			defer func() { <-sem }()
 
 			probeStart := time.Now()
-			jvmMetrics, probeFailure := collectJVMMetrics(ctx, c.Heap, job.proc, job.pid, job.kind, job.startMs)
+			jvmMetrics, probeFailure := collectJVMMetrics(ctx, c.Heap, job.proc, job.pid, job.startMs)
 			timedOut := probeFailure == heap.FailureTimeout
 			var probeErr error
 			if probeFailure != "" {
@@ -547,11 +553,15 @@ func (c *Collector) applyJVMProbes(ctx context.Context, now int64, out []model.P
 	wg.Wait()
 }
 
-// ShouldProbeLiveHeap covers JVM processes that can carry Gradle work. Tool
-// attachment remains optional, so a failed probe leaves OS metrics intact.
-func ShouldProbeLiveHeap(kind string) bool {
+// ShouldProbeLiveHeap covers JVM processes that carry Gradle or Bazel work.
+// Bazel workers and tests include native binaries and wrappers, so those kinds
+// require a Java executable rather than just a Java marker in their arguments.
+func ShouldProbeLiveHeap(kind, executable string) bool {
 	switch kind {
-	case "GRADLE_DAEMON", "KOTLIN_DAEMON", "TEST_WORKER", "GRADLE_WORKER", "UNKNOWN_GRADLE_WORKER", "JAVA_GRADLE_RELATED", "BAZEL_SERVER", "BAZEL_TEST", "BAZEL_WORKER":
+	case "BAZEL_TEST", "BAZEL_WORKER":
+		name := filepath.Base(strings.ReplaceAll(executable, `\`, "/"))
+		return name == "java" || strings.EqualFold(name, "java.exe")
+	case "GRADLE_DAEMON", "KOTLIN_DAEMON", "TEST_WORKER", "GRADLE_WORKER", "UNKNOWN_GRADLE_WORKER", "JAVA_GRADLE_RELATED", "BAZEL_SERVER":
 		return true
 	default:
 		return false
@@ -590,8 +600,8 @@ func osMetricsFromPlatform(pm platform.ProcessPlatformMetrics) osMetrics {
 	return m
 }
 
-func collectJVMMetrics(ctx context.Context, prober *heap.Prober, proc *process.Process, pid int32, kind string, startMs int64) (heap.Sample, string) {
-	if !ShouldProbeLiveHeap(kind) || int(pid) == os.Getpid() || prober == nil {
+func collectJVMMetrics(ctx context.Context, prober *heap.Prober, proc *process.Process, pid int32, startMs int64) (heap.Sample, string) {
+	if int(pid) == os.Getpid() || prober == nil {
 		return heap.Sample{}, ""
 	}
 	if !sameUID(ctx, proc) {

@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cdsap/daemonitor/cored/internal/bazelprofile"
 	"github.com/cdsap/daemonitor/cored/internal/bep"
 	"github.com/cdsap/daemonitor/cored/internal/builds"
 	"github.com/cdsap/daemonitor/cored/internal/ipc"
@@ -36,6 +37,7 @@ type Server struct {
 	Collector  *poll.Collector
 	Logs       *logs.Watcher
 	BEP        *bep.Watcher
+	Profiles   *bazelprofile.Watcher
 	Store      *store.Store
 	Agg        *builds.Aggregator
 	Retention  time.Duration
@@ -87,6 +89,7 @@ func NewServer(socketPath, dbPath string, interval, retention time.Duration, gra
 		Collector:    collector,
 		Logs:         logs.NewWatcher(gradleUserHome),
 		BEP:          bepWatcher,
+		Profiles:     bazelprofile.NewWatcher(),
 		Store:        st,
 		Retention:    retention,
 		interval:     interval,
@@ -215,10 +218,15 @@ func (s *Server) refresh(ctx context.Context) {
 		}
 	}
 
+	if s.Profiles != nil {
+		for _, b := range s.Profiles.Poll(ctx, snap.Processes) {
+			s.persistBazelBuild(b)
+		}
+	}
 	if s.BEP != nil {
 		if closed, err := s.BEP.Poll(ctx); err == nil {
 			for _, b := range closed {
-				s.persistBEPBuild(b)
+				s.persistBazelBuild(b)
 			}
 		}
 	}
@@ -236,7 +244,7 @@ func (s *Server) refresh(ctx context.Context) {
 	s.mu.Unlock()
 }
 
-func (s *Server) persistBEPBuild(b builds.Build) {
+func (s *Server) persistBazelBuild(b builds.Build) {
 	if b.CommandLine != nil {
 		redacted := poll.RedactCommandLine(*b.CommandLine)
 		b.CommandLine = &redacted
@@ -562,7 +570,7 @@ func (s *Server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		filters.PID = pid
-		filters.StartTimeMs = startMs
+		filters.DaemonStartTimeMs = startMs
 		rows, err = s.Store.ListBuildsForDaemonSince(pid, startMs, limit)
 	} else if pidRaw != "" {
 		pid, parseErr := strconv.ParseInt(pidRaw, 10, 64)
@@ -629,17 +637,18 @@ func (s *Server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 }
 
 type buildResponse struct {
-	BuildID         string   `json:"build_id"`
-	DaemonPID       int64    `json:"daemon_pid"`
-	StartTimeMs     int64    `json:"start_time_ms"`
-	FinalStatus     string   `json:"final_status"`
-	InferredSource  string   `json:"inferred_source"`
-	Agent           string   `json:"agent"`
-	AgentProvider   string   `json:"agent_provider"`
-	ProjectPath     string   `json:"project_path"`
-	DurationSeconds *float64 `json:"duration_seconds"`
-	LogSnippet      string   `json:"log_snippet,omitempty"`
-	Tool            string   `json:"tool,omitempty"`
+	BuildID         string               `json:"build_id"`
+	DaemonPID       int64                `json:"daemon_pid"`
+	StartTimeMs     int64                `json:"start_time_ms"`
+	FinalStatus     string               `json:"final_status"`
+	InferredSource  string               `json:"inferred_source"`
+	Agent           string               `json:"agent"`
+	AgentProvider   string               `json:"agent_provider"`
+	ProjectPath     string               `json:"project_path"`
+	DurationSeconds *float64             `json:"duration_seconds"`
+	LogSnippet      string               `json:"log_snippet,omitempty"`
+	Tool            string               `json:"tool,omitempty"`
+	BazelProfile    *builds.BazelProfile `json:"bazel_profile,omitempty"`
 }
 
 func newBuildResponse(b builds.Build, includeLogs bool) buildResponse {
@@ -651,7 +660,7 @@ func newBuildResponse(b builds.Build, includeLogs bool) buildResponse {
 		BuildID: b.BuildID, DaemonPID: b.DaemonPID, StartTimeMs: b.StartTimeMs,
 		FinalStatus: string(b.FinalStatus), InferredSource: string(b.InferredSource),
 		Agent: b.Agent, AgentProvider: b.AgentProvider, ProjectPath: b.ProjectPath,
-		DurationSeconds: b.DurationSeconds, Tool: tool,
+		DurationSeconds: b.DurationSeconds, Tool: tool, BazelProfile: b.BazelProfile,
 	}
 	if includeLogs {
 		response.LogSnippet = b.LogSnippet

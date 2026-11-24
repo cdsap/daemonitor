@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -118,11 +119,8 @@ func NewProber() *Prober {
 
 // LookPathWithJDKDir resolves a JDK tool before JAVA_HOME and PATH.
 func LookPathWithJDKDir(jdkDir, name string) (string, error) {
-	if jdkDir != "" {
-		path := filepath.Join(jdkDir, "bin", name)
-		if info, err := os.Stat(path); err == nil && !info.IsDir() {
-			return path, nil
-		}
+	if path := findJDKTool(jdkDir, name); path != "" {
+		return path, nil
 	}
 	return LookPathWithJavaHome(name)
 }
@@ -132,11 +130,11 @@ func (p *Prober) lookPath(pid int32, name string) (string, error) {
 		return p.LookPath(name)
 	}
 	if p != nil {
-		if path, err := LookPathWithJDKDir(p.JDKDir, name); err == nil {
+		if path := findJDKTool(p.JDKDir, name); path != "" {
 			return path, nil
 		}
 		if p.TargetJDKDir != nil {
-			if path, err := LookPathWithJDKDir(p.TargetJDKDir(pid), name); err == nil {
+			if path := findJDKTool(p.TargetJDKDir(pid), name); path != "" {
 				return path, nil
 			}
 		}
@@ -193,12 +191,18 @@ func LookPathWithJavaHome(name string) (string, error) {
 }
 
 func findJavaHomeTool(name string) string {
-	home := os.Getenv("JAVA_HOME")
+	return findJDKTool(os.Getenv("JAVA_HOME"), name)
+}
+
+func findJDKTool(home, name string) string {
 	if home == "" {
 		return ""
 	}
+	if runtime.GOOS == "windows" && !strings.HasSuffix(strings.ToLower(name), ".exe") {
+		name += ".exe"
+	}
 	path := filepath.Join(home, "bin", name)
-	if _, err := os.Stat(path); err != nil {
+	if info, err := os.Stat(path); err != nil || info.IsDir() {
 		return ""
 	}
 	return path

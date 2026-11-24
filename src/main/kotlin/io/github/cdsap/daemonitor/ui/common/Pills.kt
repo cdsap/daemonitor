@@ -103,6 +103,7 @@ fun SourcePill(source: Source, modifier: Modifier = Modifier) {
         Source.TERMINAL -> SourceStyle(LocalAccentColors.current.info, LocalAccentColors.current.infoBg, "terminal", Icons.Filled.Terminal)
         Source.IDE -> SourceStyle(LocalAccentColors.current.brand, LocalAccentColors.current.brandBg, "IDE", Icons.Filled.Code)
         Source.BEP -> SourceStyle(LocalAccentColors.current.info, LocalAccentColors.current.infoBg, "BEP", Icons.Filled.Code)
+        Source.PROFILE -> SourceStyle(LocalAccentColors.current.info, LocalAccentColors.current.infoBg, "profile", Icons.Filled.Code)
         Source.UNKNOWN -> SourceStyle(LocalAccentColors.current.neutral, LocalAccentColors.current.neutralBg, "unknown", Icons.Filled.HelpOutline)
     }
     Pill(style.label, style.fg, style.bg, modifier, icon = style.icon)
