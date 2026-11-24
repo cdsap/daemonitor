@@ -94,6 +94,8 @@ class LiveProcessGroupingTest {
         assertEquals(0, reused[1].depth)
         val directReused = groupedLiveProcessRows(listOf(root.copy(startTimeMs = 101), worker.copy(parentPid = root.pid)))
         assertEquals(0, directReused.first().groupChildCount)
-        assertEquals(500L, groupedLiveProcessRows(listOf(root)).single().process.rssMemoryMb)
+        val hiddenOnly = groupedLiveProcessRows(listOf(root)).single()
+        assertEquals(false, hiddenOnly.isGroupRoot)
+        assertEquals(500L, hiddenOnly.process.rssMemoryMb)
     }
 }

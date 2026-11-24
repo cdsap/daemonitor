@@ -20,6 +20,8 @@ type Process struct {
 	CommandLine                string   `json:"command_line"`
 	WorkingDirectory           *string  `json:"working_directory"`
 	ProjectPath                *string  `json:"project_path"`
+	BazelOutputBase            string   `json:"bazel_output_base,omitempty"`
+	BazelInstallBase           string   `json:"bazel_install_base,omitempty"`
 	RSSMemoryMB                int64    `json:"rss_memory_mb"`
 	VirtualMemoryMB            *int64   `json:"virtual_memory_mb"`
 	SwapMemoryMB               *int64   `json:"swap_memory_mb"`

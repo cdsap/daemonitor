@@ -162,7 +162,7 @@ func (h *processHierarchy) rows(processes []model.Process, expandedDefault bool)
 		}
 		rootID := identity(root)
 		children := childrenByOwner[rootID]
-		if len(children) == 0 && root.SubtreeRSSMemoryMB == nil {
+		if len(children) == 0 {
 			continue
 		}
 		sort.SliceStable(children, func(i, j int) bool { return children[i].PID < children[j].PID })
@@ -185,7 +185,11 @@ func (h *processHierarchy) rows(processes []model.Process, expandedDefault bool)
 		if groupedRoots[id] || grouped[id] {
 			continue
 		}
-		rows = append(rows, displayRow{process: p, target: p})
+		display := p
+		if p.Type == "BAZEL_SERVER" && p.SubtreeRSSMemoryMB != nil {
+			display = aggregateGroup(p, nil)
+		}
+		rows = append(rows, displayRow{process: display, target: p})
 	}
 	return rows
 }

@@ -66,7 +66,7 @@ internal fun groupedLiveProcessRows(processes: List<GradleProcess>): List<LivePr
 
     processes.filter { it.type.isHierarchyRoot() }.forEach { root ->
         val children = descendants(root.pid)
-        if (children.isEmpty() && root.subtreeRssMemoryMb == null) return@forEach
+        if (children.isEmpty()) return@forEach
 
         groupedRoots += root.pid
         groupedPids += children.map { it.first.pid }
@@ -89,6 +89,13 @@ internal fun groupedLiveProcessRows(processes: List<GradleProcess>): List<LivePr
 
     rows += processes
         .filter { it.pid !in groupedPids && it.pid !in groupedRoots }
-        .map { LiveProcessRow(process = it) }
+        .map { p ->
+            val display = if (p.type == ProcessType.BAZEL_SERVER && p.subtreeRssMemoryMb != null) {
+                p.copy(rssMemoryMb = p.subtreeRssMemoryMb!!, cpuPercent = p.subtreeCpuPercent)
+            } else {
+                p
+            }
+            LiveProcessRow(process = display, targetPid = p.pid)
+        }
     return rows
 }

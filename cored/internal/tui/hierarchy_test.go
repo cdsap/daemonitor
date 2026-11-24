@@ -140,9 +140,9 @@ func TestBazelOwnerBridgeAndSubtreeTotals(t *testing.T) {
 	if rows[0].children != 0 {
 		t.Fatalf("direct parent reused its PID: %+v", rows)
 	}
-	// Hidden-only subtrees still display their full footprint.
+	// Hidden-only subtrees still display their full footprint without a fake group-root arrow.
 	rows = h.rows([]model.Process{root}, true)
-	if rows[0].process.RSSMemoryMB != 350 {
-		t.Fatalf("hidden-only RSS=%d", rows[0].process.RSSMemoryMB)
+	if rows[0].groupRoot || rows[0].process.RSSMemoryMB != 350 {
+		t.Fatalf("hidden-only row=%+v", rows[0])
 	}
 }
