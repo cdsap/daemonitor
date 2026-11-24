@@ -100,7 +100,8 @@ func (s *Store) migrate() error {
 // v5: process_samples includes cumulative CPU counters and interval cores used.
 // v6: process_instances + process_events for incarnation identity and lifecycle.
 // v7: builds.tool distinguishes GRADLE vs BAZEL (opportunistic BEP) rows.
-const schemaVersion = 7
+// v8: optional Bazel trace summaries retained across BEP enrichment.
+const schemaVersion = 8
 
 func (s *Store) ensureProcessSamplesAlignedWithApp() error {
 	exists, err := s.tableExists("process_samples")
@@ -381,6 +382,7 @@ func (s *Store) ensureBuildsAlignedWithApp() error {
 		{"agent", `ALTER TABLE builds ADD COLUMN agent TEXT`},
 		{"agent_provider", `ALTER TABLE builds ADD COLUMN agent_provider TEXT`},
 		{"tool", `ALTER TABLE builds ADD COLUMN tool TEXT NOT NULL DEFAULT 'GRADLE'`},
+		{"bazel_profile", `ALTER TABLE builds ADD COLUMN bazel_profile TEXT`},
 	} {
 		if contains(cols, a.col) {
 			continue
@@ -416,7 +418,8 @@ CREATE TABLE IF NOT EXISTS builds (
   log_snippet TEXT,
   agent TEXT,
   agent_provider TEXT,
-  tool TEXT NOT NULL DEFAULT 'GRADLE'
+  tool TEXT NOT NULL DEFAULT 'GRADLE',
+  bazel_profile TEXT
 );
 CREATE INDEX IF NOT EXISTS builds_start ON builds(start_time);
 CREATE INDEX IF NOT EXISTS builds_project ON builds(project_path);

@@ -7,6 +7,7 @@ const (
 	SourceTerminal Source = "TERMINAL"
 	SourceIDE      Source = "IDE"
 	SourceBEP      Source = "BEP"
+	SourceProfile  Source = "PROFILE"
 	SourceUnknown  Source = "UNKNOWN"
 )
 
@@ -47,13 +48,26 @@ type Build struct {
 	LogSnippet       string      `json:"log_snippet,omitempty"`
 	Agent            string      `json:"agent,omitempty"`
 	AgentProvider    string      `json:"agent_provider,omitempty"`
-	// Tool distinguishes Gradle daemon-log builds from opportunistic Bazel BEP rows.
+	// Tool distinguishes Gradle daemon-log builds from Bazel history rows.
 	// Empty / omitted means GRADLE for backward compatibility with existing rows.
-	Tool Tool `json:"tool,omitempty"`
+	Tool         Tool          `json:"tool,omitempty"`
+	BazelProfile *BazelProfile `json:"bazel_profile,omitempty"`
 }
 
 // Sample is one RSS/CPU observation for peak calculation.
 type Sample struct {
 	RSSMemoryMB int64
 	CPUPercent  *float64
+}
+
+// BazelProfile retains trace summaries separately from sampled OS RSS/CPU.
+// Counter keys combine the trace series name and argument; units remain those
+// supplied by Bazel, rather than being guessed or coerced to process metrics.
+type BazelProfile struct {
+	BazelVersion           string             `json:"bazel_version,omitempty"`
+	Date                   string             `json:"date"`
+	PhaseSeconds           map[string]float64 `json:"phase_seconds"`
+	CriticalPathSeconds    float64            `json:"critical_path_seconds"`
+	CriticalPathComponents int                `json:"critical_path_components"`
+	PeakCounters           map[string]float64 `json:"peak_counters"`
 }
