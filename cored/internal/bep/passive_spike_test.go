@@ -266,7 +266,8 @@ func TestPassiveSpikeLogEvidenceAndRedaction(t *testing.T) {
 			}
 		}
 		// CRLF must not change recognition of the complete lines.
-		for _, line := range strings.Split(strings.ReplaceAll(log, "\n", "\r\n"), "\n") {
+		normalized := strings.ReplaceAll(log, "\r\n", "\n")
+		for _, line := range strings.Split(strings.ReplaceAll(normalized, "\n", "\r\n"), "\n") {
 			if got := poll.RedactLogLine(strings.TrimSuffix(line, "\r")); strings.ContainsRune(got, '\r') {
 				t.Fatal("CRLF handling")
 			}
