@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -164,12 +165,20 @@ func TestProberAdvancedTelemetryIsBestEffort(t *testing.T) {
 	}
 }
 
+func jcmdToolPath(dir string) string {
+	name := "jcmd"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	return filepath.Join(dir, "bin", name)
+}
+
 func TestLookPathWithJDKDirPrecedesJavaHomeAndPath(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.Mkdir(filepath.Join(dir, "bin"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	tool := filepath.Join(dir, "bin", "jcmd")
+	tool := jcmdToolPath(dir)
 	if err := os.WriteFile(tool, []byte(""), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -179,6 +188,71 @@ func TestLookPathWithJDKDirPrecedesJavaHomeAndPath(t *testing.T) {
 	}
 	if got != tool {
 		t.Fatalf("tool=%q want %q", got, tool)
+	}
+}
+
+func TestProberTargetJDKPrecedesAmbientTools(t *testing.T) {
+	configured, target, ambient := t.TempDir(), t.TempDir(), t.TempDir()
+	for _, dir := range []string{configured, target, ambient} {
+		if err := os.Mkdir(filepath.Join(dir, "bin"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(jcmdToolPath(dir), nil, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("JAVA_HOME", ambient)
+	t.Setenv("PATH", "")
+	for _, tc := range []struct{ name, configured, target, want string }{
+		{"target before ambient", "", target, target},
+		{"configured before target", configured, target, configured},
+		{"missing configured falls through to target", t.TempDir(), target, target},
+		{"missing target falls through to ambient", "", t.TempDir(), ambient},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := heap.NewProber()
+			p.JDKDir = tc.configured
+			p.TargetJDKDir = func(pid int32) string {
+				if pid != 42 {
+					t.Fatalf("target pid=%d", pid)
+				}
+				return tc.target
+			}
+			p.Runner = func(_ context.Context, name string, _ ...string) (string, error) {
+				if name != jcmdToolPath(tc.want) {
+					t.Errorf("tool=%q, want tools from %q", name, tc.want)
+				}
+				return jcmdHeapInfoFixture, nil
+			}
+			if _, err := p.SampleFor(context.Background(), 42, 1); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestProberEmbeddedRuntimeWithoutTools(t *testing.T) {
+	t.Setenv("JAVA_HOME", t.TempDir())
+	t.Setenv("PATH", "")
+	p := heap.NewProber()
+	embedded := t.TempDir()
+	p.TargetJDKDir = func(int32) string { return embedded }
+	p.Runner = func(context.Context, string, ...string) (string, error) {
+		t.Fatal("missing tools must not start an attach command")
+		return "", nil
+	}
+	_, err := p.SampleFor(context.Background(), 42, 1)
+	if heap.FailureCategory(err) != heap.FailureMissingTool {
+		t.Fatalf("category=%q err=%v", heap.FailureCategory(err), err)
+	}
+	diagnostics := heap.FailureDiagnostics(err)
+	if len(diagnostics) != 2 {
+		t.Fatalf("diagnostics=%+v", diagnostics)
+	}
+	for _, d := range diagnostics {
+		if d.Category != heap.FailureMissingTool {
+			t.Fatalf("diagnostic=%+v", d)
+		}
 	}
 }
 

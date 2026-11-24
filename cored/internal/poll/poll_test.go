@@ -181,9 +181,26 @@ func TestBazelWorkspaceDirectory(t *testing.T) {
 }
 
 func TestShouldProbeLiveHeapIncludesBazelFamily(t *testing.T) {
-	for _, kind := range []string{"BAZEL_SERVER", "BAZEL_TEST", "BAZEL_WORKER"} {
-		if !poll.ShouldProbeLiveHeap(kind) {
-			t.Fatalf("%s should be heap-probed", kind)
+	for _, tc := range []struct {
+		kind, executable string
+		want             bool
+	}{
+		{"BAZEL_SERVER", "bazel(workspace)", true},
+		{"BAZEL_WORKER", "/jdk/bin/java", true},
+		{"BAZEL_WORKER", "java", true},
+		{"BAZEL_TEST", "/jdk with spaces/bin/java", true},
+		{"BAZEL_TEST", `C:\Program Files\Java\bin\java.exe`, true},
+		{"BAZEL_WORKER", "/rules_swift/worker", false},
+		{"BAZEL_WORKER", "/rules_go/worker", false},
+		{"BAZEL_WORKER", "/rules_rust/worker", false},
+		{"BAZEL_TEST", "/sandbox/test.runfiles/native_test", false},
+		{"BAZEL_TEST", "/bin/bash", false},
+		{"BAZEL_TEST", "/bin/process-wrapper", false},
+		{"BAZEL_WORKER", "", false},
+		{"BAZEL_TEST", "", false},
+	} {
+		if got := poll.ShouldProbeLiveHeap(tc.kind, tc.executable); got != tc.want {
+			t.Errorf("ShouldProbeLiveHeap(%q, %q)=%v want %v", tc.kind, tc.executable, got, tc.want)
 		}
 	}
 }
@@ -229,14 +246,25 @@ func TestIsNonInteractive(t *testing.T) {
 }
 
 func TestShouldProbeLiveHeap(t *testing.T) {
-	for _, kind := range []string{"GRADLE_DAEMON", "KOTLIN_DAEMON", "GRADLE_WORKER", "TEST_WORKER", "UNKNOWN_GRADLE_WORKER", "JAVA_GRADLE_RELATED", "BAZEL_SERVER", "BAZEL_TEST", "BAZEL_WORKER"} {
-		if !poll.ShouldProbeLiveHeap(kind) {
+	for _, kind := range []string{"GRADLE_DAEMON", "KOTLIN_DAEMON", "GRADLE_WORKER", "TEST_WORKER", "UNKNOWN_GRADLE_WORKER", "JAVA_GRADLE_RELATED", "BAZEL_SERVER"} {
+		if !poll.ShouldProbeLiveHeap(kind, "") {
 			t.Fatalf("%s must be probed", kind)
 		}
 	}
 	for _, kind := range []string{"GRADLE_WRAPPER", ""} {
-		if poll.ShouldProbeLiveHeap(kind) {
+		if poll.ShouldProbeLiveHeap(kind, "java") {
 			t.Fatalf("%s must stay unprobed", kind)
 		}
+	}
+}
+
+func TestBazelDirectories(t *testing.T) {
+	out, install := poll.BazelDirectories([]string{"java", "--output_base=/cache/with spaces", `--install_base=C:\bazel\install`, "--other=ignored"})
+	if out != "/cache/with spaces" || install != `C:\bazel\install` {
+		t.Fatalf("directories = %q, %q", out, install)
+	}
+	out, install = poll.BazelDirectories([]string{"java", "--output_base_other=/wrong"})
+	if out != "" || install != "" {
+		t.Fatalf("unexpected directories = %q, %q", out, install)
 	}
 }

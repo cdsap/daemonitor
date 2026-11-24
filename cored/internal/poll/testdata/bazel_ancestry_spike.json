@@ -1,0 +1,40 @@
+{
+  "provenance": "Synthetic topology fixtures for issue 580; NOT captured OS trees. PIDs and timings are invented.",
+  "cases": [
+    {"name":"macOS sandbox-exec native action", "nodes":[
+      {"pid":100,"ppid":1,"start":10,"kind":"BAZEL_SERVER","owner":100},
+      {"pid":101,"ppid":100,"start":11,"executable":"/usr/bin/sandbox-exec","owner":100},
+      {"pid":102,"ppid":101,"start":12,"executable":"/usr/bin/clang","owner":100}]},
+    {"name":"Linux nested sandbox and JVM worker", "nodes":[
+      {"pid":200,"start":10,"kind":"BAZEL_SERVER","owner":200},
+      {"pid":201,"ppid":200,"start":11,"executable":"linux-sandbox","owner":200},
+      {"pid":202,"ppid":201,"start":12,"executable":"process-wrapper","owner":200},
+      {"pid":203,"ppid":202,"start":13,"kind":"BAZEL_WORKER","executable":"/jdk/bin/java","owner":200}]},
+    {"name":"Windows native test through launcher", "nodes":[
+      {"pid":300,"start":10,"kind":"BAZEL_SERVER","owner":300},
+      {"pid":301,"ppid":300,"start":11,"executable":"cmd.exe","owner":300},
+      {"pid":302,"ppid":301,"start":12,"kind":"BAZEL_TEST","executable":"C:\\out\\test.exe","owner":300}]},
+    {"name":"persistent Swift worker and short compiler actions", "nodes":[
+      {"pid":400,"start":10,"kind":"BAZEL_SERVER","owner":400},
+      {"pid":401,"ppid":400,"start":11,"kind":"BAZEL_WORKER","executable":"swift_worker","owner":400},
+      {"pid":402,"ppid":401,"start":12,"executable":"swiftc","owner":400},
+      {"pid":403,"ppid":400,"start":12,"executable":"javac","owner":400},
+      {"pid":404,"ppid":400,"start":12,"executable":"kotlinc","owner":400},
+      {"pid":405,"ppid":400,"start":12,"executable":"rustc","owner":400}]},
+    {"name":"nearest server and unrelated roots", "nodes":[
+      {"pid":500,"start":10,"kind":"BAZEL_SERVER","owner":500},
+      {"pid":501,"ppid":500,"start":11,"kind":"BAZEL_SERVER","owner":501},
+      {"pid":502,"ppid":501,"start":12,"owner":501},
+      {"pid":503,"ppid":500,"start":11,"kind":"GRADLE_DAEMON"},
+      {"pid":504,"ppid":503,"start":12},
+      {"pid":505,"ppid":1,"start":11}]},
+    {"name":"missing parent cycle reuse and unknown creation time", "nodes":[
+      {"pid":600,"start":20,"kind":"BAZEL_SERVER","owner":600},
+      {"pid":601,"ppid":999,"start":21},
+      {"pid":602,"ppid":603,"start":21},
+      {"pid":603,"ppid":602,"start":21},
+      {"pid":604,"ppid":600,"start":19},
+      {"pid":605,"ppid":605,"start":21},
+      {"pid":606,"ppid":600}]}
+  ]
+}
