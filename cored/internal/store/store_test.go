@@ -627,7 +627,6 @@ func TestDefaultSocketPathBesideAppSupport(t *testing.T) {
 	}
 }
 
-
 func TestBuildsToolColumnDefaultsAndFilters(t *testing.T) {
 	s, err := store.Open(filepath.Join(t.TempDir(), "tool.sqlite"))
 	if err != nil {
@@ -684,5 +683,77 @@ VALUES ('pre-1', 3, 100, 'TERMINAL', 'SUCCESS');`); err != nil {
 	rows, err := s.ListBuildsFiltered(store.BuildFilters{Tool: "GRADLE"}, 10)
 	if err != nil || len(rows) != 1 || rows[0].BuildID != "pre-1" || rows[0].Tool != builds.ToolGradle {
 		t.Fatalf("rows=%+v err=%v", rows, err)
+	}
+}
+
+func TestBazelBuildSamplesUseSubtreeWithoutChangingOwnHistory(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "bazel.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	rss := int64(500)
+	cpu := 25.0
+	ownCPU := 5.0
+	snap := model.Snapshot{SampledAtMs: 1000, Processes: []model.Process{{PID: 10, Type: "BAZEL_SERVER", RSSMemoryMB: 100, CPUPercent: &ownCPU, SubtreeRSSMemoryMB: &rss, SubtreeCPUPercent: &cpu}}}
+	if err := s.InsertSnapshot(snap); err != nil {
+		t.Fatal(err)
+	}
+	samples := s.SamplesAsBuildSamples(10, 0, 2000)
+	if len(samples) != 1 || samples[0].RSSMemoryMB != 500 || samples[0].CPUPercent == nil || *samples[0].CPUPercent != 25 {
+		t.Fatalf("build samples=%+v", samples)
+	}
+	history, err := s.History(0, 10)
+	if err != nil || len(history) != 1 || history[0].RSSMemoryMB != 100 || *history[0].CPUPercent != 5 {
+		t.Fatalf("own history=%+v err=%v", history, err)
+	}
+	// Missing subtree CPU is unavailable, even when the server CPU is known.
+	snap.SampledAtMs = 1500
+	snap.Processes[0].SubtreeCPUPercent = nil
+	if err := s.InsertSnapshot(snap); err != nil {
+		t.Fatal(err)
+	}
+	samples = s.SamplesAsBuildSamples(10, 1500, 2000)
+	if len(samples) != 1 || samples[0].CPUPercent != nil {
+		t.Fatalf("unknown subtree CPU=%+v", samples)
+	}
+}
+
+func TestBazelSubtreeColumnsMigrateExistingDatabase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "old.sqlite")
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.InsertSnapshot(model.Snapshot{SampledAtMs: 1, Processes: []model.Process{{PID: 10, Type: "BAZEL_SERVER", RSSMemoryMB: 100}}}); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, statement := range []string{"ALTER TABLE process_samples DROP COLUMN subtree_rss_memory_mb", "ALTER TABLE process_samples DROP COLUMN subtree_cpu_percent", "PRAGMA user_version = 7"} {
+		if _, err := db.Exec(statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+	db.Close()
+	s, err = store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	samples := s.SamplesAsBuildSamples(10, 0, 2)
+	if len(samples) != 1 || samples[0].RSSMemoryMB != 100 {
+		t.Fatalf("old samples lost: %+v", samples)
+	}
+	rss := int64(500)
+	if err := s.InsertSnapshot(model.Snapshot{SampledAtMs: 2, Processes: []model.Process{{PID: 10, Type: "BAZEL_SERVER", RSSMemoryMB: 100, SubtreeRSSMemoryMB: &rss}}}); err != nil {
+		t.Fatal(err)
+	}
+	samples = s.SamplesAsBuildSamples(10, 2, 2)
+	if len(samples) != 1 || samples[0].RSSMemoryMB != 500 {
+		t.Fatalf("migrated samples=%+v", samples)
 	}
 }

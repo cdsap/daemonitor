@@ -23,7 +23,22 @@ private fun ProcessType.isHierarchyRoot(): Boolean =
  * Processes with no hierarchy-root ancestor remain ordinary rows.
  */
 internal fun groupedLiveProcessRows(processes: List<GradleProcess>): List<LiveProcessRow> {
-    val childrenByParent = processes.groupBy { it.parentPid }
+    val byPid = processes.associateBy { it.pid }
+    val childrenByParent = processes.groupBy { child ->
+        val owner = byPid[child.ownerPid]
+        val ownerStart = child.ownerStartTimeMs
+        val parent = byPid[child.parentPid]
+        val invalidParent = parent != null && (
+            (parent.startTimeMs > 0 && child.startTimeMs > 0 && parent.startTimeMs > child.startTimeMs) ||
+                (parent.type == ProcessType.BAZEL_SERVER && child.ownerPid == parent.pid &&
+                    ownerStart != null && ownerStart != parent.startTimeMs)
+            )
+        if (child.parentPid !in byPid && owner?.type == ProcessType.BAZEL_SERVER &&
+            child.pid != owner.pid && ownerStart != null &&
+            ownerStart > 0 && ownerStart == owner.startTimeMs &&
+            child.startTimeMs >= owner.startTimeMs
+        ) owner.pid else if (invalidParent) null else child.parentPid
+    }
     val groupedPids = mutableSetOf<Long>()
     val groupedRoots = mutableSetOf<Long>()
     val rows = mutableListOf<LiveProcessRow>()
@@ -57,8 +72,9 @@ internal fun groupedLiveProcessRows(processes: List<GradleProcess>): List<LivePr
         groupedPids += children.map { it.first.pid }
         val cpuValues = listOfNotNull(root.cpuPercent) + children.mapNotNull { it.first.cpuPercent }
         val aggregate = root.copy(
-            rssMemoryMb = root.rssMemoryMb + children.sumOf { it.first.rssMemoryMb },
-            cpuPercent = cpuValues.takeIf { it.isNotEmpty() }?.sum(),
+            rssMemoryMb = root.subtreeRssMemoryMb ?: (root.rssMemoryMb + children.sumOf { it.first.rssMemoryMb }),
+            cpuPercent = if (root.subtreeRssMemoryMb != null) root.subtreeCpuPercent
+                else cpuValues.takeIf { it.isNotEmpty() }?.sum(),
         )
         rows += LiveProcessRow(
             process = aggregate,
@@ -73,6 +89,13 @@ internal fun groupedLiveProcessRows(processes: List<GradleProcess>): List<LivePr
 
     rows += processes
         .filter { it.pid !in groupedPids && it.pid !in groupedRoots }
-        .map { LiveProcessRow(process = it) }
+        .map { p ->
+            val display = if (p.type == ProcessType.BAZEL_SERVER && p.subtreeRssMemoryMb != null) {
+                p.copy(rssMemoryMb = p.subtreeRssMemoryMb!!, cpuPercent = p.subtreeCpuPercent)
+            } else {
+                p
+            }
+            LiveProcessRow(process = display, targetPid = p.pid)
+        }
     return rows
 }

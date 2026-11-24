@@ -101,7 +101,8 @@ func (s *Store) migrate() error {
 // v6: process_instances + process_events for incarnation identity and lifecycle.
 // v7: builds.tool distinguishes GRADLE vs BAZEL (opportunistic BEP) rows.
 // v8: optional Bazel trace summaries retained across BEP enrichment.
-const schemaVersion = 8
+// v9: inclusive Bazel subtree resource samples for build rollups.
+const schemaVersion = 9
 
 func (s *Store) ensureProcessSamplesAlignedWithApp() error {
 	exists, err := s.tableExists("process_samples")
@@ -143,6 +144,8 @@ CREATE TABLE IF NOT EXISTS process_samples (
 	cpu_cores_used REAL,
 	logical_processor_count INTEGER,
   rss_memory_mb INTEGER NOT NULL,
+  subtree_rss_memory_mb INTEGER,
+  subtree_cpu_percent REAL,
 	virtual_memory_mb INTEGER,
 	swap_memory_mb INTEGER,
 	resident_bytes INTEGER,
@@ -204,6 +207,8 @@ func (s *Store) ensureProcessSamplesAdditiveColumns(cols []string) error {
 		col string
 		ddl string
 	}{
+		{"subtree_rss_memory_mb", `ALTER TABLE process_samples ADD COLUMN subtree_rss_memory_mb INTEGER`},
+		{"subtree_cpu_percent", `ALTER TABLE process_samples ADD COLUMN subtree_cpu_percent REAL`},
 		{"virtual_memory_mb", `ALTER TABLE process_samples ADD COLUMN virtual_memory_mb INTEGER`},
 		{"swap_memory_mb", `ALTER TABLE process_samples ADD COLUMN swap_memory_mb INTEGER`},
 		{"resident_bytes", `ALTER TABLE process_samples ADD COLUMN resident_bytes INTEGER`},
@@ -554,7 +559,7 @@ INSERT INTO process_samples(
   status, name, min_heap_mb, gc, metaspace_used_mb, metaspace_committed_mb, young_gc_count,
   young_gc_time_ms, old_gc_count, old_gc_time_ms, full_gc_count, concurrent_gc_count, total_gc_count, java_version, java_runtime_version, java_vendor,
   java_vm_name, java_vm_version, os_name, os_arch, active_processor_count,
-  start_time_ms, automated
+  start_time_ms, automated, subtree_rss_memory_mb, subtree_cpu_percent
 ) VALUES (
  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
@@ -562,7 +567,7 @@ INSERT INTO process_samples(
  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
- ?, ?, ?, ?)`)
+ ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -588,7 +593,7 @@ INSERT INTO process_samples(
 			p.MaxHeapMB, p.HeapUsedMB, p.HeapCommittedMB, p.HeapMaxMB, p.HeapSampledAtMs, heapAvail,
 			p.Status, nullStr(p.Name), p.MinHeapMB, p.GC, p.MetaspaceUsedMB, p.MetaspaceCommittedMB,
 			p.YoungGCCount, p.YoungGCTimeMs, p.OldGCCount, p.OldGCTimeMs, p.FullGCCount, p.ConcurrentGCCount, p.TotalGCCount, p.JavaVersion, p.JavaRuntimeVersion,
-			p.JavaVendor, p.JavaVMName, p.JavaVMVersion, p.OSName, p.OSArch, p.ActiveProcessorCount, p.StartTimeMs, automated,
+			p.JavaVendor, p.JavaVMName, p.JavaVMVersion, p.OSName, p.OSArch, p.ActiveProcessorCount, p.StartTimeMs, automated, p.SubtreeRSSMemoryMB, p.SubtreeCPUPercent,
 		); err != nil {
 			return err
 		}
@@ -697,7 +702,8 @@ func (s *Store) SamplesInWindow(pid, startMs, endMs int64) ([]struct {
 	CPU *float64
 }, error) {
 	rows, err := s.db.Query(`
-SELECT rss_memory_mb, cpu_percent
+SELECT COALESCE(subtree_rss_memory_mb, rss_memory_mb),
+       CASE WHEN subtree_rss_memory_mb IS NOT NULL THEN subtree_cpu_percent ELSE cpu_percent END
 FROM process_samples
 WHERE pid = ? AND timestamp >= ? AND timestamp <= ?
 ORDER BY timestamp ASC`, pid, startMs, endMs)
