@@ -1,7 +1,9 @@
 package bep
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"os"
 	"strings"
 	"sync"
@@ -10,7 +12,7 @@ import (
 	"github.com/shirou/gopsutil/v4/process"
 )
 
-// Watcher discovers opportunistic BEP sinks and closes builds from JSON files.
+// Watcher discovers opportunistic BEP sinks and closes builds from JSON or binary files.
 type Watcher struct {
 	mu              sync.Mutex
 	files           map[string]*trackedFile
@@ -21,11 +23,13 @@ type Watcher struct {
 }
 
 type trackedFile struct {
-	sink    Sink
-	offset  int64
-	pending []byte
-	state   partial
-	client  clientObservation
+	sink     Sink
+	offset   int64
+	pending  []byte
+	state    partial
+	identity os.FileInfo
+	prefix   []byte
+	client   clientObservation
 }
 
 // clientObservation retains fixed attribution only, never ancestry argv or env values.
@@ -70,7 +74,6 @@ func (w *Watcher) observeClient(client clientObservation) {
 }
 
 // Poll discovers sinks from live processes and reads newly appended bytes.
-// Binary sinks are registered but skipped until a binary parser is wired (H2b).
 func (w *Watcher) Poll(ctx context.Context) ([]builds.Build, error) {
 	sinks, err := DiscoverFromProcesses(ctx)
 	if err != nil {
@@ -95,18 +98,13 @@ func (w *Watcher) Poll(ctx context.Context) ([]builds.Build, error) {
 	}
 
 	var closed []builds.Build
-	for path, tf := range w.files {
-		if tf.sink.Format != FormatJSON {
+	for _, tf := range w.files {
+		if tf.sink.Format != FormatJSON && tf.sink.Format != FormatBinary {
 			continue
 		}
-		buildsClosed, err := w.readJSON(tf)
-		if err != nil {
-			// Missing file is normal before Bazel creates it; keep tracking.
-			if os.IsNotExist(err) {
-				continue
-			}
-			continue
-		}
+		// A malformed event must not discard builds already decoded in this
+		// poll. File/read errors are opportunistic and retried next tick.
+		buildsClosed, _ := w.readFile(tf)
 		for _, b := range buildsClosed {
 			if b.BuildID == "" {
 				continue
@@ -117,12 +115,11 @@ func (w *Watcher) Poll(ctx context.Context) ([]builds.Build, error) {
 			w.seenIDs[b.BuildID] = struct{}{}
 			closed = append(closed, b)
 		}
-		_ = path
 	}
 	return closed, nil
 }
 
-func (w *Watcher) readJSON(tf *trackedFile) ([]builds.Build, error) {
+func (w *Watcher) readFile(tf *trackedFile) ([]builds.Build, error) {
 	f, err := os.Open(tf.sink.Path)
 	if err != nil {
 		return nil, err
@@ -134,39 +131,72 @@ func (w *Watcher) readJSON(tf *trackedFile) ([]builds.Build, error) {
 		return nil, err
 	}
 	size := info.Size()
-	if size < tf.offset {
-		// Rotated / truncated — restart.
+	prefix := make([]byte, min(size, 64))
+	if _, err := f.ReadAt(prefix, 0); err != nil && err != io.EOF {
+		return nil, err
+	}
+	replaced := tf.identity != nil && !os.SameFile(tf.identity, info)
+	rewritten := len(prefix) < len(tf.prefix) || !bytes.Equal(prefix[:min(len(prefix), len(tf.prefix))], tf.prefix)
+	if size < tf.offset || replaced || rewritten {
+		// Bazel may truncate and rewrite the entire sink between polls,
+		// so a size comparison alone can miss a new invocation.
 		tf.offset = 0
 		tf.pending = nil
-		tf.state = partial{}
+		tf.state = partial{ambientEnvNames: w.ambientEnvNames}
 	}
-	if size == tf.offset {
-		return nil, nil
-	}
+	tf.identity = info
+	tf.prefix = prefix
 	if _, err := f.Seek(tf.offset, 0); err != nil {
 		return nil, err
 	}
-	chunk := make([]byte, size-tf.offset)
-	n, err := f.Read(chunk)
-	if err != nil && n == 0 {
-		return nil, err
-	}
-	chunk = chunk[:n]
-	tf.offset += int64(n)
-
 	tf.state.ambientEnvNames = w.ambientEnvNames
-	closed, leftover, err := ConsumeJSONBytes(&tf.state, tf.pending, chunk)
+	var closed []builds.Build
+	var parseErr error
+	for tf.offset < size {
+		chunk := make([]byte, min(size-tf.offset, 64*1024))
+		n, err := f.Read(chunk)
+		if n == 0 {
+			if err == nil {
+				err = io.ErrNoProgress
+			}
+			applyClientAttribution(closed, tf.client)
+			return closed, err
+		}
+		tf.offset += int64(n)
+		var rows []builds.Build
+		var leftover []byte
+		if tf.sink.Format == FormatBinary {
+			rows, leftover, parseErr = ConsumeBinaryBytes(&tf.state, tf.pending, chunk[:n])
+		} else {
+			rows, leftover, parseErr = ConsumeJSONBytes(&tf.state, tf.pending, chunk[:n])
+		}
+		tf.pending = leftover
+		closed = append(closed, rows...)
+		if parseErr != nil {
+			applyClientAttribution(closed, tf.client)
+			return closed, parseErr
+		}
+		if err != nil {
+			applyClientAttribution(closed, tf.client)
+			return closed, err
+		}
+	}
+	applyClientAttribution(closed, tf.client)
+	return closed, nil
+}
+
+func applyClientAttribution(closed []builds.Build, c clientObservation) {
+	if c.Agent == nil || c.StartTimeMs <= 0 {
+		return
+	}
 	for i := range closed {
 		b := &closed[i]
-		c := tf.client
 		// Direct ancestry wins over the weaker env-name hint, including when
 		// Daemonitor has the same ambient agent variables as the build client.
-		if c.Agent != nil && c.StartTimeMs > 0 && b.StartTimeMs >= c.StartTimeMs && b.StartTimeMs <= c.ObservedAtMs {
+		if b.StartTimeMs >= c.StartTimeMs && b.StartTimeMs <= c.ObservedAtMs {
 			b.Agent, b.AgentProvider = c.Agent.Agent, c.Agent.Provider
 		}
 	}
-	tf.pending = leftover
-	return closed, err
 }
 
 // DiscoverFromProcesses scrapes live process argv for BEP file flags.

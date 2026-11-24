@@ -162,4 +162,11 @@ data class GradleProcess(
     val codeCache: List<JvmMemoryPool> = emptyList(),
     val jit: JvmJitMetrics? = null,
     val resourceScope: String? = null,
+    val ownerPid: Long? = null,
+    val ownerStartTimeMs: Long? = null,
+    /** Inclusive Bazel subtree totals; own-process RSS and CPU remain separate. */
+    val subtreeRssMemoryMb: Long? = null,
+    val subtreeCpuPercent: Double? = null,
+    val activeWorkerCount: Long? = null,
+    val activeSandboxedActionCount: Long? = null,
 )

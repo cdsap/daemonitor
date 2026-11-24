@@ -1,0 +1,25 @@
+{
+  "otherData": {
+    "bazel_version": "release 8.0.0",
+    "build_id": "88888888-1111-4111-8111-111111111111",
+    "output_base": "/fixture/output-base",
+    "date": "2026-11-23T12:00:00.123Z",
+    "profile_start_ts": 1795435200123
+  },
+  "traceEvents": [
+    {"name":"thread_name","ph":"M","pid":1,"tid":0,"args":{"name":"Critical Path"}},
+    {"cat":"build phase marker","name":"Launch Blaze","ph":"X","ts":-20000,"dur":20000,"pid":1,"tid":1},
+    {"cat":"build phase marker","name":"Initialize command","ph":"i","ts":0,"pid":1,"tid":1},
+    {"cat":"build phase marker","name":"Load and analyze dependencies","ph":"i","ts":100000,"pid":1,"tid":1},
+    {"cat":"build phase marker","name":"Build artifacts","ph":"i","ts":300000,"pid":1,"tid":1},
+    {"name":"CPU usage (Bazel)","ph":"C","ts":0,"pid":1,"tid":30,"args":{"cpu":1.5}},
+    {"name":"Memory usage (Bazel)","ph":"C","ts":0,"pid":1,"tid":30,"args":{"memory":128.5}},
+    {"name":"action count","ph":"C","ts":200000,"pid":1,"tid":30,"args":{"action":2.5}},
+    {"name":"CPU usage (Bazel)","ph":"C","ts":1000000,"pid":1,"tid":30,"args":{"cpu":0}},
+    {"name":"Workers memory usage","ph":"C","ts":0,"pid":1,"tid":30,"args":{"workers memory":32}},
+    {"cat":"gc notification","name":"minor GC","ph":"X","ts":400000,"dur":2000,"pid":1,"tid":31},
+    {"cat":"critical path component","name":"fixture action","ph":"X","ts":300000,"dur":600000,"pid":1,"tid":0},
+    {"cat":"build phase marker","name":"Complete build","ph":"i","ts":950000,"pid":1,"tid":1},
+    {"cat":"general information","name":"Finishing","ph":"i","ts":1000000,"pid":1,"tid":1}
+  ]
+}

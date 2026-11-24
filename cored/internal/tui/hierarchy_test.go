@@ -118,3 +118,31 @@ func TestGroupedViewCollapseExpandAllIncludesBazelRoots(t *testing.T) {
 func floatPtr(v float64) *float64 { return &v }
 
 func key(code rune) tea.KeyPressMsg { return tea.KeyPressMsg(tea.Key{Code: code}) }
+
+func TestBazelOwnerBridgeAndSubtreeTotals(t *testing.T) {
+	rss := int64(350)
+	root := model.Process{PID: 10, StartTimeMs: 100, Type: "BAZEL_SERVER", RSSMemoryMB: 100, SubtreeRSSMemoryMB: &rss, SubtreeCPUPercent: floatPtr(15)}
+	child := model.Process{PID: 12, ParentPID: 11, StartTimeMs: 120, Type: "BAZEL_WORKER", OwnerPID: 10, OwnerStartTimeMs: 100, RSSMemoryMB: 50}
+	h := newProcessHierarchy()
+	rows := h.rows([]model.Process{root, child}, true)
+	if len(rows) != 2 || !rows[0].groupRoot || rows[0].children != 1 || rows[0].process.RSSMemoryMB != 350 || *rows[0].process.CPUPercent != 15 {
+		t.Fatalf("rows=%+v", rows)
+	}
+	// A new server incarnation must not inherit the old server's worker.
+	root.StartTimeMs = 110
+	rows = h.rows([]model.Process{root, child}, true)
+	if rows[0].children != 0 {
+		t.Fatalf("reused owner inherited child: %+v", rows)
+	}
+	child.ParentPID = root.PID
+	fresh := newProcessHierarchy()
+	rows = fresh.rows([]model.Process{root, child}, true)
+	if rows[0].children != 0 {
+		t.Fatalf("direct parent reused its PID: %+v", rows)
+	}
+	// Hidden-only subtrees still display their full footprint without a fake group-root arrow.
+	rows = h.rows([]model.Process{root}, true)
+	if rows[0].groupRoot || rows[0].process.RSSMemoryMB != 350 {
+		t.Fatalf("hidden-only row=%+v", rows[0])
+	}
+}

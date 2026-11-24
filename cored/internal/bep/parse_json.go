@@ -7,6 +7,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/cdsap/daemonitor/cored/internal/builds"
 )
@@ -83,6 +84,7 @@ func applyJSONEvent(state *partial, line []byte) (builds.Build, bool) {
 		var started struct {
 			UUID               string `json:"uuid"`
 			StartTimeMillis    any    `json:"startTimeMillis"`
+			StartTime          string `json:"startTime"`
 			WorkingDirectory   string `json:"workingDirectory"`
 			WorkspaceDirectory string `json:"workspaceDirectory"`
 			ServerPid          any    `json:"serverPid"`
@@ -96,18 +98,16 @@ func applyJSONEvent(state *partial, line []byte) (builds.Build, bool) {
 		state.WorkingDirectory = started.WorkingDirectory
 		state.ProjectPath = started.WorkspaceDirectory
 		state.Command = started.Command
-		state.StartTimeMs = anyToInt64(started.StartTimeMillis)
+		state.StartTimeMs = jsonTimeMillis(started.StartTimeMillis, started.StartTime)
 		state.DaemonPID = anyToInt64(started.ServerPid)
 		return builds.Build{}, false
 	}
 	if finishedRaw, ok := raw["finished"]; ok {
 		var finished struct {
-			FinishTimeMillis any `json:"finishTimeMillis"`
-			ExitCode         *struct {
-				Name string `json:"name"`
-				Code *int   `json:"code"`
-			} `json:"exitCode"`
-			OverallSuccess *bool `json:"overallSuccess"`
+			FinishTimeMillis any       `json:"finishTimeMillis"`
+			FinishTime       string    `json:"finishTime"`
+			ExitCode         *exitCode `json:"exitCode"`
+			OverallSuccess   *bool     `json:"overallSuccess"`
 		}
 		if err := json.Unmarshal(finishedRaw, &finished); err != nil {
 			return builds.Build{}, false
@@ -115,7 +115,7 @@ func applyJSONEvent(state *partial, line []byte) (builds.Build, bool) {
 		if state.BuildID == "" {
 			return builds.Build{}, false
 		}
-		state.EndTimeMs = anyToInt64(finished.FinishTimeMillis)
+		state.EndTimeMs = jsonTimeMillis(finished.FinishTimeMillis, finished.FinishTime)
 		state.Status = statusFromExit(finished.ExitCode, finished.OverallSuccess)
 		state.Finished = true
 		return state.toBuild(), true
@@ -123,10 +123,12 @@ func applyJSONEvent(state *partial, line []byte) (builds.Build, bool) {
 	return builds.Build{}, false
 }
 
-func statusFromExit(exit *struct {
+type exitCode struct {
 	Name string `json:"name"`
 	Code *int   `json:"code"`
-}, overall *bool) builds.FinalStatus {
+}
+
+func statusFromExit(exit *exitCode, overall *bool) builds.FinalStatus {
 	if exit != nil {
 		if exit.Code != nil {
 			if *exit.Code == 0 {
@@ -255,4 +257,13 @@ func anyToInt64(v any) int64 {
 	default:
 		return 0
 	}
+}
+
+func jsonTimeMillis(legacy any, timestamp string) int64 {
+	if timestamp != "" {
+		if parsed, err := time.Parse(time.RFC3339Nano, timestamp); err == nil {
+			return parsed.UnixMilli()
+		}
+	}
+	return anyToInt64(legacy)
 }
