@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/cdsap/daemonitor/cored/internal/heap"
@@ -38,6 +39,9 @@ func TestBazelSpikeTargetJDKLookup(t *testing.T) {
 					t.Fatal(err)
 				}
 				for _, name := range []string{"jcmd", "jstat", "jinfo"} {
+					if runtime.GOOS == "windows" {
+						name += ".exe"
+					}
 					if err := os.WriteFile(filepath.Join(bin, name), nil, 0o755); err != nil {
 						t.Fatal(err)
 					}
