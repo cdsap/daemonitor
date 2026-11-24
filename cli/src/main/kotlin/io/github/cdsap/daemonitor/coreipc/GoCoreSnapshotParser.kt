@@ -130,6 +130,12 @@ internal object GoCoreSnapshotParser {
         return GradleProcess(
             pid = pid,
             parentPid = parentPid,
+            ownerPid = longField(obj, "owner_pid"),
+            ownerStartTimeMs = longField(obj, "owner_start_time_ms"),
+            subtreeRssMemoryMb = longField(obj, "subtree_rss_memory_mb"),
+            subtreeCpuPercent = numberField(obj, "subtree_cpu_percent"),
+            activeWorkerCount = longField(obj, "active_worker_count"),
+            activeSandboxedActionCount = longField(obj, "active_sandboxed_action_count"),
             type = type,
             commandLine = commandLine,
             workingDirectory = workingDirectory,

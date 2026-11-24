@@ -75,4 +75,25 @@ class LiveProcessGroupingTest {
         assertEquals(null, rows.single().process.cpuPercent)
         assertEquals(false, rows.single().isGroupRoot)
     }
+
+    @Test
+    fun `bazel owner bridges wrappers and uses inclusive totals once`() {
+        val root = process(100, 1, ProcessType.BAZEL_SERVER).copy(
+            subtreeRssMemoryMb = 500, subtreeCpuPercent = 25.0,
+        )
+        val worker = process(102, 101, ProcessType.BAZEL_WORKER).copy(
+            ownerPid = 100, ownerStartTimeMs = root.startTimeMs,
+        )
+        val rows = groupedLiveProcessRows(listOf(root, worker))
+        assertEquals(1, rows.first().groupChildCount)
+        assertEquals(1, rows[1].depth)
+        assertEquals(500L, rows.first().process.rssMemoryMb)
+        assertEquals(25.0, rows.first().process.cpuPercent)
+        val reused = groupedLiveProcessRows(listOf(root.copy(startTimeMs = 101), worker))
+        assertEquals(0, reused.first().groupChildCount)
+        assertEquals(0, reused[1].depth)
+        val directReused = groupedLiveProcessRows(listOf(root.copy(startTimeMs = 101), worker.copy(parentPid = root.pid)))
+        assertEquals(0, directReused.first().groupChildCount)
+        assertEquals(500L, groupedLiveProcessRows(listOf(root)).single().process.rssMemoryMb)
+    }
 }

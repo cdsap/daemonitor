@@ -49,9 +49,25 @@ func (h *processHierarchy) observe(processes []model.Process) {
 		id := identity(p)
 		byPID[p.PID] = id
 	}
+	bazelRoots := make(map[int32]processIdentity)
+	for _, p := range processes {
+		if p.Type == "BAZEL_SERVER" {
+			bazelRoots[p.PID] = identity(p)
+		}
+	}
 	for _, p := range processes {
 		if parent, ok := byPID[p.ParentPID]; ok && p.PID != p.ParentPID {
+			if parent.start > 0 && p.StartTimeMs > 0 && parent.start > p.StartTimeMs {
+				continue
+			}
+			if _, bazel := bazelRoots[p.ParentPID]; bazel && p.OwnerPID == p.ParentPID &&
+				p.OwnerStartTimeMs > 0 && p.OwnerStartTimeMs != parent.start {
+				continue
+			}
 			current[identity(p)] = parent
+		} else if owner, ok := bazelRoots[p.OwnerPID]; ok && p.PID != p.OwnerPID &&
+			p.OwnerStartTimeMs > 0 && owner.start == p.OwnerStartTimeMs && p.StartTimeMs >= owner.start {
+			current[identity(p)] = owner
 		}
 	}
 	for child, parent := range current {
@@ -113,6 +129,10 @@ func aggregateGroup(root model.Process, children []model.Process) model.Process 
 	} else {
 		aggregate.CPUPercent = nil
 	}
+	if root.Type == "BAZEL_SERVER" && root.SubtreeRSSMemoryMB != nil {
+		aggregate.RSSMemoryMB = *root.SubtreeRSSMemoryMB
+		aggregate.CPUPercent = root.SubtreeCPUPercent
+	}
 	return aggregate
 }
 
@@ -142,7 +162,7 @@ func (h *processHierarchy) rows(processes []model.Process, expandedDefault bool)
 		}
 		rootID := identity(root)
 		children := childrenByOwner[rootID]
-		if len(children) == 0 {
+		if len(children) == 0 && root.SubtreeRSSMemoryMB == nil {
 			continue
 		}
 		sort.SliceStable(children, func(i, j int) bool { return children[i].PID < children[j].PID })

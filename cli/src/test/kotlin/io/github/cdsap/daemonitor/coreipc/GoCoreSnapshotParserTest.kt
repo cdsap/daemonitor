@@ -326,4 +326,19 @@ class GoCoreSnapshotParserTest {
         assertEquals(1, processes.size)
         assertEquals(longCmd, processes.single().commandLine)
     }
+
+    @Test
+    fun `parses bazel ownership and inclusive rollups`() {
+        val process = GoCoreSnapshotParser.parseProcesses("""{"processes":[{
+            "pid":10,"type":"BAZEL_SERVER","owner_pid":9,"owner_start_time_ms":100,
+            "subtree_rss_memory_mb":500,"subtree_cpu_percent":25.5,
+            "active_worker_count":2,"active_sandboxed_action_count":3
+        }]}""").single()
+        assertEquals(9L, process.ownerPid)
+        assertEquals(100L, process.ownerStartTimeMs)
+        assertEquals(500L, process.subtreeRssMemoryMb)
+        assertEquals(25.5, process.subtreeCpuPercent)
+        assertEquals(2L, process.activeWorkerCount)
+        assertEquals(3L, process.activeSandboxedActionCount)
+    }
 }

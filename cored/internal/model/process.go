@@ -5,16 +5,24 @@ import "github.com/cdsap/daemonitor/cored/internal/platform"
 // Process is an IPC snapshot of a Gradle-related process.
 // Field names mirror the Kotlin GradleProcess domain for dual-run clients.
 type Process struct {
-	PID              int32   `json:"pid"`
-	ParentPID        int32   `json:"parent_pid"`
-	Type             string  `json:"type"`
-	Name             string  `json:"name"`
-	CommandLine      string  `json:"command_line"`
-	WorkingDirectory *string `json:"working_directory"`
-	ProjectPath      *string `json:"project_path"`
-	RSSMemoryMB      int64   `json:"rss_memory_mb"`
-	VirtualMemoryMB  *int64  `json:"virtual_memory_mb"`
-	SwapMemoryMB     *int64  `json:"swap_memory_mb"`
+	PID       int32 `json:"pid"`
+	ParentPID int32 `json:"parent_pid"`
+	// Owner identity bridges unclassified OS wrappers. Subtree totals include the
+	// server itself and all sampled descendants; own-process metrics stay intact.
+	OwnerPID                   int32    `json:"owner_pid,omitempty"`
+	OwnerStartTimeMs           int64    `json:"owner_start_time_ms,omitempty"`
+	SubtreeRSSMemoryMB         *int64   `json:"subtree_rss_memory_mb,omitempty"`
+	SubtreeCPUPercent          *float64 `json:"subtree_cpu_percent,omitempty"`
+	ActiveWorkerCount          int      `json:"active_worker_count"`
+	ActiveSandboxedActionCount int      `json:"active_sandboxed_action_count"`
+	Type                       string   `json:"type"`
+	Name                       string   `json:"name"`
+	CommandLine                string   `json:"command_line"`
+	WorkingDirectory           *string  `json:"working_directory"`
+	ProjectPath                *string  `json:"project_path"`
+	RSSMemoryMB                int64    `json:"rss_memory_mb"`
+	VirtualMemoryMB            *int64   `json:"virtual_memory_mb"`
+	SwapMemoryMB               *int64   `json:"swap_memory_mb"`
 	// Platform-faithful memory metrics. A nil value means the platform does not
 	// expose that measurement; it is never filled with a different metric.
 	ResidentBytes              *int64   `json:"resident_bytes"`

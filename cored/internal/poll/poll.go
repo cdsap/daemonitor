@@ -36,7 +36,7 @@ var (
 	gradleRuntime      = regexp.MustCompile(`(-Dorg\.gradle\.|org\.gradle\.(launcher|process|tooling|internal|api|workers)\.|GradleWorkerMain)`)
 	// Bazel 9.x server argv: -jar …/A-server.jar plus --product_name=Bazel and/or --output_base=.
 	// Unix (/) and Windows (\) separators; optional closing quote on the jar token.
-	bazelServerJar    = regexp.MustCompile(`(^|[\s/\\])A-server\.jar["']?(?:\s|$)`)
+	bazelServerJar = regexp.MustCompile(`(^|[\s/\\])A-server\.jar["']?(?:\s|$)`)
 	// Require end-of-token after Bazel so --product_name=Bazelisk does not match.
 	bazelServerMarker = regexp.MustCompile(`--product_name=Bazel(?:\s|$)|--output_base=`)
 	bazelWorkspaceDir = regexp.MustCompile(`--workspace_directory=(?:"([^"]+)"|'([^']+)'|([^\s]+))`)
@@ -98,6 +98,7 @@ type Collector struct {
 	Cadences              observe.Cadences
 	ProbeConcurrency      int
 	PollInterval          time.Duration
+	lastSnapshotTime      time.Time
 }
 
 func NewCollector() *Collector {
@@ -154,14 +155,16 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 	seenPIDs := make(map[int32]struct{}, len(pids))
 	out := make([]model.Process, 0, 8)
 	var jvmJobs []pendingJVM
+	var hidden []model.Process
 	hostID := c.HostID
 	if hostID == "" {
 		hostID = platform.LocalHostID()
 	}
 
-	// Pass 0: hard argv classification index so native Bazel test leaves can be
-	// ancestry-gated (parent must already be BAZEL_TEST / test-setup spine).
-	kindByPID := make(map[int32]string, 8)
+	// Pass 0: index OS ancestry as well as classification, retaining unclassified
+	// wrappers so Bazel descendants can find their server through sandbox spines.
+	nodes := make(map[int32]processNode, len(pids))
+	validated := make(map[int32]bool)
 	for _, pid := range pids {
 		select {
 		case <-ctx.Done():
@@ -173,12 +176,12 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 			continue
 		}
 		cmdline, err := p.CmdlineWithContext(ctx)
-		if err != nil || cmdline == "" {
-			continue
+		if err != nil {
+			cmdline = ""
 		}
-		if kind := Classify(cmdline); kind != "" {
-			kindByPID[pid] = kind
-		}
+		parent, _ := p.PpidWithContext(ctx)
+		start, _ := p.CreateTimeWithContext(ctx)
+		nodes[pid] = processNode{parent: parent, start: start, kind: Classify(cmdline), cmd: cmdline}
 	}
 
 	// Pass 1: discovery + OS metrics only. JVM probes must not delay this path.
@@ -194,26 +197,35 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 			continue
 		}
 		cmdline, err := p.CmdlineWithContext(ctx)
-		if err != nil || cmdline == "" {
+		if err != nil {
+			cmdline = ""
+		}
+		node, indexed := nodes[pid]
+		startMs, _ := p.CreateTimeWithContext(ctx)
+		parentPID, _ := p.PpidWithContext(ctx)
+		// Do not transfer Pass 0 classification/ownership to a reused PID.
+		if !indexed || startMs != node.start || parentPID != node.parent {
 			continue
 		}
 		kind := Classify(cmdline)
+		node.cmd = cmdline
+		nodes[pid] = node
+		owner := bazelOwner(pid, nodes)
+		if owner != 0 && !validBazelChain(ctx, pid, owner, nodes, validated) {
+			owner = 0
+		}
+		if kind == "" && owner != 0 {
+			kind = PromoteBazelNativeTest(cmdline, bazelTestAncestor(pid, nodes))
+		}
 		if kind == "" {
-			ppid, err := p.PpidWithContext(ctx)
-			if err != nil {
-				continue
+			if owner != 0 {
+				sample := c.sampleBazelDescendant(ctx, p, owner, startMs, nowTime, seen)
+				sample.OwnerStartTimeMs = nodes[owner].start
+				hidden = append(hidden, sample)
 			}
-			kind = PromoteBazelNativeTest(cmdline, kindByPID[ppid])
-			if kind == "" {
-				continue
-			}
+			continue
 		}
 		seenPIDs[pid] = struct{}{}
-
-		startMs := int64(0)
-		if create, err := p.CreateTimeWithContext(ctx); err == nil {
-			startMs = create
-		}
 
 		platMetrics := platform.ProcessPlatformMetrics{}
 		if c.Platform != nil {
@@ -223,6 +235,9 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 				HostID:       hostID,
 			})
 			if platMetrics.Identity.CreateTimeMs > 0 {
+				if startMs > 0 && startMs != platMetrics.Identity.CreateTimeMs {
+					continue
+				}
 				startMs = platMetrics.Identity.CreateTimeMs
 			}
 		}
@@ -316,10 +331,6 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 			}
 		}
 
-		parentPID := int32(0)
-		if ppid, err := p.PpidWithContext(ctx); err == nil {
-			parentPID = ppid
-		}
 		name, _ := p.NameWithContext(ctx)
 		status := "RUNNING"
 		if statuses, err := p.StatusWithContext(ctx); err == nil && len(statuses) > 0 {
@@ -347,6 +358,8 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 		out = append(out, model.Process{
 			PID:              pid,
 			ParentPID:        parentPID,
+			OwnerPID:         owner,
+			OwnerStartTimeMs: nodes[owner].start,
 			Type:             kind,
 			Name:             name,
 			CommandLine:      RedactCommandLine(cmdline),
@@ -386,6 +399,8 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 		}
 	}
 
+	applyBazelRollups(out, hidden, nodes)
+
 	// Poll duration covers OS discovery only so self-telemetry matches probe isolation.
 	if c.Observe != nil {
 		c.Observe.ObservePoll(time.Since(started), c.PollInterval)
@@ -395,6 +410,7 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 	c.applyJVMProbes(ctx, now, out, jvmJobs)
 
 	c.mu.Lock()
+	c.lastSnapshotTime = nowTime
 	for key := range c.priors {
 		if _, ok := seen[key]; !ok {
 			delete(c.priors, key)
