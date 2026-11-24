@@ -36,6 +36,7 @@ type Server struct {
 	DBPath     string
 	Collector  *poll.Collector
 	Logs       *logs.Watcher
+	BazelLogs  *logs.BazelWatcher
 	BEP        *bep.Watcher
 	Profiles   *bazelprofile.Watcher
 	Store      *store.Store
@@ -89,6 +90,7 @@ func NewServer(socketPath, dbPath string, interval, retention time.Duration, gra
 		DBPath:       dbPath,
 		Collector:    collector,
 		Logs:         logs.NewWatcher(gradleUserHome),
+		BazelLogs:    logs.NewBazelWatcher(),
 		BEP:          bepWatcher,
 		Profiles:     bazelprofile.NewWatcher(),
 		Store:        st,
@@ -207,6 +209,9 @@ func (s *Server) refresh(ctx context.Context) {
 	}
 
 	newLines, _ := s.Logs.Poll(active)
+	if s.BazelLogs != nil {
+		s.BazelLogs.Poll(snap.Processes)
+	}
 	for pid, lines := range newLines {
 		for _, line := range lines {
 			var evPtr *logs.Event
@@ -525,8 +530,12 @@ func (s *Server) handleDaemonLogs(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	all := s.Logs.List()
+	if s.BazelLogs != nil {
+		all = append(all, s.BazelLogs.List()...)
+	}
 	writeJSON(w, map[string]any{
-		"logs": s.Logs.List(),
+		"logs": all,
 	})
 }
 
@@ -543,7 +552,18 @@ func (s *Server) handleDaemonLogTail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid pid", http.StatusBadRequest)
 		return
 	}
-	tail, ok := s.Logs.TailFor(pid)
+	var tail logs.Tail
+	var ok bool
+	knownBazel := false
+	if s.BazelLogs != nil {
+		_, knownBazel = s.BazelLogs.TailFor(pid, "")
+		if knownBazel {
+			tail, ok = s.BazelLogs.TailFor(pid, r.URL.Query().Get("source"))
+		}
+	}
+	if !knownBazel {
+		tail, ok = s.Logs.TailFor(pid)
+	}
 	if !ok {
 		http.Error(w, "daemon log not found", http.StatusNotFound)
 		return

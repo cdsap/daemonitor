@@ -338,8 +338,12 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 			cwd = &dir
 		}
 		var project *string
+		var bazelOutputBase, bazelInstallBase string
 		switch {
 		case kind == "BAZEL_SERVER":
+			if argv, err := p.CmdlineSliceWithContext(ctx); err == nil {
+				bazelOutputBase, bazelInstallBase = BazelDirectories(argv)
+			}
 			if ws := BazelWorkspaceDirectory(cmdline); ws != "" {
 				project = &ws
 			} else if cwd != nil {
@@ -359,6 +363,8 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 			CommandLine:      RedactCommandLine(cmdline),
 			WorkingDirectory: cwd,
 			ProjectPath:      project,
+			BazelOutputBase:  bazelOutputBase,
+			BazelInstallBase: bazelInstallBase,
 			RSSMemoryMB:      rssMB,
 			VirtualMemoryMB:  osMetrics.virtualMemoryMB, SwapMemoryMB: osMetrics.swapMemoryMB,
 			ResidentBytes: platMetrics.ResidentBytes.Value,
@@ -709,6 +715,20 @@ func BazelWorkspaceDirectory(commandLine string) string {
 		}
 	}
 	return ""
+}
+
+// BazelDirectories extracts server directory flags from argv without splitting
+// paths containing spaces or interpreting platform-specific path separators.
+func BazelDirectories(argv []string) (outputBase, installBase string) {
+	for _, arg := range argv {
+		if value, ok := strings.CutPrefix(arg, "--output_base="); ok {
+			outputBase = value
+		}
+		if value, ok := strings.CutPrefix(arg, "--install_base="); ok {
+			installBase = value
+		}
+	}
+	return
 }
 
 func Platform() string { return runtime.GOOS + "/" + runtime.GOARCH }

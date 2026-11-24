@@ -5,20 +5,21 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/cdsap/daemonitor/cored/internal/heap"
 )
 
-// Characterizes current lookup, including JAVA_HOME shadowing TargetJDKDir.
-// The report proposes a separate fix; this spike must not silently change policy.
+// Verifies TargetJDKDir lookup precedence after #583/#592: explicit JDKDir >
+// TargetJDKDir (embedded target JDK) > system JAVA_HOME / PATH.
 func TestBazelSpikeTargetJDKLookup(t *testing.T) {
 	for _, tc := range []struct {
 		name                       string
 		system, target, configured bool
 		want                       string
 	}{
-		{"system shadows embedded target today", true, true, false, "system"},
+		{"embedded target wins over system JAVA_HOME", true, true, false, "embedded"},
 		{"target selected without system tools", false, true, false, "embedded"},
 		{"explicit JDK wins", true, true, true, "configured"},
 		{"stripped embedded JRE falls back", true, false, false, "system"},
@@ -38,6 +39,9 @@ func TestBazelSpikeTargetJDKLookup(t *testing.T) {
 					t.Fatal(err)
 				}
 				for _, name := range []string{"jcmd", "jstat", "jinfo"} {
+					if runtime.GOOS == "windows" {
+						name += ".exe"
+					}
 					if err := os.WriteFile(filepath.Join(bin, name), nil, 0o755); err != nil {
 						t.Fatal(err)
 					}
