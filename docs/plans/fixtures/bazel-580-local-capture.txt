@@ -1,0 +1,39 @@
+Issue 580 local capture attempt — 2026-11-23 America/Los_Angeles
+Host: Darwin arm64, Apple M4 Pro; cached Bazel binary reports bazel 9.3.3.
+Provenance: actual command output, excerpted; worktree/cache paths omitted.
+This is failure evidence, NOT a captured Bazel process tree.
+
+An isolated MODULE.bazel workspace used a custom Starlark action with run_shell.
+The action attempted to walk its own ancestors with:
+  ps -p "$pid" -o pid=,ppid=,comm=
+No host-wide command lines or environments were collected.
+
+Bazel invocation (all output and temporary paths under this worktree):
+  TMPDIR=<worktree>/.spike-tmp/tmp <cached-bazel-9.3.3> \
+    --output_user_root=<worktree>/.spike-tmp/bazel --batch \
+    --host_jvm_args=-XX:-UsePerfData --ignore_all_rc_files \
+    build --incompatible_autoload_externally= --spawn_strategy=sandboxed //:tree
+
+Observed output:
+  WARNING: failed to get value of sysctl kern.maxprocperuid: Operation not permitted
+  ERROR: Error computing the main repository mapping: Error accessing registry
+  https://bcr.bazel.build/: Failed to fetch registry file
+  https://bcr.bazel.build/modules/rules_shell/0.6.1/MODULE.bazel:
+  Unknown host: bcr.bazel.build
+  FATAL: bazel crashed due to an internal error.
+  java.lang.RuntimeException: Operation not permitted (sysctl failed)
+    at java.base/java.lang.ProcessHandleImpl.getProcessPids0(Native Method)
+    at java.base/java.lang.ProcessHandleImpl.children(Unknown Source)
+Exit status: 37. Action never ran.
+
+Separate direct ps of the current shell:
+  operation not permitted: /bin/ps
+
+Observed extracted install tree (only jdk/bin was inspected):
+  install/<hash>/embedded_tools/jdk/bin/java
+  install/<hash>/embedded_tools/jdk/bin/keytool
+No jcmd, jstat or jinfo in that bin directory. This observation applies only
+to this cached macOS Bazel distribution; no live attach was possible.
+
+Temporary workspace, extracted installation, logs and caches were removed.
+Linux/Windows hosts and language-rule toolchains were unavailable in this run.
