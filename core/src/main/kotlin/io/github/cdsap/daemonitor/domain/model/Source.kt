@@ -9,6 +9,7 @@ enum class Source {
     TERMINAL,
     IDE,
     BEP,
+    PROFILE,
     UNKNOWN,
 }
 
