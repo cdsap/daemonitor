@@ -19,11 +19,13 @@ const (
 
 var filenameRE = regexp.MustCompile(`^daemon-(\d+)\.out\.log$`)
 
-// DaemonLog is a discovered Gradle daemon out log.
+// DaemonLog is a discovered build tool log. Source distinguishes logs for one PID.
 type DaemonLog struct {
 	PID           int64  `json:"pid"`
 	GradleVersion string `json:"gradle_version"`
 	Path          string `json:"path"`
+	Tool          string `json:"tool,omitempty"`
+	Source        string `json:"source,omitempty"`
 }
 
 // Tail is the retained redacted lines for one log, plus parsed build events (U3).
@@ -33,6 +35,8 @@ type Tail struct {
 	Path          string   `json:"path"`
 	Lines         []string `json:"lines"`
 	Events        []Event  `json:"events"`
+	Tool          string   `json:"tool,omitempty"`
+	Source        string   `json:"source,omitempty"`
 }
 
 // Watcher discovers daemon logs and keeps a redacted live tail (Kotlin DaemonLogWatcher subset).
