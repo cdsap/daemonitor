@@ -105,6 +105,16 @@ GET /v1/daemon-logs/{pid}/tail   # lines + parsed U3 events
 GET /v1/builds?limit=<n>&pid=<pid>&project=<text>&status=<status>
 ```
 
+For live Bazel servers, `/v1/daemon-logs` includes `tool: "bazel"` entries
+with `source: "command.log"` or `source: "server/jvm.out"`. The PID tail defaults
+to `command.log` (or the server log when it is absent); use
+`/v1/daemon-logs/{pid}/tail?source=server%2Fjvm.out` to select the server log.
+These tails contain redacted lines and an empty events array. The watcher derives
+paths from the server's `--output_base=` argv, never invokes Bazel, and never
+opens its lock. It retains up to 100 complete lines per file, reading a recent
+256 KiB window and dropping lines over 16 KiB. Rotation and detected rewrites
+reset the tail; absent files are ignored until they appear.
+
 ## Security and privacy
 
 Daemonitor is local-only by default: the core does not upload telemetry or start a

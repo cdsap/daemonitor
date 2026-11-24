@@ -6,6 +6,7 @@ import (
 	"os"
 	"regexp"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -36,7 +37,7 @@ var (
 	gradleRuntime      = regexp.MustCompile(`(-Dorg\.gradle\.|org\.gradle\.(launcher|process|tooling|internal|api|workers)\.|GradleWorkerMain)`)
 	// Bazel 9.x server argv: -jar …/A-server.jar plus --product_name=Bazel and/or --output_base=.
 	// Unix (/) and Windows (\) separators; optional closing quote on the jar token.
-	bazelServerJar    = regexp.MustCompile(`(^|[\s/\\])A-server\.jar["']?(?:\s|$)`)
+	bazelServerJar = regexp.MustCompile(`(^|[\s/\\])A-server\.jar["']?(?:\s|$)`)
 	// Require end-of-token after Bazel so --product_name=Bazelisk does not match.
 	bazelServerMarker = regexp.MustCompile(`--product_name=Bazel(?:\s|$)|--output_base=`)
 	bazelWorkspaceDir = regexp.MustCompile(`--workspace_directory=(?:"([^"]+)"|'([^']+)'|([^\s]+))`)
@@ -331,8 +332,12 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 			cwd = &dir
 		}
 		var project *string
+		var bazelOutputBase, bazelInstallBase string
 		switch {
 		case kind == "BAZEL_SERVER":
+			if argv, err := p.CmdlineSliceWithContext(ctx); err == nil {
+				bazelOutputBase, bazelInstallBase = BazelDirectories(argv)
+			}
 			if ws := BazelWorkspaceDirectory(cmdline); ws != "" {
 				project = &ws
 			} else if cwd != nil {
@@ -352,6 +357,8 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 			CommandLine:      RedactCommandLine(cmdline),
 			WorkingDirectory: cwd,
 			ProjectPath:      project,
+			BazelOutputBase:  bazelOutputBase,
+			BazelInstallBase: bazelInstallBase,
 			RSSMemoryMB:      rssMB,
 			VirtualMemoryMB:  osMetrics.virtualMemoryMB, SwapMemoryMB: osMetrics.swapMemoryMB,
 			ResidentBytes: platMetrics.ResidentBytes.Value,
@@ -694,6 +701,20 @@ func BazelWorkspaceDirectory(commandLine string) string {
 		}
 	}
 	return ""
+}
+
+// BazelDirectories extracts server directory flags from argv without splitting
+// paths containing spaces or interpreting platform-specific path separators.
+func BazelDirectories(argv []string) (outputBase, installBase string) {
+	for _, arg := range argv {
+		if value, ok := strings.CutPrefix(arg, "--output_base="); ok {
+			outputBase = value
+		}
+		if value, ok := strings.CutPrefix(arg, "--install_base="); ok {
+			installBase = value
+		}
+	}
+	return
 }
 
 func Platform() string { return runtime.GOOS + "/" + runtime.GOARCH }

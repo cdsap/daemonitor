@@ -240,3 +240,14 @@ func TestShouldProbeLiveHeap(t *testing.T) {
 		}
 	}
 }
+
+func TestBazelDirectories(t *testing.T) {
+	out, install := poll.BazelDirectories([]string{"java", "--output_base=/cache/with spaces", `--install_base=C:\bazel\install`, "--other=ignored"})
+	if out != "/cache/with spaces" || install != `C:\bazel\install` {
+		t.Fatalf("directories = %q, %q", out, install)
+	}
+	out, install = poll.BazelDirectories([]string{"java", "--output_base_other=/wrong"})
+	if out != "" || install != "" {
+		t.Fatalf("unexpected directories = %q, %q", out, install)
+	}
+}
