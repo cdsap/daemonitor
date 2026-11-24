@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/cdsap/daemonitor/cored/internal/builds"
@@ -13,9 +14,10 @@ import (
 
 // Watcher discovers opportunistic BEP sinks and closes builds from JSON or binary files.
 type Watcher struct {
-	mu      sync.Mutex
-	files   map[string]*trackedFile
-	seenIDs map[string]struct{}
+	mu              sync.Mutex
+	files           map[string]*trackedFile
+	seenIDs         map[string]struct{}
+	ambientEnvNames map[string]struct{}
 	// Optional extra absolute paths / globs resolved by the caller each poll.
 	ExtraPaths func() []Sink
 }
@@ -27,13 +29,48 @@ type trackedFile struct {
 	state    partial
 	identity os.FileInfo
 	prefix   []byte
+	client   clientObservation
+}
+
+// clientObservation retains fixed attribution only, never ancestry argv or env values.
+// The time window prevents attribution leaking to another invocation reusing a sink.
+type clientObservation struct {
+	Sink         Sink
+	Agent        *builds.AgentAttribution
+	StartTimeMs  int64
+	ObservedAtMs int64
 }
 
 func NewWatcher() *Watcher {
-	return &Watcher{
-		files:   make(map[string]*trackedFile),
-		seenIDs: make(map[string]struct{}),
+	ambient := make(map[string]struct{})
+	for _, entry := range os.Environ() {
+		name, _, _ := strings.Cut(entry, "=")
+		ambient[strings.Clone(name)] = struct{}{}
 	}
+	return &Watcher{
+		files:           make(map[string]*trackedFile),
+		seenIDs:         make(map[string]struct{}),
+		ambientEnvNames: ambient,
+	}
+}
+
+// observeClient is called during process Pass 0, before slower JVM probes and
+// before short-lived clients disappear. Evidence survives until BEP is read.
+func (w *Watcher) observeClient(client clientObservation) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if client.Sink.Path == "" {
+		return
+	}
+	tf := w.files[client.Sink.Path]
+	if tf == nil {
+		tf = &trackedFile{sink: client.Sink}
+		w.files[client.Sink.Path] = tf
+	}
+	if tf.client.Sink.ClientPID == client.Sink.ClientPID && tf.client.StartTimeMs == client.StartTimeMs && client.Agent == nil {
+		client.Agent = tf.client.Agent
+	}
+	tf.client = client
 }
 
 // Poll discovers sinks from live processes and reads newly appended bytes.
@@ -105,13 +142,14 @@ func (w *Watcher) readFile(tf *trackedFile) ([]builds.Build, error) {
 		// so a size comparison alone can miss a new invocation.
 		tf.offset = 0
 		tf.pending = nil
-		tf.state = partial{}
+		tf.state = partial{ambientEnvNames: w.ambientEnvNames}
 	}
 	tf.identity = info
 	tf.prefix = prefix
 	if _, err := f.Seek(tf.offset, 0); err != nil {
 		return nil, err
 	}
+	tf.state.ambientEnvNames = w.ambientEnvNames
 	var closed []builds.Build
 	var parseErr error
 	for tf.offset < size {
@@ -121,6 +159,7 @@ func (w *Watcher) readFile(tf *trackedFile) ([]builds.Build, error) {
 			if err == nil {
 				err = io.ErrNoProgress
 			}
+			applyClientAttribution(closed, tf.client)
 			return closed, err
 		}
 		tf.offset += int64(n)
@@ -134,13 +173,30 @@ func (w *Watcher) readFile(tf *trackedFile) ([]builds.Build, error) {
 		tf.pending = leftover
 		closed = append(closed, rows...)
 		if parseErr != nil {
+			applyClientAttribution(closed, tf.client)
 			return closed, parseErr
 		}
 		if err != nil {
+			applyClientAttribution(closed, tf.client)
 			return closed, err
 		}
 	}
+	applyClientAttribution(closed, tf.client)
 	return closed, nil
+}
+
+func applyClientAttribution(closed []builds.Build, c clientObservation) {
+	if c.Agent == nil || c.StartTimeMs <= 0 {
+		return
+	}
+	for i := range closed {
+		b := &closed[i]
+		// Direct ancestry wins over the weaker env-name hint, including when
+		// Daemonitor has the same ambient agent variables as the build client.
+		if b.StartTimeMs >= c.StartTimeMs && b.StartTimeMs <= c.ObservedAtMs {
+			b.Agent, b.AgentProvider = c.Agent.Agent, c.Agent.Provider
+		}
+	}
 }
 
 // DiscoverFromProcesses scrapes live process argv for BEP file flags.

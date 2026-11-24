@@ -100,6 +100,8 @@ type Collector struct {
 	ProbeConcurrency      int
 	PollInterval          time.Duration
 	lastSnapshotTime      time.Time
+	// BazelClientObserved inspects Pass 0 argv before JVM probes can delay discovery.
+	BazelClientObserved func(context.Context, *process.Process, string, int64)
 }
 
 func NewCollector() *Collector {
@@ -184,6 +186,9 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 		parent, _ := p.PpidWithContext(ctx)
 		start, _ := p.CreateTimeWithContext(ctx)
 		nodes[pid] = processNode{parent: parent, start: start, kind: Classify(cmdline), cmd: cmdline}
+		if c.BazelClientObserved != nil && cmdline != "" {
+			c.BazelClientObserved(ctx, p, cmdline, now)
+		}
 	}
 
 	// Pass 1: discovery + OS metrics only. JVM probes must not delay this path.

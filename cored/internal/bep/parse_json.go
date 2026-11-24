@@ -23,6 +23,8 @@ type partial struct {
 	EndTimeMs        int64
 	Status           builds.FinalStatus
 	Finished         bool
+	EnvNames         []string
+	ambientEnvNames  map[string]struct{}
 }
 
 // ParseJSONStream reads NDJSON BuildEvent lines and returns closed builds.
@@ -56,7 +58,9 @@ func ConsumeJSONBytes(state *partial, pending []byte, chunk []byte) (closed []bu
 	for {
 		nl := bytes.IndexByte(buf, '\n')
 		if nl < 0 {
-			return closed, buf, nil
+			// Do not retain consumed events (and their env values) behind a
+			// trailing fragment's backing array between polls.
+			return closed, bytes.Clone(buf), nil
 		}
 		line := bytes.TrimSpace(buf[:nl])
 		buf = buf[nl+1:]
@@ -65,7 +69,7 @@ func ConsumeJSONBytes(state *partial, pending []byte, chunk []byte) (closed []bu
 		}
 		if b, ok := applyJSONEvent(state, line); ok {
 			closed = append(closed, b)
-			*state = partial{}
+			*state = partial{ambientEnvNames: state.ambientEnvNames}
 		}
 	}
 }
@@ -75,6 +79,7 @@ func applyJSONEvent(state *partial, line []byte) (builds.Build, bool) {
 	if err := json.Unmarshal(line, &raw); err != nil {
 		return builds.Build{}, false
 	}
+	state.EnvNames = append(state.EnvNames, clientEnvNames(raw)...)
 	if startedRaw, ok := raw["started"]; ok {
 		var started struct {
 			UUID               string `json:"uuid"`
@@ -88,6 +93,7 @@ func applyJSONEvent(state *partial, line []byte) (builds.Build, bool) {
 		if err := json.Unmarshal(startedRaw, &started); err != nil {
 			return builds.Build{}, false
 		}
+		*state = partial{ambientEnvNames: state.ambientEnvNames}
 		state.BuildID = started.UUID
 		state.WorkingDirectory = started.WorkingDirectory
 		state.ProjectPath = started.WorkspaceDirectory
@@ -165,6 +171,9 @@ func (p *partial) toBuild() builds.Build {
 		FinalStatus:      p.Status,
 		Tool:             builds.ToolBazel,
 	}
+	if attr := builds.DetectAgent(p.EnvNames, p.ambientEnvNames); attr != nil {
+		b.Agent, b.AgentProvider = attr.Agent, attr.Provider
+	}
 	if p.Command != "" {
 		cmd := "bazel " + p.Command
 		b.CommandLine = &cmd
@@ -178,6 +187,57 @@ func (p *partial) toBuild() builds.Build {
 		}
 	}
 	return b
+}
+
+// clientEnvNames reads only Bazel's client_env options. Action/repository env
+// options and arbitrary build metadata are not evidence of client provenance.
+// Values are discarded at this boundary and never enter partial or Build.
+func clientEnvNames(raw map[string]json.RawMessage) []string {
+	var names []string
+	add := func(entry string) {
+		name, _, _ := strings.Cut(entry, "=")
+		if name != "" {
+			names = append(names, strings.Clone(name))
+		}
+	}
+	var structured struct {
+		Sections []struct {
+			OptionList struct {
+				Option []struct {
+					Name  string `json:"optionName"`
+					Value string `json:"optionValue"`
+				} `json:"option"`
+			} `json:"optionList"`
+		} `json:"sections"`
+	}
+	if json.Unmarshal(raw["structuredCommandLine"], &structured) == nil {
+		for _, section := range structured.Sections {
+			for _, option := range section.OptionList.Option {
+				if option.Name == "client_env" {
+					add(option.Value)
+				}
+			}
+		}
+	}
+	var unstructured struct {
+		Args []string `json:"args"`
+	}
+	var parsed struct {
+		CmdLine []string `json:"cmdLine"`
+	}
+	_ = json.Unmarshal(raw["unstructuredCommandLine"], &unstructured)
+	_ = json.Unmarshal(raw["optionsParsed"], &parsed)
+	for _, args := range [][]string{unstructured.Args, parsed.CmdLine} {
+		for i := 0; i < len(args); i++ {
+			if entry, ok := strings.CutPrefix(args[i], "--client_env="); ok {
+				add(entry)
+			} else if args[i] == "--client_env" && i+1 < len(args) {
+				i++
+				add(args[i])
+			}
+		}
+	}
+	return names
 }
 
 func anyToInt64(v any) int64 {

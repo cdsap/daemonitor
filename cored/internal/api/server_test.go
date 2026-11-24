@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -415,6 +416,7 @@ func getBuilds(t *testing.T, client *http.Client, query string) buildsPayload {
 func TestBEPWatchIngestsBazelBuildsAndFiltersByTool(t *testing.T) {
 	bepPath := filepath.Join(t.TempDir(), "bep.ndjson")
 	body := `{"started":{"uuid":"bep-api-1","startTimeMillis":"1700000000000","command":"build","workingDirectory":"/work/app","workspaceDirectory":"/work/app","serverPid":"4242"}}` + "\n" +
+		`{"optionsParsed":{"cmdLine":["--client_env=AIDER_DAEMONITOR_596_TEST=private-test-value"]}}` + "\n" +
 		`{"finished":{"overallSuccess":true,"exitCode":{"name":"SUCCESS","code":0},"finishTimeMillis":"1700000003000"}}` + "\n"
 	if err := os.WriteFile(bepPath, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
@@ -462,6 +464,20 @@ func TestBEPWatchIngestsBazelBuildsAndFiltersByTool(t *testing.T) {
 	got := payload.Builds[0]
 	if got.BuildID != "bep-api-1" || got.Tool != builds.ToolBazel || got.InferredSource != builds.SourceBEP || got.FinalStatus != builds.StatusSuccess {
 		t.Fatalf("build=%+v", got)
+	}
+	if got.Agent != "Aider" || got.AgentProvider != "configurable" {
+		t.Fatalf("agent attribution was not persisted: %+v", got)
+	}
+	persisted, err := srv.Store.ListBuilds(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(persisted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "private-test-value") {
+		t.Fatal("environment value leaked into persisted builds")
 	}
 	gradle := getBuilds(t, client, "?tool=GRADLE")
 	if gradle.Count != 1 || gradle.Builds[0].BuildID != "gradle-1" || gradle.Builds[0].Tool != builds.ToolGradle {
