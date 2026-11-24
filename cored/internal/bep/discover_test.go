@@ -48,3 +48,23 @@ func TestParseSinksSkipsUnresolvedRelative(t *testing.T) {
 		t.Fatalf("expected skip without cwd, got %v", sinks)
 	}
 }
+
+func TestBinarySinkPaths(t *testing.T) {
+	for _, tc := range []struct{ cmd, cwd, path string }{
+		{`bazel test --build_event_binary_file='out/build events.bep'`, "/work/app", filepath.Join("/work/app", "out/build events.bep")},
+		{`bazel build --build_event_binary_file=../events.bep`, "/work/app", filepath.Join("/work", "events.bep")},
+		{`bazel build --build_event_binary_file=/work/events.bep`, "", "/work/events.bep"},
+		{`bazel build --build_event_binary_file=relative.bep`, "", ""},
+	} {
+		got := bep.ParseSinksFromArgv(tc.cmd, tc.cwd, 42)
+		if tc.path == "" {
+			if len(got) != 0 {
+				t.Fatalf("unresolved: %v", got)
+			}
+			continue
+		}
+		if len(got) != 1 || got[0].Path != tc.path || got[0].Format != bep.FormatBinary || got[0].ClientPID != 42 || got[0].Cwd != tc.cwd {
+			t.Fatalf("got=%v want path=%q", got, tc.path)
+		}
+	}
+}
