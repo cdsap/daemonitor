@@ -66,6 +66,7 @@ func NewServer(socketPath, dbPath string, interval, retention time.Duration, gra
 		collector.PollInterval = interval
 	}
 	bepWatcher := bep.NewWatcher()
+	collector.BazelClientObserved = bepWatcher.ObserveProcess
 	// Local/dev assist: absolute JSON BEP paths already emitted by the user,
 	// separated by the OS path-list separator (":" on Unix, ";" on Windows).
 	// Daemonitor never enables BEP itself. Example:

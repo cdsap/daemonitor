@@ -99,6 +99,8 @@ type Collector struct {
 	Cadences              observe.Cadences
 	ProbeConcurrency      int
 	PollInterval          time.Duration
+	// BazelClientObserved inspects Pass 0 argv before JVM probes can delay discovery.
+	BazelClientObserved func(context.Context, *process.Process, string, int64)
 }
 
 func NewCollector() *Collector {
@@ -180,6 +182,9 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 		}
 		if kind := Classify(cmdline); kind != "" {
 			kindByPID[pid] = kind
+		}
+		if c.BazelClientObserved != nil {
+			c.BazelClientObserved(ctx, p, cmdline, now)
 		}
 	}
 
