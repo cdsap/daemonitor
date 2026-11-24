@@ -1,0 +1,5 @@
+INFO: Invocation ID: 99999999-1111-4111-8111-111111111111
+ERROR: /fixture/BUILD:1:8: fixture action failed
+INFO: Elapsed time: 1.000s, Critical Path: 0.60s
+INFO: 1 process: 1 internal.
+FAILED: Build did NOT complete successfully

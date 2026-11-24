@@ -1,0 +1,6 @@
+INFO: Invocation ID: 88888888-1111-4111-8111-111111111111
+INFO: Analyzed target //fixture:hello (1 packages loaded, 2 targets configured).
+INFO: Found 1 target...
+INFO: Elapsed time: 1.000s, Critical Path: 0.60s
+INFO: 2 processes: 1 internal, 1 local.
+INFO: Build completed successfully, 2 total actions
