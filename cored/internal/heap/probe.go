@@ -376,6 +376,8 @@ func (p *Prober) supplementAdvanced(ctx context.Context, look func(string) (stri
 		if out, err := run(ctx, jstat, "-compiler", fmt.Sprintf("%d", pid)); err == nil {
 			if metrics, err := ParseJstatCompiler(out); err == nil {
 				sample.JIT = &metrics
+			} else {
+				sample.Diagnostics = append(sample.Diagnostics, Diagnostic{Tool: "jstat", Operation: "-compiler", Category: FailureParseError})
 			}
 		} else {
 			sample.Diagnostics = append(sample.Diagnostics, diagnostic("jstat", "-compiler", err))
@@ -383,6 +385,8 @@ func (p *Prober) supplementAdvanced(ctx context.Context, look func(string) (stri
 		if out, err := run(ctx, jstat, "-class", fmt.Sprintf("%d", pid)); err == nil {
 			if metrics, err := ParseJstatClass(out); err == nil {
 				sample.Classes = &metrics
+			} else {
+				sample.Diagnostics = append(sample.Diagnostics, Diagnostic{Tool: "jstat", Operation: "-class", Category: FailureParseError})
 			}
 		} else {
 			sample.Diagnostics = append(sample.Diagnostics, diagnostic("jstat", "-class", err))
@@ -394,6 +398,8 @@ func (p *Prober) supplementAdvanced(ctx context.Context, look func(string) (stri
 		if out, err := run(ctx, jcmd, fmt.Sprintf("%d", pid), "Compiler.codecache"); err == nil {
 			if pools, err := ParseJcmdCodeCache(out); err == nil {
 				sample.CodeCache = pools
+			} else {
+				sample.Diagnostics = append(sample.Diagnostics, Diagnostic{Tool: "jcmd", Operation: "Compiler.codecache", Category: FailureParseError})
 			}
 		} else {
 			sample.Diagnostics = append(sample.Diagnostics, diagnostic("jcmd", "Compiler.codecache", err))
@@ -401,6 +407,8 @@ func (p *Prober) supplementAdvanced(ctx context.Context, look func(string) (stri
 		if out, err := run(ctx, jcmd, fmt.Sprintf("%d", pid), "PerfCounter.print"); err == nil {
 			if metrics, err := ParsePerfCounterSafepoints(out); err == nil {
 				sample.Safepoints = &metrics
+			} else {
+				sample.Diagnostics = append(sample.Diagnostics, Diagnostic{Tool: "jcmd", Operation: "PerfCounter.print", Category: FailureParseError})
 			}
 		} else {
 			sample.Diagnostics = append(sample.Diagnostics, diagnostic("jcmd", "PerfCounter.print", err))

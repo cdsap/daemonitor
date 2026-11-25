@@ -2,6 +2,7 @@ package heap_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -162,6 +163,66 @@ func TestProberAdvancedTelemetryIsBestEffort(t *testing.T) {
 	}
 	if s.JIT == nil || s.CodeCache == nil || s.Classes == nil || s.Safepoints == nil {
 		t.Fatalf("advanced telemetry=%+v", s)
+	}
+}
+
+func TestProberAdvancedParseFailuresAreSanitized(t *testing.T) {
+	for _, operation := range []string{"-compiler", "-class", "Compiler.codecache", "PerfCounter.print"} {
+		t.Run(operation, func(t *testing.T) {
+			p := heap.NewProber()
+			p.EnableAdvancedTelemetry = true
+			p.LookPath = func(name string) (string, error) { return "/fake/" + name, nil }
+			p.Runner = func(ctx context.Context, name string, args ...string) (string, error) {
+				op := args[0]
+				if strings.HasSuffix(name, "jcmd") {
+					op = args[len(args)-1]
+				}
+				if op == operation {
+					return "private.Example secret failedMethod", nil
+				}
+				switch op {
+				case "-compiler":
+					return "Compiled Failed Invalid Time FailedType FailedMethod\n128 0 0 0.02 0\n", nil
+				case "-class":
+					return jstatClassFixture, nil
+				case "Compiler.codecache":
+					return codeCacheFixture, nil
+				case "PerfCounter.print":
+					return perfCounterSafepointFixture, nil
+				case "GC.heap_info", "VM.info":
+					return jcmdHeapInfoFixture, nil
+				case "-gc":
+					return jstatGCFixture, nil
+				default:
+					return "", nil
+				}
+			}
+			s, err := p.SampleFor(context.Background(), 42, 1000)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if s.UsedMB != 35 || s.CommittedMB != 256 || s.TotalGCTimeSeconds == nil {
+				t.Fatalf("lost heap/GC sample: %+v", s)
+			}
+			if (s.JIT == nil) != (operation == "-compiler") || (s.Classes == nil) != (operation == "-class") || (s.CodeCache == nil) != (operation == "Compiler.codecache") || (s.Safepoints == nil) != (operation == "PerfCounter.print") {
+				t.Fatalf("unrelated metrics lost: %+v", s)
+			}
+			tool := "jcmd"
+			if strings.HasPrefix(operation, "-") {
+				tool = "jstat"
+			}
+			want := heap.Diagnostic{Tool: tool, Operation: operation, Category: heap.FailureParseError}
+			if len(s.Diagnostics) != 1 || s.Diagnostics[0] != want {
+				t.Fatalf("diagnostics=%+v want %+v", s.Diagnostics, want)
+			}
+			encoded, err := json.Marshal(s.Diagnostics)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(encoded), "private.Example") || strings.Contains(string(encoded), "secret") || strings.Contains(string(encoded), "failedMethod") {
+				t.Fatalf("raw output leaked: %s", encoded)
+			}
+		})
 	}
 }
 

@@ -2,6 +2,7 @@ package heap
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -444,9 +445,8 @@ func ParseJstatCompiler(out string) (JITMetrics, error) {
 		return JITMetrics{}, fmt.Errorf("jstat -compiler: need header and data row")
 	}
 	headers, values := strings.Fields(lines[0]), strings.Fields(lines[len(lines)-1])
-	if len(values) < len(headers) {
-		return JITMetrics{}, fmt.Errorf("jstat -compiler: column count mismatch")
-	}
+	// Ignored trailing fields (notably FailedMethod) may be blank. Each
+	// supported counter checks its own position below.
 	idx := map[string]int{}
 	for i, h := range headers {
 		idx[h] = i
@@ -468,7 +468,7 @@ func ParseJstatCompiler(out string) (JITMetrics, error) {
 			return nil
 		}
 		v, err := strconv.ParseFloat(values[i], 64)
-		if err != nil {
+		if err != nil || math.IsNaN(v) || math.IsInf(v, 0) {
 			return nil
 		}
 		return &v
@@ -523,7 +523,11 @@ func ParseJstatClass(out string) (ClassMetrics, error) {
 		total := *loaded + *unloaded
 		loadedTotal = &total
 	}
-	return ClassMetrics{LoadedClasses: loaded, UnloadedClasses: unloaded, LoadedClassesTotal: loadedTotal, ClassTimeSeconds: getFloat("Time")}, nil
+	m := ClassMetrics{LoadedClasses: loaded, UnloadedClasses: unloaded, LoadedClassesTotal: loadedTotal, ClassTimeSeconds: getFloat("Time")}
+	if m.LoadedClasses == nil && m.UnloadedClasses == nil && m.ClassTimeSeconds == nil {
+		return ClassMetrics{}, fmt.Errorf("jstat -class: no supported counters")
+	}
+	return m, nil
 }
 
 // ParsePerfCounterSafepoints parses cumulative HotSpot perf counters. These
