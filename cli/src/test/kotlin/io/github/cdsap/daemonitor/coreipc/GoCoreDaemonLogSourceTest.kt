@@ -91,6 +91,29 @@ class GoCoreDaemonLogSourceTest {
     }
 
     @Test
+    fun `parses and tails bazel daemon logs with source query`() {
+        val responses = mapOf(
+            "/v1/daemon-logs" to """
+                {"logs":[{"pid":4242,"gradle_version":"","path":"/tmp/outbase/command.log","tool":"bazel","source":"command.log"}]}
+            """.trimIndent(),
+            "/v1/daemon-logs/4242/tail?source=command.log" to """
+                {"pid":4242,"gradle_version":"","path":"/tmp/outbase/command.log","tool":"bazel","source":"command.log","lines":["INFO: Build completed successfully"]}
+            """.trimIndent(),
+        )
+        val source = GoCoreDaemonLogSource(
+            GoCoreClient(Files.createFile(tempDir.resolve("cored-bazel.sock"))) { _, path ->
+                responses.getValue(path)
+            },
+        )
+
+        val logs = source.discover()
+        assertEquals(1, logs.size)
+        assertEquals("bazel", logs.single().tool)
+        assertEquals("command.log", logs.single().source)
+        assertEquals(listOf("INFO: Build completed successfully"), source.tailFor(logs.single()))
+    }
+
+    @Test
     fun `tail fetch failures are exposed to the caller`() {
         val source = GoCoreDaemonLogSource(
             GoCoreClient(Files.createFile(tempDir.resolve("cored.sock"))) { _, _ -> error("socket unavailable") },

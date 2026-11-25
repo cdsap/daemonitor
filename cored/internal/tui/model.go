@@ -426,7 +426,7 @@ func (m Model) detailPaneOffset(pane detailPaneKind) int {
 }
 
 func (m Model) detailPaneCount() int {
-	if m.width >= 120 && m.detailProcess != nil && m.detailProcess.Type == "GRADLE_DAEMON" {
+	if m.width >= 120 && m.detailProcess != nil && (m.detailProcess.Type == "GRADLE_DAEMON" || m.detailProcess.Type == "BAZEL_SERVER") {
 		return 4
 	}
 	if m.width >= 120 {

@@ -164,8 +164,14 @@ class LiveViewModel(
         is DaemonLogTailResult.Error -> LogTailState.Error(errorType)
     }
 
-    private fun logFor(process: GradleProcess): DaemonLog? =
-        if (process.type == ProcessType.GRADLE_DAEMON) daemonLogs.firstOrNull { it.pid == process.pid } else null
+    private fun logFor(process: GradleProcess): DaemonLog? = when (process.type) {
+        ProcessType.GRADLE_DAEMON ->
+            daemonLogs.firstOrNull { it.pid == process.pid && !it.tool.equals("bazel", ignoreCase = true) }
+        ProcessType.BAZEL_SERVER ->
+            daemonLogs.filter { it.pid == process.pid }
+                .minByOrNull { if (it.source == "command.log") 0 else 1 }
+        else -> null
+    }
 
     private fun nextDetail(current: DetailState, processes: List<GradleProcess>): DetailState =
         when (current) {

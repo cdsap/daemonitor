@@ -63,6 +63,17 @@ class LiveViewModelTest {
         assertNull(vm.state.value.daemonLog)
     }
 
+    @Test
+    fun `bazel server selection prefers command log over jvm out`() {
+        val vm = LiveViewModel()
+        val bazel = proc(10).copy(type = ProcessType.BAZEL_SERVER)
+        val jvmOut = DaemonLog(10, "", Path.of("/tmp/out/server/jvm.out"), tool = "bazel", source = "server/jvm.out")
+        val cmdLog = DaemonLog(10, "", Path.of("/tmp/out/command.log"), tool = "bazel", source = "command.log")
+        vm.onPoll(listOf(bazel), daemonLogs = listOf(jvmOut, cmdLog))
+        vm.select(10)
+        assertEquals(cmdLog, vm.state.value.daemonLog)
+    }
+
     private fun proc(
         pid: Long,
         rss: Long = 100,

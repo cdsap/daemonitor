@@ -595,8 +595,11 @@ func TestBazelServerEmptyBuildsHonesty(t *testing.T) {
 	m := NewModel(Config{Now: fixedNow, NoColor: true})
 	m.width, m.height, m.detailsOpen, m.detailProcess = 140, 40, true, &p
 	body := m.View().Content
-	if !strings.Contains(body, "No Bazel build events found (BEP not in reach)") {
+	if !strings.Contains(body, "No Bazel builds captured yet.") || !strings.Contains(body, "No command.profile.gz or BEP.") {
 		t.Fatalf("missing honest empty copy: %s", body)
+	}
+	if !strings.Contains(body, "BAZEL LOG") {
+		t.Fatalf("bazel details should show bazel log pane: %s", body)
 	}
 	if strings.Contains(body, "GRADLE LOG") || strings.Contains(body, "should be hidden") {
 		t.Fatalf("bazel details should not show gradle log: %s", body)
