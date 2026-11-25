@@ -21,6 +21,8 @@ import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.BuildTool
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
+import io.github.cdsap.daemonitor.domain.model.JvmClassMetrics
+import io.github.cdsap.daemonitor.domain.model.JvmJitMetrics
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.domain.model.Source
 import io.github.cdsap.daemonitor.persistence.BuildRepository
@@ -137,6 +139,21 @@ class WatcherDatabase private constructor(
             java_version = sample.javaVersion,
             java_vendor = sample.javaVendor,
             active_processor_count = sample.activeProcessorCount,
+            jit_present = if (sample.jit == null) null else 1L,
+            jit_compiled_count = sample.jit?.compiledCount,
+            jit_failed_count = sample.jit?.failedCount,
+            jit_invalid_count = sample.jit?.invalidCount,
+            jit_compilation_time_seconds = sample.jit?.compilationTimeSeconds,
+            classes_present = if (sample.classes == null) null else 1L,
+            classes_loaded = sample.classes?.loaded,
+            classes_unloaded_total = sample.classes?.unloadedTotal,
+            classes_loaded_total = sample.classes?.loadedTotal,
+            classes_time_seconds = sample.classes?.timeSeconds,
+            young_gc_time_seconds = sample.youngGcTimeSeconds,
+            full_gc_time_seconds = sample.fullGcTimeSeconds,
+            concurrent_gc_time_seconds = sample.concurrentGcTimeSeconds,
+            total_gc_time_seconds = sample.totalGcTimeSeconds,
+            start_time_ms = sample.startTimeMs,
             status = sample.status,
             )
         }
@@ -572,6 +589,21 @@ class WatcherDatabase private constructor(
                 "ALTER TABLE builds ADD COLUMN window_summaries TEXT",
                 "CREATE INDEX IF NOT EXISTS builds_tool ON builds(tool)",
                 "CREATE TABLE IF NOT EXISTS bazel_build_details (build_id TEXT PRIMARY KEY NOT NULL REFERENCES builds(build_id) ON DELETE CASCADE, schema_version INTEGER NOT NULL CHECK (schema_version = 1), bazel_version TEXT, source_format TEXT NOT NULL CHECK (source_format IN ('json', 'binary')), collection_state TEXT NOT NULL CHECK (collection_state IN ('partial', 'sealed', 'truncated', 'invalid')), updated_at_ms INTEGER NOT NULL, metrics_json TEXT NOT NULL CHECK (length(CAST(metrics_json AS BLOB)) <= 1048576))",
+                "ALTER TABLE process_samples ADD COLUMN jit_present INTEGER",
+                "ALTER TABLE process_samples ADD COLUMN jit_compiled_count INTEGER",
+                "ALTER TABLE process_samples ADD COLUMN jit_failed_count INTEGER",
+                "ALTER TABLE process_samples ADD COLUMN jit_invalid_count INTEGER",
+                "ALTER TABLE process_samples ADD COLUMN jit_compilation_time_seconds REAL",
+                "ALTER TABLE process_samples ADD COLUMN classes_present INTEGER",
+                "ALTER TABLE process_samples ADD COLUMN classes_loaded INTEGER",
+                "ALTER TABLE process_samples ADD COLUMN classes_unloaded_total INTEGER",
+                "ALTER TABLE process_samples ADD COLUMN classes_loaded_total INTEGER",
+                "ALTER TABLE process_samples ADD COLUMN classes_time_seconds REAL",
+                "ALTER TABLE process_samples ADD COLUMN young_gc_time_seconds REAL",
+                "ALTER TABLE process_samples ADD COLUMN full_gc_time_seconds REAL",
+                "ALTER TABLE process_samples ADD COLUMN concurrent_gc_time_seconds REAL",
+                "ALTER TABLE process_samples ADD COLUMN total_gc_time_seconds REAL",
+                "ALTER TABLE process_samples ADD COLUMN start_time_ms INTEGER NOT NULL DEFAULT 0",
                 "ALTER TABLE process_samples ADD COLUMN heap_used_mb INTEGER",
                 "ALTER TABLE process_samples ADD COLUMN heap_committed_mb INTEGER",
                 "ALTER TABLE process_samples ADD COLUMN heap_max_mb INTEGER",
@@ -849,6 +881,13 @@ class WatcherDatabase private constructor(
                 javaVersion = java_version,
                 javaVendor = java_vendor,
                 activeProcessorCount = active_processor_count,
+                startTimeMs = start_time_ms,
+                jit = if (jit_present == 1L) JvmJitMetrics(jit_compiled_count, jit_failed_count, jit_invalid_count, jit_compilation_time_seconds) else null,
+                classes = if (classes_present == 1L) JvmClassMetrics(classes_loaded, classes_unloaded_total, classes_loaded_total, classes_time_seconds) else null,
+                youngGcTimeSeconds = young_gc_time_seconds,
+                fullGcTimeSeconds = full_gc_time_seconds,
+                concurrentGcTimeSeconds = concurrent_gc_time_seconds,
+                totalGcTimeSeconds = total_gc_time_seconds,
             )
         }
 
@@ -872,6 +911,13 @@ class WatcherDatabase private constructor(
                 heapMaxMb = heap_max_mb.takeIf { available },
                 heapSampledAtMs = heap_sampled_at_ms,
                 heapAvailable = available,
+                startTimeMs = start_time_ms,
+                jit = if (jit_present == 1L) JvmJitMetrics(jit_compiled_count, jit_failed_count, jit_invalid_count, jit_compilation_time_seconds) else null,
+                classes = if (classes_present == 1L) JvmClassMetrics(classes_loaded, classes_unloaded_total, classes_loaded_total, classes_time_seconds) else null,
+                youngGcTimeSeconds = young_gc_time_seconds,
+                fullGcTimeSeconds = full_gc_time_seconds,
+                concurrentGcTimeSeconds = concurrent_gc_time_seconds,
+                totalGcTimeSeconds = total_gc_time_seconds,
             )
         }
     }

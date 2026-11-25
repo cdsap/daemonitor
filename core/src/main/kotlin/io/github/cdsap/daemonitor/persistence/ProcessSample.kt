@@ -1,5 +1,7 @@
 package io.github.cdsap.daemonitor.persistence
 
+import io.github.cdsap.daemonitor.domain.model.JvmClassMetrics
+import io.github.cdsap.daemonitor.domain.model.JvmJitMetrics
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 
 /** A persisted process snapshot used by history and MCP queries. */
@@ -42,6 +44,13 @@ data class ProcessSample(
     val javaVersion: String? = null,
     val javaVendor: String? = null,
     val activeProcessorCount: Long? = null,
+    val startTimeMs: Long = 0,
+    val jit: JvmJitMetrics? = null,
+    val classes: JvmClassMetrics? = null,
+    val youngGcTimeSeconds: Double? = null,
+    val fullGcTimeSeconds: Double? = null,
+    val concurrentGcTimeSeconds: Double? = null,
+    val totalGcTimeSeconds: Double? = null,
 )
 
 /** Schema-stable subset used for retained timeline reads from the shared Kotlin/cored database. */

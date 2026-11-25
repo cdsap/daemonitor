@@ -110,7 +110,8 @@ func (s *Store) migrate() error {
 // v11: bazel_build_details table for rich BEP telemetry.
 // v12: optional per-incarnation effective JVM flags document.
 // v13: successful JVM acquisition times by family (null for legacy rows).
-const schemaVersion = 13
+// v14: nullable JIT/class metrics and independent cumulative GC seconds.
+const schemaVersion = 14
 
 func (s *Store) ensureProcessSamplesAlignedWithApp() error {
 	exists, err := s.tableExists("process_samples")
@@ -204,6 +205,20 @@ CREATE TABLE IF NOT EXISTS process_samples (
 	os_name TEXT,
 	os_arch TEXT,
 	active_processor_count INTEGER,
+  jit_present INTEGER,
+  jit_compiled_count INTEGER,
+  jit_failed_count INTEGER,
+  jit_invalid_count INTEGER,
+  jit_compilation_time_seconds REAL,
+  classes_present INTEGER,
+  classes_loaded INTEGER,
+  classes_unloaded_total INTEGER,
+  classes_loaded_total INTEGER,
+  classes_time_seconds REAL,
+  young_gc_time_seconds REAL,
+  full_gc_time_seconds REAL,
+  concurrent_gc_time_seconds REAL,
+  total_gc_time_seconds REAL,
   start_time_ms INTEGER NOT NULL DEFAULT 0,
   automated INTEGER NOT NULL DEFAULT 0
 );
@@ -219,6 +234,20 @@ func (s *Store) ensureProcessSamplesAdditiveColumns(cols []string) error {
 		ddl string
 	}{
 		{"jvm_sampled_at_ms", `ALTER TABLE process_samples ADD COLUMN jvm_sampled_at_ms TEXT`},
+		{"jit_present", `ALTER TABLE process_samples ADD COLUMN jit_present INTEGER`},
+		{"jit_compiled_count", `ALTER TABLE process_samples ADD COLUMN jit_compiled_count INTEGER`},
+		{"jit_failed_count", `ALTER TABLE process_samples ADD COLUMN jit_failed_count INTEGER`},
+		{"jit_invalid_count", `ALTER TABLE process_samples ADD COLUMN jit_invalid_count INTEGER`},
+		{"jit_compilation_time_seconds", `ALTER TABLE process_samples ADD COLUMN jit_compilation_time_seconds REAL`},
+		{"classes_present", `ALTER TABLE process_samples ADD COLUMN classes_present INTEGER`},
+		{"classes_loaded", `ALTER TABLE process_samples ADD COLUMN classes_loaded INTEGER`},
+		{"classes_unloaded_total", `ALTER TABLE process_samples ADD COLUMN classes_unloaded_total INTEGER`},
+		{"classes_loaded_total", `ALTER TABLE process_samples ADD COLUMN classes_loaded_total INTEGER`},
+		{"classes_time_seconds", `ALTER TABLE process_samples ADD COLUMN classes_time_seconds REAL`},
+		{"young_gc_time_seconds", `ALTER TABLE process_samples ADD COLUMN young_gc_time_seconds REAL`},
+		{"full_gc_time_seconds", `ALTER TABLE process_samples ADD COLUMN full_gc_time_seconds REAL`},
+		{"concurrent_gc_time_seconds", `ALTER TABLE process_samples ADD COLUMN concurrent_gc_time_seconds REAL`},
+		{"total_gc_time_seconds", `ALTER TABLE process_samples ADD COLUMN total_gc_time_seconds REAL`},
 		{"owner_pid", `ALTER TABLE process_samples ADD COLUMN owner_pid INTEGER`},
 		{"owner_start_time_ms", `ALTER TABLE process_samples ADD COLUMN owner_start_time_ms INTEGER`},
 		{"subtree_rss_memory_mb", `ALTER TABLE process_samples ADD COLUMN subtree_rss_memory_mb INTEGER`},
@@ -577,7 +606,8 @@ INSERT INTO process_samples(
   status, name, min_heap_mb, gc, metaspace_used_mb, metaspace_committed_mb, young_gc_count,
   young_gc_time_ms, old_gc_count, old_gc_time_ms, full_gc_count, concurrent_gc_count, total_gc_count, java_version, java_runtime_version, java_vendor,
   java_vm_name, java_vm_version, os_name, os_arch, active_processor_count,
-  start_time_ms, automated, subtree_rss_memory_mb, subtree_cpu_percent, owner_pid, owner_start_time_ms, jvm_sampled_at_ms
+  start_time_ms, automated, subtree_rss_memory_mb, subtree_cpu_percent, owner_pid, owner_start_time_ms, jvm_sampled_at_ms,
+  jit_present, jit_compiled_count, jit_failed_count, jit_invalid_count, jit_compilation_time_seconds, classes_present, classes_loaded, classes_unloaded_total, classes_loaded_total, classes_time_seconds, young_gc_time_seconds, full_gc_time_seconds, concurrent_gc_time_seconds, total_gc_time_seconds
 ) VALUES (
  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
@@ -585,16 +615,24 @@ INSERT INTO process_samples(
  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
- ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+ ?, ?, ?, ?, ?, ?, ?, ?, ?,
+ ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
 
 	for _, p := range snap.Processes {
-		// History retains heap and GC values, but not advanced JVM payloads.
+		// History retains heap/GC timestamps and optional JIT/class timestamps when persisted.
 		var retainedTimes map[string]int64
-		for _, family := range []string{"heap", "gc"} {
+		families := []string{"heap", "gc"}
+		if p.JIT != nil {
+			families = append(families, "jit")
+		}
+		if p.Classes != nil {
+			families = append(families, "classes")
+		}
+		for _, family := range families {
 			if at, ok := p.JVMMeasurementTimes[family]; ok {
 				if retainedTimes == nil {
 					retainedTimes = make(map[string]int64)
@@ -621,6 +659,14 @@ INSERT INTO process_samples(
 		if p.OwnerStartTimeMs > 0 {
 			ownerStart = p.OwnerStartTimeMs
 		}
+		var jit model.JITMetrics
+		if p.JIT != nil {
+			jit = *p.JIT
+		}
+		var classes model.ClassMetrics
+		if p.Classes != nil {
+			classes = *p.Classes
+		}
 		if _, err := stmt.Exec(
 			snap.SampledAtMs, hostID, p.PID, p.ParentPID, p.Type, p.CommandLine,
 			p.WorkingDirectory, p.ProjectPath, p.RSSMemoryMB, p.VirtualMemoryMB, p.SwapMemoryMB, p.ResidentBytes,
@@ -634,6 +680,9 @@ INSERT INTO process_samples(
 			p.YoungGCCount, p.YoungGCTimeMs, p.OldGCCount, p.OldGCTimeMs, p.FullGCCount, p.ConcurrentGCCount, p.TotalGCCount, p.JavaVersion, p.JavaRuntimeVersion,
 			p.JavaVendor, p.JavaVMName, p.JavaVMVersion, p.OSName, p.OSArch, p.ActiveProcessorCount, p.StartTimeMs, automated, p.SubtreeRSSMemoryMB, p.SubtreeCPUPercent,
 			ownerPID, ownerStart, string(timesJSON),
+			p.JIT != nil, jit.CompiledCount, jit.FailedCount, jit.InvalidCount, jit.CompilationTimeSeconds,
+			p.Classes != nil, classes.LoadedClasses, classes.UnloadedClasses, classes.LoadedClassesTotal, classes.ClassTimeSeconds,
+			p.YoungGCTimeSeconds, p.FullGCTimeSeconds, p.ConcurrentGCTimeSeconds, p.TotalGCTimeSeconds,
 		); err != nil {
 			return err
 		}
@@ -697,7 +746,8 @@ SELECT timestamp, pid, parent_pid, process_type, COALESCE(name, ''), command_lin
        heap_available, metaspace_used_mb, metaspace_committed_mb, young_gc_count, young_gc_time_ms,
        old_gc_count, old_gc_time_ms, full_gc_count, concurrent_gc_count, total_gc_count, java_version, java_runtime_version, java_vendor,
        java_vm_name, java_vm_version, os_name, os_arch, active_processor_count,
-       start_time_ms, status, automated, owner_pid, owner_start_time_ms, jvm_sampled_at_ms
+       start_time_ms, status, automated, owner_pid, owner_start_time_ms, jvm_sampled_at_ms,
+       jit_present, jit_compiled_count, jit_failed_count, jit_invalid_count, jit_compilation_time_seconds, classes_present, classes_loaded, classes_unloaded_total, classes_loaded_total, classes_time_seconds, young_gc_time_seconds, full_gc_time_seconds, concurrent_gc_time_seconds, total_gc_time_seconds
 FROM process_samples
 WHERE timestamp >= ?
 ORDER BY timestamp ASC
@@ -710,7 +760,11 @@ LIMIT ?`, sinceMs, limit)
 	out := make([]model.Process, 0, 64)
 	for rows.Next() {
 		var p model.Process
-		var automated, heapAvailable int
+		var automated int
+		var heapAvailable sql.NullBool
+		var jitPresent, classesPresent sql.NullBool
+		var jit model.JITMetrics
+		var classes model.ClassMetrics
 		var ownerPID, ownerStart sql.NullInt64
 		var timesJSON sql.NullString
 		if err := rows.Scan(
@@ -726,8 +780,17 @@ LIMIT ?`, sinceMs, limit)
 			&p.OldGCCount, &p.OldGCTimeMs, &p.FullGCCount, &p.ConcurrentGCCount, &p.TotalGCCount, &p.JavaVersion, &p.JavaRuntimeVersion, &p.JavaVendor,
 			&p.JavaVMName, &p.JavaVMVersion, &p.OSName, &p.OSArch, &p.ActiveProcessorCount,
 			&p.StartTimeMs, &p.Status, &automated, &ownerPID, &ownerStart, &timesJSON,
+			&jitPresent, &jit.CompiledCount, &jit.FailedCount, &jit.InvalidCount, &jit.CompilationTimeSeconds,
+			&classesPresent, &classes.LoadedClasses, &classes.UnloadedClasses, &classes.LoadedClassesTotal, &classes.ClassTimeSeconds,
+			&p.YoungGCTimeSeconds, &p.FullGCTimeSeconds, &p.ConcurrentGCTimeSeconds, &p.TotalGCTimeSeconds,
 		); err != nil {
 			return nil, err
+		}
+		if jitPresent.Bool {
+			p.JIT = &jit
+		}
+		if classesPresent.Bool {
+			p.Classes = &classes
 		}
 		p.Automated = automated != 0
 		if timesJSON.Valid {
@@ -735,7 +798,7 @@ LIMIT ?`, sinceMs, limit)
 				return nil, fmt.Errorf("decode JVM measurement times: %w", err)
 			}
 		}
-		p.HeapAvailable = heapAvailable != 0
+		p.HeapAvailable = heapAvailable.Bool
 		if ownerPID.Valid {
 			p.OwnerPID = int32(ownerPID.Int64)
 		}

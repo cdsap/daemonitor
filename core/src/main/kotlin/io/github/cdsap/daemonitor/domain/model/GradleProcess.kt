@@ -65,6 +65,13 @@ data class JvmMemoryPool(
     val max: JvmRawValue?,
 )
 
+data class JvmClassMetrics(
+    val loaded: Long?,
+    val unloadedTotal: Long?,
+    val loadedTotal: Long?,
+    val timeSeconds: Double?,
+)
+
 data class JvmJitMetrics(
     val compiledCount: Long?,
     val failedCount: Long?,
@@ -171,6 +178,7 @@ data class GradleProcess(
     val subtreeCpuPercent: Double? = null,
     val activeWorkerCount: Long? = null,
     val activeSandboxedActionCount: Long? = null,
+    val classes: JvmClassMetrics? = null,
     /** Bazel `--output_base` and `--install_base` paths reported by `cored` for `BAZEL_SERVER`. */
     val bazelOutputBase: String? = null,
     val bazelInstallBase: String? = null,
