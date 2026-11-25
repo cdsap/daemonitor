@@ -961,3 +961,103 @@ func TestKotlinSchemaJVMCountersReadableByGo(t *testing.T) {
 		t.Fatalf("Kotlin JVM row changed: %s", mustJSON(t, p))
 	}
 }
+
+func TestHistoryReturnsMostRecentAndFiltersByPIDAndStartTime(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "history-filter.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	const targetPID = int32(50527)
+	const targetStart = int64(1000)
+	const reusedStart = int64(2000)
+	baseTs := int64(1_700_000_000_000)
+
+	// Simulate 12 concurrent processes across 60 poll ticks (720 total rows > 500)
+	// spanning 10 minutes (600s > 120s minimum analysis window).
+	for tick := 0; tick < 60; tick++ {
+		ts := baseTs + int64(tick)*10_000
+		procs := make([]model.Process, 0, 12)
+		for p := 0; p < 11; p++ {
+			procs = append(procs, model.Process{
+				PID:         int32(40000 + p),
+				Type:        "GRADLE_DAEMON",
+				CommandLine: "java GradleDaemon",
+				RSSMemoryMB: 200 + int64(tick),
+				StartTimeMs: 500,
+				Status:      "R",
+				SampledAtMs: ts,
+			})
+		}
+		heapMB := int64(100 + tick)
+		procs = append(procs, model.Process{
+			PID:           targetPID,
+			Type:          "GRADLE_DAEMON",
+			CommandLine:   "java GradleDaemon",
+			RSSMemoryMB:   500 + int64(tick)*2,
+			HeapUsedMB:    &heapMB,
+			HeapAvailable: true,
+			StartTimeMs:   targetStart,
+			Status:        "R",
+			SampledAtMs:   ts,
+		})
+		if err := s.InsertSnapshot(model.Snapshot{SampledAtMs: ts, Processes: procs}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Also insert a different incarnation with the same PID to verify start_time_ms filtering.
+	if err := s.InsertSnapshot(model.Snapshot{
+		SampledAtMs: baseTs + 61*10_000,
+		Processes: []model.Process{{
+			PID:         targetPID,
+			Type:        "GRADLE_DAEMON",
+			CommandLine: "java GradleDaemon",
+			RSSMemoryMB: 999,
+			StartTimeMs: reusedStart,
+			Status:      "R",
+			SampledAtMs: baseTs + 61*10_000,
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Unfiltered History with limit=24 must return the MOST RECENT 24 rows in chronological ASC order.
+	recent, err := s.History(baseTs, 24)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recent) != 24 {
+		t.Fatalf("len(recent)=%d want 24", len(recent))
+	}
+	if recent[len(recent)-1].SampledAtMs != baseTs+61*10_000 {
+		t.Fatalf("newest timestamp=%d want %d", recent[len(recent)-1].SampledAtMs, baseTs+61*10_000)
+	}
+	for i := 1; i < len(recent); i++ {
+		if recent[i].SampledAtMs < recent[i-1].SampledAtMs {
+			t.Fatalf("rows out of chronological order at %d: %d < %d", i, recent[i].SampledAtMs, recent[i-1].SampledAtMs)
+		}
+	}
+
+	// Filtered by PID + StartTimeMs returns all 60 ticks spanning 590s for that exact incarnation.
+	scoped, err := s.HistoryFiltered(store.HistoryFilter{
+		SinceMs:     baseTs,
+		Limit:       500,
+		PID:         int64(targetPID),
+		StartTimeMs: targetStart,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scoped) != 60 {
+		t.Fatalf("len(scoped)=%d want 60", len(scoped))
+	}
+	if scoped[0].SampledAtMs != baseTs || scoped[len(scoped)-1].SampledAtMs != baseTs+59*10_000 {
+		t.Fatalf("scoped span=[%d..%d] want [%d..%d]", scoped[0].SampledAtMs, scoped[len(scoped)-1].SampledAtMs, baseTs, baseTs+59*10_000)
+	}
+	for _, row := range scoped {
+		if row.PID != targetPID || row.StartTimeMs != targetStart {
+			t.Fatalf("unexpected incarnation leaked: pid=%d start=%d", row.PID, row.StartTimeMs)
+		}
+	}
+}

@@ -130,7 +130,12 @@ func (m Model) fetchDetails(p model.Process) tea.Cmd {
 				IncludeMetrics: true,
 			})
 		}
-		history, _ := c.History(ctx, time.Now().Add(-30*time.Minute).UnixMilli(), 500)
+		history, _ := c.HistoryFiltered(ctx, client.HistoryQuery{
+			SinceMs:     time.Now().Add(-30 * time.Minute).UnixMilli(),
+			Limit:       1000,
+			PID:         pid,
+			StartTimeMs: startMs,
+		})
 		host, hostErr := c.Host(ctx)
 		capabilities, capabilitiesErr := c.Capabilities(ctx)
 		return detailsLoadedMsg{

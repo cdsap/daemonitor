@@ -305,7 +305,7 @@ func runOneShot(ctx context.Context, opts Options, cmd string, args []string, st
 		if limit == 0 {
 			limit = 200
 		}
-		hist, err := c.History(ctx, sinceMs, limit)
+		hist, err := c.HistoryFiltered(ctx, client.HistoryQuery{SinceMs: sinceMs, Limit: limit, PID: opts.PID})
 		if err != nil {
 			fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
 			return 1
@@ -401,7 +401,7 @@ func runOneShot(ctx context.Context, opts Options, cmd string, args []string, st
 			}
 			return 0
 		}
-		hist, err := c.History(ctx, historySince(opts).UnixMilli(), boundedLimit(opts.Limit))
+		hist, err := c.HistoryFiltered(ctx, client.HistoryQuery{SinceMs: historySince(opts).UnixMilli(), Limit: boundedLimit(opts.Limit), PID: opts.PID})
 		if err != nil {
 			fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
 			return 1
@@ -632,7 +632,7 @@ func exportTelemetry(ctx context.Context, c *client.Client, opts Options, stdout
 	defer file.Close()
 	enc := json.NewEncoder(file)
 	start := historySince(opts).UnixMilli()
-	hist, err := c.History(ctx, start, boundedLimit(opts.Limit))
+	hist, err := c.HistoryFiltered(ctx, client.HistoryQuery{SinceMs: start, Limit: boundedLimit(opts.Limit), PID: opts.PID})
 	if err != nil {
 		fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
 		return 1
