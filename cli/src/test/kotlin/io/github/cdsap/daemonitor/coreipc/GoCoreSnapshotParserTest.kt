@@ -406,4 +406,30 @@ class GoCoreSnapshotParserTest {
         assertEquals(150L, build.windowSummaries.single().deltaRssMb)
         assertEquals(120L, build.windowSummaries.single().deltaHeapUsedMb)
     }
+
+    @Test
+    fun `parses daemon log tail with unbalanced brackets escaped quotes long lines and null lines`() {
+        val longPayload = "x".repeat(12_000)
+        val json = """
+            {
+              "pid": 50527,
+              "gradle_version": "9.6.1",
+              "lines": [
+                "2026-11-25 [DEBUG] [org.gradle.cache.internal] truncated [unbalanced bracket",
+                "2026-11-25 [INFO] quoted \"hello [world]\" and \\path\\file",
+                "2026-11-25 [DEBUG] $longPayload"
+              ],
+              "events": [{"kind": "STARTED"}]
+            }
+        """.trimIndent()
+
+        val lines = GoCoreSnapshotParser.parseDaemonLogTail(json)
+        assertEquals(3, lines.size)
+        assertEquals("2026-11-25 [DEBUG] [org.gradle.cache.internal] truncated [unbalanced bracket", lines[0])
+        assertEquals("2026-11-25 [INFO] quoted \"hello [world]\" and \\path\\file", lines[1])
+        assertEquals("2026-11-25 [DEBUG] $longPayload", lines[2])
+
+        val nullLinesJson = """{"pid": 50527, "lines": null, "events": ["should_not_bleed"]}"""
+        assertEquals(emptyList(), GoCoreSnapshotParser.parseDaemonLogTail(nullLinesJson))
+    }
 }
