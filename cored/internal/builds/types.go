@@ -1,5 +1,7 @@
 package builds
 
+import "github.com/cdsap/daemonitor/cored/internal/sessions"
+
 // Source is the inferred origin of a build (U6 / KTD-8).
 type Source string
 
@@ -50,8 +52,9 @@ type Build struct {
 	AgentProvider    string      `json:"agent_provider,omitempty"`
 	// Tool distinguishes Gradle daemon-log builds from Bazel history rows.
 	// Empty / omitted means GRADLE for backward compatibility with existing rows.
-	Tool         Tool          `json:"tool,omitempty"`
-	BazelProfile *BazelProfile `json:"bazel_profile,omitempty"`
+	Tool            Tool                  `json:"tool,omitempty"`
+	BazelProfile    *BazelProfile         `json:"bazel_profile,omitempty"`
+	WindowSummaries []sessions.RSSSummary `json:"window_summaries,omitempty"`
 }
 
 // Sample is one RSS/CPU observation for peak calculation.

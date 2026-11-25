@@ -39,14 +39,20 @@ type Build struct {
 	EndTimeMs   *int64
 }
 
-// Retention reports RSS around one completed build. It is omitted when a
-// complete build window or sufficiently close before/after samples is absent.
+// Retention reports RSS (and optional live heap) around one completed build.
+// It is omitted when a complete build window or sufficiently close before/after
+// RSS samples are absent. Heap fields remain nil when valid heap samples are
+// unavailable around the build (never treating missing heap as zero).
 type Retention struct {
-	BuildID    string
-	BeforeMB   int64
-	PeakMB     int64
-	AfterMB    int64
-	RetainedMB int64
+	BuildID        string
+	BeforeMB       int64
+	PeakMB         int64
+	AfterMB        int64
+	RetainedMB     int64
+	HeapBeforeMB   *int64
+	HeapPeakMB     *int64
+	HeapAfterMB    *int64
+	HeapRetainedMB *int64
 }
 
 // Metric contains the bounded-window summary for one memory signal.
@@ -137,21 +143,56 @@ func AnalyzeBuildRetention(samples []model.Process, builds []Build, pid int32, s
 		}
 		var before, after *model.Process
 		peak := int64(-1)
+		var heapBefore, heapAfter *model.Process
+		heapPeak := int64(-1)
 		for i := range valid {
 			sample := &valid[i]
+			hasHeap := sample.HeapUsedMB != nil && *sample.HeapUsedMB >= 0
 			switch {
 			case sample.SampledAtMs < build.StartTimeMs:
 				before = sample
-			case sample.SampledAtMs >= build.StartTimeMs && sample.SampledAtMs <= *build.EndTimeMs && sample.RSSMemoryMB > peak:
-				peak = sample.RSSMemoryMB
-			case sample.SampledAtMs > *build.EndTimeMs && after == nil:
-				after = sample
+				if hasHeap {
+					heapBefore = sample
+				}
+			case sample.SampledAtMs >= build.StartTimeMs && sample.SampledAtMs <= *build.EndTimeMs:
+				if sample.RSSMemoryMB > peak {
+					peak = sample.RSSMemoryMB
+				}
+				if hasHeap && *sample.HeapUsedMB > heapPeak {
+					heapPeak = *sample.HeapUsedMB
+				}
+			case sample.SampledAtMs > *build.EndTimeMs:
+				if after == nil {
+					after = sample
+				}
+				if hasHeap && heapAfter == nil {
+					heapAfter = sample
+				}
 			}
 		}
 		if before == nil || after == nil || peak < 0 || build.StartTimeMs-before.SampledAtMs > maximumSurroundingGapMs || after.SampledAtMs-*build.EndTimeMs > maximumSurroundingGapMs {
 			continue
 		}
-		result = append(result, Retention{BuildID: build.ID, BeforeMB: before.RSSMemoryMB, PeakMB: peak, AfterMB: after.RSSMemoryMB, RetainedMB: after.RSSMemoryMB - before.RSSMemoryMB})
+		entry := Retention{
+			BuildID:    build.ID,
+			BeforeMB:   before.RSSMemoryMB,
+			PeakMB:     peak,
+			AfterMB:    after.RSSMemoryMB,
+			RetainedMB: after.RSSMemoryMB - before.RSSMemoryMB,
+		}
+		if heapBefore != nil && heapAfter != nil && heapPeak >= 0 &&
+			build.StartTimeMs-heapBefore.SampledAtMs <= maximumSurroundingGapMs &&
+			heapAfter.SampledAtMs-*build.EndTimeMs <= maximumSurroundingGapMs {
+			hb := *heapBefore.HeapUsedMB
+			hp := heapPeak
+			ha := *heapAfter.HeapUsedMB
+			hr := ha - hb
+			entry.HeapBeforeMB = &hb
+			entry.HeapPeakMB = &hp
+			entry.HeapAfterMB = &ha
+			entry.HeapRetainedMB = &hr
+		}
+		result = append(result, entry)
 	}
 	return result
 }

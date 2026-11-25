@@ -66,7 +66,8 @@ CREATE TABLE builds (
     agent            TEXT,                -- named AI agent (env-name fingerprint), null if none
     agent_provider   TEXT,                -- LLM provider / "configurable" / "unknown"; null if none
     tool             TEXT NOT NULL DEFAULT 'GRADLE', -- GRADLE | BAZEL
-    bazel_profile    TEXT                 -- optional JSON trace summary written by cored
+    bazel_profile    TEXT,                -- optional JSON trace summary written by cored
+    window_summaries TEXT                 -- optional JSON process-window deltas written by cored
 );
 
 CREATE INDEX builds_start ON builds(start_time);

@@ -541,6 +541,7 @@ class WatcherDatabase private constructor(
                 "ALTER TABLE builds ADD COLUMN agent_provider TEXT",
                 "ALTER TABLE builds ADD COLUMN tool TEXT NOT NULL DEFAULT 'GRADLE'",
                 "ALTER TABLE builds ADD COLUMN bazel_profile TEXT",
+                "ALTER TABLE builds ADD COLUMN window_summaries TEXT",
                 "CREATE INDEX IF NOT EXISTS builds_tool ON builds(tool)",
                 "ALTER TABLE process_samples ADD COLUMN heap_used_mb INTEGER",
                 "ALTER TABLE process_samples ADD COLUMN heap_committed_mb INTEGER",

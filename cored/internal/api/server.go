@@ -226,13 +226,13 @@ func (s *Server) refresh(ctx context.Context) {
 
 	if s.Profiles != nil {
 		for _, b := range s.Profiles.Poll(ctx, snap.Processes) {
-			s.persistBazelBuild(b)
+			s.persistBazelBuildWithContext(b, snap.Processes, hostID)
 		}
 	}
 	if s.BEP != nil {
 		if closed, err := s.BEP.Poll(ctx); err == nil {
 			for _, b := range closed {
-				s.persistBazelBuild(b)
+				s.persistBazelBuildWithContext(b, snap.Processes, hostID)
 			}
 		}
 	}
@@ -251,6 +251,17 @@ func (s *Server) refresh(ctx context.Context) {
 }
 
 func (s *Server) persistBazelBuild(b builds.Build) {
+	s.mu.RLock()
+	processes := s.last.Processes
+	s.mu.RUnlock()
+	hostID := ""
+	if s.Collector != nil {
+		hostID = s.Collector.HostID
+	}
+	s.persistBazelBuildWithContext(b, processes, hostID)
+}
+
+func (s *Server) persistBazelBuildWithContext(b builds.Build, processes []model.Process, hostID string) {
 	if b.CommandLine != nil {
 		redacted := poll.RedactCommandLine(*b.CommandLine)
 		b.CommandLine = &redacted
@@ -258,30 +269,27 @@ func (s *Server) persistBazelBuild(b builds.Build) {
 	if b.LogSnippet != "" {
 		b.LogSnippet = poll.RedactLogLine(b.LogSnippet)
 	}
-	if b.EndTimeMs != nil && s.Store != nil {
-		samples := s.Store.SamplesAsBuildSamples(b.DaemonPID, b.StartTimeMs, *b.EndTimeMs)
-		if len(samples) > 0 {
-			var peak, sum int64
-			var cpuPeak float64
-			var cpuN int
-			for _, sample := range samples {
-				if sample.RSSMemoryMB > peak {
-					peak = sample.RSSMemoryMB
-				}
-				sum += sample.RSSMemoryMB
-				if sample.CPUPercent != nil {
-					if *sample.CPUPercent > cpuPeak {
-						cpuPeak = *sample.CPUPercent
-					}
-					cpuN++
-				}
+	if b.EndTimeMs != nil && *b.EndTimeMs >= b.StartTimeMs && s.Store != nil && b.DaemonPID > 0 {
+		resolvedHost, serverStartMs := hostID, int64(0)
+		for _, p := range processes {
+			if p.Type == "BAZEL_SERVER" && int64(p.PID) == b.DaemonPID && p.StartTimeMs > 0 && p.StartTimeMs <= *b.EndTimeMs {
+				serverStartMs = p.StartTimeMs
+				break
 			}
-			peakCopy := peak
-			avg := sum / int64(len(samples))
-			b.PeakMemoryMB = &peakCopy
-			b.AvgMemoryMB = &avg
-			if cpuN > 0 {
-				b.PeakCPUPercent = &cpuPeak
+		}
+		if serverStartMs == 0 {
+			if h, start, ok := s.Store.ResolveBazelServerIncarnation(hostID, b.DaemonPID, b.StartTimeMs, *b.EndTimeMs); ok {
+				resolvedHost, serverStartMs = h, start
+			}
+		}
+		if serverStartMs > 0 {
+			if b.DaemonIdentity == "" {
+				b.DaemonIdentity = store.ProcessInstanceID(resolvedHost, int32(b.DaemonPID), serverStartMs)
+			}
+			samples, summaries, err := s.Store.BazelBuildWindowSamples(resolvedHost, b.DaemonPID, serverStartMs, b.StartTimeMs, *b.EndTimeMs)
+			if err == nil && len(samples) > 0 {
+				b.PeakMemoryMB, b.AvgMemoryMB, b.PeakCPUPercent = builds.SummarizeSamples(samples)
+				b.WindowSummaries = summaries
 			}
 		}
 	}
@@ -658,18 +666,23 @@ func (s *Server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 }
 
 type buildResponse struct {
-	BuildID         string               `json:"build_id"`
-	DaemonPID       int64                `json:"daemon_pid"`
-	StartTimeMs     int64                `json:"start_time_ms"`
-	FinalStatus     string               `json:"final_status"`
-	InferredSource  string               `json:"inferred_source"`
-	Agent           string               `json:"agent"`
-	AgentProvider   string               `json:"agent_provider"`
-	ProjectPath     string               `json:"project_path"`
-	DurationSeconds *float64             `json:"duration_seconds"`
-	LogSnippet      string               `json:"log_snippet,omitempty"`
-	Tool            string               `json:"tool,omitempty"`
-	BazelProfile    *builds.BazelProfile `json:"bazel_profile,omitempty"`
+	BuildID         string                `json:"build_id"`
+	DaemonPID       int64                 `json:"daemon_pid"`
+	StartTimeMs     int64                 `json:"start_time_ms"`
+	EndTimeMs       *int64                `json:"end_time_ms,omitempty"`
+	FinalStatus     string                `json:"final_status"`
+	InferredSource  string                `json:"inferred_source"`
+	Agent           string                `json:"agent"`
+	AgentProvider   string                `json:"agent_provider"`
+	ProjectPath     string                `json:"project_path"`
+	DurationSeconds *float64              `json:"duration_seconds"`
+	PeakMemoryMB    *int64                `json:"peak_memory_mb,omitempty"`
+	AvgMemoryMB     *int64                `json:"avg_memory_mb,omitempty"`
+	PeakCPUPercent  *float64              `json:"peak_cpu_percent,omitempty"`
+	LogSnippet      string                `json:"log_snippet,omitempty"`
+	Tool            string                `json:"tool,omitempty"`
+	BazelProfile    *builds.BazelProfile  `json:"bazel_profile,omitempty"`
+	WindowSummaries []sessions.RSSSummary `json:"window_summaries,omitempty"`
 }
 
 func newBuildResponse(b builds.Build, includeLogs bool) buildResponse {
@@ -678,10 +691,12 @@ func newBuildResponse(b builds.Build, includeLogs bool) buildResponse {
 		tool = string(builds.ToolGradle)
 	}
 	response := buildResponse{
-		BuildID: b.BuildID, DaemonPID: b.DaemonPID, StartTimeMs: b.StartTimeMs,
+		BuildID: b.BuildID, DaemonPID: b.DaemonPID, StartTimeMs: b.StartTimeMs, EndTimeMs: b.EndTimeMs,
 		FinalStatus: string(b.FinalStatus), InferredSource: string(b.InferredSource),
 		Agent: b.Agent, AgentProvider: b.AgentProvider, ProjectPath: b.ProjectPath,
-		DurationSeconds: b.DurationSeconds, Tool: tool, BazelProfile: b.BazelProfile,
+		DurationSeconds: b.DurationSeconds, PeakMemoryMB: b.PeakMemoryMB, AvgMemoryMB: b.AvgMemoryMB,
+		PeakCPUPercent: b.PeakCPUPercent, Tool: tool, BazelProfile: b.BazelProfile,
+		WindowSummaries: b.WindowSummaries,
 	}
 	if includeLogs {
 		response.LogSnippet = b.LogSnippet

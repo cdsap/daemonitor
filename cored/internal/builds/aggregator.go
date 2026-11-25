@@ -199,15 +199,6 @@ func (w *window) toBuild(
 		samples = sampleProvider(daemonPID, w.busyTimeMs, *endMs)
 	}
 
-	var rss []int64
-	var cpu []float64
-	for _, s := range samples {
-		rss = append(rss, s.RSSMemoryMB)
-		if s.CPUPercent != nil {
-			cpu = append(cpu, *s.CPUPercent)
-		}
-	}
-
 	status := StatusCompletedNoOutcome
 	switch {
 	case interrupted:
@@ -258,27 +249,37 @@ func (w *window) toBuild(
 	if len(w.logLines) > 0 {
 		b.LogSnippet = strings.Join(w.logLines, "\n")
 	}
-	if len(rss) > 0 {
-		peak := rss[0]
-		sum := int64(0)
-		for _, v := range rss {
-			sum += v
-			if v > peak {
-				peak = v
-			}
-		}
-		avg := sum / int64(len(rss))
-		b.PeakMemoryMB = &peak
-		b.AvgMemoryMB = &avg
-	}
-	if len(cpu) > 0 {
-		peak := cpu[0]
-		for _, v := range cpu {
-			if v > peak {
-				peak = v
-			}
-		}
-		b.PeakCPUPercent = &peak
-	}
+	b.PeakMemoryMB, b.AvgMemoryMB, b.PeakCPUPercent = SummarizeSamples(samples)
 	return b
+}
+
+// SummarizeSamples computes peak/average RSS and peak CPU over a build window.
+// Empty sample slices return nil pointers (preserving NULL for sub-poll builds).
+func SummarizeSamples(samples []Sample) (peakMem, avgMem *int64, peakCPU *float64) {
+	if len(samples) == 0 {
+		return nil, nil, nil
+	}
+	peak := samples[0].RSSMemoryMB
+	var sum int64
+	var cpuPeak float64
+	var haveCPU bool
+	for _, s := range samples {
+		sum += s.RSSMemoryMB
+		if s.RSSMemoryMB > peak {
+			peak = s.RSSMemoryMB
+		}
+		if s.CPUPercent != nil {
+			if !haveCPU || *s.CPUPercent > cpuPeak {
+				cpuPeak = *s.CPUPercent
+				haveCPU = true
+			}
+		}
+	}
+	avg := sum / int64(len(samples))
+	peakMem = &peak
+	avgMem = &avg
+	if haveCPU {
+		peakCPU = &cpuPeak
+	}
+	return peakMem, avgMem, peakCPU
 }

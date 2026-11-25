@@ -102,7 +102,8 @@ func (s *Store) migrate() error {
 // v7: builds.tool distinguishes GRADLE vs BAZEL (opportunistic BEP) rows.
 // v8: optional Bazel trace summaries retained across BEP enrichment.
 // v9: inclusive Bazel subtree resource samples for build rollups.
-const schemaVersion = 9
+// v10: Bazel descendant owner columns on process_samples and build window_summaries.
+const schemaVersion = 10
 
 func (s *Store) ensureProcessSamplesAlignedWithApp() error {
 	exists, err := s.tableExists("process_samples")
@@ -133,6 +134,8 @@ CREATE TABLE IF NOT EXISTS process_samples (
   host_id TEXT NOT NULL DEFAULT '',
   pid INTEGER NOT NULL,
   parent_pid INTEGER NOT NULL DEFAULT 0,
+  owner_pid INTEGER,
+  owner_start_time_ms INTEGER,
   process_type TEXT NOT NULL,
   command_line TEXT NOT NULL,
   working_directory TEXT,
@@ -207,6 +210,8 @@ func (s *Store) ensureProcessSamplesAdditiveColumns(cols []string) error {
 		col string
 		ddl string
 	}{
+		{"owner_pid", `ALTER TABLE process_samples ADD COLUMN owner_pid INTEGER`},
+		{"owner_start_time_ms", `ALTER TABLE process_samples ADD COLUMN owner_start_time_ms INTEGER`},
 		{"subtree_rss_memory_mb", `ALTER TABLE process_samples ADD COLUMN subtree_rss_memory_mb INTEGER`},
 		{"subtree_cpu_percent", `ALTER TABLE process_samples ADD COLUMN subtree_cpu_percent REAL`},
 		{"virtual_memory_mb", `ALTER TABLE process_samples ADD COLUMN virtual_memory_mb INTEGER`},
@@ -291,6 +296,8 @@ CREATE TABLE process_samples_v3 (
   timestamp INTEGER NOT NULL,
   pid INTEGER NOT NULL,
   parent_pid INTEGER NOT NULL DEFAULT 0,
+  owner_pid INTEGER,
+  owner_start_time_ms INTEGER,
   process_type TEXT NOT NULL,
   command_line TEXT NOT NULL,
   working_directory TEXT,
@@ -388,6 +395,7 @@ func (s *Store) ensureBuildsAlignedWithApp() error {
 		{"agent_provider", `ALTER TABLE builds ADD COLUMN agent_provider TEXT`},
 		{"tool", `ALTER TABLE builds ADD COLUMN tool TEXT NOT NULL DEFAULT 'GRADLE'`},
 		{"bazel_profile", `ALTER TABLE builds ADD COLUMN bazel_profile TEXT`},
+		{"window_summaries", `ALTER TABLE builds ADD COLUMN window_summaries TEXT`},
 	} {
 		if contains(cols, a.col) {
 			continue
@@ -424,7 +432,8 @@ CREATE TABLE IF NOT EXISTS builds (
   agent TEXT,
   agent_provider TEXT,
   tool TEXT NOT NULL DEFAULT 'GRADLE',
-  bazel_profile TEXT
+  bazel_profile TEXT,
+  window_summaries TEXT
 );
 CREATE INDEX IF NOT EXISTS builds_start ON builds(start_time);
 CREATE INDEX IF NOT EXISTS builds_project ON builds(project_path);
@@ -559,7 +568,7 @@ INSERT INTO process_samples(
   status, name, min_heap_mb, gc, metaspace_used_mb, metaspace_committed_mb, young_gc_count,
   young_gc_time_ms, old_gc_count, old_gc_time_ms, full_gc_count, concurrent_gc_count, total_gc_count, java_version, java_runtime_version, java_vendor,
   java_vm_name, java_vm_version, os_name, os_arch, active_processor_count,
-  start_time_ms, automated, subtree_rss_memory_mb, subtree_cpu_percent
+  start_time_ms, automated, subtree_rss_memory_mb, subtree_cpu_percent, owner_pid, owner_start_time_ms
 ) VALUES (
  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
@@ -567,7 +576,7 @@ INSERT INTO process_samples(
  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
- ?, ?, ?, ?, ?, ?)`)
+ ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -582,6 +591,13 @@ INSERT INTO process_samples(
 		if p.HeapAvailable {
 			heapAvail = 1
 		}
+		var ownerPID, ownerStart any
+		if p.OwnerPID > 0 {
+			ownerPID = p.OwnerPID
+		}
+		if p.OwnerStartTimeMs > 0 {
+			ownerStart = p.OwnerStartTimeMs
+		}
 		if _, err := stmt.Exec(
 			snap.SampledAtMs, hostID, p.PID, p.ParentPID, p.Type, p.CommandLine,
 			p.WorkingDirectory, p.ProjectPath, p.RSSMemoryMB, p.VirtualMemoryMB, p.SwapMemoryMB, p.ResidentBytes,
@@ -594,6 +610,7 @@ INSERT INTO process_samples(
 			p.Status, nullStr(p.Name), p.MinHeapMB, p.GC, p.MetaspaceUsedMB, p.MetaspaceCommittedMB,
 			p.YoungGCCount, p.YoungGCTimeMs, p.OldGCCount, p.OldGCTimeMs, p.FullGCCount, p.ConcurrentGCCount, p.TotalGCCount, p.JavaVersion, p.JavaRuntimeVersion,
 			p.JavaVendor, p.JavaVMName, p.JavaVMVersion, p.OSName, p.OSArch, p.ActiveProcessorCount, p.StartTimeMs, automated, p.SubtreeRSSMemoryMB, p.SubtreeCPUPercent,
+			ownerPID, ownerStart,
 		); err != nil {
 			return err
 		}
@@ -654,7 +671,7 @@ SELECT timestamp, pid, parent_pid, process_type, COALESCE(name, ''), command_lin
        heap_available, metaspace_used_mb, metaspace_committed_mb, young_gc_count, young_gc_time_ms,
        old_gc_count, old_gc_time_ms, full_gc_count, concurrent_gc_count, total_gc_count, java_version, java_runtime_version, java_vendor,
        java_vm_name, java_vm_version, os_name, os_arch, active_processor_count,
-       start_time_ms, status, automated
+       start_time_ms, status, automated, owner_pid, owner_start_time_ms
 FROM process_samples
 WHERE timestamp >= ?
 ORDER BY timestamp ASC
@@ -668,6 +685,7 @@ LIMIT ?`, sinceMs, limit)
 	for rows.Next() {
 		var p model.Process
 		var automated, heapAvailable int
+		var ownerPID, ownerStart sql.NullInt64
 		if err := rows.Scan(
 			&p.SampledAtMs, &p.PID, &p.ParentPID, &p.Type, &p.Name, &p.CommandLine,
 			&p.WorkingDirectory, &p.ProjectPath, &p.RSSMemoryMB, &p.VirtualMemoryMB, &p.SwapMemoryMB, &p.ResidentBytes,
@@ -680,12 +698,18 @@ LIMIT ?`, sinceMs, limit)
 			&heapAvailable, &p.MetaspaceUsedMB, &p.MetaspaceCommittedMB, &p.YoungGCCount, &p.YoungGCTimeMs,
 			&p.OldGCCount, &p.OldGCTimeMs, &p.FullGCCount, &p.ConcurrentGCCount, &p.TotalGCCount, &p.JavaVersion, &p.JavaRuntimeVersion, &p.JavaVendor,
 			&p.JavaVMName, &p.JavaVMVersion, &p.OSName, &p.OSArch, &p.ActiveProcessorCount,
-			&p.StartTimeMs, &p.Status, &automated,
+			&p.StartTimeMs, &p.Status, &automated, &ownerPID, &ownerStart,
 		); err != nil {
 			return nil, err
 		}
 		p.Automated = automated != 0
 		p.HeapAvailable = heapAvailable != 0
+		if ownerPID.Valid {
+			p.OwnerPID = int32(ownerPID.Int64)
+		}
+		if ownerStart.Valid {
+			p.OwnerStartTimeMs = ownerStart.Int64
+		}
 		out = append(out, p)
 	}
 	return out, rows.Err()
