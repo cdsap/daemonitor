@@ -74,6 +74,7 @@ func TestTypeDisplayForGradleWorkerKinds(t *testing.T) {
 		{kind: "TEST_WORKER", want: "Gradle test worker"},
 		{kind: "GRADLE_WORKER", want: "Gradle worker"},
 		{kind: "UNKNOWN_GRADLE_WORKER", want: "Unknown Gradle worker"},
+		{kind: "KOTLIN_TOOLCHAIN", want: "Kotlin Toolchain"},
 	} {
 		t.Run(tc.kind, func(t *testing.T) {
 			if got := TypeDisplay(tc.kind); got != tc.want {

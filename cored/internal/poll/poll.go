@@ -29,6 +29,7 @@ type pendingJVM struct {
 var (
 	gradleDaemon       = regexp.MustCompile(`org\.gradle\.launcher\.daemon\.bootstrap\.GradleDaemon|GradleDaemon`)
 	kotlinDaemon       = regexp.MustCompile(`org\.jetbrains\.kotlin\.daemon|KotlinCompileDaemon`)
+	kotlinToolchain    = regexp.MustCompile(`org\.jetbrains\.amper\.cli\.MainKt`)
 	gradleWorker       = regexp.MustCompile(`worker\.org\.gradle\.process\.internal\.worker\.GradleWorkerMain|org\.gradle\.process\.internal\.worker\.GradleWorkerMain`)
 	gradleTestExecutor = regexp.MustCompile(`Gradle Test Executor`)
 	gradleWorkerDaemon = regexp.MustCompile(`Gradle Worker Daemon`)
@@ -362,6 +363,9 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 			}
 		case kind == "GRADLE_WRAPPER" && cwd != nil:
 			project = cwd
+		case kind == "KOTLIN_TOOLCHAIN" && cwd != nil:
+			// Toolchain CLI has no --workspace_directory=; cwd is the project root.
+			project = cwd
 		}
 
 		jvm := ParseJVMArgs(cmdline)
@@ -572,7 +576,7 @@ func ShouldProbeLiveHeap(kind, executable string) bool {
 	case "BAZEL_TEST", "BAZEL_WORKER":
 		name := filepath.Base(strings.ReplaceAll(executable, `\`, "/"))
 		return name == "java" || strings.EqualFold(name, "java.exe")
-	case "GRADLE_DAEMON", "KOTLIN_DAEMON", "TEST_WORKER", "GRADLE_WORKER", "UNKNOWN_GRADLE_WORKER", "JAVA_GRADLE_RELATED", "BAZEL_SERVER":
+	case "GRADLE_DAEMON", "KOTLIN_DAEMON", "KOTLIN_TOOLCHAIN", "TEST_WORKER", "GRADLE_WORKER", "UNKNOWN_GRADLE_WORKER", "JAVA_GRADLE_RELATED", "BAZEL_SERVER":
 		return true
 	default:
 		return false
@@ -669,6 +673,8 @@ func Classify(commandLine string) string {
 		return "GRADLE_DAEMON"
 	case kotlinDaemon.MatchString(commandLine):
 		return "KOTLIN_DAEMON"
+	case kotlinToolchain.MatchString(commandLine):
+		return "KOTLIN_TOOLCHAIN"
 	case bazelServerJar.MatchString(commandLine) && bazelServerMarker.MatchString(commandLine):
 		return "BAZEL_SERVER"
 	case isBazelTest(commandLine):

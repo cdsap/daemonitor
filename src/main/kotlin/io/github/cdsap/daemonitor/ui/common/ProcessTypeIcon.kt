@@ -32,8 +32,9 @@ import io.github.cdsap.daemonitor.domain.model.ProcessType
 /**
  * A small per-process-type glyph shown next to the type label in the Live Monitor. Gradle's mascot
  * is the elephant 🐘, so the daemon gets a plain elephant and the wrapper an elephant wearing a
- * tool badge (it *invokes* the build). Kotlin has no emoji, so its mark is drawn directly. Emoji
- * are already used elsewhere in this UI (the 🔒 permission glyph), so they render here too.
+ * tool badge (it *invokes* the build). Kotlin has no emoji, so its mark is drawn directly; the
+ * Toolchain CLI reuses that mark with the same tool badge (ephemeral build CLI vs compile daemon).
+ * Emoji are already used elsewhere in this UI (the 🔒 permission glyph), so they render here too.
  *
  * Emoji glyphs are laid out with trimmed line metrics and a slightly reduced font size so tall
  * glyphs (especially 🐘) stay centered inside the icon box instead of clipping.
@@ -45,6 +46,7 @@ fun ProcessTypeIcon(type: ProcessType, modifier: Modifier = Modifier, size: Dp =
         ProcessType.GRADLE_DAEMON -> Emoji("🐘", size, tagged)
         ProcessType.GRADLE_WRAPPER -> WrapperGlyph(size, tagged)
         ProcessType.KOTLIN_DAEMON -> KotlinLogo(tagged.size(size))
+        ProcessType.KOTLIN_TOOLCHAIN -> ToolchainGlyph(size, tagged)
         ProcessType.BAZEL_SERVER -> Emoji("🧱", size, tagged)
         ProcessType.BAZEL_TEST -> Emoji("🧪", size, tagged)
         ProcessType.BAZEL_WORKER -> Emoji("⚙️", size, tagged)
@@ -79,18 +81,38 @@ private fun WrapperGlyph(size: Dp, modifier: Modifier = Modifier) {
             maxLines = 1,
             textAlign = TextAlign.Center,
         )
-        Icon(
-            Icons.Filled.Build,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onPrimary,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .size(size * 0.5f)
-                .clip(CircleShape)
-                .background(LocalAccentColors.current.brand)
-                .padding(1.dp),
-        )
+        ToolBadge(size = size * 0.5f, modifier = Modifier.align(Alignment.BottomEnd))
     }
+}
+
+/**
+ * Kotlin Toolchain CLI = Kotlin mark with a build badge (same idea as [WrapperGlyph]): the mark
+ * alone is the compile daemon; the badge signals the ephemeral `kotlin` / Amper CLI that runs builds.
+ */
+@Composable
+private fun ToolchainGlyph(size: Dp, modifier: Modifier = Modifier) {
+    Box(modifier = modifier.size(size), contentAlignment = Alignment.Center) {
+        KotlinLogo(
+            Modifier
+                .align(Alignment.Center)
+                .size(size * 0.78f),
+        )
+        ToolBadge(size = size * 0.5f, modifier = Modifier.align(Alignment.BottomEnd))
+    }
+}
+
+@Composable
+private fun ToolBadge(size: Dp, modifier: Modifier = Modifier) {
+    Icon(
+        Icons.Filled.Build,
+        contentDescription = null,
+        tint = MaterialTheme.colorScheme.onPrimary,
+        modifier = modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(LocalAccentColors.current.brand)
+            .padding(1.dp),
+    )
 }
 
 /**

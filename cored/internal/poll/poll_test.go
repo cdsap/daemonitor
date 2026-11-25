@@ -35,6 +35,13 @@ func TestClassifyParityWithKotlin(t *testing.T) {
 			want: "KOTLIN_DAEMON",
 		},
 		{
+			name: "kotlin toolchain cli (amper)",
+			in: "java @/Users/dev/Library/Caches/JetBrains/Kotlin/cli/kotlin-cli-0.14.1/kotlin-cli.args " +
+				"-cp /Users/dev/Library/Caches/JetBrains/Kotlin/cli/kotlin-cli-0.14.1/lib/* " +
+				"org.jetbrains.amper.cli.MainKt build",
+			want: "KOTLIN_TOOLCHAIN",
+		},
+		{
 			name: "gradle test worker",
 			in:   "java worker.org.gradle.process.internal.worker.GradleWorkerMain 'Gradle Test Executor 3'",
 			want: "TEST_WORKER",
@@ -246,7 +253,7 @@ func TestIsNonInteractive(t *testing.T) {
 }
 
 func TestShouldProbeLiveHeap(t *testing.T) {
-	for _, kind := range []string{"GRADLE_DAEMON", "KOTLIN_DAEMON", "GRADLE_WORKER", "TEST_WORKER", "UNKNOWN_GRADLE_WORKER", "JAVA_GRADLE_RELATED", "BAZEL_SERVER"} {
+	for _, kind := range []string{"GRADLE_DAEMON", "KOTLIN_DAEMON", "KOTLIN_TOOLCHAIN", "GRADLE_WORKER", "TEST_WORKER", "UNKNOWN_GRADLE_WORKER", "JAVA_GRADLE_RELATED", "BAZEL_SERVER"} {
 		if !poll.ShouldProbeLiveHeap(kind, "") {
 			t.Fatalf("%s must be probed", kind)
 		}

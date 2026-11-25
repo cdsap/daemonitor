@@ -125,6 +125,7 @@ object HeadlessTerminalRenderer {
         ProcessType.GRADLE_DAEMON -> "Gradle daemon"
         ProcessType.GRADLE_WRAPPER -> "Gradle wrapper"
         ProcessType.KOTLIN_DAEMON -> "Kotlin daemon"
+        ProcessType.KOTLIN_TOOLCHAIN -> "Kotlin Toolchain"
         ProcessType.BAZEL_SERVER -> "Bazel server"
         ProcessType.BAZEL_TEST -> "Bazel test"
         ProcessType.BAZEL_WORKER -> "Bazel worker"

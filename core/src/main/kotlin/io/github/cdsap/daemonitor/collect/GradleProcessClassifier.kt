@@ -18,6 +18,9 @@ object GradleProcessClassifier {
             cl.contains("org.jetbrains.kotlin.daemon") ||
                 cl.contains("KotlinCompileDaemon") -> ProcessType.KOTLIN_DAEMON
 
+            // Kotlin Toolchain CLI (Amper). Distinct from KOTLIN_DAEMON (KotlinCompileDaemon under Gradle).
+            cl.contains("org.jetbrains.amper.cli.MainKt") -> ProcessType.KOTLIN_TOOLCHAIN
+
             isBazelServer(cl) -> ProcessType.BAZEL_SERVER
 
             isBazelTest(cl) -> ProcessType.BAZEL_TEST
