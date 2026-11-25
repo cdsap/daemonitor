@@ -86,11 +86,15 @@ func WriteProcessesCSV(w io.Writer, snap model.Snapshot) error {
 		"heap_used_mb", "heap_committed_mb", "heap_max_mb", "heap_sampled_at_ms", "heap_available", "metaspace_used_mb",
 		"metaspace_committed_mb", "young_gc_count", "young_gc_time_ms", "young_gc_time_seconds", "full_gc_time_seconds", "concurrent_gc_time_seconds", "total_gc_time_seconds", "old_gc_count", "old_gc_time_ms", "java_version",
 		"java_runtime_version", "java_vendor", "java_vm_name", "java_vm_version", "os_name", "os_arch",
-		"active_processor_count", "start_time_ms", "status", "automated",
+		"active_processor_count", "start_time_ms", "status", "automated", "jvm_sampled_at_ms",
 	}); err != nil {
 		return err
 	}
 	for _, p := range snap.Processes {
+		timesJSON, err := json.Marshal(p.JVMMeasurementTimes)
+		if err != nil {
+			return err
+		}
 		row := []string{
 			fmt.Sprint(snap.SampledAtMs), fmt.Sprint(p.PID), fmt.Sprint(p.ParentPID), p.Type, p.Name, p.CommandLine,
 			optionalString(p.WorkingDirectory), ProjectName(p), fmt.Sprint(p.RSSMemoryMB), optionalInt64(p.ResidentBytes), optionalInt64(p.VirtualBytes),
@@ -103,7 +107,7 @@ func WriteProcessesCSV(w io.Writer, snap model.Snapshot) error {
 			optionalInt64(p.MetaspaceUsedMB), optionalInt64(p.MetaspaceCommittedMB), optionalInt64(p.YoungGCCount), optionalInt64(p.YoungGCTimeMs),
 			optionalFloat64(p.YoungGCTimeSeconds), optionalFloat64(p.FullGCTimeSeconds), optionalFloat64(p.ConcurrentGCTimeSeconds), optionalFloat64(p.TotalGCTimeSeconds), optionalInt64(p.OldGCCount), optionalInt64(p.OldGCTimeMs), optionalString(p.JavaVersion), optionalString(p.JavaRuntimeVersion),
 			optionalString(p.JavaVendor), optionalString(p.JavaVMName), optionalString(p.JavaVMVersion), optionalString(p.OSName), optionalString(p.OSArch),
-			optionalInt64(p.ActiveProcessorCount), fmt.Sprint(p.StartTimeMs), p.Status, fmt.Sprint(p.Automated),
+			optionalInt64(p.ActiveProcessorCount), fmt.Sprint(p.StartTimeMs), p.Status, fmt.Sprint(p.Automated), string(timesJSON),
 		}
 		if err := c.Write(row); err != nil {
 			return err
@@ -116,11 +120,15 @@ func WriteProcessesCSV(w io.Writer, snap model.Snapshot) error {
 // WriteHistoryCSV writes timestamped process samples.
 func WriteHistoryCSV(w io.Writer, hist model.History) error {
 	c := csv.NewWriter(w)
-	if err := c.Write([]string{"sampled_at_ms", "pid", "type", "rss_mb", "heap_used_mb", "heap_committed_mb", "project"}); err != nil {
+	if err := c.Write([]string{"sampled_at_ms", "pid", "type", "rss_mb", "heap_used_mb", "heap_committed_mb", "project", "heap_sampled_at_ms", "jvm_sampled_at_ms"}); err != nil {
 		return err
 	}
 	for _, p := range hist.Processes {
-		if err := c.Write([]string{fmt.Sprint(p.SampledAtMs), fmt.Sprint(p.PID), p.Type, fmt.Sprint(p.RSSMemoryMB), optionalInt64(p.HeapUsedMB), optionalInt64(p.HeapCommittedMB), ProjectName(p)}); err != nil {
+		timesJSON, err := json.Marshal(p.JVMMeasurementTimes)
+		if err != nil {
+			return err
+		}
+		if err := c.Write([]string{fmt.Sprint(p.SampledAtMs), fmt.Sprint(p.PID), p.Type, fmt.Sprint(p.RSSMemoryMB), optionalInt64(p.HeapUsedMB), optionalInt64(p.HeapCommittedMB), ProjectName(p), optionalInt64(p.HeapSampledAtMs), string(timesJSON)}); err != nil {
 			return err
 		}
 	}

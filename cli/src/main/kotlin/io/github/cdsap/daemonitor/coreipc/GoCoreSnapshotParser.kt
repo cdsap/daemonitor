@@ -11,7 +11,9 @@ import io.github.cdsap.daemonitor.coreipc.GoCoreJson.longField
 import io.github.cdsap.daemonitor.coreipc.GoCoreJson.numberField
 import io.github.cdsap.daemonitor.coreipc.GoCoreJson.splitObjects
 import io.github.cdsap.daemonitor.coreipc.GoCoreJson.stringField
+import io.github.cdsap.daemonitor.domain.model.BazelBuildTelemetryParser
 import io.github.cdsap.daemonitor.domain.model.Build
+import io.github.cdsap.daemonitor.domain.model.BuildTool
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.LiveJvmHeap
@@ -82,6 +84,25 @@ internal object GoCoreSnapshotParser {
         val finalStatus = stringField(obj, "final_status")
             ?.let { runCatching { FinalStatus.valueOf(it) }.getOrNull() }
             ?: return null
+        val tool = stringField(obj, "tool")
+            ?.takeIf { it.isNotBlank() }
+            ?.let { runCatching { BuildTool.valueOf(it.uppercase()) }.getOrNull() }
+            ?: BuildTool.GRADLE
+        val bazelProfile = extractContainer(obj, "bazel_profile", '{', '}')
+            ?.let { BazelBuildTelemetryParser.parseProfile("{$it}") }
+        val bazelDetails = extractContainer(obj, "bazel_details", '{', '}')?.let { detailsObj ->
+            val wrapped = "{$detailsObj}"
+            val metrics = extractContainer(wrapped, "metrics", '{', '}')?.let { "{$it}" }
+            BazelBuildTelemetryParser.parseDetails(
+                bazelVersion = stringField(wrapped, "bazel_version"),
+                sourceFormat = stringField(wrapped, "source_format"),
+                collectionState = stringField(wrapped, "collection_state"),
+                metricsJson = metrics,
+            )
+        }
+        val windowSummaries = extractContainer(obj, "window_summaries", '[', ']')
+            ?.let { BazelBuildTelemetryParser.parseWindowSummaries("[$it]") }
+            .orEmpty()
         return Build(
             buildId = buildId,
             daemonPid = daemonPid,
@@ -100,6 +121,10 @@ internal object GoCoreSnapshotParser {
             logSnippet = stringField(obj, "log_snippet").nullIfEmpty(),
             agent = stringField(obj, "agent").nullIfEmpty(),
             agentProvider = stringField(obj, "agent_provider").nullIfEmpty(),
+            tool = tool,
+            bazelProfile = bazelProfile,
+            bazelDetails = bazelDetails,
+            windowSummaries = windowSummaries,
         )
     }
 
@@ -107,9 +132,17 @@ internal object GoCoreSnapshotParser {
 
     private fun parseDaemonLog(obj: String): DaemonLog? {
         val pid = numberField(obj, "pid")?.toLong() ?: return null
-        val gradleVersion = stringField(obj, "gradle_version") ?: return null
         val path = stringField(obj, "path") ?: return null
-        return DaemonLog(pid = pid, gradleVersion = gradleVersion, path = Path.of(path))
+        val gradleVersion = stringField(obj, "gradle_version").orEmpty()
+        val tool = stringField(obj, "tool")?.takeIf { it.isNotBlank() }
+        val source = stringField(obj, "source")?.takeIf { it.isNotBlank() }
+        return DaemonLog(
+            pid = pid,
+            gradleVersion = gradleVersion,
+            path = Path.of(path),
+            tool = tool,
+            source = source,
+        )
     }
 
     private fun parseProcess(obj: String): GradleProcess? {
@@ -137,6 +170,8 @@ internal object GoCoreSnapshotParser {
             subtreeCpuPercent = numberField(obj, "subtree_cpu_percent"),
             activeWorkerCount = longField(obj, "active_worker_count"),
             activeSandboxedActionCount = longField(obj, "active_sandboxed_action_count"),
+            bazelOutputBase = stringField(obj, "bazel_output_base")?.takeIf { it.isNotBlank() },
+            bazelInstallBase = stringField(obj, "bazel_install_base")?.takeIf { it.isNotBlank() },
             type = type,
             commandLine = commandLine,
             workingDirectory = workingDirectory,

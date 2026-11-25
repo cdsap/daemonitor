@@ -241,6 +241,55 @@ func TestParseJstatCompiler(t *testing.T) {
 	}
 }
 
+func TestParseJstatCompilerNamedCounters(t *testing.T) {
+	tests := []struct {
+		name, out                 string
+		compiled, failed, invalid *int64
+		seconds                   *float64
+		wantErr                   bool
+	}{
+		{"blank failed method", "Compiled Failed Invalid   Time   FailedType FailedMethod\n     128      0       0     0.02          0\n", ptr(int64(128)), ptr(int64(0)), ptr(int64(0)), ptr(0.02), false},
+		{"nonempty failed method", "Compiled Failed Invalid Time FailedType FailedMethod\n128 1 2 0.02 1 private.Example method\n", ptr(int64(128)), ptr(int64(1)), ptr(int64(2)), ptr(0.02), false},
+		{"extra reordered columns", "Extra Time Invalid Compiled Failed FailedType FailedMethod\nx 0.02 2 128 1\n", ptr(int64(128)), ptr(int64(1)), ptr(int64(2)), ptr(0.02), false},
+		{"truncated supported fields", "Compiled Failed Invalid Time\n128 0\n", ptr(int64(128)), ptr(int64(0)), nil, nil, false},
+		{"malformed supported fields", "Compiled Failed Invalid Time\nbad 0 bad bad\n", nil, ptr(int64(0)), nil, nil, false},
+		{"nonfinite time", "Compiled Failed Invalid Time\n128 0 0 NaN\n", ptr(int64(128)), ptr(int64(0)), ptr(int64(0)), nil, false},
+		{"infinite time", "Compiled Failed Invalid Time\n128 0 0 +Inf\n", ptr(int64(128)), ptr(int64(0)), ptr(int64(0)), nil, false},
+		{"missing supported headers", "Compiled Extra\n128 x\n", ptr(int64(128)), nil, nil, nil, false},
+		{"zeros", "Compiled Failed Invalid Time\n0 0 0 0\n", ptr(int64(0)), ptr(int64(0)), ptr(int64(0)), ptr(0.0), false},
+		{"all malformed", "Compiled Failed Invalid Time\nx x x x\n", nil, nil, nil, nil, true},
+		{"unsupported", "Other FailedMethod\n0 private.Example\n", nil, nil, nil, nil, true},
+		{"no data", "Compiled Failed Invalid Time\n", nil, nil, nil, nil, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := heap.ParseJstatCompiler(tt.out)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("error=%v wantErr=%v", err, tt.wantErr)
+			}
+			assertCounter(t, "compiled", got.CompiledCount, tt.compiled)
+			assertCounter(t, "failed", got.FailedCount, tt.failed)
+			assertCounter(t, "invalid", got.InvalidCount, tt.invalid)
+			assertCounter(t, "seconds", got.CompilationTimeSeconds, tt.seconds)
+		})
+	}
+}
+
+func ptr[T any](v T) *T { return &v }
+
+func assertCounter[T comparable](t *testing.T, name string, got, want *T) {
+	t.Helper()
+	if want == nil {
+		if got != nil {
+			t.Errorf("%s=%v want unavailable", name, *got)
+		}
+	} else if got == nil {
+		t.Errorf("%s unavailable want %v", name, *want)
+	} else if *got != *want {
+		t.Errorf("%s=%v want %v", name, *got, *want)
+	}
+}
+
 func TestParseJstatClassKeepsGaugeAndCumulativeCountersDistinct(t *testing.T) {
 	s, err := heap.ParseJstatClass(jstatClassFixture)
 	if err != nil {
@@ -248,6 +297,14 @@ func TestParseJstatClassKeepsGaugeAndCumulativeCountersDistinct(t *testing.T) {
 	}
 	if s.LoadedClasses == nil || *s.LoadedClasses != 18432 || s.UnloadedClasses == nil || *s.UnloadedClasses != 217 || s.LoadedClassesTotal == nil || *s.LoadedClassesTotal != 18649 {
 		t.Fatalf("classes=%+v", s)
+	}
+}
+
+func TestParseJstatClassRejectsUnavailableCounters(t *testing.T) {
+	for _, out := range []string{"Other\n0\n", "Loaded Unloaded Time\nbad bad bad\n"} {
+		if _, err := heap.ParseJstatClass(out); err == nil {
+			t.Fatalf("expected parse error for %q", out)
+		}
 	}
 }
 

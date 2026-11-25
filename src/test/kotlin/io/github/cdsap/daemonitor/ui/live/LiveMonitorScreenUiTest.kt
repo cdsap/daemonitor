@@ -195,7 +195,7 @@ class LiveMonitorScreenUiTest {
     }
 
     @Test
-    fun `bazel server selection shows history honesty note without gradle log`() = runComposeUiTest {
+    fun `bazel server selection shows metadata worker rollup live log tail and honest empty state without gradle log`() = runComposeUiTest {
         mainClock.autoAdvance = false
         val bazel = sampleProcess(
             pid = 30030,
@@ -204,22 +204,60 @@ class LiveMonitorScreenUiTest {
             projectPath = "/tmp/ws",
             maxHeapMb = null,
             gc = null,
+        ).copy(
+            bazelOutputBase = "/tmp/outbase",
+            bazelInstallBase = "/tmp/installbase",
+            activeWorkerCount = 2,
+            activeSandboxedActionCount = 4,
+            subtreeRssMemoryMb = 1800,
+            subtreeCpuPercent = 34.5,
         )
-        val state = LiveUiState(
-            processes = listOf(bazel),
-            summary = LiveSummary(
-                activeProcessCount = 1,
-                totalRssMb = 1024,
-                highestMemoryPid = 30030,
-                activeProjectCount = 1,
+        val bazelLog = DaemonLog(
+            pid = 30030,
+            gradleVersion = "",
+            path = Path.of("/tmp/outbase/command.log"),
+            tool = "bazel",
+            source = "command.log",
+        )
+        val bazelBuild = Build(
+            buildId = "bz-1",
+            daemonPid = 30030,
+            daemonIdentity = null,
+            commandLine = null,
+            workingDirectory = "/tmp/ws",
+            projectPath = "/tmp/ws",
+            startTimeMs = 1_700_000_000_000,
+            endTimeMs = 1_700_000_005_000,
+            durationSeconds = 5.0,
+            peakMemoryMb = 1800,
+            avgMemoryMb = 1400,
+            peakCpuPercent = 34.5,
+            inferredSource = Source.BEP,
+            finalStatus = FinalStatus.SUCCESS,
+            logSnippet = null,
+            tool = io.github.cdsap.daemonitor.domain.model.BuildTool.BAZEL,
+            bazelDetails = io.github.cdsap.daemonitor.domain.model.BazelDetailsSummary(bazelVersion = "8.1.1"),
+        )
+        var state by mutableStateOf(
+            LiveUiState(
+                processes = listOf(bazel),
+                summary = LiveSummary(
+                    activeProcessCount = 1,
+                    totalRssMb = 1024,
+                    highestMemoryPid = 30030,
+                    activeProjectCount = 1,
+                ),
+                detail = DetailState.Selected(bazel),
+                daemonLog = bazelLog,
+                tailState = LogTailState.Available(listOf("INFO: Build completed successfully")),
+                recentBuilds = RecentBuildsState.Loaded(listOf(bazelBuild)),
+                isLoading = false,
+                isEmpty = false,
             ),
-            detail = DetailState.Selected(bazel),
-            isLoading = false,
-            isEmpty = false,
         )
         setContent {
             WatcherTheme(appearance = AppearancePreference.DARK) {
-                Box(Modifier.size(width = 900.dp, height = 380.dp)) {
+                Box(Modifier.size(width = 1100.dp, height = 700.dp)) {
                     LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
                 }
             }
@@ -227,12 +265,31 @@ class LiveMonitorScreenUiTest {
 
         onNodeWithText("Bazel server / Process detail").assertIsDisplayed()
         onNodeWithTag("process-type-icon-BAZEL_SERVER").assertExists()
-        onNodeWithText(ProcessType.BAZEL_SERVER.displayLabel(), useUnmergedTree = true).assertExists()
-        onNodeWithTag("bazel-history-note").assertIsDisplayed()
-        onNodeWithText("Bazel history").assertIsDisplayed()
-        onNodeWithText("completed builds appear under History → Bazel. Daemonitor never enables BEP.", substring = true).assertExists()
+        onNodeWithTag("bazel-log-card").assertIsDisplayed()
+        onNodeWithText("Bazel log").assertIsDisplayed()
+        onNodeWithText("INFO: Build completed successfully").assertExists()
+        onNodeWithTag("process-detail-tab-bazel").performClick()
+        waitForIdle()
+        assertTrue(onAllNodesWithText("Bazel server").fetchSemanticsNodes().size >= 2)
+        onNodeWithText("Bazel version").assertExists()
+        onNodeWithText("8.1.1").assertExists()
+        onNodeWithText("Output base").assertExists()
+        onNodeWithText("/tmp/outbase").assertExists()
+        onNodeWithText("Active workers").assertExists()
+        onNodeWithText("Sandboxed actions").assertExists()
+        onNodeWithText("Subtree RSS").assertExists()
+        onNodeWithText("1800 MB").assertExists()
         onNodeWithText("Gradle version").assertDoesNotExist()
         onNodeWithText("Gradle daemon log").assertDoesNotExist()
+
+        state = state.copy(
+            daemonLog = null,
+            tailState = LogTailState.NoLog,
+            recentBuilds = RecentBuildsState.Loaded(emptyList()),
+        )
+        waitForIdle()
+        onNodeWithText("No Bazel builds captured yet (neither command.profile.gz nor BEP in reach).").assertExists()
+        onNodeWithText("command.profile.gz or BEP is in reach (Daemonitor never enables BEP).", substring = true).assertExists()
     }
 
     @Test

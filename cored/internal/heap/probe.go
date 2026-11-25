@@ -92,15 +92,34 @@ type Prober struct {
 	LookPath func(string) (string, error)
 	// Runner runs a command; defaults to exec.CommandContext.
 	Runner func(ctx context.Context, name string, args ...string) (stdout string, err error)
+	// Now supplies the acquisition/cache clock; defaults to time.Now.
+	Now func() time.Time
 
-	mu      sync.Mutex
-	cache   map[cacheKey]cacheEntry
-	gcCache map[cacheKey]gcCacheEntry
+	flagsMu      sync.Mutex
+	flagsCache   map[cacheKey]flagsCacheEntry
+	flagsPending map[cacheKey]chan struct{}
+	mu           sync.Mutex
+	cache        map[cacheKey]cacheEntry
+	gcCache      map[cacheKey]gcCacheEntry
 }
 
 type cacheKey struct {
 	pid         int32
 	startTimeMs int64
+}
+
+func (p *Prober) now() time.Time {
+	if p.Now != nil {
+		return p.Now()
+	}
+	return time.Now()
+}
+
+func (p *Prober) measured(sample *Sample, family string) {
+	if sample.MeasurementTimes == nil {
+		sample.MeasurementTimes = make(map[string]int64)
+	}
+	sample.MeasurementTimes[family] = p.now().UnixMilli()
 }
 
 type cacheEntry struct {
@@ -157,7 +176,7 @@ func (p *Prober) GCFor(ctx context.Context, pid int32, startTimeMs int64) (*stri
 		ttl = DefaultCacheTTL
 	}
 	key := cacheKey{pid: pid, startTimeMs: startTimeMs}
-	now := time.Now()
+	now := p.now()
 	p.mu.Lock()
 	if e, ok := p.gcCache[key]; ok && now.Before(e.expiresAt) {
 		gc := e.gc
@@ -219,7 +238,7 @@ func (p *Prober) SampleFor(ctx context.Context, pid int32, startTimeMs int64) (S
 		ttl = DefaultCacheTTL
 	}
 	key := cacheKey{pid: pid, startTimeMs: startTimeMs}
-	now := time.Now()
+	now := p.now()
 	p.mu.Lock()
 	if e, ok := p.cache[key]; ok && now.Before(e.expiresAt) {
 		s := e.sample
@@ -236,6 +255,9 @@ func (p *Prober) SampleFor(ctx context.Context, pid int32, startTimeMs int64) (S
 		return Sample{}, err
 	}
 	p.mu.Lock()
+	if p.cache == nil {
+		p.cache = make(map[cacheKey]cacheEntry)
+	}
 	p.cache[key] = cacheEntry{sample: sample, expiresAt: now.Add(ttl)}
 	p.mu.Unlock()
 	return sample, nil
@@ -246,6 +268,13 @@ func (p *Prober) EvictMissing(live map[int32]struct{}) {
 	if p == nil {
 		return
 	}
+	p.flagsMu.Lock()
+	for k := range p.flagsCache {
+		if _, ok := live[k.pid]; !ok {
+			delete(p.flagsCache, k)
+		}
+	}
+	p.flagsMu.Unlock()
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for k := range p.cache {
@@ -312,6 +341,7 @@ func (p *Prober) probe(ctx context.Context, pid int32) (Sample, error) {
 		if err == nil {
 			s, perr := ParseJcmdHeapInfo(out)
 			if perr == nil {
+				p.measured(&s, "heap")
 				s.Diagnostics = diagnostics
 				if info, infoErr := run(ctx, jcmdPath, fmt.Sprintf("%d", pid), "VM.info"); infoErr == nil {
 					// Processor count remains sourced from jcmd; JVM identity is
@@ -350,6 +380,8 @@ func (p *Prober) probe(ctx context.Context, pid int32) (Sample, error) {
 		return Sample{}, unavailableError(diagnostics, jcmdErr, err)
 	}
 	s.Diagnostics = diagnostics
+	p.measured(&s, "heap")
+	s.MeasurementTimes["gc"] = s.MeasurementTimes["heap"]
 	p.supplementGC(ctx, look, run, pid, &s)
 	p.collectAllowlistedSysprops(ctx, look, run, pid, &s)
 	p.supplementAdvanced(ctx, look, run, pid, &s)
@@ -366,6 +398,9 @@ func (p *Prober) supplementAdvanced(ctx context.Context, look func(string) (stri
 		if out, err := run(ctx, jstat, "-compiler", fmt.Sprintf("%d", pid)); err == nil {
 			if metrics, err := ParseJstatCompiler(out); err == nil {
 				sample.JIT = &metrics
+				p.measured(sample, "jit")
+			} else {
+				sample.Diagnostics = append(sample.Diagnostics, Diagnostic{Tool: "jstat", Operation: "-compiler", Category: FailureParseError})
 			}
 		} else {
 			sample.Diagnostics = append(sample.Diagnostics, diagnostic("jstat", "-compiler", err))
@@ -373,6 +408,9 @@ func (p *Prober) supplementAdvanced(ctx context.Context, look func(string) (stri
 		if out, err := run(ctx, jstat, "-class", fmt.Sprintf("%d", pid)); err == nil {
 			if metrics, err := ParseJstatClass(out); err == nil {
 				sample.Classes = &metrics
+				p.measured(sample, "classes")
+			} else {
+				sample.Diagnostics = append(sample.Diagnostics, Diagnostic{Tool: "jstat", Operation: "-class", Category: FailureParseError})
 			}
 		} else {
 			sample.Diagnostics = append(sample.Diagnostics, diagnostic("jstat", "-class", err))
@@ -384,6 +422,9 @@ func (p *Prober) supplementAdvanced(ctx context.Context, look func(string) (stri
 		if out, err := run(ctx, jcmd, fmt.Sprintf("%d", pid), "Compiler.codecache"); err == nil {
 			if pools, err := ParseJcmdCodeCache(out); err == nil {
 				sample.CodeCache = pools
+				p.measured(sample, "code_cache")
+			} else {
+				sample.Diagnostics = append(sample.Diagnostics, Diagnostic{Tool: "jcmd", Operation: "Compiler.codecache", Category: FailureParseError})
 			}
 		} else {
 			sample.Diagnostics = append(sample.Diagnostics, diagnostic("jcmd", "Compiler.codecache", err))
@@ -391,6 +432,9 @@ func (p *Prober) supplementAdvanced(ctx context.Context, look func(string) (stri
 		if out, err := run(ctx, jcmd, fmt.Sprintf("%d", pid), "PerfCounter.print"); err == nil {
 			if metrics, err := ParsePerfCounterSafepoints(out); err == nil {
 				sample.Safepoints = &metrics
+				p.measured(sample, "safepoints")
+			} else {
+				sample.Diagnostics = append(sample.Diagnostics, Diagnostic{Tool: "jcmd", Operation: "PerfCounter.print", Category: FailureParseError})
 			}
 		} else {
 			sample.Diagnostics = append(sample.Diagnostics, diagnostic("jcmd", "PerfCounter.print", err))
@@ -478,6 +522,7 @@ func (p *Prober) supplementGCTimes(
 		return
 	}
 	sample.YoungGCCount = jstatSample.YoungGCCount
+	p.measured(sample, "gc")
 	sample.YoungGCTimeMs = jstatSample.YoungGCTimeMs
 	sample.YoungGCTimeSeconds = jstatSample.YoungGCTimeSeconds
 	sample.FullGCTimeSeconds = jstatSample.FullGCTimeSeconds

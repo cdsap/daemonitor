@@ -2,7 +2,9 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/cdsap/daemonitor/cored/internal/model"
@@ -10,11 +12,11 @@ import (
 
 // Lifecycle event types persisted in process_events.
 const (
-	EventFirstObserved           = "process.first_observed"
-	EventDisappearanceDetected   = "process.disappearance_detected"
-	EventConfigurationObserved   = "process.configuration_observed"
-	EventSourceProcessPoll       = "process_poll"
-	ProcessEventSchemaVersion    = 1
+	EventFirstObserved         = "process.first_observed"
+	EventDisappearanceDetected = "process.disappearance_detected"
+	EventConfigurationObserved = "process.configuration_observed"
+	EventSourceProcessPoll     = "process_poll"
+	ProcessEventSchemaVersion  = 1
 )
 
 // ProcessInstanceID builds a durable incarnation key from host + PID + OS create time.
@@ -65,7 +67,14 @@ CREATE TABLE IF NOT EXISTS process_events (
 	if _, err := s.db.Exec(`CREATE INDEX IF NOT EXISTS process_events_instance_ts ON process_events(process_instance_id, timestamp_ms)`); err != nil {
 		return err
 	}
-	return nil
+	cols, err := s.tableColumns("process_instances")
+	if err != nil {
+		return err
+	}
+	if !slices.Contains(cols, "jvm_flags_json") {
+		_, err = s.db.Exec(`ALTER TABLE process_instances ADD COLUMN jvm_flags_json TEXT`)
+	}
+	return err
 }
 
 // ObserveProcesses upserts process instances, updates last_observed, and emits lifecycle events.
@@ -105,6 +114,7 @@ WHERE disappeared_at_ms IS NULL`)
 	}
 	aliveRows.Close()
 
+	deferFlags := make(map[string]*model.JVMFlagsMetadata)
 	seen := make(map[string]struct{}, len(processes))
 	for _, p := range processes {
 		// Without a real OS create time, PID reuse cannot be distinguished — skip identity.
@@ -113,6 +123,10 @@ WHERE disappeared_at_ms IS NULL`)
 		}
 		id := ProcessInstanceID(hostID, p.PID, p.StartTimeMs)
 		seen[id] = struct{}{}
+		if p.JVMFlags != nil && p.JVMFlags.PID == p.PID && p.JVMFlags.StartTimeMs == p.StartTimeMs {
+			// New instances are inserted below; update after all lifecycle work.
+			deferFlags[id] = p.JVMFlags
+		}
 		existing, wasAlive := alive[id]
 		if wasAlive {
 			if _, err := tx.Exec(`
@@ -189,6 +203,15 @@ WHERE id=? AND disappeared_at_ms IS NULL`, sampledAtMs, id); err != nil {
 		}
 	}
 
+	for id, metadata := range deferFlags {
+		data, err := json.Marshal(metadata)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`UPDATE process_instances SET jvm_flags_json=? WHERE id=? AND (jvm_flags_json IS NULL OR jvm_flags_json != ?)`, string(data), id, string(data)); err != nil {
+			return err
+		}
+	}
 	return tx.Commit()
 }
 
@@ -244,4 +267,22 @@ func (s *Store) CountEvents() (int64, error) {
 	var n int64
 	err := s.db.QueryRow(`SELECT COUNT(*) FROM process_events`).Scan(&n)
 	return n, err
+}
+
+// JVMFlags returns only the exact requested host/PID/start-time incarnation.
+// A nil document means no metadata has been observed (including older databases).
+func (s *Store) JVMFlags(hostID string, pid int32, start int64) (*model.JVMFlagsMetadata, error) {
+	var data sql.NullString
+	err := s.db.QueryRow(`SELECT jvm_flags_json FROM process_instances WHERE id=?`, ProcessInstanceID(hostID, pid, start)).Scan(&data)
+	if err == sql.ErrNoRows || (err == nil && !data.Valid) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var m model.JVMFlagsMetadata
+	if err := json.Unmarshal([]byte(data.String), &m); err != nil {
+		return nil, err
+	}
+	return &m, nil
 }

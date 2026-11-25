@@ -127,6 +127,47 @@ func TestMetricJSONLHasStableSchemaFields(t *testing.T) {
 	}
 }
 
+func TestJVMMetricExportSeparatesObservationAndMeasurement(t *testing.T) {
+	for _, times := range []map[string]int64{nil, {"heap": 1000, "gc": 1200}} {
+		used, gc, legacyHeapTime := int64(42), int64(7), int64(3000)
+		rows := metricRecords([]model.Process{{PID: 7, SampledAtMs: 5000,
+			HeapUsedMB: &used, YoungGCCount: &gc, HeapSampledAtMs: &legacyHeapTime, JVMMeasurementTimes: times}})
+		var out bytes.Buffer
+		if err := writeMetrics(&out, rows, "jsonl"); err != nil {
+			t.Fatal(err)
+		}
+		for _, line := range strings.Split(strings.TrimSpace(out.String()), "\n") {
+			var row model.MetricRecord
+			if err := json.Unmarshal([]byte(line), &row); err != nil {
+				t.Fatal(err)
+			}
+			if row.CollectionTimeMs != 5000 {
+				t.Fatalf("lost observation time: %+v", row)
+			}
+			if !strings.HasPrefix(row.MetricName, "process.jvm.") {
+				continue
+			}
+			family := "heap"
+			switch {
+			case strings.Contains(row.MetricName, "_gc_"):
+				family = "gc"
+			case strings.HasPrefix(row.MetricName, "process.jvm.jit."):
+				family = "jit"
+			case strings.HasPrefix(row.MetricName, "process.jvm.classes."):
+				family = "classes"
+			}
+			want := times[family]
+			if want == 0 {
+				if row.MeasurementTimeMs != nil {
+					t.Fatalf("invented legacy measurement: %+v", row)
+				}
+			} else if row.MeasurementTimeMs == nil || *row.MeasurementTimeMs != want {
+				t.Fatalf("lost %s measurement time: %+v", family, row)
+			}
+		}
+	}
+}
+
 func TestParseArgsRejectsInvalidOutputAndNegativeValues(t *testing.T) {
 	for _, argv := range [][]string{
 		{"ps", "--format", "xml"},

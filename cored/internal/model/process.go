@@ -5,8 +5,10 @@ import "github.com/cdsap/daemonitor/cored/internal/platform"
 // Process is an IPC snapshot of a Gradle-related process.
 // Field names mirror the Kotlin GradleProcess domain for dual-run clients.
 type Process struct {
-	PID       int32 `json:"pid"`
-	ParentPID int32 `json:"parent_pid"`
+	// JVMFlags is retained once per incarnation and served through the metadata endpoint.
+	JVMFlags  *JVMFlagsMetadata `json:"-"`
+	PID       int32             `json:"pid"`
+	ParentPID int32             `json:"parent_pid"`
 	// Owner identity bridges unclassified OS wrappers. Subtree totals include the
 	// server itself and all sampled descendants; own-process metrics stay intact.
 	OwnerPID                   int32    `json:"owner_pid,omitempty"`
@@ -56,15 +58,18 @@ type Process struct {
 	GC                         *string  `json:"gc"`
 	// Live heap from jcmd/jstat (Gradle/Kotlin daemons and eligible workers). Null used/committed when
 	// unavailable — never coerced to zero. Distinct from MaxHeapMB (-Xmx).
-	HeapUsedMB           *int64 `json:"heap_used_mb"`
-	HeapCommittedMB      *int64 `json:"heap_committed_mb"`
-	HeapMaxMB            *int64 `json:"heap_max_mb"`
-	HeapSampledAtMs      *int64 `json:"heap_sampled_at_ms"`
-	HeapAvailable        bool   `json:"heap_available"`
-	MetaspaceUsedMB      *int64 `json:"metaspace_used_mb"`
-	MetaspaceCommittedMB *int64 `json:"metaspace_committed_mb"`
-	YoungGCCount         *int64 `json:"young_gc_count"`
-	YoungGCTimeMs        *int64 `json:"young_gc_time_ms"`
+	HeapUsedMB      *int64 `json:"heap_used_mb"`
+	HeapCommittedMB *int64 `json:"heap_committed_mb"`
+	HeapMaxMB       *int64 `json:"heap_max_mb"`
+	HeapSampledAtMs *int64 `json:"heap_sampled_at_ms"`
+	// Successful acquisition completion by JVM family, in Unix milliseconds.
+	// Nil is unknown (legacy) or unavailable; never infer these from SampledAtMs.
+	JVMMeasurementTimes  map[string]int64 `json:"jvm_sampled_at_ms"`
+	HeapAvailable        bool             `json:"heap_available"`
+	MetaspaceUsedMB      *int64           `json:"metaspace_used_mb"`
+	MetaspaceCommittedMB *int64           `json:"metaspace_committed_mb"`
+	YoungGCCount         *int64           `json:"young_gc_count"`
+	YoungGCTimeMs        *int64           `json:"young_gc_time_ms"`
 	// Cumulative jstat -gc times, in seconds; null means unavailable.
 	YoungGCTimeSeconds      *float64                 `json:"young_gc_time_seconds"`
 	FullGCTimeSeconds       *float64                 `json:"full_gc_time_seconds"`
@@ -226,14 +231,15 @@ type SelfMetrics struct {
 
 // MetricRecord is one normalized metric sample for machine-readable exports.
 type MetricRecord struct {
-	SchemaVersion    int    `json:"schema_version"`
-	MetricName       string `json:"metric_name"`
-	Unit             string `json:"unit"`
-	Value            any    `json:"value"`
-	Source           string `json:"source"`
-	CollectionTimeMs int64  `json:"collection_timestamp_ms"`
-	ProcessIdentity  string `json:"process_identity,omitempty"`
-	PID              int32  `json:"pid,omitempty"`
+	SchemaVersion     int    `json:"schema_version"`
+	MetricName        string `json:"metric_name"`
+	Unit              string `json:"unit"`
+	Value             any    `json:"value"`
+	Source            string `json:"source"`
+	CollectionTimeMs  int64  `json:"collection_timestamp_ms"`
+	MeasurementTimeMs *int64 `json:"measurement_timestamp_ms"`
+	ProcessIdentity   string `json:"process_identity,omitempty"`
+	PID               int32  `json:"pid,omitempty"`
 }
 
 // CollectorCadences exposes provisional independent sampling intervals.

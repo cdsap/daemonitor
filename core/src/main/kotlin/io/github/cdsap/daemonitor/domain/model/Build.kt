@@ -44,8 +44,14 @@ data class Build(
     val agent: String? = null,
     /** LLM provider for the agent: a concrete name, "configurable", or "unknown"; null if no agent. */
     val agentProvider: String? = null,
-    /** GRADLE (daemon log) or BAZEL (opportunistic BEP). Defaults GRADLE for legacy rows. */
+    /** GRADLE (daemon log) or BAZEL (opportunistic BEP / command.profile.gz). Defaults GRADLE for legacy rows. */
     val tool: BuildTool = BuildTool.GRADLE,
+    /** Parsed `command.profile.gz` summary when present on Bazel builds. */
+    val bazelProfile: BazelProfileSummary? = null,
+    /** Parsed BEP `bazel_build_details` metrics projection when present on Bazel builds. */
+    val bazelDetails: BazelDetailsSummary? = null,
+    /** Parsed per-process build-window RSS/heap/GC deltas when present. */
+    val windowSummaries: List<BazelWindowSummary> = emptyList(),
 ) {
     val daemonIdentityConfidence: DaemonIdentityConfidence
         get() = if (daemonIdentity.isNullOrBlank()) {
