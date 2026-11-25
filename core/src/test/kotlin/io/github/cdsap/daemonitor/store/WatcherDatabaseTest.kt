@@ -6,6 +6,8 @@ import io.github.cdsap.daemonitor.domain.BuildSample
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
+import io.github.cdsap.daemonitor.domain.model.JvmClassMetrics
+import io.github.cdsap.daemonitor.domain.model.JvmJitMetrics
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.domain.model.Source
 import io.github.cdsap.daemonitor.persistence.BuildRepository
@@ -47,6 +49,79 @@ class WatcherDatabaseTest {
         agent = "Claude Code",
         agentProvider = "Anthropic",
     )
+
+    @Test
+    fun `legacy rows keep new JVM values unavailable after additive migration`(@TempDirArg tmp: Path) {
+        val path = tmp.resolve("legacy-jvm.db")
+        WatcherDatabase.open(path).use { it.save(sample(1000, "java"), 1000) }
+        JdbcSqliteDriver("jdbc:sqlite:${path.toAbsolutePath()}").use { driver ->
+            listOf(
+                "jit_present", "jit_compiled_count", "jit_failed_count", "jit_invalid_count", "jit_compilation_time_seconds",
+                "classes_present", "classes_loaded", "classes_unloaded_total", "classes_loaded_total", "classes_time_seconds",
+                "young_gc_time_seconds", "full_gc_time_seconds", "concurrent_gc_time_seconds", "total_gc_time_seconds", "start_time_ms",
+            ).forEach { driver.execute(null, "ALTER TABLE process_samples DROP COLUMN $it", 0) }
+            driver.execute(null, "UPDATE process_samples SET young_gc_time_ms = 123", 0)
+        }
+        repeat(2) {
+            WatcherDatabase.open(path).use { db ->
+                val row = db.processSamplesForPid(5).single()
+                assertEquals(null, row.jit)
+                assertEquals(null, row.classes)
+                assertEquals(null, row.youngGcTimeSeconds)
+                assertEquals(null, row.fullGcTimeSeconds)
+                assertEquals(null, row.concurrentGcTimeSeconds)
+                assertEquals(null, row.totalGcTimeSeconds)
+                assertEquals(123L, row.youngGcTimeMs)
+                assertEquals(0L, row.startTimeMs)
+            }
+        }
+    }
+
+    @Test
+    fun `JVM counters retain precision nulls and incarnation across reopen`(@TempDirArg tmp: Path) {
+        val path = tmp.resolve("jvm.db")
+        val p = GradleProcess(
+            pid = 42, parentPid = 1, type = ProcessType.GRADLE_DAEMON,
+            commandLine = "java", workingDirectory = null, projectPath = null,
+            cpuPercent = null, rssMemoryMb = 100, maxHeapMb = null, minHeapMb = null,
+            gc = null, startTimeMs = 123, status = "R",
+            jit = JvmJitMetrics(9007199254740993L, 0, 2, 1.23456789),
+            classes = JvmClassMetrics(17, 3, 20, 2.34567891),
+            youngGcTimeSeconds = 0.00012345, fullGcTimeSeconds = 3.45678912,
+            concurrentGcTimeSeconds = 0.0, totalGcTimeSeconds = 4.56789123,
+        )
+        WatcherDatabase.open(path).use { db ->
+            db.save(p, 1000)
+            db.save(
+                p.copy(
+                    startTimeMs = 456,
+                    jit = JvmJitMetrics(null, null, null, null),
+                    classes = JvmClassMetrics(null, null, null, null),
+                    youngGcTimeSeconds = null,
+                ),
+                2000,
+            )
+            db.save(p.copy(jit = null, classes = null), 3000)
+        }
+        WatcherDatabase.open(path).use { db ->
+            val rows = db.processSamplesForPid(42).sortedBy { it.timestampMs }
+            assertEquals(3, rows.size)
+            assertEquals(1000L, rows[0].timestampMs)
+            assertEquals(123L, rows[0].startTimeMs)
+            assertEquals(p.jit, rows[0].jit)
+            assertEquals(p.classes, rows[0].classes)
+            assertEquals(p.youngGcTimeSeconds, rows[0].youngGcTimeSeconds)
+            assertEquals(p.fullGcTimeSeconds, rows[0].fullGcTimeSeconds)
+            assertEquals(p.concurrentGcTimeSeconds, rows[0].concurrentGcTimeSeconds)
+            assertEquals(p.totalGcTimeSeconds, rows[0].totalGcTimeSeconds)
+            assertEquals(456L, rows[1].startTimeMs)
+            assertEquals(JvmJitMetrics(null, null, null, null), rows[1].jit)
+            assertEquals(JvmClassMetrics(null, null, null, null), rows[1].classes)
+            assertEquals(null, rows[1].youngGcTimeSeconds)
+            assertEquals(null, rows[2].jit)
+            assertEquals(null, rows[2].classes)
+        }
+    }
 
     @Test
     fun `build round-trips through the database`(@TempDirArg tmp: Path) = runTest {

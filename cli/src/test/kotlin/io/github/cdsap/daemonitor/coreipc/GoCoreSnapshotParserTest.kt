@@ -51,7 +51,8 @@ class GoCoreSnapshotParserTest {
             {"processes":[{"pid":1,"type":"GRADLE_DAEMON",
               "memory_pools":[{"name":"Eden","source":"jstat","used":{"value":0,"unit":"K"},"committed":{"value":12.5,"unit":"M"},"max":null}],
               "code_cache":[{"name":"CodeHeap","used":{"value":2,"unit":"M"}}],
-              "jit":{"compiled_count":0,"failed_count":null,"compilation_time_seconds":1.25}}]}
+              "jit":{"compiled_count":0,"failed_count":null,"compilation_time_seconds":1.25},
+              "classes":{"loaded":17,"unloaded_total":0,"loaded_total":20,"time_seconds":0.123456789}}]}
         """).single()
         assertEquals(0.0, process.memoryPools.single().used?.value)
         assertEquals("K", process.memoryPools.single().used?.unit)
@@ -62,6 +63,10 @@ class GoCoreSnapshotParserTest {
         assertEquals(0L, process.jit?.compiledCount)
         assertNull(process.jit?.failedCount)
         assertEquals(1.25, process.jit?.compilationTimeSeconds)
+        assertEquals(17L, process.classes?.loaded)
+        assertEquals(0L, process.classes?.unloadedTotal)
+        assertEquals(20L, process.classes?.loadedTotal)
+        assertEquals(0.123456789, process.classes?.timeSeconds)
 
         val empty = GoCoreSnapshotParser.parseProcesses("""
             {"processes":[{"pid":2,"type":"JAVA_GRADLE_RELATED","memory_pools":null,
@@ -70,6 +75,7 @@ class GoCoreSnapshotParserTest {
         assertTrue(empty.memoryPools.isEmpty())
         assertTrue(empty.codeCache.isEmpty())
         assertNull(empty.jit)
+        assertNull(empty.classes)
     }
     @Test
     fun `parses rich process snapshot from go core json`() {

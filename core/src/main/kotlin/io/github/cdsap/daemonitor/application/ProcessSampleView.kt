@@ -1,5 +1,7 @@
 package io.github.cdsap.daemonitor.application
 
+import io.github.cdsap.daemonitor.domain.model.JvmClassMetrics
+import io.github.cdsap.daemonitor.domain.model.JvmJitMetrics
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 
 /** Application-owned read model for a retained process snapshot. */
@@ -20,4 +22,11 @@ data class ProcessSampleView(
     val heapMaxMb: Long? = null,
     val heapSampledAtMs: Long? = null,
     val heapAvailable: Boolean = false,
+    val startTimeMs: Long = 0,
+    val jit: JvmJitMetrics? = null,
+    val classes: JvmClassMetrics? = null,
+    val youngGcTimeSeconds: Double? = null,
+    val fullGcTimeSeconds: Double? = null,
+    val concurrentGcTimeSeconds: Double? = null,
+    val totalGcTimeSeconds: Double? = null,
 )

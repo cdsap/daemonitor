@@ -332,6 +332,23 @@ class DaemonitorMcpServer(
         "heapMaxMb" to jsonNumberOrNull(heapMaxMb.takeIf { heapAvailable }),
         "heapSampledAtMs" to jsonNumberOrNull(heapSampledAtMs),
         "heapAvailable" to JsonBoolean(heapAvailable),
+        "startTimeMs" to JsonNumber(startTimeMs),
+        "jit" to jit?.let { jsonObject(
+            "compiledCount" to jsonNumberOrNull(it.compiledCount),
+            "failedCount" to jsonNumberOrNull(it.failedCount),
+            "invalidCount" to jsonNumberOrNull(it.invalidCount),
+            "compilationTimeSeconds" to jsonNumberOrNull(it.compilationTimeSeconds),
+        ) },
+        "classes" to classes?.let { jsonObject(
+            "loaded" to jsonNumberOrNull(it.loaded),
+            "unloadedTotal" to jsonNumberOrNull(it.unloadedTotal),
+            "loadedTotal" to jsonNumberOrNull(it.loadedTotal),
+            "timeSeconds" to jsonNumberOrNull(it.timeSeconds),
+        ) },
+        "youngGcTimeSeconds" to jsonNumberOrNull(youngGcTimeSeconds),
+        "fullGcTimeSeconds" to jsonNumberOrNull(fullGcTimeSeconds),
+        "concurrentGcTimeSeconds" to jsonNumberOrNull(concurrentGcTimeSeconds),
+        "totalGcTimeSeconds" to jsonNumberOrNull(totalGcTimeSeconds),
         "status" to JsonString(status),
     )
 

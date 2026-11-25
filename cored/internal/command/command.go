@@ -474,6 +474,26 @@ func metricRecords(processes []model.Process) []model.MetricRecord {
 		add("process.jvm.heap_used_mb", "MB", p.HeapUsedMB)
 		add("process.jvm.heap_committed_mb", "MB", p.HeapCommittedMB)
 		add("process.jvm.young_gc_count", "count", p.YoungGCCount)
+		add("process.jvm.young_gc_time_seconds", "seconds", p.YoungGCTimeSeconds)
+		add("process.jvm.full_gc_time_seconds", "seconds", p.FullGCTimeSeconds)
+		add("process.jvm.concurrent_gc_time_seconds", "seconds", p.ConcurrentGCTimeSeconds)
+		add("process.jvm.total_gc_time_seconds", "seconds", p.TotalGCTimeSeconds)
+		var jit model.JITMetrics
+		if p.JIT != nil {
+			jit = *p.JIT
+		}
+		add("process.jvm.jit.compiled_count", "count", jit.CompiledCount)
+		add("process.jvm.jit.failed_count", "count", jit.FailedCount)
+		add("process.jvm.jit.invalid_count", "count", jit.InvalidCount)
+		add("process.jvm.jit.compilation_time_seconds", "seconds", jit.CompilationTimeSeconds)
+		var classes model.ClassMetrics
+		if p.Classes != nil {
+			classes = *p.Classes
+		}
+		add("process.jvm.classes.loaded", "count", classes.LoadedClasses)
+		add("process.jvm.classes.unloaded_total", "count", classes.UnloadedClasses)
+		add("process.jvm.classes.loaded_total", "count", classes.LoadedClassesTotal)
+		add("process.jvm.classes.time_seconds", "seconds", classes.ClassTimeSeconds)
 	}
 	return rows
 }

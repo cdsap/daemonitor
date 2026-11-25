@@ -15,6 +15,7 @@ import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.LiveJvmHeap
+import io.github.cdsap.daemonitor.domain.model.JvmClassMetrics
 import io.github.cdsap.daemonitor.domain.model.JvmJitMetrics
 import io.github.cdsap.daemonitor.domain.model.JvmMemoryPool
 import io.github.cdsap.daemonitor.domain.model.JvmRawValue
@@ -191,6 +192,12 @@ internal object GoCoreSnapshotParser {
             activeProcessorCount = longField(obj, "active_processor_count"),
             memoryPools = parsePools(obj, "memory_pools"),
             codeCache = parsePools(obj, "code_cache"),
+            classes = extractContainer(obj, "classes", '{', '}')?.let {
+                JvmClassMetrics(
+                    longField(it, "loaded"), longField(it, "unloaded_total"),
+                    longField(it, "loaded_total"), numberField(it, "time_seconds"),
+                )
+            },
             jit = extractContainer(obj, "jit", '{', '}')?.let {
                 JvmJitMetrics(longField(it, "compiled_count"), longField(it, "failed_count"),
                     longField(it, "invalid_count"), numberField(it, "compilation_time_seconds"))
