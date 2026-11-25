@@ -149,3 +149,22 @@ func TestFiltersApplyToProcesses(t *testing.T) {
 }
 
 func strPtr(s string) *string { return &s }
+
+func TestMetricRecordsPreserveHeapMeasurementTime(t *testing.T) {
+	heapAt := int64(123)
+	for _, tc := range []struct {
+		at   *int64
+		want int64
+	}{{&heapAt, 123}, {nil, 0}} {
+		records := metricRecords([]model.Process{{PID: 42, SampledAtMs: 456, HeapSampledAtMs: tc.at}})
+		for _, record := range records {
+			want := int64(456)
+			if strings.HasPrefix(record.MetricName, "process.jvm.") {
+				want = tc.want
+			}
+			if record.CollectionTimeMs != want {
+				t.Errorf("%s timestamp=%d want %d", record.MetricName, record.CollectionTimeMs, want)
+			}
+		}
+	}
+}

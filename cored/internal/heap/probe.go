@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/shirou/gopsutil/v4/process"
 )
 
 const (
@@ -228,7 +230,7 @@ func (p *Prober) SampleFor(ctx context.Context, pid int32, startTimeMs int64) (S
 	}
 	p.mu.Unlock()
 
-	sample, err := p.probe(ctx, pid)
+	sample, err := p.probe(ctx, pid, p.EnableAdvancedTelemetry)
 	if err != nil {
 		p.mu.Lock()
 		delete(p.cache, key)
@@ -288,7 +290,7 @@ func (p *Prober) probeGC(ctx context.Context, pid int32) (*string, error) {
 	return gc, nil
 }
 
-func (p *Prober) probe(ctx context.Context, pid int32) (Sample, error) {
+func (p *Prober) probe(ctx context.Context, pid int32, advanced bool) (Sample, error) {
 	timeout := p.Timeout
 	if timeout <= 0 {
 		timeout = defaultProbeBudget
@@ -323,7 +325,9 @@ func (p *Prober) probe(ctx context.Context, pid int32) (Sample, error) {
 				p.supplementGC(ctx, look, run, pid, &s)
 				p.supplementGCTimes(ctx, look, run, pid, &s)
 				p.collectAllowlistedSysprops(ctx, look, run, pid, &s)
-				p.supplementAdvanced(ctx, look, run, pid, &s)
+				if advanced {
+					p.supplementAdvanced(ctx, look, run, pid, &s)
+				}
 				return s, nil
 			}
 			diagnostics = append(diagnostics, diagnostic("jcmd", "GC.heap_info", perr))
@@ -352,7 +356,9 @@ func (p *Prober) probe(ctx context.Context, pid int32) (Sample, error) {
 	s.Diagnostics = diagnostics
 	p.supplementGC(ctx, look, run, pid, &s)
 	p.collectAllowlistedSysprops(ctx, look, run, pid, &s)
-	p.supplementAdvanced(ctx, look, run, pid, &s)
+	if advanced {
+		p.supplementAdvanced(ctx, look, run, pid, &s)
+	}
 	return s, nil
 }
 
@@ -366,6 +372,8 @@ func (p *Prober) supplementAdvanced(ctx context.Context, look func(string) (stri
 		if out, err := run(ctx, jstat, "-compiler", fmt.Sprintf("%d", pid)); err == nil {
 			if metrics, err := ParseJstatCompiler(out); err == nil {
 				sample.JIT = &metrics
+			} else {
+				sample.Diagnostics = append(sample.Diagnostics, diagnostic("jstat", "-compiler", err))
 			}
 		} else {
 			sample.Diagnostics = append(sample.Diagnostics, diagnostic("jstat", "-compiler", err))
@@ -373,6 +381,8 @@ func (p *Prober) supplementAdvanced(ctx context.Context, look func(string) (stri
 		if out, err := run(ctx, jstat, "-class", fmt.Sprintf("%d", pid)); err == nil {
 			if metrics, err := ParseJstatClass(out); err == nil {
 				sample.Classes = &metrics
+			} else {
+				sample.Diagnostics = append(sample.Diagnostics, diagnostic("jstat", "-class", err))
 			}
 		} else {
 			sample.Diagnostics = append(sample.Diagnostics, diagnostic("jstat", "-class", err))
@@ -384,6 +394,8 @@ func (p *Prober) supplementAdvanced(ctx context.Context, look func(string) (stri
 		if out, err := run(ctx, jcmd, fmt.Sprintf("%d", pid), "Compiler.codecache"); err == nil {
 			if pools, err := ParseJcmdCodeCache(out); err == nil {
 				sample.CodeCache = pools
+			} else {
+				sample.Diagnostics = append(sample.Diagnostics, diagnostic("jcmd", "Compiler.codecache", err))
 			}
 		} else {
 			sample.Diagnostics = append(sample.Diagnostics, diagnostic("jcmd", "Compiler.codecache", err))
@@ -391,10 +403,14 @@ func (p *Prober) supplementAdvanced(ctx context.Context, look func(string) (stri
 		if out, err := run(ctx, jcmd, fmt.Sprintf("%d", pid), "PerfCounter.print"); err == nil {
 			if metrics, err := ParsePerfCounterSafepoints(out); err == nil {
 				sample.Safepoints = &metrics
+			} else {
+				sample.Diagnostics = append(sample.Diagnostics, diagnostic("jcmd", "PerfCounter.print", err))
 			}
 		} else {
 			sample.Diagnostics = append(sample.Diagnostics, diagnostic("jcmd", "PerfCounter.print", err))
 		}
+	} else {
+		sample.Diagnostics = append(sample.Diagnostics, diagnostic("jcmd", "Compiler.codecache", err))
 	}
 }
 
@@ -558,4 +574,43 @@ func FindJavaHomeTools() (jcmd, jstat string) {
 	jcmd = findJavaHomeTool("jcmd")
 	jstat = findJavaHomeTool("jstat")
 	return jcmd, jstat
+}
+
+// ProbeFamily performs one uncached, bounded family measurement. The collector
+// owns cadence and deduplication. Revalidate before every command so a sequence
+// cannot attach to a reused PID after its first command completes.
+func (p *Prober) ProbeFamily(ctx context.Context, pid int32, startTimeMs int64, advanced bool) (Sample, error) {
+	timeout := p.Timeout
+	if timeout <= 0 {
+		timeout = DefaultTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	run := p.Runner
+	if run == nil {
+		run = defaultRunner
+	}
+	// A fresh tool configuration avoids copying the shared prober's mutex/cache
+	// or changing its Runner while other families are executing.
+	family := &Prober{Timeout: timeout, EnableAdvancedTelemetry: true, JDKDir: p.JDKDir, TargetJDKDir: p.TargetJDKDir, LookPath: p.LookPath}
+	family.Runner = func(ctx context.Context, name string, args ...string) (string, error) {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		target, err := process.NewProcessWithContext(ctx, pid)
+		if err != nil {
+			return "", errors.New("process not found")
+		}
+		start, err := target.CreateTimeWithContext(ctx)
+		if err != nil || start != startTimeMs {
+			return "", errors.New("process not found")
+		}
+		return run(ctx, name, args...)
+	}
+	if !advanced {
+		return family.probe(ctx, pid, false)
+	}
+	sample := Sample{}
+	family.supplementAdvanced(ctx, func(name string) (string, error) { return family.lookPath(pid, name) }, family.Runner, pid, &sample)
+	return sample, nil
 }

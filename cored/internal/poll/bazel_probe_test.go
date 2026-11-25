@@ -114,6 +114,7 @@ func TestSnapshotMixedBazelJVMAndNativeProcesses(t *testing.T) {
 	targets[pid] = target{"BAZEL_TEST", false}
 
 	c := NewCollector()
+	defer c.Close()
 	if c.Heap.TargetJDKDir == nil {
 		t.Fatal("collector must wire target JDK resolution")
 	}
@@ -158,6 +159,12 @@ func TestSnapshotMixedBazelJVMAndNativeProcesses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	c.jvmWG.Wait()
+	snapshot, err = c.Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Close()
 	for _, row := range snapshot.Processes {
 		want, ok := targets[row.PID]
 		if !ok {

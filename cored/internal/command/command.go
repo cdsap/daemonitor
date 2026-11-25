@@ -458,9 +458,10 @@ func metricRecords(processes []model.Process) []model.MetricRecord {
 	rows := make([]model.MetricRecord, 0, len(processes)*8)
 	for _, p := range processes {
 		identity := fmt.Sprintf("%d:%d", p.PID, p.StartTimeMs)
+		sampledAt := p.SampledAtMs
 		add := func(name, unit string, value any) {
 			rows = append(rows, model.MetricRecord{SchemaVersion: 1, MetricName: name, Unit: unit, Value: value,
-				Source: "daemonitor-cored/history", CollectionTimeMs: p.SampledAtMs, ProcessIdentity: identity, PID: p.PID})
+				Source: "daemonitor-cored/history", CollectionTimeMs: sampledAt, ProcessIdentity: identity, PID: p.PID})
 		}
 		add("process.memory.rss_mb", "MB", p.RSSMemoryMB)
 		add("process.memory.virtual_mb", "MB", p.VirtualMemoryMB)
@@ -471,6 +472,10 @@ func metricRecords(processes []model.Process) []model.MetricRecord {
 		add("process.io.read_operations_total", "count", p.ReadOperations)
 		add("process.io.write_operations_total", "count", p.WriteOperations)
 		add("process.cpu.usage_percent", "percent", p.CPUPercent)
+		sampledAt = 0
+		if p.HeapSampledAtMs != nil {
+			sampledAt = *p.HeapSampledAtMs
+		}
 		add("process.jvm.heap_used_mb", "MB", p.HeapUsedMB)
 		add("process.jvm.heap_committed_mb", "MB", p.HeapCommittedMB)
 		add("process.jvm.young_gc_count", "count", p.YoungGCCount)

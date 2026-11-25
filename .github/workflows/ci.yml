@@ -291,6 +291,10 @@ jobs:
         working-directory: cored
         run: go test ./internal/heap ./internal/poll ./internal/api -count=1
 
+      - name: Smoke multiple Gradle, Kotlin and worker JVMs
+        working-directory: cored
+        run: ./scripts/jvm-cadence-smoke.sh
+
       - name: Summarize JVM compatibility
         if: always()
         run: |

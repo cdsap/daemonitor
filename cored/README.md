@@ -170,3 +170,50 @@ Full comparison procedure and cutover gates: [`docs/dual-run.md`](docs/dual-run.
 ## Next
 
 1. Optional: expand dual-run honesty to assert live-heap near-match when JDK tools are present
+
+### JVM sampling and client reads
+
+Core `-interval` (default `2s`) controls OS process scans and snapshot publication.
+CLI `--poll-interval` controls how often the client reads the latest snapshot; it
+never changes core sampling or forces an attach command. Configure the core
+before starting it, for example:
+
+```sh
+daemonitor-cored -interval 2s -jvm-heap-interval 10s -jvm-advanced-interval 20s -jvm-probe-budget 750ms
+```
+
+Heap/GC (including JVM identity) and advanced JIT/class/code-cache/safepoint
+commands have separate FIFO queues, results and budgets. Their intervals are
+minimum gaps between admission of attempts, checked on OS scan ticks, so actual
+freshness also depends on scan timing, queue length and tool duration. Each
+family gets a reserved worker by default (two concurrent family attempts total).
+A slow advanced family cannot consume the heap worker; FIFO ordering gives other
+processes a turn. Each process incarnation/family has at most one queued or
+running attempt. Exited/reused PIDs cancel old work and discard old results;
+shutdown cancels queued/running commands and joins workers.
+
+Publication merges the last completed results without waiting for JVM tools.
+The JVM scheduling/merge path is regression-tested to return within **100 ms**
+with blocked tools. This is a bound on JVM-induced waiting, not a whole-system
+OS enumeration latency or an overhead benchmark. OS scan/storage latency still
+depends on the host. Performance comparisons require an isolated baseline as
+tracked in #398; concurrent collector row counts do not establish overhead.
+
+`heap_sampled_at_ms` and `jvm_advanced_sampled_at_ms` record completed family
+attempts and stay unchanged when cached results appear in newer OS snapshots.
+Before a family completes, its timestamp is null and its values are unavailable.
+A failed heap attempt replaces the prior result with unavailable values and the
+failure attempt's timestamp; sanitized diagnostics describe failures. Advanced
+attempts can contain partial results; missing fields remain unavailable and their
+timestamp records the attempt, not a claim that every tool succeeded.
+`sampled_at_ms` on the process/snapshot continues to describe the OS scan.
+
+`/v1/self` reports effective OS/JVM cadences, the per-family
+`jvm_probe_budget_ms`, and total `probe_concurrency` (minimum two, reserving at
+least one slot per family). `/v1/health` status `ok` means IPC is serving;
+`process_sample_ready=false` and `process_sampled_at_ms=0` mean no OS scan has
+completed yet. A completed, valid empty scan has readiness true and a nonzero
+sample timestamp. Clients can inspect process rows separately for useful JVM
+samples. The Linux JDK CI matrix runs `scripts/jvm-cadence-smoke.sh` with three
+live JVMs classified as Gradle daemon, Kotlin daemon and Gradle worker; the
+fixtures check live tools and repeated publication, not real build overhead.

@@ -56,15 +56,16 @@ type Process struct {
 	GC                         *string  `json:"gc"`
 	// Live heap from jcmd/jstat (Gradle/Kotlin daemons and eligible workers). Null used/committed when
 	// unavailable — never coerced to zero. Distinct from MaxHeapMB (-Xmx).
-	HeapUsedMB           *int64 `json:"heap_used_mb"`
-	HeapCommittedMB      *int64 `json:"heap_committed_mb"`
-	HeapMaxMB            *int64 `json:"heap_max_mb"`
-	HeapSampledAtMs      *int64 `json:"heap_sampled_at_ms"`
-	HeapAvailable        bool   `json:"heap_available"`
-	MetaspaceUsedMB      *int64 `json:"metaspace_used_mb"`
-	MetaspaceCommittedMB *int64 `json:"metaspace_committed_mb"`
-	YoungGCCount         *int64 `json:"young_gc_count"`
-	YoungGCTimeMs        *int64 `json:"young_gc_time_ms"`
+	HeapUsedMB             *int64 `json:"heap_used_mb"`
+	HeapCommittedMB        *int64 `json:"heap_committed_mb"`
+	HeapMaxMB              *int64 `json:"heap_max_mb"`
+	HeapSampledAtMs        *int64 `json:"heap_sampled_at_ms"`
+	JVMAdvancedSampledAtMs *int64 `json:"jvm_advanced_sampled_at_ms"`
+	HeapAvailable          bool   `json:"heap_available"`
+	MetaspaceUsedMB        *int64 `json:"metaspace_used_mb"`
+	MetaspaceCommittedMB   *int64 `json:"metaspace_committed_mb"`
+	YoungGCCount           *int64 `json:"young_gc_count"`
+	YoungGCTimeMs          *int64 `json:"young_gc_time_ms"`
 	// Cumulative jstat -gc times, in seconds; null means unavailable.
 	YoungGCTimeSeconds      *float64                 `json:"young_gc_time_seconds"`
 	FullGCTimeSeconds       *float64                 `json:"full_gc_time_seconds"`
@@ -164,13 +165,15 @@ type DaemonLogTail struct {
 
 // Health is the `/v1/health` response body.
 type Health struct {
-	Status      string `json:"status"`
-	Version     string `json:"version"`
-	Socket      string `json:"socket"`
-	SampleCount int64  `json:"sample_count"`
-	DBPath      string `json:"db_path,omitempty"`
-	RetentionMs int64  `json:"retention_ms"`
-	PID         int    `json:"pid"`
+	ProcessSampleReady bool   `json:"process_sample_ready"`
+	ProcessSampledAtMs int64  `json:"process_sampled_at_ms"`
+	Status             string `json:"status"`
+	Version            string `json:"version"`
+	Socket             string `json:"socket"`
+	SampleCount        int64  `json:"sample_count"`
+	DBPath             string `json:"db_path,omitempty"`
+	RetentionMs        int64  `json:"retention_ms"`
+	PID                int    `json:"pid"`
 }
 
 // Capabilities is the `/v1/capabilities` response body.
@@ -216,6 +219,7 @@ type CapabilityMetric struct {
 
 // SelfMetrics is the `/v1/self` response for collector overhead.
 type SelfMetrics struct {
+	JVMProbeBudgetMs int64             `json:"jvm_probe_budget_ms"`
 	SchemaVersion    int               `json:"schema_version"`
 	Platform         string            `json:"platform"`
 	SampledAtMs      int64             `json:"sampled_at_ms"`
