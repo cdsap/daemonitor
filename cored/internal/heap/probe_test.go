@@ -39,6 +39,9 @@ func TestProberPrefersJcmdThenFallsBackToJstat(t *testing.T) {
 	if s.Source != "jstat" {
 		t.Fatalf("expected jstat fallback, got %s", s.Source)
 	}
+	if s.MeasurementTimes["heap"] <= 0 || s.MeasurementTimes["gc"] != s.MeasurementTimes["heap"] {
+		t.Fatalf("fallback measurement times=%v", s.MeasurementTimes)
+	}
 }
 
 func TestProberUsesJinfoOnlyToSupplementUnknownGC(t *testing.T) {
@@ -133,9 +136,13 @@ func TestProberSupplementsJcmdHeapSampleWithJstatGCTimes(t *testing.T) {
 
 func TestProberAdvancedTelemetryIsBestEffort(t *testing.T) {
 	p := heap.NewProber()
+	now := time.UnixMilli(1000)
+	p.Now = func() time.Time { return now }
 	p.EnableAdvancedTelemetry = true
+	failClasses := false
 	p.LookPath = func(name string) (string, error) { return "/fake/" + name, nil }
 	p.Runner = func(ctx context.Context, name string, args ...string) (string, error) {
+		now = now.Add(time.Millisecond)
 		if strings.Contains(name, "jcmd") {
 			switch args[len(args)-1] {
 			case "Compiler.codecache":
@@ -150,6 +157,9 @@ func TestProberAdvancedTelemetryIsBestEffort(t *testing.T) {
 			return "Compiled Failed Invalid Time\n10 1 2 3.5\n", nil
 		}
 		if strings.Contains(args[0], "-class") {
+			if failClasses {
+				return "", errors.New("attach denied")
+			}
 			return "Loaded Bytes Unloaded Bytes Time\n12 1K 2 2K 3.5\n", nil
 		}
 		if strings.Contains(args[0], "-gc") {
@@ -164,6 +174,77 @@ func TestProberAdvancedTelemetryIsBestEffort(t *testing.T) {
 	if s.JIT == nil || s.CodeCache == nil || s.Classes == nil || s.Safepoints == nil {
 		t.Fatalf("advanced telemetry=%+v", s)
 	}
+	last := int64(1000)
+	for _, family := range []string{"heap", "gc", "jit", "classes", "code_cache", "safepoints"} {
+		if at := s.MeasurementTimes[family]; at <= last {
+			t.Fatalf("family %s has acquisition time %d after %d", family, at, last)
+		} else {
+			last = at
+		}
+	}
+	now = time.UnixMilli(5000)
+	cached, err := p.SampleFor(context.Background(), 42, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for family, at := range s.MeasurementTimes {
+		if cached.MeasurementTimes[family] != at {
+			t.Fatalf("cache hit changed %s measurement time", family)
+		}
+	}
+	now = time.UnixMilli(20000)
+	failClasses = true
+	refreshed, err := p.SampleFor(context.Background(), 42, 1000)
+	if err != nil || refreshed.Classes != nil || refreshed.MeasurementTimes["classes"] != 0 || refreshed.MeasurementTimes["jit"] <= s.MeasurementTimes["jit"] {
+		t.Fatalf("partial refresh=%+v err=%v", refreshed, err)
+	}
+}
+
+func TestProberMeasurementTimesAcrossCacheRefreshAndPIDReuse(t *testing.T) {
+	p := heap.NewProber()
+	now := time.UnixMilli(1000)
+	p.Now = func() time.Time { return now }
+	fail := false
+	p.LookPath = func(name string) (string, error) {
+		if name == "jcmd" {
+			return name, nil
+		}
+		return "", errors.New("missing tool")
+	}
+	p.Runner = func(_ context.Context, _ string, _ ...string) (string, error) {
+		if fail {
+			return "", errors.New("attach denied")
+		}
+		return jcmdHeapInfoFixture, nil
+	}
+	check := func(start, want int64) {
+		t.Helper()
+		s, err := p.SampleFor(context.Background(), 7, start)
+		if err != nil || s.MeasurementTimes["heap"] != want {
+			t.Fatalf("start=%d sample=%+v err=%v want time=%d", start, s, err, want)
+		}
+		if _, ok := s.MeasurementTimes["gc"]; ok {
+			t.Fatal("failed supplementary GC probe claimed a measurement")
+		}
+	}
+	check(99, 1000)
+	for _, at := range []int64{3000, 5000, 9000} {
+		now = time.UnixMilli(at)
+		check(99, 1000)
+	}
+	now = time.UnixMilli(11000)
+	check(99, 11000)
+	now = time.UnixMilli(12000)
+	check(100, 12000) // Same PID, new process incarnation before cache expiry.
+	now = time.UnixMilli(22000)
+	fail = true
+	s, err := p.SampleFor(context.Background(), 7, 100)
+	if err == nil || s.MeasurementTimes != nil {
+		t.Fatalf("failed refresh returned successful acquisition: %+v err=%v", s, err)
+	}
+	fail = false
+	now = time.UnixMilli(23000)
+	check(100, 23000)
 }
 
 func TestProberAdvancedParseFailuresAreSanitized(t *testing.T) {

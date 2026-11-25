@@ -69,6 +69,55 @@ connector address. Entries for processes that disappear are evicted each poll.
 
 CGO-free: cored shells to external JDK tools (no embedded JVM).
 
+### Go JSON measurement times
+
+`sampled_at_ms` on a snapshot or process is the OS observation time, in Unix
+milliseconds. JVM probes can complete after that observation and cached results
+can predate it. It is not a JVM measurement time.
+
+`jvm_sampled_at_ms` is an object of successful acquisition completion times, in
+Unix milliseconds, by family:
+
+| Key | Values measured |
+| --- | --- |
+| `heap` | Heap usage, metaspace, and heap memory pools |
+| `gc` | Cumulative GC counts and times from `jstat -gc` |
+| `jit` | JIT compilation counters |
+| `classes` | Class loading counters |
+| `code_cache` | Code cache pools |
+| `safepoints` | Safepoint counters |
+
+For example, an observation at `5000` may contain
+`"heap_sampled_at_ms":1000,"jvm_sampled_at_ms":{"heap":1000,"gc":1100}`.
+Cache hits preserve all acquisition times. A successful refresh advances the
+times of successfully acquired families. The cache remains keyed by PID and
+process start time. Times describe tool acquisitions, not exact atomic JVM events;
+families are probed independently within one bounded probe operation.
+
+`heap_sampled_at_ms` mirrors the `heap` acquisition time for existing clients.
+A failed refresh drops the expired sample, reports `heap_available:false`, null
+heap values and null `heap_sampled_at_ms` / `jvm_sampled_at_ms`. A failed or
+disabled supplementary family has no key and no values for that refresh; its
+previous values are not carried forward. Collector configuration (`gc`, `-Xmx`)
+and allowlisted JVM identity properties are not covered by these dynamic times.
+
+Older payloads omit `jvm_sampled_at_ms`; older retained rows read it as null.
+Their existing `heap_sampled_at_ms` is preserved for compatibility, but may be an
+observation or failed-attempt time and must not be treated as trustworthy
+measurement freshness. Do not infer missing times from equal values or from
+`sampled_at_ms`. A missing family time means unavailable or unknown provenance;
+check the corresponding values for availability.
+
+Live JSON/JSONL and process CSV expose the family object (JSON in one CSV cell).
+History preserves the times for retained heap/metaspace and GC values, including
+across database reopen and migration. Advanced family payloads are not retained
+by the Go store, so their times are omitted from history. History CSV also includes
+`heap_sampled_at_ms` and `jvm_sampled_at_ms`.
+Normalized JVM metric JSON/JSONL, including `export`, keeps
+`collection_timestamp_ms` as the observation time and adds nullable
+`measurement_timestamp_ms` from the relevant family. Legacy or unavailable
+measurement times stay null; non-JVM metrics leave this additional field null.
+
 ## Overhead
 
 - **First successful probe per process identity:** loads the local management agent (Attach path)

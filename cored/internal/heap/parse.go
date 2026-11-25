@@ -13,6 +13,9 @@ var jinfoGCFlag = regexp.MustCompile(`(?:^|\s)-XX:\+Use([[:alnum:]]+)GC(?:\s|$)`
 
 // Sample is live heap usage in megabytes (floor division from KB tool output).
 type Sample struct {
+	// MeasurementTimes records successful tool acquisition completion times in
+	// Unix milliseconds by family. Cache hits preserve these times.
+	MeasurementTimes     map[string]int64
 	UsedMB               int64
 	CommittedMB          int64
 	Source               string // "jcmd" | "jstat"

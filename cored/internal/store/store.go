@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -108,7 +109,8 @@ func (s *Store) migrate() error {
 // v10: Bazel descendant owner columns on process_samples and build window_summaries.
 // v11: bazel_build_details table for rich BEP telemetry.
 // v12: optional per-incarnation effective JVM flags document.
-const schemaVersion = 12
+// v13: successful JVM acquisition times by family (null for legacy rows).
+const schemaVersion = 13
 
 func (s *Store) ensureProcessSamplesAlignedWithApp() error {
 	exists, err := s.tableExists("process_samples")
@@ -179,6 +181,7 @@ CREATE TABLE IF NOT EXISTS process_samples (
   heap_committed_mb INTEGER,
   heap_max_mb INTEGER,
   heap_sampled_at_ms INTEGER,
+  jvm_sampled_at_ms TEXT,
   heap_available INTEGER,
   status TEXT NOT NULL,
   name TEXT,
@@ -215,6 +218,7 @@ func (s *Store) ensureProcessSamplesAdditiveColumns(cols []string) error {
 		col string
 		ddl string
 	}{
+		{"jvm_sampled_at_ms", `ALTER TABLE process_samples ADD COLUMN jvm_sampled_at_ms TEXT`},
 		{"owner_pid", `ALTER TABLE process_samples ADD COLUMN owner_pid INTEGER`},
 		{"owner_start_time_ms", `ALTER TABLE process_samples ADD COLUMN owner_start_time_ms INTEGER`},
 		{"subtree_rss_memory_mb", `ALTER TABLE process_samples ADD COLUMN subtree_rss_memory_mb INTEGER`},
@@ -573,7 +577,7 @@ INSERT INTO process_samples(
   status, name, min_heap_mb, gc, metaspace_used_mb, metaspace_committed_mb, young_gc_count,
   young_gc_time_ms, old_gc_count, old_gc_time_ms, full_gc_count, concurrent_gc_count, total_gc_count, java_version, java_runtime_version, java_vendor,
   java_vm_name, java_vm_version, os_name, os_arch, active_processor_count,
-  start_time_ms, automated, subtree_rss_memory_mb, subtree_cpu_percent, owner_pid, owner_start_time_ms
+  start_time_ms, automated, subtree_rss_memory_mb, subtree_cpu_percent, owner_pid, owner_start_time_ms, jvm_sampled_at_ms
 ) VALUES (
  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
@@ -581,13 +585,27 @@ INSERT INTO process_samples(
  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
- ?, ?, ?, ?, ?, ?, ?, ?)`)
+ ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
 
 	for _, p := range snap.Processes {
+		// History retains heap and GC values, but not advanced JVM payloads.
+		var retainedTimes map[string]int64
+		for _, family := range []string{"heap", "gc"} {
+			if at, ok := p.JVMMeasurementTimes[family]; ok {
+				if retainedTimes == nil {
+					retainedTimes = make(map[string]int64)
+				}
+				retainedTimes[family] = at
+			}
+		}
+		timesJSON, err := json.Marshal(retainedTimes)
+		if err != nil {
+			return err
+		}
 		automated := 0
 		if p.Automated {
 			automated = 1
@@ -615,7 +633,7 @@ INSERT INTO process_samples(
 			p.Status, nullStr(p.Name), p.MinHeapMB, p.GC, p.MetaspaceUsedMB, p.MetaspaceCommittedMB,
 			p.YoungGCCount, p.YoungGCTimeMs, p.OldGCCount, p.OldGCTimeMs, p.FullGCCount, p.ConcurrentGCCount, p.TotalGCCount, p.JavaVersion, p.JavaRuntimeVersion,
 			p.JavaVendor, p.JavaVMName, p.JavaVMVersion, p.OSName, p.OSArch, p.ActiveProcessorCount, p.StartTimeMs, automated, p.SubtreeRSSMemoryMB, p.SubtreeCPUPercent,
-			ownerPID, ownerStart,
+			ownerPID, ownerStart, string(timesJSON),
 		); err != nil {
 			return err
 		}
@@ -679,7 +697,7 @@ SELECT timestamp, pid, parent_pid, process_type, COALESCE(name, ''), command_lin
        heap_available, metaspace_used_mb, metaspace_committed_mb, young_gc_count, young_gc_time_ms,
        old_gc_count, old_gc_time_ms, full_gc_count, concurrent_gc_count, total_gc_count, java_version, java_runtime_version, java_vendor,
        java_vm_name, java_vm_version, os_name, os_arch, active_processor_count,
-       start_time_ms, status, automated, owner_pid, owner_start_time_ms
+       start_time_ms, status, automated, owner_pid, owner_start_time_ms, jvm_sampled_at_ms
 FROM process_samples
 WHERE timestamp >= ?
 ORDER BY timestamp ASC
@@ -694,6 +712,7 @@ LIMIT ?`, sinceMs, limit)
 		var p model.Process
 		var automated, heapAvailable int
 		var ownerPID, ownerStart sql.NullInt64
+		var timesJSON sql.NullString
 		if err := rows.Scan(
 			&p.SampledAtMs, &p.PID, &p.ParentPID, &p.Type, &p.Name, &p.CommandLine,
 			&p.WorkingDirectory, &p.ProjectPath, &p.RSSMemoryMB, &p.VirtualMemoryMB, &p.SwapMemoryMB, &p.ResidentBytes,
@@ -706,11 +725,16 @@ LIMIT ?`, sinceMs, limit)
 			&heapAvailable, &p.MetaspaceUsedMB, &p.MetaspaceCommittedMB, &p.YoungGCCount, &p.YoungGCTimeMs,
 			&p.OldGCCount, &p.OldGCTimeMs, &p.FullGCCount, &p.ConcurrentGCCount, &p.TotalGCCount, &p.JavaVersion, &p.JavaRuntimeVersion, &p.JavaVendor,
 			&p.JavaVMName, &p.JavaVMVersion, &p.OSName, &p.OSArch, &p.ActiveProcessorCount,
-			&p.StartTimeMs, &p.Status, &automated, &ownerPID, &ownerStart,
+			&p.StartTimeMs, &p.Status, &automated, &ownerPID, &ownerStart, &timesJSON,
 		); err != nil {
 			return nil, err
 		}
 		p.Automated = automated != 0
+		if timesJSON.Valid {
+			if err := json.Unmarshal([]byte(timesJSON.String), &p.JVMMeasurementTimes); err != nil {
+				return nil, fmt.Errorf("decode JVM measurement times: %w", err)
+			}
+		}
 		p.HeapAvailable = heapAvailable != 0
 		if ownerPID.Valid {
 			p.OwnerPID = int32(ownerPID.Int64)

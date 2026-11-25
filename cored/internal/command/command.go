@@ -471,9 +471,15 @@ func metricRecords(processes []model.Process) []model.MetricRecord {
 		add("process.io.read_operations_total", "count", p.ReadOperations)
 		add("process.io.write_operations_total", "count", p.WriteOperations)
 		add("process.cpu.usage_percent", "percent", p.CPUPercent)
-		add("process.jvm.heap_used_mb", "MB", p.HeapUsedMB)
-		add("process.jvm.heap_committed_mb", "MB", p.HeapCommittedMB)
-		add("process.jvm.young_gc_count", "count", p.YoungGCCount)
+		addJVM := func(name, unit string, value any, family string) {
+			add(name, unit, value)
+			if at := p.JVMMeasurementTimes[family]; at > 0 {
+				rows[len(rows)-1].MeasurementTimeMs = &at
+			}
+		}
+		addJVM("process.jvm.heap_used_mb", "MB", p.HeapUsedMB, "heap")
+		addJVM("process.jvm.heap_committed_mb", "MB", p.HeapCommittedMB, "heap")
+		addJVM("process.jvm.young_gc_count", "count", p.YoungGCCount, "gc")
 	}
 	return rows
 }
