@@ -428,7 +428,7 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 	}
 
 	// Pass 2: bounded concurrent JVM probes. Failures never drop OS rows.
-	c.applyJVMProbes(ctx, now, out, jvmJobs)
+	c.applyJVMProbes(ctx, out, jvmJobs)
 
 	c.mu.Lock()
 	c.lastSnapshotTime = nowTime
@@ -493,7 +493,7 @@ func safepointMetrics(m *heap.SafepointMetrics) *model.SafepointMetrics {
 	return &model.SafepointMetrics{SafepointCount: m.SafepointCount, SafepointTimeNs: m.SafepointTimeNs, SafepointSyncTimeNs: m.SafepointSyncTimeNs, ApplicationTimeNs: m.ApplicationTimeNs}
 }
 
-func (c *Collector) applyJVMProbes(ctx context.Context, now int64, out []model.Process, jobs []pendingJVM) {
+func (c *Collector) applyJVMProbes(ctx context.Context, out []model.Process, jobs []pendingJVM) {
 	if len(jobs) == 0 {
 		return
 	}
@@ -526,7 +526,7 @@ func (c *Collector) applyJVMProbes(ctx context.Context, now int64, out []model.P
 				c.Observe.ObserveProbe(time.Since(probeStart), probeErr, timedOut)
 			}
 
-			usedMB, committedMB, maxMB, heapSampledAt, heapAvail := liveHeapFieldsFromSample(now, jvmMetrics, probeFailure)
+			usedMB, committedMB, maxMB, heapSampledAt, heapAvail := liveHeapFieldsFromSample(jvmMetrics, probeFailure)
 			proc := &out[job.idx]
 			if proc.GC == nil {
 				proc.GC = jvmMetrics.GC
@@ -535,6 +535,7 @@ func (c *Collector) applyJVMProbes(ctx context.Context, now int64, out []model.P
 			proc.HeapCommittedMB = committedMB
 			proc.HeapMaxMB = maxMB
 			proc.HeapSampledAtMs = heapSampledAt
+			proc.JVMMeasurementTimes = jvmMetrics.MeasurementTimes
 			proc.HeapAvailable = heapAvail
 			proc.MetaspaceUsedMB = jvmMetrics.MetaspaceUsedMB
 			proc.MetaspaceCommittedMB = jvmMetrics.MetaspaceCommittedMB
@@ -629,14 +630,16 @@ func collectJVMMetrics(ctx context.Context, prober *heap.Prober, proc *process.P
 	return sample, ""
 }
 
-func liveHeapFieldsFromSample(now int64, sample heap.Sample, probeFailure string) (used, committed, max, sampledAt *int64, available bool) {
-	sampled := now
+func liveHeapFieldsFromSample(sample heap.Sample, probeFailure string) (used, committed, max, sampledAt *int64, available bool) {
 	if probeFailure != "" {
-		return nil, nil, nil, &sampled, false
+		return nil, nil, nil, nil, false
+	}
+	if sampled := sample.MeasurementTimes["heap"]; sampled > 0 {
+		sampledAt = &sampled
 	}
 	u := sample.UsedMB
 	c := sample.CommittedMB
-	return &u, &c, nil, &sampled, true
+	return &u, &c, nil, sampledAt, true
 }
 
 func probeDiagnostics(diagnostics []heap.Diagnostic, terminalFailure string) []model.ProbeDiagnostic {

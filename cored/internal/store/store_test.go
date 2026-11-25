@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -16,6 +17,65 @@ import (
 	"github.com/cdsap/daemonitor/cored/internal/store"
 	_ "modernc.org/sqlite"
 )
+
+func TestJVMMeasurementTimesSurviveHistoryAndLegacyMigration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "times.sqlite")
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	measured, used, gc := int64(1000), int64(42), int64(7)
+	for _, observed := range []int64{2000, 4000} {
+		if err := s.InsertSnapshot(model.Snapshot{SampledAtMs: observed, Processes: []model.Process{{
+			PID: 7, Status: "R", HeapAvailable: true, HeapUsedMB: &used, YoungGCCount: &gc,
+			HeapSampledAtMs: &measured, JVMMeasurementTimes: map[string]int64{"heap": 1000, "gc": 1100, "jit": 1200},
+		}}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	history, err := s.History(0, 10)
+	if err != nil || len(history) != 2 {
+		t.Fatalf("history=%+v err=%v", history, err)
+	}
+	for i, p := range history {
+		if p.SampledAtMs != int64((i+1)*2000) || p.HeapSampledAtMs == nil || *p.HeapSampledAtMs != measured || p.HeapUsedMB == nil || *p.HeapUsedMB != used || p.YoungGCCount == nil || *p.YoungGCCount != gc || !reflect.DeepEqual(p.JVMMeasurementTimes, map[string]int64{"heap": 1000, "gc": 1100}) {
+			t.Fatalf("lost retained measurement: %+v", p)
+		}
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// Model an older store with values and a historical heap timestamp but no
+	// trustworthy per-family acquisition times. Migration must not invent them.
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec("ALTER TABLE process_samples DROP COLUMN jvm_sampled_at_ms")
+	_ = db.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err = store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	history, err = s.History(0, 10)
+	if err != nil || len(history) != 2 {
+		t.Fatalf("legacy history=%+v err=%v", history, err)
+	}
+	if history[0].JVMMeasurementTimes != nil || history[0].HeapSampledAtMs == nil || *history[0].HeapSampledAtMs != measured {
+		t.Fatalf("migration changed legacy semantics: %+v", history[0])
+	}
+}
 
 func TestInsertHistoryAndPurge(t *testing.T) {
 	dir := t.TempDir()
