@@ -493,3 +493,95 @@ func TestBEPWatchIngestsBazelBuildsAndFiltersByTool(t *testing.T) {
 		t.Fatal("server did not shut down")
 	}
 }
+
+func TestHistoryEndpointSupportsPIDAndStartTimeFilters(t *testing.T) {
+	socket := ipc.TempEndpoint(t, "histfilter")
+	db := filepath.Join(t.TempDir(), "core.sqlite")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	srv, err := api.NewServer(socket, db, time.Hour, time.Hour, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseTs := int64(1_700_000_000_000)
+	for i := 0; i < 5; i++ {
+		ts := baseTs + int64(i)*30_000
+		if err := srv.Store.InsertSnapshot(model.Snapshot{
+			SampledAtMs: ts,
+			Processes: []model.Process{
+				{PID: 77, Type: "GRADLE_DAEMON", CommandLine: "java GradleDaemon", RSSMemoryMB: 400 + int64(i)*10, StartTimeMs: 1000, Status: "R", SampledAtMs: ts},
+				{PID: 88, Type: "BAZEL_SERVER", CommandLine: "java A-server.jar", RSSMemoryMB: 300, StartTimeMs: 1000, Status: "R", SampledAtMs: ts},
+			},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := srv.Store.InsertSnapshot(model.Snapshot{
+		SampledAtMs: baseTs + 5*30_000,
+		Processes: []model.Process{
+			{PID: 77, Type: "GRADLE_DAEMON", CommandLine: "java GradleDaemon", RSSMemoryMB: 900, StartTimeMs: 2000, Status: "R", SampledAtMs: baseTs + 5*30_000},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Run(ctx) }()
+	httpClient := &http.Client{
+		Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return ipc.Default.Dial(ctx, socket)
+		}},
+		Timeout: 3 * time.Second,
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		resp, err := httpClient.Get("http://daemonitor/v1/health")
+		if err == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				break
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("server never became healthy: %v", err)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	resp, err := httpClient.Get("http://daemonitor/v1/processes/history?since_ms=0&pid=77&start_time_ms=1000&limit=50")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d want 200", resp.StatusCode)
+	}
+	var hist model.History
+	if err := json.NewDecoder(resp.Body).Decode(&hist); err != nil {
+		t.Fatal(err)
+	}
+	if hist.Count != 5 || len(hist.Processes) != 5 {
+		t.Fatalf("hist=%+v want 5 rows for pid=77 start=1000", hist)
+	}
+	for _, p := range hist.Processes {
+		if p.PID != 77 || p.StartTimeMs != 1000 {
+			t.Fatalf("unexpected row=%+v", p)
+		}
+	}
+
+	badResp, err := httpClient.Get("http://daemonitor/v1/processes/history?since_ms=0&pid=-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	badResp.Body.Close()
+	if badResp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("bad pid status=%d want 400", badResp.StatusCode)
+	}
+
+	cancel()
+	select {
+	case <-errCh:
+	case <-time.After(3 * time.Second):
+		t.Fatal("server did not shut down")
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/cdsap/daemonitor/cored/internal/model"
@@ -730,11 +731,39 @@ func (s *Store) PurgeOlderThan(retention time.Duration) (int64, error) {
 	return n + evN + instN + buildsN, nil
 }
 
+// HistoryFilter narrows process_samples queries. Zero values leave a dimension unfiltered.
+type HistoryFilter struct {
+	SinceMs     int64
+	Limit       int
+	PID         int64
+	StartTimeMs int64
+}
+
 func (s *Store) History(sinceMs int64, limit int) ([]model.Process, error) {
+	return s.HistoryFiltered(HistoryFilter{SinceMs: sinceMs, Limit: limit})
+}
+
+// HistoryFiltered returns up to Limit of the most recent process_samples rows
+// matching filter, ordered chronologically ascending.
+func (s *Store) HistoryFiltered(filter HistoryFilter) ([]model.Process, error) {
+	limit := filter.Limit
 	if limit <= 0 || limit > 5000 {
 		limit = 500
 	}
-	rows, err := s.db.Query(`
+	var conds []string
+	var args []any
+	conds = append(conds, "timestamp >= ?")
+	args = append(args, filter.SinceMs)
+	if filter.PID > 0 {
+		conds = append(conds, "pid = ?")
+		args = append(args, filter.PID)
+	}
+	if filter.StartTimeMs > 0 {
+		conds = append(conds, "start_time_ms = ?")
+		args = append(args, filter.StartTimeMs)
+	}
+	args = append(args, limit)
+	query := `
 SELECT timestamp, pid, parent_pid, process_type, COALESCE(name, ''), command_line,
 	working_directory, project_path, rss_memory_mb, virtual_memory_mb, swap_memory_mb, resident_bytes, virtual_bytes,
 	private_committed_bytes, proportional_bytes, physical_footprint_bytes, swap_bytes, peak_resident_bytes,
@@ -749,9 +778,10 @@ SELECT timestamp, pid, parent_pid, process_type, COALESCE(name, ''), command_lin
        start_time_ms, status, automated, owner_pid, owner_start_time_ms, jvm_sampled_at_ms,
        jit_present, jit_compiled_count, jit_failed_count, jit_invalid_count, jit_compilation_time_seconds, classes_present, classes_loaded, classes_unloaded_total, classes_loaded_total, classes_time_seconds, young_gc_time_seconds, full_gc_time_seconds, concurrent_gc_time_seconds, total_gc_time_seconds
 FROM process_samples
-WHERE timestamp >= ?
-ORDER BY timestamp ASC
-LIMIT ?`, sinceMs, limit)
+WHERE ` + strings.Join(conds, " AND ") + `
+ORDER BY timestamp DESC, rowid DESC
+LIMIT ?`
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -807,7 +837,13 @@ LIMIT ?`, sinceMs, limit)
 		}
 		out = append(out, p)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	return out, nil
 }
 
 func (s *Store) Count() (int64, error) {

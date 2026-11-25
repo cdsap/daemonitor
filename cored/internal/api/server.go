@@ -507,19 +507,42 @@ func (s *Server) handleProcesses(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
 	sinceMs := time.Now().Add(-15 * time.Minute).UnixMilli()
-	if raw := r.URL.Query().Get("since_ms"); raw != "" {
+	if raw := query.Get("since_ms"); raw != "" {
 		if v, err := strconv.ParseInt(raw, 10, 64); err == nil {
 			sinceMs = v
 		}
 	}
 	limit := defaultQueryLimit
-	if raw := r.URL.Query().Get("limit"); raw != "" {
+	if raw := query.Get("limit"); raw != "" {
 		if v, err := strconv.Atoi(raw); err == nil {
 			limit = boundedLimit(v)
 		}
 	}
-	rows, err := s.Store.History(sinceMs, limit)
+	var pid, startTimeMs int64
+	if raw := query.Get("pid"); raw != "" {
+		v, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || v <= 0 {
+			http.Error(w, "pid must be a positive integer", http.StatusBadRequest)
+			return
+		}
+		pid = v
+	}
+	if raw := query.Get("start_time_ms"); raw != "" {
+		v, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || v <= 0 {
+			http.Error(w, "start_time_ms must be a positive integer", http.StatusBadRequest)
+			return
+		}
+		startTimeMs = v
+	}
+	rows, err := s.Store.HistoryFiltered(store.HistoryFilter{
+		SinceMs:     sinceMs,
+		Limit:       limit,
+		PID:         pid,
+		StartTimeMs: startTimeMs,
+	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
