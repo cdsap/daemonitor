@@ -3,15 +3,18 @@ package tui
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
 	terminalansi "github.com/charmbracelet/x/ansi"
 
 	"github.com/cdsap/daemonitor/cored/internal/analysis"
+	"github.com/cdsap/daemonitor/cored/internal/builds"
 	"github.com/cdsap/daemonitor/cored/internal/client"
 	"github.com/cdsap/daemonitor/cored/internal/model"
 	"github.com/cdsap/daemonitor/cored/internal/render"
+	"github.com/cdsap/daemonitor/cored/internal/sessions"
 )
 
 func (m Model) renderDetails() string {
@@ -26,16 +29,21 @@ func (m Model) renderDetails() string {
 	header := detailHeader(*p, now, m.detailIsEnded(), m.detailIsStale(), m.width, m.noColor)
 	// Keep operator-facing process fields before the expanded telemetry and its
 	// capability matrix so the details pane opens on the most useful context.
-	attributes := append(detailAttributes(*p, m.width, now), detailTelemetry(m, *p, m.width)...)
+	attributes := append(detailAttributes(m, *p, m.width, now), detailTelemetry(m, *p, m.width)...)
 	gradle := p.Type == "GRADLE_DAEMON"
 	bazel := p.Type == "BAZEL_SERVER"
 	showBuilds := gradle || bazel
+	showLog := gradle || bazel
+	logTitle := "GRADLE LOG"
+	if bazel {
+		logTitle = "BAZEL LOG"
+	}
 	builds := []string(nil)
 	if showBuilds {
 		builds = detailBuilds(m, m.width)
 	}
 	log := []string(nil)
-	if gradle {
+	if showLog {
 		log = detailLog(m, m.width)
 	}
 
@@ -64,7 +72,7 @@ func (m Model) renderDetails() string {
 		panes := [][]string{detailPanel("ATTRIBUTES", attributes, attrWidth, available, m.detailPaneOffset(detailPaneAttributes), 0, m.detailPane == detailPaneAttributes, m.noColor)}
 		panes = append(panes, middle)
 		if logWidth > 0 {
-			panes = append(panes, detailPanel("GRADLE LOG", log, logWidth, available, m.detailPaneOffset(detailPaneLog), m.detailPaneHorizontalScroll[detailPaneLog], m.detailPane == detailPaneLog, m.noColor))
+			panes = append(panes, detailPanel(logTitle, log, logWidth, available, m.detailPaneOffset(detailPaneLog), m.detailPaneHorizontalScroll[detailPaneLog], m.detailPane == detailPaneLog, m.noColor))
 		}
 		b.WriteString(joinDetailPanes(panes, m.width))
 	} else if m.width >= 120 {
@@ -74,13 +82,13 @@ func (m Model) renderDetails() string {
 		resource := detailResources(m, *p, activityWidth)
 		stack := [][]string{detailPanel("RESOURCE TRENDS", resource, activityWidth, available, m.detailPaneOffset(detailPaneResources), 0, m.detailPane == detailPaneResources, m.noColor)}
 		if showBuilds {
-			if gradle {
+			if showLog {
 				heights := splitDetailHeight(available, 3)
 				resourceHeight, buildHeight, logHeight := heights[0], heights[1], heights[2]
 				stack = [][]string{
 					detailPanel("RESOURCE TRENDS", resource, activityWidth, resourceHeight, m.detailPaneOffset(detailPaneResources), 0, m.detailPane == detailPaneResources, m.noColor),
 					detailPanel("RECENT BUILDS", builds, activityWidth, buildHeight, m.detailPaneOffset(detailPaneBuilds), 0, m.detailPane == detailPaneBuilds, m.noColor),
-					detailPanel("GRADLE LOG", log, activityWidth, max(1, logHeight), m.detailPaneOffset(detailPaneLog), m.detailPaneHorizontalScroll[detailPaneLog], m.detailPane == detailPaneLog, m.noColor),
+					detailPanel(logTitle, log, activityWidth, max(1, logHeight), m.detailPaneOffset(detailPaneLog), m.detailPaneHorizontalScroll[detailPaneLog], m.detailPane == detailPaneLog, m.noColor),
 				}
 			} else {
 				heights := splitDetailHeight(available, 2)
@@ -107,7 +115,7 @@ func (m Model) renderDetails() string {
 			content = append(content, builds...)
 		}
 		if len(log) > 0 {
-			content = append(content, "", "Recent log lines: / GRADLE LOG")
+			content = append(content, "", "Recent log lines: / "+logTitle)
 			content = append(content, log...)
 		}
 		section := detailPanel("PROCESS DETAILS", content, m.width, max(1, m.height-5), m.detailPaneOffset(detailPaneAttributes), 0, true, m.noColor)
@@ -424,7 +432,7 @@ func detailTitle(kind string) string {
 	}
 }
 
-func detailAttributes(p model.Process, width int, now int64) []string {
+func detailAttributes(m Model, p model.Process, width int, now int64) []string {
 	lines := []string{
 		"Identity",
 		detailField("Type", render.TypeDisplay(p.Type)),
@@ -435,6 +443,23 @@ func detailAttributes(p model.Process, width int, now int64) []string {
 		detailField("Status", na(p.Status)),
 		detailField("Start", formatStart(p.StartTimeMs)),
 		detailField("Uptime", render.Uptime(p.StartTimeMs, now)),
+	}
+	if p.Type == "BAZEL_SERVER" {
+		source, path := bazelLogMetadata(m)
+		lines = append(lines,
+			"",
+			"BAZEL SERVER",
+			detailField("Bazel version", na(bazelVersionFromBuilds(m.detailBuilds.Builds))),
+			detailField("Workspace", render.ProjectName(p)),
+			detailField("Output base", na(p.BazelOutputBase)),
+			detailField("Install base", na(p.BazelInstallBase)),
+			detailField("Workers", fmt.Sprintf("%d", p.ActiveWorkerCount)),
+			detailField("Sandboxed", fmt.Sprintf("%d", p.ActiveSandboxedActionCount)),
+			detailField("Subtree RSS", optionalRSSText(p.SubtreeRSSMemoryMB)),
+			detailField("Subtree CPU", render.CPUText(p.SubtreeCPUPercent)),
+			detailField("Log source", na(source)),
+			detailField("Log path", na(path)),
+		)
 	}
 	lines = append(lines,
 		"",
@@ -493,6 +518,9 @@ func detailResources(m Model, p model.Process, width int) []string {
 			break
 		}
 		lines = append(lines, fmt.Sprintf("  Retention %s → %s (%s)", render.RSSText(retention.BeforeMB), render.RSSText(retention.AfterMB), signedMemory(retention.RetainedMB)))
+		if retention.HeapBeforeMB != nil && retention.HeapAfterMB != nil && retention.HeapRetainedMB != nil {
+			lines = append(lines, fmt.Sprintf("  Heap %s → %s (%s)", render.RSSText(*retention.HeapBeforeMB), render.RSSText(*retention.HeapAfterMB), signedMemory(*retention.HeapRetainedMB)))
+		}
 	}
 	if trend := rssTrend(m.detailHistory, p.PID); trend != "" {
 		lines = append(lines, "  RSS trend: "+trend)
@@ -511,7 +539,10 @@ func detailBuilds(m Model, width int) []string {
 	}
 	if len(m.detailBuilds.Builds) == 0 {
 		if m.detailProcess != nil && m.detailProcess.Type == "BAZEL_SERVER" {
-			return []string{"No Bazel build events found (BEP not in reach)."}
+			return []string{
+				"No Bazel builds captured yet.",
+				"No command.profile.gz or BEP.",
+			}
 		}
 		return []string{"No build history for this daemon."}
 	}
@@ -536,10 +567,166 @@ func buildSummaryLines(build client.BuildRecord) []string {
 	if build.Tool != "" && !strings.EqualFold(build.Tool, "GRADLE") {
 		source = strings.ToLower(build.Tool) + "/" + source
 	}
-	return []string{na(build.FinalStatus), "project=" + na(build.ProjectPath), "duration=" + duration, "start=" + formatStart(build.StartTimeMs), "source=" + source, "agent=" + na(build.Agent)}
+	lines := []string{na(build.FinalStatus), "project=" + na(build.ProjectPath), "duration=" + duration, "start=" + formatStart(build.StartTimeMs), "source=" + source, "agent=" + na(build.Agent)}
+	if strings.EqualFold(build.Tool, "BAZEL") {
+		lines = append(lines, bazelBuildMetricLines(build)...)
+	}
+	return lines
+}
+
+func bazelLogMetadata(m Model) (source, path string) {
+	if m.detailTail != nil {
+		source, path = m.detailTail.Source, m.detailTail.Path
+	}
+	if m.detailLog != nil {
+		if source == "" {
+			source = m.detailLog.Source
+		}
+		if path == "" {
+			path = m.detailLog.Path
+		}
+	}
+	return source, path
+}
+
+func bazelVersionFromBuilds(builds []client.BuildRecord) string {
+	for _, b := range builds {
+		if b.BazelDetails != nil && strings.TrimSpace(b.BazelDetails.BazelVersion) != "" {
+			return strings.TrimSpace(b.BazelDetails.BazelVersion)
+		}
+		if b.BazelProfile != nil && strings.TrimSpace(b.BazelProfile.BazelVersion) != "" {
+			return strings.TrimSpace(b.BazelProfile.BazelVersion)
+		}
+	}
+	return ""
+}
+
+func optionalRSSText(v *int64) string {
+	if v == nil {
+		return "n/a"
+	}
+	return render.RSSText(*v)
+}
+
+func bazelBuildMetricLines(build client.BuildRecord) []string {
+	var lines []string
+	if build.PeakMemoryMB != nil {
+		lines = append(lines, "peak_rss="+render.RSSText(*build.PeakMemoryMB))
+	}
+	if phases := bazelPhaseSummary(build); phases != "" {
+		lines = append(lines, "phases="+phases)
+	}
+	if build.BazelDetails != nil {
+		m := build.BazelDetails.Metrics
+		if actions := bazelActionSummary(m.Actions); actions != "" {
+			lines = append(lines, "actions="+actions)
+		}
+		if len(m.Workers) > 0 {
+			lines = append(lines, fmt.Sprintf("workers=%d", len(m.Workers)))
+		}
+		if m.TestTotals != nil && m.TestTotals.Total > 0 {
+			lines = append(lines, fmt.Sprintf("tests=%d pass/%d fail/%d cached", m.TestTotals.Passed, m.TestTotals.Failed, m.TestTotals.Cached))
+		}
+		if mem := bazelMemorySummary(m.Memory); mem != "" {
+			lines = append(lines, "memory="+mem)
+		}
+	}
+	if win := bazelWindowSummary(build.WindowSummaries); win != "" {
+		lines = append(lines, "window="+win)
+	}
+	return lines
+}
+
+func bazelPhaseSummary(build client.BuildRecord) string {
+	var parts []string
+	if build.BazelDetails != nil && build.BazelDetails.Metrics.Timing != nil {
+		t := build.BazelDetails.Metrics.Timing
+		if t.AnalysisPhaseMs != nil {
+			parts = append(parts, fmt.Sprintf("analysis %.1fs", float64(*t.AnalysisPhaseMs)/1000))
+		}
+		if t.ExecutionPhaseMs != nil {
+			parts = append(parts, fmt.Sprintf("exec %.1fs", float64(*t.ExecutionPhaseMs)/1000))
+		}
+		if t.WallTimeMs != nil && len(parts) == 0 {
+			parts = append(parts, fmt.Sprintf("wall %.1fs", float64(*t.WallTimeMs)/1000))
+		}
+	}
+	if len(parts) == 0 && build.BazelProfile != nil && len(build.BazelProfile.PhaseSeconds) > 0 {
+		keys := make([]string, 0, len(build.BazelProfile.PhaseSeconds))
+		for k := range build.BazelProfile.PhaseSeconds {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			if len(parts) == 3 {
+				break
+			}
+			parts = append(parts, fmt.Sprintf("%s %.1fs", k, build.BazelProfile.PhaseSeconds[k]))
+		}
+	}
+	if build.BazelProfile != nil && build.BazelProfile.CriticalPathSeconds > 0 {
+		parts = append(parts, fmt.Sprintf("crit %.1fs", build.BazelProfile.CriticalPathSeconds))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func bazelActionSummary(actions *builds.BazelActionSummary) string {
+	if actions == nil {
+		return ""
+	}
+	var parts []string
+	if actions.Executed != nil {
+		parts = append(parts, fmt.Sprintf("exec %d", *actions.Executed))
+	}
+	if actions.RemoteCacheHits != nil && *actions.RemoteCacheHits > 0 {
+		parts = append(parts, fmt.Sprintf("remote_hit %d", *actions.RemoteCacheHits))
+	}
+	if actions.LocalCacheHits != nil && *actions.LocalCacheHits > 0 {
+		parts = append(parts, fmt.Sprintf("local_hit %d", *actions.LocalCacheHits))
+	}
+	if actions.LocalCacheMisses != nil && *actions.LocalCacheMisses > 0 {
+		parts = append(parts, fmt.Sprintf("miss %d", *actions.LocalCacheMisses))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func bazelMemorySummary(mem *builds.BazelMemoryMetrics) string {
+	if mem == nil {
+		return ""
+	}
+	var parts []string
+	if mem.UsedHeapPostBuildBytes != nil {
+		parts = append(parts, "post_heap "+formatBytes(*mem.UsedHeapPostBuildBytes))
+	}
+	if mem.PeakPostGCHeapBytes != nil {
+		parts = append(parts, "peak_gc_heap "+formatBytes(*mem.PeakPostGCHeapBytes))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func bazelWindowSummary(summaries []sessions.RSSSummary) string {
+	if len(summaries) == 0 {
+		return ""
+	}
+	selected := summaries[0]
+	for _, s := range summaries {
+		if s.ProcessType == "BAZEL_SERVER" {
+			selected = s
+			break
+		}
+	}
+	parts := []string{"rss " + signedMemory(selected.DeltaRSSMB)}
+	if selected.DeltaHeapUsedMB != nil {
+		parts = append(parts, "heap "+signedMemory(*selected.DeltaHeapUsedMB))
+	}
+	if selected.DeltaTotalGCCount != nil {
+		parts = append(parts, fmt.Sprintf("gc %+d", *selected.DeltaTotalGCCount))
+	}
+	return strings.Join(parts, ", ")
 }
 
 func detailLog(m Model, width int) []string {
+	bazel := m.detailProcess != nil && m.detailProcess.Type == "BAZEL_SERVER"
 	if m.detailLoading {
 		return []string{"Loading…"}
 	}
@@ -547,9 +734,15 @@ func detailLog(m Model, width int) []string {
 		return []string{"Unavailable: " + oneLine(m.detailError)}
 	}
 	if m.detailTail == nil {
+		if bazel {
+			return []string{"No Bazel log available yet (command.log / server/jvm.out)."}
+		}
 		return []string{"No matching Gradle daemon log is available."}
 	}
 	if len(m.detailTail.Lines) == 0 {
+		if bazel {
+			return []string{"Bazel log is available but empty."}
+		}
 		return []string{"Gradle log is available but empty."}
 	}
 	lines := m.detailTail.Lines

@@ -95,9 +95,12 @@ type Prober struct {
 	// Now supplies the acquisition/cache clock; defaults to time.Now.
 	Now func() time.Time
 
-	mu      sync.Mutex
-	cache   map[cacheKey]cacheEntry
-	gcCache map[cacheKey]gcCacheEntry
+	flagsMu      sync.Mutex
+	flagsCache   map[cacheKey]flagsCacheEntry
+	flagsPending map[cacheKey]chan struct{}
+	mu           sync.Mutex
+	cache        map[cacheKey]cacheEntry
+	gcCache      map[cacheKey]gcCacheEntry
 }
 
 type cacheKey struct {
@@ -265,6 +268,13 @@ func (p *Prober) EvictMissing(live map[int32]struct{}) {
 	if p == nil {
 		return
 	}
+	p.flagsMu.Lock()
+	for k := range p.flagsCache {
+		if _, ok := live[k.pid]; !ok {
+			delete(p.flagsCache, k)
+		}
+	}
+	p.flagsMu.Unlock()
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for k := range p.cache {
@@ -389,6 +399,8 @@ func (p *Prober) supplementAdvanced(ctx context.Context, look func(string) (stri
 			if metrics, err := ParseJstatCompiler(out); err == nil {
 				sample.JIT = &metrics
 				p.measured(sample, "jit")
+			} else {
+				sample.Diagnostics = append(sample.Diagnostics, Diagnostic{Tool: "jstat", Operation: "-compiler", Category: FailureParseError})
 			}
 		} else {
 			sample.Diagnostics = append(sample.Diagnostics, diagnostic("jstat", "-compiler", err))
@@ -397,6 +409,8 @@ func (p *Prober) supplementAdvanced(ctx context.Context, look func(string) (stri
 			if metrics, err := ParseJstatClass(out); err == nil {
 				sample.Classes = &metrics
 				p.measured(sample, "classes")
+			} else {
+				sample.Diagnostics = append(sample.Diagnostics, Diagnostic{Tool: "jstat", Operation: "-class", Category: FailureParseError})
 			}
 		} else {
 			sample.Diagnostics = append(sample.Diagnostics, diagnostic("jstat", "-class", err))
@@ -409,6 +423,8 @@ func (p *Prober) supplementAdvanced(ctx context.Context, look func(string) (stri
 			if pools, err := ParseJcmdCodeCache(out); err == nil {
 				sample.CodeCache = pools
 				p.measured(sample, "code_cache")
+			} else {
+				sample.Diagnostics = append(sample.Diagnostics, Diagnostic{Tool: "jcmd", Operation: "Compiler.codecache", Category: FailureParseError})
 			}
 		} else {
 			sample.Diagnostics = append(sample.Diagnostics, diagnostic("jcmd", "Compiler.codecache", err))
@@ -417,6 +433,8 @@ func (p *Prober) supplementAdvanced(ctx context.Context, look func(string) (stri
 			if metrics, err := ParsePerfCounterSafepoints(out); err == nil {
 				sample.Safepoints = &metrics
 				p.measured(sample, "safepoints")
+			} else {
+				sample.Diagnostics = append(sample.Diagnostics, Diagnostic{Tool: "jcmd", Operation: "PerfCounter.print", Category: FailureParseError})
 			}
 		} else {
 			sample.Diagnostics = append(sample.Diagnostics, diagnostic("jcmd", "PerfCounter.print", err))

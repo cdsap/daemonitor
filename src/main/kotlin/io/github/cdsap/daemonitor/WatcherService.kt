@@ -215,7 +215,7 @@ class WatcherService(
     }
 
     private fun loadRecentBuilds(generation: Long, process: GradleProcess) {
-        if (process.type != ProcessType.GRADLE_DAEMON) return
+        if (process.type != ProcessType.GRADLE_DAEMON && process.type != ProcessType.BAZEL_SERVER) return
         monitoringService.launchIo {
             val builds = try {
                 if (process.startTimeMs > 0) {

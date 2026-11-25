@@ -25,14 +25,15 @@ class GoCoreDaemonLogSource internal constructor(
     }
 
     override fun readNewLines(log: DaemonLog): List<DaemonLogLine> {
-        val current = runCatching { fetchTailLines(log.pid) }.getOrElse { return emptyList() }
+        val current = runCatching { fetchTailLines(log) }.getOrElse { return emptyList() }
         return tailTracker.newLinesSince(log.pid, current)
     }
 
-    override fun tailFor(log: DaemonLog): List<String> = fetchTailLines(log.pid)
+    override fun tailFor(log: DaemonLog): List<String> = fetchTailLines(log)
 
-    private fun fetchTailLines(pid: Long): List<String> {
-        val body = client.get("/v1/daemon-logs/$pid/tail")
+    private fun fetchTailLines(log: DaemonLog): List<String> {
+        val query = log.source?.takeIf { it.isNotBlank() }?.let { "?source=$it" }.orEmpty()
+        val body = client.get("/v1/daemon-logs/${log.pid}/tail$query")
         return GoCoreSnapshotParser.parseDaemonLogTail(body)
     }
 }

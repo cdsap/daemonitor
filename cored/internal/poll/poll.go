@@ -528,6 +528,8 @@ func (c *Collector) applyJVMProbes(ctx context.Context, out []model.Process, job
 
 			usedMB, committedMB, maxMB, heapSampledAt, heapAvail := liveHeapFieldsFromSample(jvmMetrics, probeFailure)
 			proc := &out[job.idx]
+			flags := collectJVMFlags(ctx, c.Heap, job.pid, job.startMs)
+			proc.JVMFlags = &flags
 			if proc.GC == nil {
 				proc.GC = jvmMetrics.GC
 			}
