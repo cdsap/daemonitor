@@ -171,4 +171,7 @@ data class GradleProcess(
     val subtreeCpuPercent: Double? = null,
     val activeWorkerCount: Long? = null,
     val activeSandboxedActionCount: Long? = null,
+    /** Bazel `--output_base` and `--install_base` paths reported by `cored` for `BAZEL_SERVER`. */
+    val bazelOutputBase: String? = null,
+    val bazelInstallBase: String? = null,
 )

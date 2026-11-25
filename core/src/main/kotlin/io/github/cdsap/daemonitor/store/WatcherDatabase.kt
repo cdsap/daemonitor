@@ -16,6 +16,7 @@ import io.github.cdsap.daemonitor.application.ProcessSampleWriter
 import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.domain.BuildSample
 import io.github.cdsap.daemonitor.domain.BuildSampleProvider
+import io.github.cdsap.daemonitor.domain.model.BazelBuildTelemetryParser
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.BuildTool
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
@@ -288,13 +289,12 @@ class WatcherDatabase private constructor(
 
     /** One-shot snapshot of all retained builds, newest first. */
     fun recentBuilds(): List<Build> =
-        db.watcherQueries.recentBuilds().executeAsList().map { it.toDomain() }
+        hydrateBuilds(db.watcherQueries.recentBuilds().executeAsList())
 
     override fun recent(): List<Build> = recentBuilds()
 
     fun buildsForDaemonPid(pid: Long, limit: Long = DEFAULT_QUERY_LIMIT): List<Build> =
-        db.watcherQueries.buildsForDaemonPid(pid, limit.coerceQueryLimit()).executeAsList()
-            .map { it.toDomain() }
+        hydrateBuilds(db.watcherQueries.buildsForDaemonPid(pid, limit.coerceQueryLimit()).executeAsList())
 
     override fun findByDaemon(pid: Long, limit: Long): List<Build> =
         buildsForDaemonPid(pid, limit)
@@ -302,18 +302,20 @@ class WatcherDatabase private constructor(
     fun searchBuilds(query: String, limit: Long = DEFAULT_QUERY_LIMIT): List<Build> {
         val sanitizedQuery = query.trim()
         if (sanitizedQuery.isEmpty()) return recentBuilds().take(limit.coerceQueryLimit().toInt())
-        return db.watcherQueries.searchBuilds(
-            sanitizedQuery,
-            sanitizedQuery,
-            sanitizedQuery,
-            sanitizedQuery,
-            sanitizedQuery,
-            sanitizedQuery,
-            sanitizedQuery,
-            sanitizedQuery,
-            sanitizedQuery,
-            limit.coerceQueryLimit(),
-        ).executeAsList().map { it.toDomain() }
+        return hydrateBuilds(
+            db.watcherQueries.searchBuilds(
+                sanitizedQuery,
+                sanitizedQuery,
+                sanitizedQuery,
+                sanitizedQuery,
+                sanitizedQuery,
+                sanitizedQuery,
+                sanitizedQuery,
+                sanitizedQuery,
+                sanitizedQuery,
+                limit.coerceQueryLimit(),
+            ).executeAsList(),
+        )
     }
 
     override fun search(query: String, limit: Long): List<Build> =
@@ -425,13 +427,19 @@ class WatcherDatabase private constructor(
 
     fun buildsFlow(): Flow<List<Build>> =
         db.watcherQueries.recentBuilds().asFlow().mapToList(ioDispatcher).map { rows ->
-            rows.map { it.toDomain() }
+            hydrateBuilds(rows)
         }
 
     fun buildsSinceFlow(startMs: Long): Flow<List<Build>> =
         db.watcherQueries.buildsSince(startMs).asFlow().mapToList(ioDispatcher).map { rows ->
-            rows.map { it.toDomain() }
+            hydrateBuilds(rows)
         }
+
+    private fun hydrateBuilds(rows: List<io.github.cdsap.daemonitor.store.db.Builds>): List<Build> {
+        val bazelIds = rows.filter { it.tool.equals(BuildTool.BAZEL.name, ignoreCase = true) }.map { it.build_id }
+        val detailsById = if (bazelIds.isEmpty()) emptyMap() else bazelBuildDetailsByIds(bazelIds)
+        return rows.map { it.toDomain(detailsById[it.build_id]) }
+    }
 
     fun distinctProjectsFlow(): Flow<List<String>> =
         db.watcherQueries.distinctProjects().asFlow().mapToList(ioDispatcher)
@@ -766,7 +774,9 @@ class WatcherDatabase private constructor(
             }
         }
 
-        private fun io.github.cdsap.daemonitor.store.db.Builds.toDomain(): Build = Build(
+        private fun io.github.cdsap.daemonitor.store.db.Builds.toDomain(
+            details: BazelBuildDetailsRecord? = null,
+        ): Build = Build(
             buildId = build_id,
             daemonPid = daemon_pid,
             daemonIdentity = daemon_identity,
@@ -786,6 +796,16 @@ class WatcherDatabase private constructor(
             agent = agent,
             agentProvider = agent_provider,
             tool = runCatching { BuildTool.valueOf(tool) }.getOrDefault(BuildTool.GRADLE),
+            bazelProfile = BazelBuildTelemetryParser.parseProfile(bazel_profile),
+            bazelDetails = details?.let {
+                BazelBuildTelemetryParser.parseDetails(
+                    bazelVersion = it.bazelVersion,
+                    sourceFormat = it.sourceFormat,
+                    collectionState = it.collectionState,
+                    metricsJson = it.metricsJson,
+                )
+            },
+            windowSummaries = BazelBuildTelemetryParser.parseWindowSummaries(window_summaries),
         )
 
         private fun Process_samples.toDomain(): ProcessSample {

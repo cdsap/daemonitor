@@ -195,9 +195,9 @@ fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit, onClearSelec
                             Spacer(Modifier.padding(Space.xs))
                             LogCard(state.tailState, showMetadata = true, state.daemonLog, modifier = Modifier.weight(1f).fillMaxWidth())
                         }
-                        showsBazelHistoryNote(state.detail) -> {
+                        showsBazelLogCard(state.detail) -> {
                             Spacer(Modifier.padding(Space.xs))
-                            BazelHistoryNoteCard(modifier = Modifier.weight(1f).fillMaxWidth())
+                            BazelLogCard(state.tailState, state.daemonLog, modifier = Modifier.weight(1f).fillMaxWidth())
                         }
                     }
                 }
@@ -316,7 +316,7 @@ private fun showsDaemonLogCard(detail: DetailState): Boolean = when (detail) {
     is DetailState.Ended -> detail.lastKnown.type == ProcessType.GRADLE_DAEMON
 }
 
-private fun showsBazelHistoryNote(detail: DetailState): Boolean = when (detail) {
+private fun showsBazelLogCard(detail: DetailState): Boolean = when (detail) {
     is DetailState.Selected -> detail.process.type == ProcessType.BAZEL_SERVER
     is DetailState.Ended -> detail.lastKnown.type == ProcessType.BAZEL_SERVER
     is DetailState.NoSelection -> false
@@ -345,7 +345,10 @@ private fun DetailCard(
                 Text("Select a process to see details.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
             is DetailState.Selected -> ProcessDetailInspector(
                 detail.process,
-                children = processes.filter { it.parentPid == detail.process.pid },
+                children = processes.filter {
+                    it.pid != detail.process.pid &&
+                        (it.parentPid == detail.process.pid || it.ownerPid == detail.process.pid)
+                },
                 ended = false,
                 nowMs = nowMs,
                 host = host,
@@ -369,7 +372,7 @@ private fun DetailCard(
 
 private enum class InspectorTab(val label: String, val tag: String) {
     OVERVIEW("Overview", "overview"), JVM("JVM", "jvm"), OS_IO("OS / I/O", "os-io"),
-    PROCESS("Process", "process"), GRADLE("Gradle", "gradle"),
+    PROCESS("Process", "process"), GRADLE("Gradle", "gradle"), BAZEL("Bazel", "bazel"),
 }
 
 @Composable
@@ -384,7 +387,10 @@ private fun ProcessDetailInspector(
     daemonLog: DaemonLog?,
 ) {
     var selectedTab by remember(p.pid) { mutableStateOf(InspectorTab.OVERVIEW) }
-    val tabs = InspectorTab.entries.filter { it != InspectorTab.GRADLE || p.type == ProcessType.GRADLE_DAEMON }
+    val tabs = InspectorTab.entries.filter {
+        (it != InspectorTab.GRADLE || p.type == ProcessType.GRADLE_DAEMON) &&
+            (it != InspectorTab.BAZEL || p.type == ProcessType.BAZEL_SERVER)
+    }
     val activeTab = selectedTab.takeIf { it in tabs } ?: InspectorTab.OVERVIEW
     LaunchedEffect(activeTab) { selectedTab = activeTab }
     Column(Modifier.fillMaxSize().testTag("process-detail-inspector")) {
@@ -558,6 +564,39 @@ private fun ProcessDetailInspector(
                         }
                     }
                 }
+                InspectorTab.BAZEL -> {
+                    val bazelVersion = (recentBuilds as? RecentBuildsState.Loaded)?.builds
+                        ?.firstNotNullOfOrNull { it.bazelDetails?.bazelVersion ?: it.bazelProfile?.bazelVersion }
+                    DetailSection("Bazel server")
+                    DetailRow("Bazel version", bazelVersion ?: "unavailable")
+                    DetailRow("Workspace", p.projectPath ?: "unavailable")
+                    DetailRow("Output base", p.bazelOutputBase ?: "unavailable")
+                    DetailRow("Install base", p.bazelInstallBase ?: "unavailable")
+                    DetailRow("Active workers", p.activeWorkerCount.metric())
+                    DetailRow("Sandboxed actions", p.activeSandboxedActionCount.metric())
+                    DetailRow("Subtree RSS", p.subtreeRssMemoryMb.metric("MB"))
+                    DetailRow("Subtree CPU", LiveMetricLabels.cpuDetail(p.subtreeCpuPercent))
+                    DetailRow("Log source", daemonLog?.source?.takeIf { it.isNotBlank() } ?: "unavailable")
+                    DetailRow("Log path", daemonLog?.path?.toString()?.takeIf { it.isNotBlank() } ?: "unavailable")
+                    DetailSection("Recent builds")
+                    when (recentBuilds) {
+                        RecentBuildsState.Loading -> Text("Loading recent builds…")
+                        RecentBuildsState.Unavailable -> Text("Recent builds unavailable.")
+                        is RecentBuildsState.Loaded -> if (recentBuilds.builds.isEmpty()) {
+                            Text("No Bazel builds captured yet (neither command.profile.gz nor BEP in reach).")
+                        } else {
+                            recentBuilds.builds.forEach { build ->
+                                val started = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(build.startTimeMs))
+                                val duration = build.durationSeconds?.let { String.format(Locale.ROOT, "%.1f s", it) } ?: "—"
+                                val peak = build.peakMemoryMb?.let { " · peak $it MB" } ?: ""
+                                DetailRow(
+                                    build.finalStatus.name.replace('_', ' '),
+                                    "${build.projectPath ?: build.workingDirectory ?: "Unknown workspace"} · $duration$peak · $started · ${build.inferredSource}${build.agent?.let { " / $it" } ?: ""}",
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -658,20 +697,30 @@ private fun LogCard(tailState: LogTailState, showMetadata: Boolean, daemonLog: D
 }
 
 @Composable
-private fun BazelHistoryNoteCard(modifier: Modifier = Modifier) {
-    SectionCard("Bazel history", modifier.testTag("bazel-history-note")) {
-        Column {
-            Text(
-                "Bazel has no Gradle daemon log. When your Bazel client already emits BEP, completed builds appear under History → Bazel. Daemonitor never enables BEP.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Spacer(Modifier.padding(Space.xs))
-            Text(
-                "Live process metrics for Bazel servers still appear above. Without BEP in reach, History → Bazel stays empty.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
-            )
+private fun BazelLogCard(tailState: LogTailState, daemonLog: DaemonLog?, modifier: Modifier = Modifier) {
+    SectionCard("Bazel log", modifier.testTag("bazel-log-card")) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            DetailRow("Log source", daemonLog?.source?.takeIf { it.isNotBlank() } ?: "Unavailable")
+            DetailRow("Log path", daemonLog?.path?.toString()?.takeIf { it.isNotBlank() } ?: "Unavailable")
+            when (tailState) {
+                LogTailState.Loading -> Text(
+                    "Loading Bazel log…",
+                    modifier = Modifier.padding(Space.md),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                is LogTailState.Error -> Text(
+                    "Bazel log unavailable (${tailState.errorType}).",
+                    modifier = Modifier.padding(Space.md),
+                    color = LocalAccentColors.current.warn,
+                )
+                is LogTailState.Available -> LogView(tailState.lines, modifier = Modifier.weight(1f).fillMaxWidth(), autoScroll = true)
+                LogTailState.NoLog, LogTailState.NoSelection -> Text(
+                    "No Bazel log available yet (command.log / server/jvm.out). Completed builds appear under History → Bazel when command.profile.gz or BEP is in reach (Daemonitor never enables BEP).",
+                    modifier = Modifier.padding(Space.md),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
         }
     }
 }

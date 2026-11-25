@@ -87,15 +87,15 @@ class HistoryScreenUiTest {
         val state = HistoryUiState(builds = emptyList(), isEmptyResult = true)
         setContent { WatcherTheme { HistoryScreen(state, onProject = {}, onTimeRange = {}) } }
         onNodeWithText(
-            "No builds match the current filters. Gradle rows come from daemon logs; Bazel rows appear only when BEP is already in reach.",
+            "No builds match the current filters. Gradle rows come from daemon logs; Bazel rows appear when command.profile.gz or BEP is in reach.",
         ).assertExists()
         onNodeWithText(
-            "Gradle from daemon logs; Bazel only when the client already emits BEP (Daemonitor never enables it).",
+            "Gradle from daemon logs; Bazel when command.profile.gz or BEP is in reach (Daemonitor never enables BEP).",
         ).assertExists()
     }
 
     @Test
-    fun `bazel tool filter empty state is honest about BEP`() = runComposeUiTest {
+    fun `bazel tool filter empty state is honest about profile and BEP`() = runComposeUiTest {
         val state = HistoryUiState(
             filter = HistoryFilter(tool = ToolFilter.BAZEL),
             builds = emptyList(),
@@ -103,7 +103,7 @@ class HistoryScreenUiTest {
         )
         setContent { WatcherTheme { HistoryScreen(state, onProject = {}, onTimeRange = {}) } }
         onNodeWithText(
-            "No Bazel builds match the current filters. Bazel history appears only when a client already emits BEP (Daemonitor never enables it).",
+            "No Bazel builds match the current filters. Bazel history appears when command.profile.gz or BEP is in reach (Daemonitor never enables BEP).",
         ).assertExists()
     }
 
@@ -177,6 +177,72 @@ class HistoryScreenUiTest {
         waitForIdle()
         onNodeWithText("ERROR: //app:lib failed", substring = true).assertExists()
         onNodeWithText("No failure snippet retained for this Bazel build.").assertDoesNotExist()
+    }
+
+    @Test
+    fun `bazel detail renders phase timings action cache memory deltas and agent`() = runComposeUiTest {
+        val bazel = sampleBuild(
+            buildId = "bz3",
+            projectPath = "/ws/app",
+            source = Source.BEP,
+            agent = "Claude Code",
+            tool = BuildTool.BAZEL,
+        ).copy(
+            bazelProfile = io.github.cdsap.daemonitor.domain.model.BazelProfileSummary(
+                bazelVersion = "8.1.1",
+                criticalPathSeconds = 3.2,
+                criticalPathComponents = 7,
+            ),
+            bazelDetails = io.github.cdsap.daemonitor.domain.model.BazelDetailsSummary(
+                bazelVersion = "8.1.1",
+                analysisPhaseMs = 1_500,
+                executionPhaseMs = 8_200,
+                actionsExecuted = 55,
+                remoteCacheHits = 40,
+                localCacheHits = 10,
+                localCacheMisses = 5,
+                usedHeapPostBuildBytes = 314_572_800,
+                workerCount = 2,
+                testsTotal = 6,
+                testsPassed = 5,
+                testsFailed = 1,
+                testsCached = 2,
+            ),
+            windowSummaries = listOf(
+                io.github.cdsap.daemonitor.domain.model.BazelWindowSummary(
+                    pid = 1234,
+                    processType = "BAZEL_SERVER",
+                    sampleCount = 4,
+                    firstRssMb = 900,
+                    peakRssMb = 1400,
+                    lastRssMb = 1080,
+                    deltaRssMb = 180,
+                    firstHeapUsedMb = 300,
+                    lastHeapUsedMb = 420,
+                    deltaHeapUsedMb = 120,
+                    deltaTotalGcCount = 5,
+                ),
+            ),
+        )
+        val state = HistoryUiState(builds = listOf(bazel), isEmptyResult = false)
+        setContent { WatcherTheme(appearance = AppearancePreference.DARK) { HistoryScreen(state, onProject = {}, onTimeRange = {}) } }
+
+        onNodeWithText("app").performClick()
+        waitForIdle()
+
+        onNodeWithText("Bazel build detail").assertIsDisplayed()
+        onNodeWithText("Phase timings").assertExists()
+        onNodeWithText("1.5 s").assertExists()
+        onNodeWithText("8.2 s").assertExists()
+        onNodeWithText("Action cache").assertExists()
+        onNodeWithText("40").assertExists()
+        onNodeWithText("Memory & GC deltas").assertExists()
+        onNodeWithText("900 → 1080 MB (+180 MB, peak 1400 MB)").assertExists()
+        onNodeWithText("300 → 420 MB (+120 MB)").assertExists()
+        onNodeWithText("+5 collections").assertExists()
+        onNodeWithText("Workers & tests").assertExists()
+        onNodeWithText("6 total (5 passed, 1 failed, 2 cached)").assertExists()
+        onNodeWithText("(Anthropic)").assertExists()
     }
 
     @Test

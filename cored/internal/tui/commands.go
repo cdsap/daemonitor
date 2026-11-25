@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -110,8 +111,24 @@ func (m Model) fetchDetails(p model.Process) tea.Cmd {
 			builds, buildsErr = c.BuildsForDaemon(ctx, pid, startMs, 20)
 		}
 		if bazelServer {
-			// Scope BEP-retained rows to this server incarnation (serverPid + start time).
-			builds, buildsErr = c.BuildsFiltered(ctx, client.BuildQuery{Limit: 20, PID: pid, StartTimeMs: startMs, Tool: "BAZEL"})
+			list, listErr := c.DaemonLogs(ctx)
+			if listErr == nil {
+				logMeta = selectBazelDaemonLog(list, pid)
+			}
+			t, tailErr := c.DaemonLogTail(ctx, pid)
+			if tailErr == nil {
+				tail = &t
+			} else if !isNotFoundError(tailErr) {
+				err = tailErr
+			}
+			// Scope Bazel rows to this server incarnation (serverPid + start time) with metrics.
+			builds, buildsErr = c.BuildsFiltered(ctx, client.BuildQuery{
+				Limit:          20,
+				PID:            pid,
+				StartTimeMs:    startMs,
+				Tool:           "BAZEL",
+				IncludeMetrics: true,
+			})
 		}
 		history, _ := c.History(ctx, time.Now().Add(-30*time.Minute).UnixMilli(), 500)
 		host, hostErr := c.Host(ctx)
@@ -159,6 +176,29 @@ func killNotice(msg killFinishedMsg) (string, bool) {
 		text += fmt.Sprintf(" (+%d more failed)", failed-1)
 	}
 	return text, true
+}
+
+func selectBazelDaemonLog(list []logs.DaemonLog, pid int64) *logs.DaemonLog {
+	var fallback *logs.DaemonLog
+	for i := range list {
+		if list[i].PID != pid {
+			continue
+		}
+		if list[i].Tool != "" && !strings.EqualFold(list[i].Tool, "bazel") {
+			continue
+		}
+		if list[i].Source == "command.log" {
+			return &list[i]
+		}
+		if fallback == nil {
+			fallback = &list[i]
+		}
+	}
+	return fallback
+}
+
+func isNotFoundError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "HTTP 404")
 }
 
 func compactHostMetrics(host platform.HostMetrics) model.HostMetrics {

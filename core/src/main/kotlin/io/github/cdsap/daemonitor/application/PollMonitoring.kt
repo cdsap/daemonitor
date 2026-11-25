@@ -83,7 +83,9 @@ class PollMonitoring(
         }
 
     fun tailFor(logs: List<DaemonLog>, pid: Long): DaemonLogTailResult {
-        val log = logs.firstOrNull { it.pid == pid } ?: return DaemonLogTailResult.NoLog
+        val log = logs.filter { it.pid == pid }
+            .minByOrNull { if (it.source == "command.log") 0 else 1 }
+            ?: return DaemonLogTailResult.NoLog
         return runCatching { DaemonLogTailResult.Lines(logSource.tailFor(log)) }
             .getOrElse { error ->
                 DaemonLogTailResult.Error(error::class.simpleName ?: "UnknownError")

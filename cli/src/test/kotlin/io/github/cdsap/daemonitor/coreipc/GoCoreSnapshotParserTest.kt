@@ -332,7 +332,8 @@ class GoCoreSnapshotParserTest {
         val process = GoCoreSnapshotParser.parseProcesses("""{"processes":[{
             "pid":10,"type":"BAZEL_SERVER","owner_pid":9,"owner_start_time_ms":100,
             "subtree_rss_memory_mb":500,"subtree_cpu_percent":25.5,
-            "active_worker_count":2,"active_sandboxed_action_count":3
+            "active_worker_count":2,"active_sandboxed_action_count":3,
+            "bazel_output_base":"/tmp/bazel/outbase","bazel_install_base":"/tmp/bazel/installbase"
         }]}""").single()
         assertEquals(9L, process.ownerPid)
         assertEquals(100L, process.ownerStartTimeMs)
@@ -340,5 +341,63 @@ class GoCoreSnapshotParserTest {
         assertEquals(25.5, process.subtreeCpuPercent)
         assertEquals(2L, process.activeWorkerCount)
         assertEquals(3L, process.activeSandboxedActionCount)
+        assertEquals("/tmp/bazel/outbase", process.bazelOutputBase)
+        assertEquals("/tmp/bazel/installbase", process.bazelInstallBase)
+    }
+
+    @Test
+    fun `parses bazel builds with tool profile details and window summaries`() {
+        val json = """
+            {
+              "count": 1,
+              "builds": [
+                {
+                  "build_id": "bz-42",
+                  "daemon_pid": 777,
+                  "start_time_ms": 1000,
+                  "end_time_ms": 5000,
+                  "duration_seconds": 4.0,
+                  "peak_memory_mb": 1200,
+                  "inferred_source": "BEP",
+                  "final_status": "SUCCESS",
+                  "tool": "BAZEL",
+                  "agent": "Claude Code",
+                  "agent_provider": "Anthropic",
+                  "bazel_profile": {
+                    "bazel_version": "8.1.1",
+                    "phase_seconds": {"analysis": 1.2, "execution": 2.5},
+                    "critical_path_seconds": 1.9,
+                    "critical_path_components": 6
+                  },
+                  "bazel_details": {
+                    "schema_version": 1,
+                    "bazel_version": "8.1.1",
+                    "source_format": "json",
+                    "collection_state": "sealed",
+                    "metrics": {
+                      "timing": {"analysis_phase_ms": 1200, "execution_phase_ms": 2500},
+                      "actions": {"executed": 30, "remote_cache_hits": 20, "local_cache_hits": 5, "local_cache_misses": 5},
+                      "workers": [{"process_id": 1001, "mnemonic": "Javac"}],
+                      "test_totals": {"total": 4, "passed": 3, "failed": 1, "cached": 2}
+                    }
+                  },
+                  "window_summaries": [
+                    {"pid": 777, "process_type": "BAZEL_SERVER", "sample_count": 3, "first_rss_mb": 800, "peak_rss_mb": 1200, "last_rss_mb": 950, "delta_rss_mb": 150, "first_heap_used_mb": 300, "last_heap_used_mb": 420, "delta_heap_used_mb": 120, "delta_total_gc_count": 3}
+                  ]
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val build = GoCoreSnapshotParser.parseBuilds(json).single()
+        assertEquals(io.github.cdsap.daemonitor.domain.model.BuildTool.BAZEL, build.tool)
+        assertEquals("8.1.1", build.bazelProfile?.bazelVersion)
+        assertEquals(1.9, build.bazelProfile?.criticalPathSeconds)
+        assertEquals(1200L, build.bazelDetails?.analysisPhaseMs)
+        assertEquals(20L, build.bazelDetails?.remoteCacheHits)
+        assertEquals(1, build.bazelDetails?.workerCount)
+        assertEquals(4, build.bazelDetails?.testsTotal)
+        assertEquals(150L, build.windowSummaries.single().deltaRssMb)
+        assertEquals(120L, build.windowSummaries.single().deltaHeapUsedMb)
     }
 }
