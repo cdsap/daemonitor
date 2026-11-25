@@ -107,7 +107,8 @@ func (s *Store) migrate() error {
 // v9: inclusive Bazel subtree resource samples for build rollups.
 // v10: Bazel descendant owner columns on process_samples and build window_summaries.
 // v11: bazel_build_details table for rich BEP telemetry.
-const schemaVersion = 11
+// v12: optional per-incarnation effective JVM flags document.
+const schemaVersion = 12
 
 func (s *Store) ensureProcessSamplesAlignedWithApp() error {
 	exists, err := s.tableExists("process_samples")

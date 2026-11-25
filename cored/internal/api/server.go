@@ -127,6 +127,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/v1/host", s.handleHost)
 	mux.HandleFunc("/v1/processes", s.handleProcesses)
 	mux.HandleFunc("/v1/processes/history", s.handleHistory)
+	mux.HandleFunc("/v1/processes/jvm-flags", s.handleJVMFlags)
 	mux.HandleFunc("/v1/events", s.handleEvents)
 	mux.HandleFunc("/v1/daemon-logs", s.handleDaemonLogs)
 	mux.HandleFunc("/v1/daemon-logs/", s.handleDaemonLogTail)

@@ -93,9 +93,12 @@ type Prober struct {
 	// Runner runs a command; defaults to exec.CommandContext.
 	Runner func(ctx context.Context, name string, args ...string) (stdout string, err error)
 
-	mu      sync.Mutex
-	cache   map[cacheKey]cacheEntry
-	gcCache map[cacheKey]gcCacheEntry
+	flagsMu      sync.Mutex
+	flagsCache   map[cacheKey]flagsCacheEntry
+	flagsPending map[cacheKey]chan struct{}
+	mu           sync.Mutex
+	cache        map[cacheKey]cacheEntry
+	gcCache      map[cacheKey]gcCacheEntry
 }
 
 type cacheKey struct {
@@ -246,6 +249,13 @@ func (p *Prober) EvictMissing(live map[int32]struct{}) {
 	if p == nil {
 		return
 	}
+	p.flagsMu.Lock()
+	for k := range p.flagsCache {
+		if _, ok := live[k.pid]; !ok {
+			delete(p.flagsCache, k)
+		}
+	}
+	p.flagsMu.Unlock()
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for k := range p.cache {
