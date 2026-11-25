@@ -16,6 +16,7 @@ import (
 	"github.com/cdsap/daemonitor/cored/internal/logs"
 	"github.com/cdsap/daemonitor/cored/internal/model"
 	"github.com/cdsap/daemonitor/cored/internal/platform"
+	"github.com/cdsap/daemonitor/cored/internal/sessions"
 )
 
 const defaultTimeout = 3 * time.Second
@@ -128,18 +129,22 @@ type BuildSummary struct {
 
 // BuildRecord is one build row from the core API.
 type BuildRecord struct {
-	BuildID         string   `json:"build_id"`
-	DaemonPID       int64    `json:"daemon_pid"`
-	StartTimeMs     int64    `json:"start_time_ms"`
-	EndTimeMs       *int64   `json:"end_time_ms"`
-	FinalStatus     string   `json:"final_status"`
-	InferredSource  string   `json:"inferred_source"`
-	Tool            string   `json:"tool,omitempty"`
-	Agent           string   `json:"agent"`
-	AgentProvider   string   `json:"agent_provider"`
-	ProjectPath     string   `json:"project_path"`
-	DurationSeconds *float64 `json:"duration_seconds"`
-	LogSnippet      string   `json:"log_snippet,omitempty"`
+	BuildID         string                `json:"build_id"`
+	DaemonPID       int64                 `json:"daemon_pid"`
+	StartTimeMs     int64                 `json:"start_time_ms"`
+	EndTimeMs       *int64                `json:"end_time_ms"`
+	FinalStatus     string                `json:"final_status"`
+	InferredSource  string                `json:"inferred_source"`
+	Tool            string                `json:"tool,omitempty"`
+	Agent           string                `json:"agent"`
+	AgentProvider   string                `json:"agent_provider"`
+	ProjectPath     string                `json:"project_path"`
+	DurationSeconds *float64              `json:"duration_seconds"`
+	PeakMemoryMB    *int64                `json:"peak_memory_mb,omitempty"`
+	AvgMemoryMB     *int64                `json:"avg_memory_mb,omitempty"`
+	PeakCPUPercent  *float64              `json:"peak_cpu_percent,omitempty"`
+	LogSnippet      string                `json:"log_snippet,omitempty"`
+	WindowSummaries []sessions.RSSSummary `json:"window_summaries,omitempty"`
 }
 
 // BuildQuery describes the filters supported by the core build endpoint.

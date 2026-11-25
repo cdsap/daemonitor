@@ -184,7 +184,7 @@ func TestBuildsTableMatchesAppWatcherColumns(t *testing.T) {
 		"build_id", "daemon_pid", "daemon_identity", "command_line",
 		"working_directory", "project_path", "start_time", "end_time",
 		"duration_seconds", "peak_memory_mb", "avg_memory_mb", "peak_cpu_percent",
-		"inferred_source", "final_status", "log_snippet", "agent", "agent_provider", "tool", "bazel_profile",
+		"inferred_source", "final_status", "log_snippet", "agent", "agent_provider", "tool", "bazel_profile", "window_summaries",
 	}
 	if len(cols) != len(want) {
 		t.Fatalf("cols=%v want=%v", cols, want)

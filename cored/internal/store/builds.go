@@ -44,6 +44,14 @@ func (s *Store) InsertBuild(b builds.Build) error {
 		}
 		profile = string(data)
 	}
+	var windowSummaries any
+	if len(b.WindowSummaries) > 0 {
+		data, err := json.Marshal(b.WindowSummaries)
+		if err != nil {
+			return err
+		}
+		windowSummaries = string(data)
+	}
 	conflict := `ON CONFLICT(build_id) DO UPDATE SET
   command_line=excluded.command_line,
   end_time=excluded.end_time,
@@ -55,7 +63,8 @@ func (s *Store) InsertBuild(b builds.Build) error {
   log_snippet=excluded.log_snippet,
   agent=excluded.agent,
   agent_provider=excluded.agent_provider,
-  tool=excluded.tool`
+  tool=excluded.tool,
+  window_summaries=COALESCE(excluded.window_summaries,builds.window_summaries)`
 	if b.Tool == builds.ToolBazel {
 		// BEP is authoritative, regardless of arrival order. Missing BEP fields
 		// retain profile data; a later profile may enrich but cannot downgrade BEP.
@@ -67,7 +76,7 @@ func (s *Store) InsertBuild(b builds.Build) error {
  inferred_source=CASE WHEN builds.inferred_source='BEP' THEN builds.inferred_source ELSE excluded.inferred_source END,
  final_status=CASE WHEN excluded.final_status='COMPLETED_NO_OUTCOME' OR (builds.inferred_source='BEP' AND excluded.inferred_source='PROFILE' AND builds.final_status!='COMPLETED_NO_OUTCOME') THEN builds.final_status ELSE excluded.final_status END,
  tool=excluded.tool`
-		for _, col := range []string{"command_line", "working_directory", "project_path", "end_time", "duration_seconds", "peak_memory_mb", "avg_memory_mb", "peak_cpu_percent", "log_snippet", "agent", "agent_provider"} {
+		for _, col := range []string{"command_line", "working_directory", "project_path", "end_time", "duration_seconds", "peak_memory_mb", "avg_memory_mb", "peak_cpu_percent", "log_snippet", "agent", "agent_provider", "window_summaries"} {
 			conflict += ", " + col + "=CASE WHEN builds.inferred_source='BEP' AND excluded.inferred_source='PROFILE' THEN COALESCE(builds." + col + ",excluded." + col + ") ELSE COALESCE(excluded." + col + ",builds." + col + ") END"
 		}
 	}
@@ -75,15 +84,15 @@ func (s *Store) InsertBuild(b builds.Build) error {
 INSERT INTO builds(
   build_id, daemon_pid, daemon_identity, command_line, working_directory, project_path,
   start_time, end_time, duration_seconds, peak_memory_mb, avg_memory_mb,
-  peak_cpu_percent, inferred_source, final_status, log_snippet, agent, agent_provider, tool, bazel_profile
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  peak_cpu_percent, inferred_source, final_status, log_snippet, agent, agent_provider, tool, bazel_profile, window_summaries
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `+conflict+`
 `,
 		b.BuildID, b.DaemonPID, nullStr(b.DaemonIdentity), commandLine,
 		nullStr(b.WorkingDirectory), nullStr(b.ProjectPath),
 		b.StartTimeMs, b.EndTimeMs, b.DurationSeconds, b.PeakMemoryMB, b.AvgMemoryMB,
 		b.PeakCPUPercent, string(b.InferredSource), string(b.FinalStatus), nullStr(b.LogSnippet),
-		nullStr(b.Agent), nullStr(b.AgentProvider), tool, profile,
+		nullStr(b.Agent), nullStr(b.AgentProvider), tool, profile, windowSummaries,
 	)
 	return err
 }
@@ -119,7 +128,7 @@ func (s *Store) ListBuildsFiltered(filters BuildFilters, limit int) ([]builds.Bu
 SELECT build_id, daemon_pid, daemon_identity, command_line, working_directory, project_path,
        start_time, end_time, duration_seconds, peak_memory_mb, avg_memory_mb,
        peak_cpu_percent, inferred_source, final_status, log_snippet, agent, agent_provider,
-       COALESCE(tool, 'GRADLE'), bazel_profile
+       COALESCE(tool, 'GRADLE'), bazel_profile, window_summaries
 FROM builds
 	WHERE 1 = 1`
 	args := make([]any, 0, 5)
@@ -162,19 +171,24 @@ FROM builds
 	out := make([]builds.Build, 0)
 	for rows.Next() {
 		var b builds.Build
-		var identity, workDir, project, snippet, agent, provider, cmd, tool, profile sql.NullString
+		var identity, workDir, project, snippet, agent, provider, cmd, tool, profile, windowSummaries sql.NullString
 		var endMs sql.NullInt64
 		var dur, peakCPU sql.NullFloat64
 		var peakMem, avgMem sql.NullInt64
 		if err := rows.Scan(
 			&b.BuildID, &b.DaemonPID, &identity, &cmd, &workDir, &project,
 			&b.StartTimeMs, &endMs, &dur, &peakMem, &avgMem,
-			&peakCPU, &b.InferredSource, &b.FinalStatus, &snippet, &agent, &provider, &tool, &profile,
+			&peakCPU, &b.InferredSource, &b.FinalStatus, &snippet, &agent, &provider, &tool, &profile, &windowSummaries,
 		); err != nil {
 			return nil, err
 		}
 		if profile.Valid {
 			if err := json.Unmarshal([]byte(profile.String), &b.BazelProfile); err != nil {
+				return nil, err
+			}
+		}
+		if windowSummaries.Valid {
+			if err := json.Unmarshal([]byte(windowSummaries.String), &b.WindowSummaries); err != nil {
 				return nil, err
 			}
 		}
