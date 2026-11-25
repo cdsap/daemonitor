@@ -54,6 +54,7 @@ internal object GbosDevelocityProjection {
     internal fun processRole(processType: String): String = when (processType) {
         "GRADLE_DAEMON" -> "gradle-daemon"
         "KOTLIN_DAEMON" -> "kotlin-daemon"
+        "KOTLIN_TOOLCHAIN" -> "kotlin-toolchain"
         "GRADLE_WORKER" -> "gradle-worker"
         "GRADLE_CLIENT" -> "gradle-client"
         else -> processType.ifBlank { "unknown" }.lowercase().replace('_', '-')

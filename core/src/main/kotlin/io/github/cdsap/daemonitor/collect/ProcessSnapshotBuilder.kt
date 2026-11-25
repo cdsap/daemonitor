@@ -40,7 +40,9 @@ object ProcessSnapshotBuilder {
             projectPath = when (type) {
                 ProcessType.BAZEL_SERVER ->
                     GradleProcessClassifier.bazelWorkspaceDirectory(info.commandLine) ?: cwd
-                ProcessType.GRADLE_WRAPPER -> cwd
+                ProcessType.GRADLE_WRAPPER,
+                ProcessType.KOTLIN_TOOLCHAIN,
+                -> cwd
                 else -> null
             },
             cpuPercent = computeCpuPercent(info, prior, sampleWallClockMs, logicalProcessorCount),

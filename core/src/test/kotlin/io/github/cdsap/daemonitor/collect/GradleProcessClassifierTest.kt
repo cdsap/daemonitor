@@ -39,6 +39,14 @@ class GradleProcessClassifierTest {
     }
 
     @Test
+    fun `classifies kotlin toolchain cli as toolchain, not kotlin daemon`() {
+        val cl = "java @/Users/dev/Library/Caches/JetBrains/Kotlin/cli/kotlin-cli-0.14.1/kotlin-cli.args " +
+            "-cp /Users/dev/Library/Caches/JetBrains/Kotlin/cli/kotlin-cli-0.14.1/lib/* " +
+            "org.jetbrains.amper.cli.MainKt build"
+        assertEquals(ProcessType.KOTLIN_TOOLCHAIN, GradleProcessClassifier.classify(cl))
+    }
+
+    @Test
     fun `classifies gradle test worker by process name`() {
         val cl = "java worker.org.gradle.process.internal.worker.GradleWorkerMain 'Gradle Test Executor 3'"
         assertEquals(ProcessType.TEST_WORKER, GradleProcessClassifier.classify(cl))

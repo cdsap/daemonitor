@@ -5,6 +5,8 @@ enum class ProcessType {
     GRADLE_DAEMON,
     GRADLE_WRAPPER,
     KOTLIN_DAEMON,
+    /** Kotlin Toolchain CLI (`org.jetbrains.amper.cli.MainKt`) — ephemeral, not a daemon. */
+    KOTLIN_TOOLCHAIN,
     /** Long-lived Bazel JVM server (`A-server.jar` + product/output_base markers). */
     BAZEL_SERVER,
     /**

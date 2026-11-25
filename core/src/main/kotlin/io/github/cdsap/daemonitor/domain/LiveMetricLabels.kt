@@ -48,6 +48,7 @@ object LiveMetricLabels {
         // unprobed on the Desktop Attach path (issue #159) even though cored may probe them.
         ProcessType.GRADLE_DAEMON,
         ProcessType.KOTLIN_DAEMON,
+        ProcessType.KOTLIN_TOOLCHAIN,
         ProcessType.BAZEL_SERVER,
         ProcessType.BAZEL_TEST,
         ProcessType.BAZEL_WORKER,
@@ -61,6 +62,7 @@ object LiveMetricLabels {
         ProcessType.GRADLE_WORKER -> "Gradle workers"
         ProcessType.UNKNOWN_GRADLE_WORKER -> "unknown Gradle workers"
         ProcessType.JAVA_GRADLE_RELATED -> "non-daemon JVMs"
+        ProcessType.KOTLIN_TOOLCHAIN -> "Kotlin Toolchain"
         ProcessType.GRADLE_DAEMON,
         ProcessType.KOTLIN_DAEMON,
         ProcessType.BAZEL_SERVER,

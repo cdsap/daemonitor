@@ -57,6 +57,7 @@ class LiveMetricLabelsTest {
         )
         assertTrue(LiveMetricLabels.isLiveHeapProbedType(ProcessType.GRADLE_DAEMON))
         assertTrue(LiveMetricLabels.isLiveHeapProbedType(ProcessType.KOTLIN_DAEMON))
+        assertTrue(LiveMetricLabels.isLiveHeapProbedType(ProcessType.KOTLIN_TOOLCHAIN))
         assertTrue(LiveMetricLabels.isLiveHeapProbedType(ProcessType.BAZEL_SERVER))
         assertTrue(LiveMetricLabels.isLiveHeapProbedType(ProcessType.BAZEL_TEST))
         assertTrue(LiveMetricLabels.isLiveHeapProbedType(ProcessType.BAZEL_WORKER))
