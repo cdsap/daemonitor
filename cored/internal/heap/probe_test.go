@@ -630,3 +630,28 @@ func TestParseJstatZeroUsedAndCommitted(t *testing.T) {
 		t.Fatal("expected error for zero used+committed")
 	}
 }
+
+func TestProbeFamilyRejectsWrongIncarnationBeforeTools(t *testing.T) {
+	p := heap.NewProber()
+	p.LookPath = func(name string) (string, error) { return name, nil }
+	calls := 0
+	p.Runner = func(context.Context, string, ...string) (string, error) { calls++; return "", nil }
+	for _, advanced := range []bool{false, true} {
+		sample, err := p.ProbeFamily(context.Background(), int32(os.Getpid()), -1, advanced)
+		diagnostics := sample.Diagnostics
+		if err != nil {
+			diagnostics = heap.FailureDiagnostics(err)
+		}
+		if len(diagnostics) == 0 {
+			t.Fatal("missing stale PID diagnostics")
+		}
+		for _, d := range diagnostics {
+			if d.Category != heap.FailureStalePID {
+				t.Fatalf("diagnostic=%+v", d)
+			}
+		}
+	}
+	if calls != 0 {
+		t.Fatalf("ran %d commands against wrong incarnation", calls)
+	}
+}

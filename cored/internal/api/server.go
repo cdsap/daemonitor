@@ -17,6 +17,7 @@ import (
 	"github.com/cdsap/daemonitor/cored/internal/bazelprofile"
 	"github.com/cdsap/daemonitor/cored/internal/bep"
 	"github.com/cdsap/daemonitor/cored/internal/builds"
+	"github.com/cdsap/daemonitor/cored/internal/heap"
 	"github.com/cdsap/daemonitor/cored/internal/ipc"
 	"github.com/cdsap/daemonitor/cored/internal/logs"
 	"github.com/cdsap/daemonitor/cored/internal/model"
@@ -59,6 +60,9 @@ const (
 )
 
 func NewServer(socketPath, dbPath string, interval, retention time.Duration, gradleUserHome string) (*Server, error) {
+	if interval <= 0 {
+		interval = observe.DefaultCadences().ProcessOS
+	}
 	st, err := store.Open(dbPath)
 	if err != nil {
 		return nil, err
@@ -66,6 +70,7 @@ func NewServer(socketPath, dbPath string, interval, retention time.Duration, gra
 	collector := poll.NewCollector()
 	if interval > 0 {
 		collector.PollInterval = interval
+		collector.Cadences.ProcessOS = interval
 	}
 	bepWatcher := bep.NewWatcher()
 	collector.BazelClientObserved = bepWatcher.ObserveProcess
@@ -113,6 +118,9 @@ func NewServer(socketPath, dbPath string, interval, retention time.Duration, gra
 
 func (s *Server) Run(ctx context.Context) error {
 	defer s.Store.Close()
+	defer s.Collector.Close()
+	ctx, cancelRun := context.WithCancel(ctx)
+	defer cancelRun()
 
 	ln, err := ipc.Default.Listen(s.SocketPath)
 	if err != nil {
@@ -143,8 +151,12 @@ func (s *Server) Run(ctx context.Context) error {
 		_ = srv.Shutdown(shutdownCtx)
 	}()
 
+	// Join the scan loop before closing workers and storage.
+	scanDone := make(chan struct{})
+	defer func() { cancelRun(); <-scanDone }()
 	// Serve immediately so health stays responsive while the first poll/log scan runs.
 	go func() {
+		defer close(scanDone)
 		s.refresh(ctx)
 		s.loop(ctx)
 	}()
@@ -404,14 +416,19 @@ func (s *Server) refreshHost(ctx context.Context) {
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	n, _ := s.Store.Count()
+	s.mu.RLock()
+	sampledAt := s.last.SampledAtMs
+	s.mu.RUnlock()
 	writeJSON(w, model.Health{
-		Status:      "ok",
-		Version:     Version,
-		Socket:      s.SocketPath,
-		SampleCount: n,
-		DBPath:      s.DBPath,
-		RetentionMs: s.Retention.Milliseconds(),
-		PID:         os.Getpid(),
+		ProcessSampleReady: sampledAt > 0,
+		ProcessSampledAtMs: sampledAt,
+		Status:             "ok",
+		Version:            Version,
+		Socket:             s.SocketPath,
+		SampleCount:        n,
+		DBPath:             s.DBPath,
+		RetentionMs:        s.Retention.Milliseconds(),
+		PID:                os.Getpid(),
 	})
 }
 
@@ -445,15 +462,20 @@ func (s *Server) handleSelf(w http.ResponseWriter, _ *http.Request) {
 	probeConcurrency := observe.DefaultJVMProbeConcurrency
 	if s.Collector != nil {
 		cadences = s.Collector.Cadences
-		if s.Collector.ProbeConcurrency > 0 {
+		if s.Collector.ProbeConcurrency >= 2 {
 			probeConcurrency = s.Collector.ProbeConcurrency
 		}
 	}
+	budget := heap.DefaultTimeout
+	if s.Collector != nil && s.Collector.Heap != nil && s.Collector.Heap.Timeout > 0 {
+		budget = s.Collector.Heap.Timeout
+	}
 	writeJSON(w, model.SelfMetrics{
-		SchemaVersion: 1,
-		Platform:      poll.Platform(),
-		SampledAtMs:   time.Now().UnixMilli(),
-		Metrics:       snap,
+		JVMProbeBudgetMs: budget.Milliseconds(),
+		SchemaVersion:    1,
+		Platform:         poll.Platform(),
+		SampledAtMs:      time.Now().UnixMilli(),
+		Metrics:          snap,
 		Cadences: model.CollectorCadences{
 			ProcessOSMs:       cadences.ProcessOS.Milliseconds(),
 			HostMs:            cadences.Host.Milliseconds(),

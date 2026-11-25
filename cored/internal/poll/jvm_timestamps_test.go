@@ -8,7 +8,6 @@ import (
 
 	"github.com/cdsap/daemonitor/cored/internal/heap"
 	"github.com/cdsap/daemonitor/cored/internal/model"
-	"github.com/shirou/gopsutil/v4/process"
 )
 
 func TestLiveHeapUnavailableHasNoMeasurementTime(t *testing.T) {
@@ -20,6 +19,8 @@ func TestLiveHeapUnavailableHasNoMeasurementTime(t *testing.T) {
 
 func TestJVMCacheTimeRemainsSeparateFromSnapshotTime(t *testing.T) {
 	c := NewCollector()
+	defer c.Close()
+	c.Cadences.JVMHeapGC = 10 * time.Second
 	now := time.UnixMilli(1000)
 	c.Heap.Now = func() time.Time { return now }
 	c.Heap.LookPath = func(name string) (string, error) {
@@ -31,10 +32,20 @@ func TestJVMCacheTimeRemainsSeparateFromSnapshotTime(t *testing.T) {
 	c.Heap.Runner = func(context.Context, string, ...string) (string, error) {
 		return "garbage-first heap total reserved 262144K, committed 262144K, used 36447K\n", nil
 	}
+	job := scheduleJob(t, 0)
+	jobs := []pendingJVM{job}
+	// Trigger initial acquisition at 1000ms and wait for async worker completion.
+	c.applyJVMProbes(context.Background(), 1000, []model.Process{{PID: job.pid, StartTimeMs: job.startMs, SampledAtMs: 1000}}, jobs)
+	c.jvmWG.Wait()
 	for _, at := range []int64{1000, 3000, 5000, 11000} {
 		now = time.UnixMilli(at)
-		rows := []model.Process{{PID: 7, StartTimeMs: 99, SampledAtMs: at}}
-		c.applyJVMProbes(context.Background(), rows, []pendingJVM{{idx: 0, proc: &process.Process{Pid: 2147483647}, pid: 7, startMs: 99}})
+		rows := []model.Process{{PID: job.pid, StartTimeMs: job.startMs, SampledAtMs: at}}
+		c.applyJVMProbes(context.Background(), at, rows, jobs)
+		if at == 11000 {
+			c.jvmWG.Wait()
+			rows = []model.Process{{PID: job.pid, StartTimeMs: job.startMs, SampledAtMs: at}}
+			c.applyJVMProbes(context.Background(), at, rows, jobs)
+		}
 		want := int64(1000)
 		if at == 11000 {
 			want = at
