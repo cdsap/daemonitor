@@ -5,8 +5,10 @@ import "github.com/cdsap/daemonitor/cored/internal/platform"
 // Process is an IPC snapshot of a Gradle-related process.
 // Field names mirror the Kotlin GradleProcess domain for dual-run clients.
 type Process struct {
-	PID       int32 `json:"pid"`
-	ParentPID int32 `json:"parent_pid"`
+	// JVMFlags is retained once per incarnation and served through the metadata endpoint.
+	JVMFlags  *JVMFlagsMetadata `json:"-"`
+	PID       int32             `json:"pid"`
+	ParentPID int32             `json:"parent_pid"`
 	// Owner identity bridges unclassified OS wrappers. Subtree totals include the
 	// server itself and all sampled descendants; own-process metrics stay intact.
 	OwnerPID                   int32    `json:"owner_pid,omitempty"`
