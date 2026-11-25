@@ -94,7 +94,13 @@ INSERT INTO builds(
 		b.PeakCPUPercent, string(b.InferredSource), string(b.FinalStatus), nullStr(b.LogSnippet),
 		nullStr(b.Agent), nullStr(b.AgentProvider), tool, profile, windowSummaries,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	if b.BazelDetails != nil {
+		return s.UpsertBazelBuildDetails(b.BuildID, b.BazelDetails)
+	}
+	return nil
 }
 
 // ListBuilds returns recent builds newest-first.

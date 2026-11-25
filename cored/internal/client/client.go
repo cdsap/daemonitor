@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/cdsap/daemonitor/cored/internal/builds"
 	"github.com/cdsap/daemonitor/cored/internal/ipc"
 	"github.com/cdsap/daemonitor/cored/internal/logs"
 	"github.com/cdsap/daemonitor/cored/internal/model"
@@ -143,20 +144,23 @@ type BuildRecord struct {
 	PeakMemoryMB    *int64                `json:"peak_memory_mb,omitempty"`
 	AvgMemoryMB     *int64                `json:"avg_memory_mb,omitempty"`
 	PeakCPUPercent  *float64              `json:"peak_cpu_percent,omitempty"`
-	LogSnippet      string                `json:"log_snippet,omitempty"`
-	WindowSummaries []sessions.RSSSummary `json:"window_summaries,omitempty"`
+	LogSnippet      string                    `json:"log_snippet,omitempty"`
+	BazelProfile    *builds.BazelProfile      `json:"bazel_profile,omitempty"`
+	BazelDetails    *builds.BazelBuildDetails `json:"bazel_details,omitempty"`
+	WindowSummaries []sessions.RSSSummary     `json:"window_summaries,omitempty"`
 }
 
 // BuildQuery describes the filters supported by the core build endpoint.
 type BuildQuery struct {
-	Limit       int
-	SinceMs     int64
-	StartTimeMs int64
-	PID         int64
-	Project     string
-	Status      string
-	Tool        string
-	IncludeLogs bool
+	Limit          int
+	SinceMs        int64
+	StartTimeMs    int64
+	PID            int64
+	Project        string
+	Status         string
+	Tool           string
+	IncludeLogs    bool
+	IncludeMetrics bool
 }
 
 // Builds fetches recent builds.
@@ -190,6 +194,9 @@ func (c *Client) BuildsFiltered(ctx context.Context, query BuildQuery) (BuildsPa
 	}
 	if query.IncludeLogs {
 		params.Set("include_logs", "true")
+	}
+	if query.IncludeMetrics {
+		params.Set("include_metrics", "true")
 	}
 	path := "/v1/builds"
 	if encoded := params.Encode(); encoded != "" {

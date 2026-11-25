@@ -90,6 +90,9 @@ func (s *Store) migrate() error {
 	if err := s.ensureObservationSessions(); err != nil {
 		return err
 	}
+	if err := s.ensureBazelBuildDetails(); err != nil {
+		return err
+	}
 	_, err := s.db.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion))
 	return err
 }
@@ -103,7 +106,8 @@ func (s *Store) migrate() error {
 // v8: optional Bazel trace summaries retained across BEP enrichment.
 // v9: inclusive Bazel subtree resource samples for build rollups.
 // v10: Bazel descendant owner columns on process_samples and build window_summaries.
-const schemaVersion = 10
+// v11: bazel_build_details table for rich BEP telemetry.
+const schemaVersion = 11
 
 func (s *Store) ensureProcessSamplesAlignedWithApp() error {
 	exists, err := s.tableExists("process_samples")
@@ -643,6 +647,9 @@ func (s *Store) PurgeOlderThan(retention time.Duration) (int64, error) {
 	instN, err := inst.RowsAffected()
 	if err != nil {
 		return n + evN, err
+	}
+	if _, err := s.db.Exec(`DELETE FROM bazel_build_details WHERE build_id IN (SELECT build_id FROM builds WHERE start_time < ?)`, cutoff); err != nil {
+		return n + evN + instN, err
 	}
 	buildsRes, err := s.db.Exec(`DELETE FROM builds WHERE start_time < ?`, cutoff)
 	if err != nil {

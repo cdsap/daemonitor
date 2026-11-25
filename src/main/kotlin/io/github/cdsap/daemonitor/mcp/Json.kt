@@ -13,6 +13,7 @@ internal data class JsonObject(val values: Map<String, JsonValue>) : JsonValue {
     fun obj(name: String): JsonObject? = values[name] as? JsonObject
     fun array(name: String): JsonArray? = values[name] as? JsonArray
     fun string(name: String): String? = (values[name] as? JsonString)?.value
+    fun boolean(name: String): Boolean? = (values[name] as? JsonBoolean)?.value
     fun long(name: String): Long? = when (val value = values[name]) {
         is JsonNumber -> value.value.toLong()
         is JsonString -> value.value.toLongOrNull()

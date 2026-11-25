@@ -10,7 +10,23 @@ interface DaemonitorQueryService {
     fun buildsForProcess(process: String, limit: Int): ProcessBuildResult
 
     fun currentProcesses(): List<GradleProcess>
+
+    fun bazelBuildDetails(buildIds: List<String>): Map<String, BazelBuildDetailsRecord> = emptyMap()
 }
+
+fun interface BazelBuildDetailsQuery {
+    fun bazelBuildDetailsByIds(buildIds: List<String>): Map<String, BazelBuildDetailsRecord>
+}
+
+data class BazelBuildDetailsRecord(
+    val buildId: String,
+    val schemaVersion: Long,
+    val bazelVersion: String?,
+    val sourceFormat: String,
+    val collectionState: String,
+    val updatedAtMs: Long,
+    val metricsJson: String,
+)
 
 data class ProcessBuildResult(
     val process: String,

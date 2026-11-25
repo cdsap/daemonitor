@@ -74,6 +74,16 @@ CREATE INDEX builds_start ON builds(start_time);
 CREATE INDEX builds_project ON builds(project_path);
 CREATE INDEX builds_tool ON builds(tool);
 
+CREATE TABLE bazel_build_details (
+    build_id         TEXT PRIMARY KEY NOT NULL REFERENCES builds(build_id) ON DELETE CASCADE,
+    schema_version   INTEGER NOT NULL CHECK (schema_version = 1),
+    bazel_version    TEXT,
+    source_format    TEXT NOT NULL CHECK (source_format IN ('json', 'binary')),
+    collection_state TEXT NOT NULL CHECK (collection_state IN ('partial', 'sealed', 'truncated', 'invalid')),
+    updated_at_ms    INTEGER NOT NULL,
+    metrics_json     TEXT NOT NULL CHECK (length(CAST(metrics_json AS BLOB)) <= 1048576)
+);
+
 -- Shared with cored. process_instances / process_events use cored column names so PreferGo
 -- desktop (and Kotlin-first DBs Go opens later) share one schema. See #484.
 CREATE TABLE process_instances (
@@ -275,6 +285,15 @@ ORDER BY timestamp ASC, pid ASC;
 
 purgeSamplesOlderThan:
 DELETE FROM process_samples WHERE timestamp < ?;
+
+purgeBazelBuildDetailsOlderThan:
+DELETE FROM bazel_build_details
+WHERE build_id IN (SELECT build_id FROM builds WHERE start_time < ?);
+
+bazelBuildDetailsByIds:
+SELECT build_id, schema_version, bazel_version, source_format, collection_state, updated_at_ms, metrics_json
+FROM bazel_build_details
+WHERE build_id IN ?;
 
 purgeBuildsOlderThan:
 DELETE FROM builds WHERE start_time < ?;

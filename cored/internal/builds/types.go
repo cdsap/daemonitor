@@ -54,6 +54,7 @@ type Build struct {
 	// Empty / omitted means GRADLE for backward compatibility with existing rows.
 	Tool            Tool                  `json:"tool,omitempty"`
 	BazelProfile    *BazelProfile         `json:"bazel_profile,omitempty"`
+	BazelDetails    *BazelBuildDetails    `json:"bazel_details,omitempty"`
 	WindowSummaries []sessions.RSSSummary `json:"window_summaries,omitempty"`
 }
 

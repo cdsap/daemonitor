@@ -57,7 +57,7 @@ func TestBinaryJSONParity(t *testing.T) {
 				`{"finished":` + tc.finish + "}\n" + `{"buildMetrics":{"memoryMetrics":{"peakPostGcHeapSize":"1024"}}}` + "\n"
 			// Auxiliary payloads do not close an invocation or populate OS samples,
 			// matching the settled JSON rows (Bazel heap is not sampled process RSS).
-			stream := wireMessage(binaryStart("parity"), wireFrame(wireBytes(22, wireString(1, "canonical"))), wireFrame(wireBytes(9, wireInt(5, 4))), wireFrame(wireBytes(4, wireInt(1, 1))), tc.payload, wireFrame(wireBytes(24, wireBytes(2, wireInt(1, 1024)))))
+			stream := wireMessage(binaryStart("parity"), wireFrame(wireBytes(22, wireString(1, "canonical"))), wireFrame(wireBytes(9, wireInt(5, 4))), wireFrame(wireBytes(4, wireInt(1, 1))), tc.payload, wireFrame(wireBytes(24, wireBytes(2, wireInt(2, 1024)))))
 			want, err := ParseJSONStream(strings.NewReader(jsonStream))
 			if err != nil {
 				t.Fatal(err)
@@ -66,6 +66,13 @@ func TestBinaryJSONParity(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if len(got) != 1 || len(want) != 1 || got[0].BazelDetails == nil || want[0].BazelDetails == nil {
+				t.Fatalf("binary=%+v JSON=%+v", got, want)
+			}
+			if got[0].BazelDetails.SourceFormat != "binary" || want[0].BazelDetails.SourceFormat != "json" {
+				t.Fatalf("formats binary=%q json=%q", got[0].BazelDetails.SourceFormat, want[0].BazelDetails.SourceFormat)
+			}
+			got[0].BazelDetails.SourceFormat = want[0].BazelDetails.SourceFormat
 			if !reflect.DeepEqual(got, want) {
 				t.Fatalf("binary=%+v JSON=%+v", got, want)
 			}

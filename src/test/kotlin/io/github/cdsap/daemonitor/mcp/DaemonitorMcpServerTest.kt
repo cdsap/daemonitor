@@ -1,8 +1,11 @@
 package io.github.cdsap.daemonitor.mcp
 
+import io.github.cdsap.daemonitor.application.BazelBuildDetailsQuery
+import io.github.cdsap.daemonitor.application.BazelBuildDetailsRecord
 import io.github.cdsap.daemonitor.application.DefaultDaemonitorQueryService
 import io.github.cdsap.daemonitor.application.ProcessSource
 import io.github.cdsap.daemonitor.domain.model.Build
+import io.github.cdsap.daemonitor.domain.model.BuildTool
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
@@ -227,6 +230,76 @@ class DaemonitorMcpServerTest {
         assertTrue(!commandLine.contains(secret), commandLine)
         // Non-secret argv (paths, main class) remains visible after Redactor.
         assertTrue(commandLine.contains("GradleDaemon"), commandLine)
+    }
+
+    @Test
+    fun `search history includes bazel details only on opt-in and enforces limit cap`() {
+        val tmp = java.nio.file.Files.createTempDirectory("mcp-bazel-details")
+        val db = WatcherDatabase.open(tmp.resolve("watcher.db"))
+        db.use {
+            it.insertBuild(
+                build(id = "bazel-rich-1", startMs = 2000, pid = 42).copy(
+                    tool = BuildTool.BAZEL,
+                    inferredSource = Source.BEP,
+                ),
+            )
+            it.insertBuild(build(id = "gradle-plain-1", startMs = 1000, pid = 9))
+            val detailsQuery = BazelBuildDetailsQuery { ids ->
+                if ("bazel-rich-1" in ids) {
+                    mapOf(
+                        "bazel-rich-1" to BazelBuildDetailsRecord(
+                            buildId = "bazel-rich-1",
+                            schemaVersion = 1L,
+                            bazelVersion = "8.4.2",
+                            sourceFormat = "json",
+                            collectionState = "sealed",
+                            updatedAtMs = 3000L,
+                            metricsJson = """{"timing":{"wall_ms":4062},"actions":{"executed":6}}""",
+                        ),
+                    )
+                } else {
+                    emptyMap()
+                }
+            }
+            val server = DaemonitorMcpServer(
+                DefaultDaemonitorQueryService(
+                    builds = it,
+                    samples = it,
+                    processSource = ProcessSource { emptyList() },
+                    history = it,
+                    bazelDetails = detailsQuery,
+                ),
+            )
+
+            val defaultPayload = server.callTool("daemonitor_search_history", jsonObject())
+            val defaultBuilds = defaultPayload.array("builds")!!.values.filterIsInstance<JsonObject>()
+            assertTrue(defaultBuilds.all { it.obj("bazelDetails") == null })
+
+            val optInPayload = server.callTool(
+                "daemonitor_search_history",
+                jsonObject("include_metrics" to JsonBoolean(true)),
+            )
+            val optInBuilds = optInPayload.array("builds")!!.values.filterIsInstance<JsonObject>()
+            val bazelRow = optInBuilds.first { it.string("buildId") == "bazel-rich-1" }
+            val gradleRow = optInBuilds.first { it.string("buildId") == "gradle-plain-1" }
+            val details = bazelRow.obj("bazelDetails")!!
+            assertEquals("8.4.2", details.string("bazelVersion"))
+            assertEquals("sealed", details.string("collectionState"))
+            assertEquals(4062L, details.obj("metrics")!!.obj("timing")!!.long("wall_ms"))
+            assertEquals(null, gradleRow.obj("bazelDetails"))
+
+            val errorResponse = server.request(
+                "tools/call",
+                jsonObject(
+                    "name" to JsonString("daemonitor_search_history"),
+                    "arguments" to jsonObject(
+                        "include_metrics" to JsonBoolean(true),
+                        "limit" to JsonNumber(25),
+                    ),
+                ),
+            )
+            assertEquals(-32602L, errorResponse.obj("error")!!.long("code"))
+        }
     }
 
     private fun server(
