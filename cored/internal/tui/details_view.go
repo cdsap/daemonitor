@@ -260,12 +260,18 @@ func memoryPoolsText(pools []model.JVMMemoryPool) string {
 		if pool.Max.Value != 0 {
 			value += " (max " + formatJVMRawValue(pool.Max) + ")"
 		}
+		if pool.Peak != nil {
+			value += " (peak " + formatJVMRawValue(*pool.Peak) + ")"
+		}
 		parts = append(parts, name+" "+value)
 	}
 	return strings.Join(parts, "; ")
 }
 
 func formatJVMRawValue(value model.JVMRawValue) string {
+	if value.Unit == "" {
+		return "n/a"
+	}
 	if value.Value == math.Trunc(value.Value) {
 		return fmt.Sprintf("%.0f%s", value.Value, value.Unit)
 	}

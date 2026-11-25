@@ -50,7 +50,7 @@ class GoCoreSnapshotParserTest {
         val process = GoCoreSnapshotParser.parseProcesses("""
             {"processes":[{"pid":1,"type":"GRADLE_DAEMON",
               "memory_pools":[{"name":"Eden","source":"jstat","used":{"value":0,"unit":"K"},"committed":{"value":12.5,"unit":"M"},"max":null}],
-              "code_cache":[{"name":"CodeHeap","used":{"value":2,"unit":"M"}}],
+              "code_cache":[{"name":"CodeHeap","used":{"value":2,"unit":"M"},"max":{"value":120,"unit":"M"},"peak":{"value":3,"unit":"M"}}],
               "jit":{"compiled_count":0,"failed_count":null,"compilation_time_seconds":1.25},
               "classes":{"loaded":17,"unloaded_total":0,"loaded_total":20,"time_seconds":0.123456789}}]}
         """).single()
@@ -60,6 +60,10 @@ class GoCoreSnapshotParserTest {
         assertNull(process.memoryPools.single().max)
         assertEquals("CodeHeap", process.codeCache.single().name)
         assertNull(process.codeCache.single().committed)
+        assertEquals(120.0, process.codeCache.single().max?.value)
+        assertEquals(3.0, process.codeCache.single().peak?.value)
+        assertEquals("M", process.codeCache.single().peak?.unit)
+        assertNull(process.memoryPools.single().peak)
         assertEquals(0L, process.jit?.compiledCount)
         assertNull(process.jit?.failedCount)
         assertEquals(1.25, process.jit?.compilationTimeSeconds)
