@@ -2,6 +2,7 @@ package io.github.cdsap.daemonitor.mcp
 
 import io.github.cdsap.daemonitor.AppContainer
 import io.github.cdsap.daemonitor.BuildInfo
+import io.github.cdsap.daemonitor.application.BazelBuildDetailsRecord
 import io.github.cdsap.daemonitor.application.DaemonitorQueryService
 import io.github.cdsap.daemonitor.application.BuildHistoryEntry
 import io.github.cdsap.daemonitor.application.HistoryEntry
@@ -9,6 +10,7 @@ import io.github.cdsap.daemonitor.application.ObservationSessionHistoryEntry
 import io.github.cdsap.daemonitor.application.ProcessSampleView
 import io.github.cdsap.daemonitor.domain.Redactor
 import io.github.cdsap.daemonitor.domain.model.Build
+import io.github.cdsap.daemonitor.domain.model.BuildTool
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
@@ -100,6 +102,7 @@ class DaemonitorMcpServer(
                     ),
                 ),
                 "limit" to limitSchema(),
+                "include_metrics" to includeMetricsSchema(),
             ),
             required = jsonArray(JsonString("process")),
         ),
@@ -112,6 +115,7 @@ class DaemonitorMcpServer(
                     "description" to JsonString("Search term. Empty returns the most recent retained builds."),
                 ),
                 "limit" to limitSchema(),
+                "include_metrics" to includeMetricsSchema(),
             ),
             required = JsonArray(emptyList()),
         ),
@@ -147,9 +151,14 @@ class DaemonitorMcpServer(
 
     private fun limitSchema(): JsonObject = jsonObject(
         "type" to JsonString("integer"),
-        "description" to JsonString("Maximum number of rows to return, capped at 200."),
+        "description" to JsonString("Maximum number of rows to return, capped at 200 (or 20 when include_metrics is true)."),
         "minimum" to JsonNumber(1),
         "maximum" to JsonNumber(200),
+    )
+
+    private fun includeMetricsSchema(): JsonObject = jsonObject(
+        "type" to JsonString("boolean"),
+        "description" to JsonString("Include rich Bazel BEP telemetry details (memory, timing, actions, workers, tests) when available. Requires limit <= 20."),
     )
 
     private fun callTool(params: JsonObject): JsonObject {
@@ -168,23 +177,44 @@ class DaemonitorMcpServer(
         val process = arguments.string("process")?.trim()
             ?: throw McpError(-32602, "Missing required argument: process")
         if (process.isEmpty()) throw McpError(-32602, "Process argument cannot be empty")
+        val includeMetrics = arguments.boolean("include_metrics") == true
+        val limit = arguments.long("limit").coerceLimit(includeMetrics)
 
-        val result = queries.buildsForProcess(process, arguments.long("limit").coerceLimit())
+        val result = queries.buildsForProcess(process, limit)
+        val detailsById = if (includeMetrics) {
+            queries.bazelBuildDetails(result.matchedBuilds.filter { it.tool == BuildTool.BAZEL }.map { it.buildId })
+        } else {
+            emptyMap()
+        }
         return jsonObject(
             "process" to JsonString(result.process),
-            "matchedBuilds" to JsonArray(result.matchedBuilds.map { it.toJson() }),
+            "matchedBuilds" to JsonArray(result.matchedBuilds.map { it.toJson(detailsById[it.buildId]) }),
             "matchedProcessSamples" to JsonArray(result.matchedProcessSamples.map { it.toJson() }),
         )
     }
 
     private fun searchHistory(arguments: JsonObject): JsonObject {
         val query = arguments.string("query").orEmpty()
-        val history = queries.searchHistory(query, arguments.long("limit").coerceLimit())
+        val includeMetrics = arguments.boolean("include_metrics") == true
+        val limit = arguments.long("limit").coerceLimit(includeMetrics)
+        val history = queries.searchHistory(query, limit)
+        val detailsById = if (includeMetrics) {
+            queries.bazelBuildDetails(
+                history.filterIsInstance<BuildHistoryEntry>()
+                    .map { it.build }
+                    .filter { it.tool == BuildTool.BAZEL }
+                    .map { it.buildId },
+            )
+        } else {
+            emptyMap()
+        }
         return jsonObject(
             "query" to JsonString(query),
-            "history" to JsonArray(history.map { it.toJson() }),
+            "history" to JsonArray(history.map { it.toJson(detailsById) }),
             // Keep the original field for clients that only understand build history.
-            "builds" to JsonArray(history.filterIsInstance<BuildHistoryEntry>().map { it.build.toJson() }),
+            "builds" to JsonArray(
+                history.filterIsInstance<BuildHistoryEntry>().map { it.build.toJson(detailsById[it.build.buildId]) },
+            ),
             "observationSessions" to JsonArray(
                 history.filterIsInstance<ObservationSessionHistoryEntry>().map { it.toJson() },
             ),
@@ -209,9 +239,17 @@ class DaemonitorMcpServer(
             "isError" to JsonBoolean(false),
         )
 
-    private fun Long?.coerceLimit(): Int = (this ?: DEFAULT_LIMIT).coerceIn(1, MAX_LIMIT).toInt()
+    private fun Long?.coerceLimit(includeMetrics: Boolean = false): Int {
+        if (includeMetrics) {
+            if (this != null && this > MAX_INCLUDE_METRICS_LIMIT) {
+                throw McpError(-32602, "include_metrics requires limit <= $MAX_INCLUDE_METRICS_LIMIT")
+            }
+            return (this ?: MAX_INCLUDE_METRICS_LIMIT).coerceIn(1, MAX_INCLUDE_METRICS_LIMIT).toInt()
+        }
+        return (this ?: DEFAULT_LIMIT).coerceIn(1, MAX_LIMIT).toInt()
+    }
 
-    private fun Build.toJson(): JsonObject = jsonObject(
+    private fun Build.toJson(details: BazelBuildDetailsRecord? = null): JsonObject = jsonObject(
         "kind" to JsonString("build"),
         "buildId" to JsonString(buildId),
         "daemonPid" to JsonNumber(daemonPid),
@@ -231,10 +269,20 @@ class DaemonitorMcpServer(
         "logSnippet" to jsonStringOrNull(logSnippet),
         "agent" to jsonStringOrNull(agent),
         "agentProvider" to jsonStringOrNull(agentProvider),
+        "bazelDetails" to details?.toJson(),
     )
 
-    private fun HistoryEntry.toJson(): JsonObject = when (this) {
-        is BuildHistoryEntry -> build.toJson()
+    private fun BazelBuildDetailsRecord.toJson(): JsonObject = jsonObject(
+        "schemaVersion" to JsonNumber(schemaVersion),
+        "bazelVersion" to jsonStringOrNull(bazelVersion),
+        "sourceFormat" to JsonString(sourceFormat),
+        "collectionState" to JsonString(collectionState),
+        "updatedAtMs" to JsonNumber(updatedAtMs),
+        "metrics" to runCatching { Json.parse(metricsJson) }.getOrElse { JsonObject(emptyMap()) },
+    )
+
+    private fun HistoryEntry.toJson(detailsById: Map<String, BazelBuildDetailsRecord> = emptyMap()): JsonObject = when (this) {
+        is BuildHistoryEntry -> build.toJson(detailsById[build.buildId])
         is ObservationSessionHistoryEntry -> toJson()
     }
 
@@ -321,6 +369,7 @@ class DaemonitorMcpServer(
         private const val LATEST_PROTOCOL_VERSION = "2026-07-28"
         private const val DEFAULT_LIMIT = 50L
         private const val MAX_LIMIT = 200L
+        private const val MAX_INCLUDE_METRICS_LIMIT = 20L
     }
 }
 

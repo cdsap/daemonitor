@@ -16,7 +16,7 @@ import (
 type Watcher struct {
 	mu              sync.Mutex
 	files           map[string]*trackedFile
-	seenIDs         map[string]struct{}
+	seenRank        map[string]int
 	ambientEnvNames map[string]struct{}
 	// Optional extra absolute paths / globs resolved by the caller each poll.
 	ExtraPaths func() []Sink
@@ -49,7 +49,7 @@ func NewWatcher() *Watcher {
 	}
 	return &Watcher{
 		files:           make(map[string]*trackedFile),
-		seenIDs:         make(map[string]struct{}),
+		seenRank:        make(map[string]int),
 		ambientEnvNames: ambient,
 	}
 }
@@ -109,14 +109,29 @@ func (w *Watcher) Poll(ctx context.Context) ([]builds.Build, error) {
 			if b.BuildID == "" {
 				continue
 			}
-			if _, seen := w.seenIDs[b.BuildID]; seen {
+			rank := buildDetailRank(b)
+			if prev, seen := w.seenRank[b.BuildID]; seen && rank <= prev {
 				continue
 			}
-			w.seenIDs[b.BuildID] = struct{}{}
-			closed = append(closed, b)
+			w.seenRank[b.BuildID] = rank
+			closed = coalesceBuilds(closed, b)
 		}
 	}
 	return closed, nil
+}
+
+func buildDetailRank(b builds.Build) int {
+	if b.BazelDetails == nil {
+		return 1
+	}
+	if b.BazelDetails.CollectionState == builds.CollectionStateSealed || b.BazelDetails.CollectionState == builds.CollectionStateTruncated {
+		return 4
+	}
+	m := b.BazelDetails.Metrics
+	if m.Memory != nil || m.Timing != nil || m.Actions != nil || len(m.Workers) > 0 || len(m.WorkerPools) > 0 || len(m.Tests) > 0 || m.Diagnostics != nil {
+		return 3
+	}
+	return 2
 }
 
 func (w *Watcher) readFile(tf *trackedFile) ([]builds.Build, error) {

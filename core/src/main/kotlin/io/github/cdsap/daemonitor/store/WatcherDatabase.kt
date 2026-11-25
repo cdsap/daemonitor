@@ -4,6 +4,8 @@ import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import io.github.cdsap.daemonitor.application.BuildWriter
+import io.github.cdsap.daemonitor.application.BazelBuildDetailsQuery
+import io.github.cdsap.daemonitor.application.BazelBuildDetailsRecord
 import io.github.cdsap.daemonitor.application.BuildHistoryEntry
 import io.github.cdsap.daemonitor.application.HistoryEntry
 import io.github.cdsap.daemonitor.application.ObservationProcessSummary
@@ -67,6 +69,7 @@ class WatcherDatabase private constructor(
     BuildWriter,
     ProcessSampleWriter,
     BuildRepository,
+    BazelBuildDetailsQuery,
     ProcessSampleRepository,
     ProcessSampleQuery,
     RetainedProcessSampleRepository,
@@ -433,10 +436,27 @@ class WatcherDatabase private constructor(
     fun distinctProjectsFlow(): Flow<List<String>> =
         db.watcherQueries.distinctProjects().asFlow().mapToList(ioDispatcher)
 
+    override fun bazelBuildDetailsByIds(buildIds: List<String>): Map<String, BazelBuildDetailsRecord> {
+        val ids = buildIds.filter { it.isNotBlank() }.distinct()
+        if (ids.isEmpty()) return emptyMap()
+        return db.watcherQueries.bazelBuildDetailsByIds(ids).executeAsList().associate { row ->
+            row.build_id to BazelBuildDetailsRecord(
+                buildId = row.build_id,
+                schemaVersion = row.schema_version,
+                bazelVersion = row.bazel_version,
+                sourceFormat = row.source_format,
+                collectionState = row.collection_state,
+                updatedAtMs = row.updated_at_ms,
+                metricsJson = row.metrics_json,
+            )
+        }
+    }
+
     /** Delete samples and builds older than [retentionDays] before [nowMs] (KTD-5). */
     override fun purgeOlderThan(nowMs: Long, retentionDays: Long) {
         val cutoff = RetentionPolicy.DEFAULT.cutoffEpochMs(nowMs, retentionDays)
         db.watcherQueries.purgeSamplesOlderThan(cutoff)
+        db.watcherQueries.purgeBazelBuildDetailsOlderThan(cutoff)
         db.watcherQueries.purgeBuildsOlderThan(cutoff)
         db.watcherQueries.purgeMetricSamplesOlderThan(cutoff)
         db.watcherQueries.purgeProcessEventsOlderThan(cutoff)
@@ -543,6 +563,7 @@ class WatcherDatabase private constructor(
                 "ALTER TABLE builds ADD COLUMN bazel_profile TEXT",
                 "ALTER TABLE builds ADD COLUMN window_summaries TEXT",
                 "CREATE INDEX IF NOT EXISTS builds_tool ON builds(tool)",
+                "CREATE TABLE IF NOT EXISTS bazel_build_details (build_id TEXT PRIMARY KEY NOT NULL REFERENCES builds(build_id) ON DELETE CASCADE, schema_version INTEGER NOT NULL CHECK (schema_version = 1), bazel_version TEXT, source_format TEXT NOT NULL CHECK (source_format IN ('json', 'binary')), collection_state TEXT NOT NULL CHECK (collection_state IN ('partial', 'sealed', 'truncated', 'invalid')), updated_at_ms INTEGER NOT NULL, metrics_json TEXT NOT NULL CHECK (length(CAST(metrics_json AS BLOB)) <= 1048576))",
                 "ALTER TABLE process_samples ADD COLUMN heap_used_mb INTEGER",
                 "ALTER TABLE process_samples ADD COLUMN heap_committed_mb INTEGER",
                 "ALTER TABLE process_samples ADD COLUMN heap_max_mb INTEGER",

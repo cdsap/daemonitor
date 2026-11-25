@@ -53,8 +53,9 @@ type Server struct {
 }
 
 const (
-	defaultQueryLimit = 100
-	maxQueryLimit     = 500
+	defaultQueryLimit      = 100
+	maxQueryLimit          = 500
+	maxIncludeMetricsLimit = 20
 )
 
 func NewServer(socketPath, dbPath string, interval, retention time.Duration, gradleUserHome string) (*Server, error) {
@@ -580,16 +581,24 @@ func (s *Server) handleDaemonLogTail(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleBuilds(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+	includeMetrics := query.Get("include_metrics") == "true"
 	limit := defaultQueryLimit
-	if raw := r.URL.Query().Get("limit"); raw != "" {
+	if includeMetrics {
+		limit = maxIncludeMetricsLimit
+	}
+	if raw := query.Get("limit"); raw != "" {
 		if v, err := strconv.Atoi(raw); err == nil {
+			if includeMetrics && v > maxIncludeMetricsLimit {
+				http.Error(w, fmt.Sprintf("include_metrics requires limit <= %d", maxIncludeMetricsLimit), http.StatusBadRequest)
+				return
+			}
 			limit = boundedLimit(v)
 		}
 	}
 	var filters store.BuildFilters
 	var rows []builds.Build
 	var err error
-	query := r.URL.Query()
 	pidRaw, startRaw := query.Get("pid"), query.Get("start_time_ms")
 	if startRaw != "" {
 		pid, pidErr := strconv.ParseInt(pidRaw, 10, 64)
@@ -654,9 +663,28 @@ func (s *Server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	includeLogs := query.Get("include_logs") == "true"
+	var detailsByID map[string]*builds.BazelBuildDetails
+	if includeMetrics && len(rows) > 0 {
+		ids := make([]string, 0, len(rows))
+		for _, row := range rows {
+			if row.Tool == builds.ToolBazel {
+				ids = append(ids, row.BuildID)
+			}
+		}
+		if len(ids) > 0 {
+			detailsByID, err = s.Store.GetBazelBuildDetailsBatch(ids)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+	}
 	response := make([]buildResponse, 0, len(rows))
 	for _, row := range rows {
-		response = append(response, newBuildResponse(row, includeLogs))
+		if includeMetrics && detailsByID != nil {
+			row.BazelDetails = detailsByID[row.BuildID]
+		}
+		response = append(response, newBuildResponse(row, includeLogs, includeMetrics))
 	}
 	writeJSON(w, map[string]any{
 		"count":   len(response),
@@ -666,26 +694,27 @@ func (s *Server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 }
 
 type buildResponse struct {
-	BuildID         string                `json:"build_id"`
-	DaemonPID       int64                 `json:"daemon_pid"`
-	StartTimeMs     int64                 `json:"start_time_ms"`
-	EndTimeMs       *int64                `json:"end_time_ms,omitempty"`
-	FinalStatus     string                `json:"final_status"`
-	InferredSource  string                `json:"inferred_source"`
-	Agent           string                `json:"agent"`
-	AgentProvider   string                `json:"agent_provider"`
-	ProjectPath     string                `json:"project_path"`
-	DurationSeconds *float64              `json:"duration_seconds"`
-	PeakMemoryMB    *int64                `json:"peak_memory_mb,omitempty"`
-	AvgMemoryMB     *int64                `json:"avg_memory_mb,omitempty"`
-	PeakCPUPercent  *float64              `json:"peak_cpu_percent,omitempty"`
-	LogSnippet      string                `json:"log_snippet,omitempty"`
-	Tool            string                `json:"tool,omitempty"`
-	BazelProfile    *builds.BazelProfile  `json:"bazel_profile,omitempty"`
-	WindowSummaries []sessions.RSSSummary `json:"window_summaries,omitempty"`
+	BuildID         string                    `json:"build_id"`
+	DaemonPID       int64                     `json:"daemon_pid"`
+	StartTimeMs     int64                     `json:"start_time_ms"`
+	EndTimeMs       *int64                    `json:"end_time_ms,omitempty"`
+	FinalStatus     string                    `json:"final_status"`
+	InferredSource  string                    `json:"inferred_source"`
+	Agent           string                    `json:"agent"`
+	AgentProvider   string                    `json:"agent_provider"`
+	ProjectPath     string                    `json:"project_path"`
+	DurationSeconds *float64                  `json:"duration_seconds"`
+	PeakMemoryMB    *int64                    `json:"peak_memory_mb,omitempty"`
+	AvgMemoryMB     *int64                    `json:"avg_memory_mb,omitempty"`
+	PeakCPUPercent  *float64                  `json:"peak_cpu_percent,omitempty"`
+	LogSnippet      string                    `json:"log_snippet,omitempty"`
+	Tool            string                    `json:"tool,omitempty"`
+	BazelProfile    *builds.BazelProfile      `json:"bazel_profile,omitempty"`
+	BazelDetails    *builds.BazelBuildDetails `json:"bazel_details,omitempty"`
+	WindowSummaries []sessions.RSSSummary     `json:"window_summaries,omitempty"`
 }
 
-func newBuildResponse(b builds.Build, includeLogs bool) buildResponse {
+func newBuildResponse(b builds.Build, includeLogs, includeMetrics bool) buildResponse {
 	tool := string(b.Tool)
 	if tool == "" {
 		tool = string(builds.ToolGradle)
@@ -700,6 +729,9 @@ func newBuildResponse(b builds.Build, includeLogs bool) buildResponse {
 	}
 	if includeLogs {
 		response.LogSnippet = b.LogSnippet
+	}
+	if includeMetrics {
+		response.BazelDetails = b.BazelDetails
 	}
 	return response
 }

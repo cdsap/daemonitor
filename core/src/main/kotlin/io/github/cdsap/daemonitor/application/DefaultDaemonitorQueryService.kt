@@ -17,9 +17,16 @@ class DefaultDaemonitorQueryService(
         override fun searchHistory(query: String, limit: Long): List<HistoryEntry> =
             builds.search(query, limit).map(::BuildHistoryEntry)
     },
+    private val bazelDetails: BazelBuildDetailsQuery? = builds as? BazelBuildDetailsQuery,
 ) : DaemonitorQueryService {
     override fun searchHistory(query: String, limit: Int): List<HistoryEntry> =
         history.searchHistory(query, limit.coerceQueryLimit())
+
+    override fun bazelBuildDetails(buildIds: List<String>): Map<String, BazelBuildDetailsRecord> {
+        val ids = buildIds.filter { it.isNotBlank() }.distinct()
+        if (ids.isEmpty()) return emptyMap()
+        return bazelDetails?.bazelBuildDetailsByIds(ids).orEmpty()
+    }
 
     override fun buildsForProcess(process: String, limit: Int): ProcessBuildResult {
         val safeLimit = limit.coerceQueryLimit()
