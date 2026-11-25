@@ -2,6 +2,7 @@ package render
 
 import (
 	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -126,7 +127,8 @@ func TestWriteJSONStableSchema(t *testing.T) {
 func TestStructuredProcessExportsIncludeExtendedMetrics(t *testing.T) {
 	threads := int64(12)
 	young, total := 1.234, 7.035
-	snap := model.Snapshot{Processes: []model.Process{{PID: 7, ThreadCount: &threads, YoungGCTimeSeconds: &young, TotalGCTimeSeconds: &total}}}
+	measured := int64(1000)
+	snap := model.Snapshot{SampledAtMs: 5000, Processes: []model.Process{{PID: 7, SampledAtMs: 5000, ThreadCount: &threads, YoungGCTimeSeconds: &young, TotalGCTimeSeconds: &total, HeapSampledAtMs: &measured, JVMMeasurementTimes: map[string]int64{"heap": 1000, "gc": 1100}}}}
 	for name, write := range map[string]func(*bytes.Buffer) error{
 		"json":  func(buf *bytes.Buffer) error { return WriteJSON(buf, snap) },
 		"jsonl": func(buf *bytes.Buffer) error { return WriteJSONLine(buf, snap) },
@@ -149,6 +151,65 @@ func TestStructuredProcessExportsIncludeExtendedMetrics(t *testing.T) {
 		}
 		if got := decoded.Processes[0]["total_gc_time_seconds"]; got != total {
 			t.Fatalf("%s total_gc_time_seconds=%v", name, got)
+		}
+		if got := decoded.Processes[0]["heap_sampled_at_ms"]; got != float64(1000) {
+			t.Fatalf("%s heap_sampled_at_ms=%v", name, got)
+		}
+		if got := decoded.Processes[0]["jvm_sampled_at_ms"].(map[string]any)["gc"]; got != float64(1100) {
+			t.Fatalf("%s GC measurement time=%v", name, got)
+		}
+	}
+	for name, write := range map[string]func(*bytes.Buffer) error{
+		"process CSV": func(buf *bytes.Buffer) error { return WriteProcessesCSV(buf, snap) },
+		"history CSV": func(buf *bytes.Buffer) error { return WriteHistoryCSV(buf, model.History{Processes: snap.Processes}) },
+	} {
+		var buf bytes.Buffer
+		if err := write(&buf); err != nil {
+			t.Fatal(err)
+		}
+		rows, err := csv.NewReader(&buf).ReadAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		columns := map[string]bool{}
+		for i, col := range rows[0] {
+			columns[col] = true
+			switch col {
+			case "sampled_at_ms":
+				if rows[1][i] != "5000" {
+					t.Fatalf("%s observation=%s", name, rows[1][i])
+				}
+			case "heap_sampled_at_ms":
+				if rows[1][i] != "1000" {
+					t.Fatalf("%s heap measurement=%s", name, rows[1][i])
+				}
+			case "jvm_sampled_at_ms":
+				if rows[1][i] != `{"gc":1100,"heap":1000}` {
+					t.Fatalf("%s family measurements=%s", name, rows[1][i])
+				}
+			}
+		}
+		for _, col := range []string{"sampled_at_ms", "heap_sampled_at_ms", "jvm_sampled_at_ms"} {
+			if !columns[col] {
+				t.Fatalf("%s missing %s", name, col)
+			}
+		}
+	}
+}
+
+func TestJSONUnknownJVMMeasurementTimesStayNull(t *testing.T) {
+	legacyTime, used := int64(3000), int64(42)
+	for _, p := range []model.Process{{}, {HeapAvailable: true, HeapUsedMB: &used, HeapSampledAtMs: &legacyTime}} {
+		var buf bytes.Buffer
+		if err := WriteJSON(&buf, p); err != nil {
+			t.Fatal(err)
+		}
+		var row map[string]any
+		if err := json.Unmarshal(buf.Bytes(), &row); err != nil {
+			t.Fatal(err)
+		}
+		if times, ok := row["jvm_sampled_at_ms"]; !ok || times != nil {
+			t.Fatalf("unknown measurement times must be explicit null: %s", buf.String())
 		}
 	}
 }

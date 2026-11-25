@@ -41,6 +41,21 @@ CREATE TABLE process_samples (
     java_version TEXT,
     java_vendor TEXT,
     active_processor_count INTEGER,
+    jit_present INTEGER,
+    jit_compiled_count INTEGER,
+    jit_failed_count INTEGER,
+    jit_invalid_count INTEGER,
+    jit_compilation_time_seconds REAL,
+    classes_present INTEGER,
+    classes_loaded INTEGER,
+    classes_unloaded_total INTEGER,
+    classes_loaded_total INTEGER,
+    classes_time_seconds REAL,
+    young_gc_time_seconds REAL,
+    full_gc_time_seconds REAL,
+    concurrent_gc_time_seconds REAL,
+    total_gc_time_seconds REAL,
+    start_time_ms INTEGER NOT NULL DEFAULT 0,
     status            TEXT NOT NULL
 );
 
@@ -203,8 +218,8 @@ CREATE TABLE observation_session_process_summaries (
 CREATE INDEX observation_sessions_opened ON observation_sessions(opened_at_ms);
 
 insertSample:
-INSERT INTO process_samples(timestamp, pid, parent_pid, process_type, command_line, working_directory, project_path, cpu_percent, rss_memory_mb, max_heap_mb, heap_used_mb, heap_committed_mb, heap_max_mb, heap_sampled_at_ms, heap_available, virtual_memory_mb, swap_memory_mb, thread_count, read_bytes, write_bytes, read_operations, write_operations, minor_page_faults, major_page_faults, voluntary_context_switches, involuntary_context_switches, open_file_descriptors, metaspace_used_mb, metaspace_committed_mb, young_gc_count, young_gc_time_ms, old_gc_count, old_gc_time_ms, java_version, java_vendor, active_processor_count, status)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO process_samples(timestamp, pid, parent_pid, process_type, command_line, working_directory, project_path, cpu_percent, rss_memory_mb, max_heap_mb, heap_used_mb, heap_committed_mb, heap_max_mb, heap_sampled_at_ms, heap_available, virtual_memory_mb, swap_memory_mb, thread_count, read_bytes, write_bytes, read_operations, write_operations, minor_page_faults, major_page_faults, voluntary_context_switches, involuntary_context_switches, open_file_descriptors, metaspace_used_mb, metaspace_committed_mb, young_gc_count, young_gc_time_ms, old_gc_count, old_gc_time_ms, java_version, java_vendor, active_processor_count, jit_present, jit_compiled_count, jit_failed_count, jit_invalid_count, jit_compilation_time_seconds, classes_present, classes_loaded, classes_unloaded_total, classes_loaded_total, classes_time_seconds, young_gc_time_seconds, full_gc_time_seconds, concurrent_gc_time_seconds, total_gc_time_seconds, start_time_ms, status)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 samplesInWindow:
 SELECT rss_memory_mb, cpu_percent

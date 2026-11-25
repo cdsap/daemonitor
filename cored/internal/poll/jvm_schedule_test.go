@@ -276,7 +276,9 @@ func TestJVMFailedAttemptReplacesCachedSuccessWithHonestTime(t *testing.T) {
 	c.jvmWG.Wait()
 	rows = make([]model.Process, 1)
 	c.applyJVMProbes(context.Background(), retry.UnixMilli(), rows, jobs)
-	if rows[0].HeapAvailable || rows[0].HeapUsedMB != nil || rows[0].HeapSampledAtMs == nil || *rows[0].HeapSampledAtMs < first || *rows[0].HeapSampledAtMs == retry.UnixMilli() {
+	_, hasHeapTime := rows[0].JVMMeasurementTimes["heap"]
+	_, hasGCTime := rows[0].JVMMeasurementTimes["gc"]
+	if rows[0].HeapAvailable || rows[0].HeapUsedMB != nil || rows[0].HeapSampledAtMs != nil || hasHeapTime || hasGCTime || first <= 0 {
 		t.Fatalf("failed measurement=%+v", rows[0])
 	}
 	for _, d := range rows[0].HeapProbeDiagnostics {

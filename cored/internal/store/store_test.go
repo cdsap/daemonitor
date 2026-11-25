@@ -2,8 +2,10 @@ package store_test
 
 import (
 	"database/sql"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -16,6 +18,65 @@ import (
 	"github.com/cdsap/daemonitor/cored/internal/store"
 	_ "modernc.org/sqlite"
 )
+
+func TestJVMMeasurementTimesSurviveHistoryAndLegacyMigration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "times.sqlite")
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	measured, used, gc := int64(1000), int64(42), int64(7)
+	for _, observed := range []int64{2000, 4000} {
+		if err := s.InsertSnapshot(model.Snapshot{SampledAtMs: observed, Processes: []model.Process{{
+			PID: 7, Status: "R", HeapAvailable: true, HeapUsedMB: &used, YoungGCCount: &gc,
+			HeapSampledAtMs: &measured, JVMMeasurementTimes: map[string]int64{"heap": 1000, "gc": 1100, "jit": 1200},
+		}}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	history, err := s.History(0, 10)
+	if err != nil || len(history) != 2 {
+		t.Fatalf("history=%+v err=%v", history, err)
+	}
+	for i, p := range history {
+		if p.SampledAtMs != int64((i+1)*2000) || p.HeapSampledAtMs == nil || *p.HeapSampledAtMs != measured || p.HeapUsedMB == nil || *p.HeapUsedMB != used || p.YoungGCCount == nil || *p.YoungGCCount != gc || !reflect.DeepEqual(p.JVMMeasurementTimes, map[string]int64{"heap": 1000, "gc": 1100}) {
+			t.Fatalf("lost retained measurement: %+v", p)
+		}
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// Model an older store with values and a historical heap timestamp but no
+	// trustworthy per-family acquisition times. Migration must not invent them.
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec("ALTER TABLE process_samples DROP COLUMN jvm_sampled_at_ms")
+	_ = db.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err = store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	history, err = s.History(0, 10)
+	if err != nil || len(history) != 2 {
+		t.Fatalf("legacy history=%+v err=%v", history, err)
+	}
+	if history[0].JVMMeasurementTimes != nil || history[0].HeapSampledAtMs == nil || *history[0].HeapSampledAtMs != measured {
+		t.Fatalf("migration changed legacy semantics: %+v", history[0])
+	}
+}
 
 func TestInsertHistoryAndPurge(t *testing.T) {
 	dir := t.TempDir()
@@ -755,5 +816,148 @@ func TestBazelSubtreeColumnsMigrateExistingDatabase(t *testing.T) {
 	samples = s.SamplesAsBuildSamples(10, 2, 2)
 	if len(samples) != 1 || samples[0].RSSMemoryMB != 500 {
 		t.Fatalf("migrated samples=%+v", samples)
+	}
+}
+
+func TestJVMCountersRoundTripAfterReopen(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "jvm.sqlite")
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	count, zero := int64(9007199254740993), int64(0)
+	loaded, unloaded, total := int64(17), int64(3), int64(20)
+	jitTime, classTime := 1.23456789, 2.34567891
+	young, full, concurrent, gcTotal := 0.00012345, 3.45678912, 0.0, 4.56789123
+	sampled := int64(123456)
+	probeTime, legacyYoungMs, legacyOldMs := sampled-200, int64(999), int64(555)
+	populated := model.Process{PID: 42, StartTimeMs: 100, SampledAtMs: sampled, Type: "GRADLE_DAEMON", Status: "R",
+		HeapSampledAtMs: &probeTime, HeapAvailable: true,
+		YoungGCTimeMs: &legacyYoungMs, OldGCTimeMs: &legacyOldMs,
+		JIT:                &model.JITMetrics{CompiledCount: &count, FailedCount: &zero, InvalidCount: &unloaded, CompilationTimeSeconds: &jitTime},
+		Classes:            &model.ClassMetrics{LoadedClasses: &loaded, UnloadedClasses: &unloaded, LoadedClassesTotal: &total, ClassTimeSeconds: &classTime},
+		YoungGCTimeSeconds: &young, FullGCTimeSeconds: &full, ConcurrentGCTimeSeconds: &concurrent, TotalGCTimeSeconds: &gcTotal,
+	}
+	empty := model.Process{PID: 42, StartTimeMs: 200, SampledAtMs: sampled, Type: "GRADLE_DAEMON", Status: "R", JIT: &model.JITMetrics{}, Classes: &model.ClassMetrics{}}
+	unavailable := model.Process{PID: 43, StartTimeMs: 300, SampledAtMs: sampled, Type: "GRADLE_DAEMON", Status: "R"}
+	want := []model.Process{populated, empty, unavailable}
+	if err := s.InsertSnapshot(model.Snapshot{SampledAtMs: sampled, Processes: want}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	got, err := s.History(0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("JVM history mismatch\ngot: %s\nwant: %s", mustJSON(t, got), mustJSON(t, want))
+	}
+}
+
+func mustJSON(t *testing.T, value any) string {
+	t.Helper()
+	b, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+func TestLegacyJVMCountersRemainUnavailable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy-jvm.sqlite")
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.InsertSnapshot(model.Snapshot{SampledAtMs: 1000, Processes: []model.Process{{PID: 7, StartTimeMs: 10, Status: "R"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Recreate the pre-v12 shape, retaining a legacy millisecond measurement.
+	for _, col := range []string{"jit_present", "jit_compiled_count", "jit_failed_count", "jit_invalid_count", "jit_compilation_time_seconds", "classes_present", "classes_loaded", "classes_unloaded_total", "classes_loaded_total", "classes_time_seconds", "young_gc_time_seconds", "full_gc_time_seconds", "concurrent_gc_time_seconds", "total_gc_time_seconds"} {
+		if _, err := db.Exec("ALTER TABLE process_samples DROP COLUMN " + col); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Exec("UPDATE process_samples SET young_gc_time_ms = 123; PRAGMA user_version = 11"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		s, err = store.Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows, err := s.History(0, 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(rows) != 1 {
+			t.Fatalf("rows=%d", len(rows))
+		}
+		p := rows[0]
+		if p.JIT != nil || p.Classes != nil || p.YoungGCTimeSeconds != nil || p.FullGCTimeSeconds != nil || p.ConcurrentGCTimeSeconds != nil || p.TotalGCTimeSeconds != nil {
+			t.Fatalf("legacy values invented: %s", mustJSON(t, p))
+		}
+		if p.YoungGCTimeMs == nil || *p.YoungGCTimeMs != 123 || p.StartTimeMs != 10 {
+			t.Fatalf("legacy data lost: %s", mustJSON(t, p))
+		}
+		if err := s.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestKotlinSchemaJVMCountersReadableByGo(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "kotlin.sqlite")
+	schema, err := os.ReadFile("../../../core/src/main/sqldelight/io/github/cdsap/daemonitor/store/db/Watcher.sq")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(strings.SplitN(string(schema), "insertSample:", 2)[0]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO process_samples(timestamp, pid, parent_pid, process_type, command_line, rss_memory_mb, status, start_time_ms,
+ jit_present, jit_compiled_count, classes_present, classes_loaded, classes_unloaded_total, classes_loaded_total, young_gc_time_seconds, total_gc_time_seconds)
+ VALUES(200, 42, 1, 'GRADLE_DAEMON', 'java', 100, 'R', 123, 1, 0, 1, 17, 3, 20, 0.0, 1.23456789)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	rows, err := s.History(0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("rows=%d", len(rows))
+	}
+	p := rows[0]
+	if p.StartTimeMs != 123 || p.SampledAtMs != 200 || p.HeapAvailable || p.JIT == nil || p.JIT.CompiledCount == nil || *p.JIT.CompiledCount != 0 || p.JIT.FailedCount != nil || p.Classes == nil || p.Classes.LoadedClassesTotal == nil || *p.Classes.LoadedClassesTotal != 20 || p.YoungGCTimeSeconds == nil || *p.YoungGCTimeSeconds != 0 || p.TotalGCTimeSeconds == nil || *p.TotalGCTimeSeconds != 1.23456789 {
+		t.Fatalf("Kotlin JVM row changed: %s", mustJSON(t, p))
 	}
 }

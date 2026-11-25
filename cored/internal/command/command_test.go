@@ -3,11 +3,14 @@ package command
 import (
 	"bytes"
 	"encoding/json"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/cdsap/daemonitor/cored/internal/model"
+	"github.com/cdsap/daemonitor/cored/internal/store"
 )
 
 func TestParseArgsDefaults(t *testing.T) {
@@ -124,6 +127,47 @@ func TestMetricJSONLHasStableSchemaFields(t *testing.T) {
 	}
 }
 
+func TestJVMMetricExportSeparatesObservationAndMeasurement(t *testing.T) {
+	for _, times := range []map[string]int64{nil, {"heap": 1000, "gc": 1200}} {
+		used, gc, legacyHeapTime := int64(42), int64(7), int64(3000)
+		rows := metricRecords([]model.Process{{PID: 7, SampledAtMs: 5000,
+			HeapUsedMB: &used, YoungGCCount: &gc, HeapSampledAtMs: &legacyHeapTime, JVMMeasurementTimes: times}})
+		var out bytes.Buffer
+		if err := writeMetrics(&out, rows, "jsonl"); err != nil {
+			t.Fatal(err)
+		}
+		for _, line := range strings.Split(strings.TrimSpace(out.String()), "\n") {
+			var row model.MetricRecord
+			if err := json.Unmarshal([]byte(line), &row); err != nil {
+				t.Fatal(err)
+			}
+			if row.CollectionTimeMs != 5000 {
+				t.Fatalf("lost observation time: %+v", row)
+			}
+			if !strings.HasPrefix(row.MetricName, "process.jvm.") {
+				continue
+			}
+			family := "heap"
+			switch {
+			case strings.Contains(row.MetricName, "_gc_"):
+				family = "gc"
+			case strings.HasPrefix(row.MetricName, "process.jvm.jit."):
+				family = "jit"
+			case strings.HasPrefix(row.MetricName, "process.jvm.classes."):
+				family = "classes"
+			}
+			want := times[family]
+			if want == 0 {
+				if row.MeasurementTimeMs != nil {
+					t.Fatalf("invented legacy measurement: %+v", row)
+				}
+			} else if row.MeasurementTimeMs == nil || *row.MeasurementTimeMs != want {
+				t.Fatalf("lost %s measurement time: %+v", family, row)
+			}
+		}
+	}
+}
+
 func TestParseArgsRejectsInvalidOutputAndNegativeValues(t *testing.T) {
 	for _, argv := range [][]string{
 		{"ps", "--format", "xml"},
@@ -150,21 +194,82 @@ func TestFiltersApplyToProcesses(t *testing.T) {
 
 func strPtr(s string) *string { return &s }
 
-func TestMetricRecordsPreserveHeapMeasurementTime(t *testing.T) {
-	heapAt := int64(123)
-	for _, tc := range []struct {
-		at   *int64
-		want int64
-	}{{&heapAt, 123}, {nil, 0}} {
-		records := metricRecords([]model.Process{{PID: 42, SampledAtMs: 456, HeapSampledAtMs: tc.at}})
-		for _, record := range records {
-			want := int64(456)
-			if strings.HasPrefix(record.MetricName, "process.jvm.") {
-				want = tc.want
+func TestJVMCounterMetricExports(t *testing.T) {
+	count, zero, seconds := int64(27), int64(0), 1.23456789
+	p := model.Process{PID: 42, StartTimeMs: 100, SampledAtMs: 200,
+		JIT:                &model.JITMetrics{CompiledCount: &count, FailedCount: &zero, CompilationTimeSeconds: &seconds},
+		Classes:            &model.ClassMetrics{LoadedClasses: &count, UnloadedClasses: &zero, ClassTimeSeconds: &seconds},
+		YoungGCTimeSeconds: &seconds, ConcurrentGCTimeSeconds: &seconds}
+	path := filepath.Join(t.TempDir(), "export.sqlite")
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.InsertSnapshot(model.Snapshot{SampledAtMs: 200, Processes: []model.Process{p}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	history, err := s.History(0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := metricRecords(history)
+	var jvm []model.MetricRecord
+	for _, r := range records {
+		if strings.HasPrefix(r.MetricName, "process.jvm.") {
+			jvm = append(jvm, r)
+		}
+	}
+	if len(jvm) != 15 {
+		t.Fatalf("got %d JVM export fields, want 15", len(jvm))
+	}
+	expected := map[string]any{
+		"process.jvm.young_gc_time_seconds":        &seconds,
+		"process.jvm.full_gc_time_seconds":         (*float64)(nil),
+		"process.jvm.concurrent_gc_time_seconds":   &seconds,
+		"process.jvm.total_gc_time_seconds":        (*float64)(nil),
+		"process.jvm.jit.compiled_count":           &count,
+		"process.jvm.jit.failed_count":             &zero,
+		"process.jvm.jit.invalid_count":            (*int64)(nil),
+		"process.jvm.jit.compilation_time_seconds": &seconds,
+		"process.jvm.classes.loaded":               &count,
+		"process.jvm.classes.unloaded_total":       &zero,
+		"process.jvm.classes.loaded_total":         (*int64)(nil),
+		"process.jvm.classes.time_seconds":         &seconds,
+	}
+	for _, r := range jvm {
+		if value, ok := expected[r.MetricName]; ok {
+			if !reflect.DeepEqual(value, r.Value) {
+				t.Fatalf("%s=%v want %v", r.MetricName, r.Value, value)
 			}
-			if record.CollectionTimeMs != want {
-				t.Errorf("%s timestamp=%d want %d", record.MetricName, record.CollectionTimeMs, want)
-			}
+			delete(expected, r.MetricName)
+		}
+	}
+	if len(expected) != 0 {
+		t.Fatalf("missing metrics: %v", expected)
+	}
+	for _, output := range []string{"json", "jsonl", "csv"} {
+		var out bytes.Buffer
+		if err := writeMetrics(&out, jvm, output); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(out.String(), "process.jvm.jit.compiled_count") || !strings.Contains(out.String(), "1.23456789") {
+			t.Fatalf("%s lost JVM values: %s", output, out.String())
+		}
+	}
+	for _, r := range jvm {
+		if r.ProcessIdentity != "42:100" || r.CollectionTimeMs != 200 {
+			t.Fatalf("identity/time=%+v", r)
+		}
+		if strings.HasSuffix(r.MetricName, "seconds") && r.Unit != "seconds" {
+			t.Fatalf("unit=%+v", r)
 		}
 	}
 }

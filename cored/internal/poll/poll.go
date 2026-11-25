@@ -502,10 +502,26 @@ func (c *Collector) applyJVMProbes(ctx context.Context, now int64, out []model.P
 	samples := c.scheduleJVM(ctx, time.UnixMilli(now), jobs)
 	for _, job := range jobs {
 		result := samples[incarnationKey{job.pid, job.startMs}]
+		proc := &out[job.idx]
+		var measurementTimes map[string]int64
+		mergeTimes := func(src map[string]int64) {
+			for k, v := range src {
+				if v <= 0 {
+					continue
+				}
+				if measurementTimes == nil {
+					measurementTimes = make(map[string]int64, len(src))
+				}
+				measurementTimes[k] = v
+			}
+		}
 		jvmMetrics, probeFailure, sampledAt := result.heap.sample, result.heap.failure, result.heap.at
 		if sampledAt != 0 {
-			usedMB, committedMB, maxMB, heapSampledAt, heapAvail := liveHeapFieldsFromSample(sampledAt, jvmMetrics, probeFailure)
-			proc := &out[job.idx]
+			usedMB, committedMB, maxMB, heapSampledAt, heapAvail := liveHeapFieldsFromSample(jvmMetrics, probeFailure)
+			if result.heap.flags != nil {
+				flags := *result.heap.flags
+				proc.JVMFlags = &flags
+			}
 			if proc.GC == nil {
 				proc.GC = jvmMetrics.GC
 			}
@@ -513,6 +529,9 @@ func (c *Collector) applyJVMProbes(ctx context.Context, now int64, out []model.P
 			proc.HeapCommittedMB = committedMB
 			proc.HeapMaxMB = maxMB
 			proc.HeapSampledAtMs = heapSampledAt
+			if probeFailure == "" {
+				mergeTimes(jvmMetrics.MeasurementTimes)
+			}
 			proc.HeapAvailable = heapAvail
 			proc.MetaspaceUsedMB = jvmMetrics.MetaspaceUsedMB
 			proc.MetaspaceCommittedMB = jvmMetrics.MetaspaceCommittedMB
@@ -538,7 +557,6 @@ func (c *Collector) applyJVMProbes(ctx context.Context, now int64, out []model.P
 			proc.ActiveProcessorCount = jvmMetrics.ActiveProcessorCount
 			proc.HeapProbeDiagnostics = probeDiagnostics(jvmMetrics.Diagnostics, probeFailure)
 		}
-		proc := &out[job.idx]
 		if result.advanced.at != 0 {
 			sample := result.advanced.sample
 			proc.JVMAdvancedSampledAtMs = ptrInt64(result.advanced.at)
@@ -546,8 +564,10 @@ func (c *Collector) applyJVMProbes(ctx context.Context, now int64, out []model.P
 			proc.JIT = jitMetrics(sample.JIT)
 			proc.Classes = classMetrics(sample.Classes)
 			proc.Safepoints = safepointMetrics(sample.Safepoints)
+			mergeTimes(sample.MeasurementTimes)
 			proc.HeapProbeDiagnostics = append(proc.HeapProbeDiagnostics, probeDiagnostics(sample.Diagnostics, result.advanced.failure)...)
 		}
+		proc.JVMMeasurementTimes = measurementTimes
 	}
 }
 
@@ -598,14 +618,16 @@ func osMetricsFromPlatform(pm platform.ProcessPlatformMetrics) osMetrics {
 	return m
 }
 
-func liveHeapFieldsFromSample(now int64, sample heap.Sample, probeFailure string) (used, committed, max, sampledAt *int64, available bool) {
-	sampled := now
+func liveHeapFieldsFromSample(sample heap.Sample, probeFailure string) (used, committed, max, sampledAt *int64, available bool) {
 	if probeFailure != "" {
-		return nil, nil, nil, &sampled, false
+		return nil, nil, nil, nil, false
+	}
+	if sampled := sample.MeasurementTimes["heap"]; sampled > 0 {
+		sampledAt = &sampled
 	}
 	u := sample.UsedMB
 	c := sample.CommittedMB
-	return &u, &c, nil, &sampled, true
+	return &u, &c, nil, sampledAt, true
 }
 
 func probeDiagnostics(diagnostics []heap.Diagnostic, terminalFailure string) []model.ProbeDiagnostic {

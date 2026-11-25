@@ -6,12 +6,14 @@ import (
 	"time"
 
 	"github.com/cdsap/daemonitor/cored/internal/heap"
+	"github.com/cdsap/daemonitor/cored/internal/model"
 	"github.com/cdsap/daemonitor/cored/internal/observe"
 	"github.com/shirou/gopsutil/v4/process"
 )
 
 type jvmResult struct {
 	sample  heap.Sample
+	flags   *model.JVMFlagsMetadata
 	failure string
 	at      int64
 }
@@ -137,6 +139,7 @@ func (c *Collector) runJVMTask(task jvmTask) {
 	defer c.jvmWG.Done()
 	started := time.Now()
 	var sample heap.Sample
+	var flags *model.JVMFlagsMetadata
 	var failure string
 	ctx := task.state.ctx
 	// Revalidate before and after tools: a reused PID must never receive old data.
@@ -151,8 +154,16 @@ func (c *Collector) runJVMTask(task jvmTask) {
 		if err != nil {
 			sample.Diagnostics = heap.FailureDiagnostics(err)
 		}
+		if task.family == 0 && ctx.Err() == nil {
+			collected := collectJVMFlags(ctx, c.Heap, task.key.pid, task.key.createTimeMs)
+			flags = &collected
+		}
 	}
-	result := jvmResult{sample: sample, failure: failure, at: time.Now().UnixMilli()}
+	measuredAt := time.Now().UnixMilli()
+	if c.Heap != nil && c.Heap.Now != nil {
+		measuredAt = c.Heap.Now().UnixMilli()
+	}
+	result := jvmResult{sample: sample, flags: flags, failure: failure, at: measuredAt}
 	if c.Observe != nil {
 		var probeErr error
 		if failure != "" {

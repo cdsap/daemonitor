@@ -96,10 +96,14 @@ shared-DB E2E and asserts `daemonitor-cored` is inside the CLI zip.
 
 ## API sketch
 
+Effective JVM flags use a separate per-incarnation metadata document. See
+[the read/export contract and privacy policy](../docs/jvm-flags-metadata.md).
+
 ```
 GET /v1/health
 GET /v1/processes
 GET /v1/processes/history?since_ms=<epoch_ms>&limit=<n>
+GET /v1/processes/jvm-flags?pid=<pid>&start_time_ms=<epoch_ms>
 GET /v1/daemon-logs
 GET /v1/daemon-logs/{pid}/tail   # lines + parsed U3 events
 GET /v1/builds?limit=<n>&pid=<pid>&project=<text>&status=<status>
