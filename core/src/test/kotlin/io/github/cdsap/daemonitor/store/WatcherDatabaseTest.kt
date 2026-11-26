@@ -30,6 +30,79 @@ import kotlin.test.assertTrue
 
 class WatcherDatabaseTest {
 
+    @Test
+    fun `repeated command lines are stored once and hydrated after reopen`() {
+        val tmp = Files.createTempDirectory("daemonitor-commands-")
+        val path = tmp.resolve("commands.db")
+        val command = "java -cp " + "/long/classpath.jar:".repeat(500)
+        try {
+            WatcherDatabase.open(path).use { db ->
+                repeat(20) { db.save(sample(1, command), it + 1L) }
+                db.save(sample(1, "changed"), 21)
+                db.save(sample(2, "reused"), 22)
+            }
+            java.sql.DriverManager.getConnection("jdbc:sqlite:$path").use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeQuery("SELECT SUM(length(command_line)) FROM process_samples").use {
+                        assertTrue(it.next())
+                        assertEquals(0L, it.getLong(1))
+                    }
+                    statement.executeQuery("SELECT COUNT(*) FROM process_command_lines").use {
+                        assertTrue(it.next())
+                        assertEquals(3L, it.getLong(1))
+                    }
+                    statement.executeUpdate("INSERT INTO process_samples(timestamp, pid, parent_pid, process_type, command_line, rss_memory_mb, status) VALUES (23, 5, 1, 'GRADLE_DAEMON', 'legacy', 1, 'R')")
+                }
+            }
+            WatcherDatabase.open(path).use { db ->
+                val expected = listOf("legacy", "reused", "changed") + List(20) { command }
+                assertEquals(expected, db.recentProcessSamples().map { it.commandLine })
+                assertEquals(expected, db.processSamplesForPid(5).map { it.commandLine })
+                assertEquals(expected, db.recentSamples(100).map { it.commandLine })
+                assertEquals(expected, db.findByPid(5, 100).map { it.commandLine })
+                db.save(sample(1, command), 100_000_000)
+                db.purgeOlderThan(nowMs = 100_000_000, retentionDays = 1)
+                assertEquals(command, db.processSamplesForPid(5).single().commandLine)
+            }
+            java.sql.DriverManager.getConnection("jdbc:sqlite:$path").use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeQuery("SELECT COUNT(*) FROM process_command_lines").use {
+                        assertTrue(it.next())
+                        assertEquals(1L, it.getLong(1))
+                    }
+                }
+            }
+        } finally {
+            tmp.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `legacy command lines survive additive normalization migration`() {
+        val tmp = Files.createTempDirectory("daemonitor-legacy-commands-")
+        val path = tmp.resolve("legacy.db")
+        try {
+            WatcherDatabase.open(path).use { it.save(sample(1, "legacy"), 1) }
+            java.sql.DriverManager.getConnection("jdbc:sqlite:$path").use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate("UPDATE process_samples SET command_line = 'legacy'")
+                    statement.executeUpdate("DROP INDEX process_samples_command_line")
+                    statement.executeUpdate("ALTER TABLE process_samples DROP COLUMN command_line_id")
+                    statement.executeUpdate("DROP TABLE process_command_lines")
+                }
+            }
+            repeat(2) {
+                WatcherDatabase.open(path).use { db ->
+                    assertEquals("legacy", db.processSamplesForPid(5).last().commandLine)
+                    db.save(sample(1, "normalized"), 2)
+                    assertEquals("normalized", db.processSamplesForPid(5).first().commandLine)
+                }
+            }
+        } finally {
+            tmp.toFile().deleteRecursively()
+        }
+    }
+
     private fun build(id: String, startMs: Long, project: String = "/p") = Build(
         buildId = id,
         daemonPid = 1,

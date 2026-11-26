@@ -90,6 +90,8 @@ class WatcherDatabase private constructor(
         val live = sample.liveHeap
         val heapAvailable = live?.available == true
         db.transaction {
+            db.watcherQueries.insertProcessCommandLine(sample.commandLine)
+            val commandId = db.watcherQueries.processCommandLineId(sample.commandLine).executeAsOne()
             db.watcherQueries.upsertProcessInstance(
                 id = processInstanceId(sample),
                 host_id = "",
@@ -107,7 +109,8 @@ class WatcherDatabase private constructor(
             pid = sample.pid,
             parent_pid = sample.parentPid,
             process_type = sample.type.name,
-            command_line = sample.commandLine,
+            command_line_id = commandId,
+            command_line = "",
             working_directory = sample.workingDirectory,
             project_path = sample.projectPath,
             cpu_percent = sample.cpuPercent,
@@ -381,20 +384,32 @@ class WatcherDatabase private constructor(
     }
 
     fun recentProcessSamples(limit: Long = DEFAULT_QUERY_LIMIT): List<ProcessSample> =
-        db.watcherQueries.recentProcessSamples(limit.coerceQueryLimit()).executeAsList()
+        readProcessSamples { db.watcherQueries.recentProcessSamples(limit.coerceQueryLimit()).executeAsList() }
             .map { it.toDomain() }
 
     override fun recentSamples(limit: Long): List<ProcessSampleView> =
-        db.watcherQueries.recentProcessSamples(limit.coerceQueryLimit()).executeAsList()
+        readProcessSamples { db.watcherQueries.recentProcessSamples(limit.coerceQueryLimit()).executeAsList() }
             .map { it.toView() }
 
     fun processSamplesForPid(pid: Long, limit: Long = DEFAULT_QUERY_LIMIT): List<ProcessSample> =
-        db.watcherQueries.processSamplesForPid(pid, limit.coerceQueryLimit()).executeAsList()
+        readProcessSamples { db.watcherQueries.processSamplesForPid(pid, limit.coerceQueryLimit()).executeAsList() }
             .map { it.toDomain() }
 
     override fun findByPid(pid: Long, limit: Long): List<ProcessSampleView> =
-        db.watcherQueries.processSamplesForPid(pid, limit.coerceQueryLimit()).executeAsList()
+        readProcessSamples { db.watcherQueries.processSamplesForPid(pid, limit.coerceQueryLimit()).executeAsList() }
             .map { it.toView() }
+
+    // Keep both reads in one SQLite snapshot if cored purges history concurrently.
+    private fun readProcessSamples(query: () -> List<Process_samples>): List<Process_samples> = db.transactionWithResult {
+        val rows = query()
+        val ids = rows.mapNotNull { it.command_line_id }.distinct()
+        if (ids.isEmpty()) return@transactionWithResult rows
+        val commands = db.watcherQueries.processCommandLinesByIds(ids).executeAsList()
+            .associate { it.id to it.command_line }
+        rows.map { row ->
+            commands[row.command_line_id]?.let { row.copy(command_line = it) } ?: row
+        }
+    }
 
     override fun samplesInRange(fromMs: Long, toMs: Long): List<RetainedProcessSample> =
         db.watcherQueries.processSamplesInRange(fromMs, toMs) {
@@ -481,6 +496,7 @@ class WatcherDatabase private constructor(
     override fun purgeOlderThan(nowMs: Long, retentionDays: Long) {
         val cutoff = RetentionPolicy.DEFAULT.cutoffEpochMs(nowMs, retentionDays)
         db.watcherQueries.purgeSamplesOlderThan(cutoff)
+        db.watcherQueries.purgeUnusedProcessCommandLines()
         db.watcherQueries.purgeBazelBuildDetailsOlderThan(cutoff)
         db.watcherQueries.purgeBuildsOlderThan(cutoff)
         db.watcherQueries.purgeMetricSamplesOlderThan(cutoff)
@@ -582,6 +598,9 @@ class WatcherDatabase private constructor(
          */
         private fun migrateInPlace(driver: JdbcSqliteDriver) {
             listOf(
+                "CREATE TABLE IF NOT EXISTS process_command_lines (id INTEGER PRIMARY KEY AUTOINCREMENT, command_line TEXT NOT NULL UNIQUE)",
+                "ALTER TABLE process_samples ADD COLUMN command_line_id INTEGER",
+                "CREATE INDEX IF NOT EXISTS process_samples_command_line ON process_samples(command_line_id)",
                 "ALTER TABLE builds ADD COLUMN agent TEXT",
                 "ALTER TABLE builds ADD COLUMN agent_provider TEXT",
                 "ALTER TABLE builds ADD COLUMN tool TEXT NOT NULL DEFAULT 'GRADLE'",
