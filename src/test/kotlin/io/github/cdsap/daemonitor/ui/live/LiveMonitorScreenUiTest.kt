@@ -1013,4 +1013,34 @@ class LiveMonitorScreenUiTest {
         assertTrue(selVersion.bottom <= selPath.top, "Selected Gradle version ($selVersion) overlapped Log path ($selPath)")
         assertTrue(selPath.bottom <= selLine.top, "Selected Log path ($selPath) overlapped log tail ($selLine)")
     }
+
+    @Test
+    fun `project column falls back to working directory when project path is null`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val withProject = sampleProcess(pid = 101, projectPath = "/work/checkout-service", workingDirectory = "/work/other")
+        val withWorkDirOnly = sampleProcess(pid = 102, projectPath = null, workingDirectory = "/private/tmp/gradle-app/")
+        val withWindowsWorkDir = sampleProcess(pid = 103, type = ProcessType.TEST_WORKER, projectPath = null, workingDirectory = "C:\\repo\\app\\")
+        val withNeither = sampleProcess(pid = 104, projectPath = null, workingDirectory = null)
+
+        assertEquals("checkout-service", displayProjectLabel(withProject))
+        assertEquals("gradle-app", displayProjectLabel(withWorkDirOnly))
+        assertEquals("app", displayProjectLabel(withWindowsWorkDir))
+        assertNull(displayProjectLabel(withNeither))
+
+        val state = LiveUiState(
+            processes = listOf(withProject, withWorkDirOnly, withWindowsWorkDir, withNeither),
+            isLoading = false,
+            isEmpty = false,
+        )
+        setContent {
+            WatcherTheme {
+                Box(Modifier.size(width = 1180.dp, height = 760.dp)) {
+                    LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+                }
+            }
+        }
+        onNodeWithText("checkout-service").assertExists()
+        onNodeWithText("gradle-app").assertExists()
+        onNodeWithText("app").assertExists()
+    }
 }
