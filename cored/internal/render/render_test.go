@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/cdsap/daemonitor/cored/internal/client"
+	"github.com/cdsap/daemonitor/cored/internal/logs"
 	"github.com/cdsap/daemonitor/cored/internal/model"
 	"github.com/cdsap/daemonitor/cored/internal/platform"
 )
@@ -362,3 +363,37 @@ func TestExportSanitizationDefaultsToBasenames(t *testing.T) {
 }
 
 func strPtr(s string) *string { return &s }
+
+func TestWriteLogsPlainAndTailDistinguishesGradleAndBazel(t *testing.T) {
+	var buf bytes.Buffer
+	WriteLogsPlain(&buf, []logs.DaemonLog{
+		{PID: 50527, GradleVersion: "9.6.1", Path: "daemon-50527.out.log"},
+		{PID: 50577, Tool: "bazel", Source: "server/jvm.out", Path: "jvm.out"},
+		{PID: 50578, Tool: "bazel", Path: "command.log"},
+	})
+	out := buf.String()
+	if !strings.Contains(out, "pid=50527   gradle=9.6.1    daemon-50527.out.log") {
+		t.Fatalf("missing Gradle log row: %q", out)
+	}
+	if !strings.Contains(out, "pid=50577   bazel=server/jvm.out jvm.out") {
+		t.Fatalf("missing Bazel log row with source: %q", out)
+	}
+	if !strings.Contains(out, "pid=50578   bazel=-") {
+		t.Fatalf("missing Bazel fallback source: %q", out)
+	}
+	if strings.Contains(out, "pid=50577   gradle=") {
+		t.Fatalf("Bazel log rendered blank gradle= label: %q", out)
+	}
+
+	buf.Reset()
+	WriteLogTailPlain(&buf, logs.Tail{
+		PID:    50577,
+		Tool:   "bazel",
+		Source: "server/jvm.out",
+		Lines:  []string{"OpenJDK warning"},
+	})
+	tailOut := buf.String()
+	if !strings.Contains(tailOut, "pid=50577 bazel=server/jvm.out lines=1 events=0") {
+		t.Fatalf("unexpected Bazel tail header: %q", tailOut)
+	}
+}
