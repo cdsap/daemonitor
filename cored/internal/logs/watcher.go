@@ -5,9 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/cdsap/daemonitor/cored/internal/poll"
 )
@@ -27,6 +27,9 @@ type DaemonLog struct {
 	Path          string `json:"path"`
 	Tool          string `json:"tool,omitempty"`
 	Source        string `json:"source,omitempty"`
+	// Ordering metadata is captured by Poll and is not part of the wire format.
+	active   bool
+	modified time.Time
 }
 
 // Tail is the retained redacted lines for one log, plus parsed build events (U3).
@@ -52,7 +55,6 @@ type Watcher struct {
 	leftovers map[string][]byte
 	tails     map[string]*ring
 	meta      map[string]DaemonLog
-	modTimes  map[string]int64
 }
 
 func NewWatcher(gradleUserHome string) *Watcher {
@@ -69,7 +71,6 @@ func NewWatcher(gradleUserHome string) *Watcher {
 		leftovers:      make(map[string][]byte),
 		tails:          make(map[string]*ring),
 		meta:           make(map[string]DaemonLog),
-		modTimes:       make(map[string]int64),
 	}
 }
 
@@ -98,6 +99,9 @@ func (w *Watcher) Discover() ([]DaemonLog, error) {
 				continue
 			}
 			if log, ok := ParseLogPath(filepath.Join(versionPath, f.Name())); ok {
+				if info, err := f.Info(); err == nil {
+					log.modified = info.ModTime()
+				}
 				out = append(out, log)
 			}
 		}
@@ -136,13 +140,9 @@ func (w *Watcher) Poll(activePIDs map[int64]struct{}) (map[int64][]string, error
 	newByPID := make(map[int64][]string)
 	for _, log := range logs {
 		seen[log.Path] = struct{}{}
-		var modTime int64
-		if info, err := os.Stat(log.Path); err == nil {
-			modTime = info.ModTime().UnixNano()
-		}
+		_, log.active = activePIDs[log.PID]
 		w.mu.Lock()
 		w.meta[log.Path] = log
-		w.modTimes[log.Path] = modTime
 		w.mu.Unlock()
 		if activePIDs != nil {
 			if _, ok := activePIDs[log.PID]; !ok {
@@ -161,7 +161,6 @@ func (w *Watcher) Poll(activePIDs map[int64]struct{}) (map[int64][]string, error
 	for path := range w.meta {
 		if _, ok := seen[path]; !ok {
 			delete(w.meta, path)
-			delete(w.modTimes, path)
 			delete(w.offsets, path)
 			delete(w.leftovers, path)
 			delete(w.tails, path)
@@ -171,35 +170,15 @@ func (w *Watcher) Poll(activePIDs map[int64]struct{}) (map[int64][]string, error
 	return newByPID, nil
 }
 
-// List returns currently known daemon logs in deterministic order:
-// most recently modified first, breaking ties by PID, Gradle version, and path.
+// List returns known logs ordered by activity and recency from the last poll.
 func (w *Watcher) List() []DaemonLog {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	type entry struct {
-		log     DaemonLog
-		modTime int64
+	out := make([]DaemonLog, 0, len(w.meta))
+	for _, log := range w.meta {
+		out = append(out, log)
 	}
-	entries := make([]entry, 0, len(w.meta))
-	for path, log := range w.meta {
-		entries = append(entries, entry{log: log, modTime: w.modTimes[path]})
-	}
-	sort.Slice(entries, func(i, j int) bool {
-		if entries[i].modTime != entries[j].modTime {
-			return entries[i].modTime > entries[j].modTime
-		}
-		if entries[i].log.PID != entries[j].log.PID {
-			return entries[i].log.PID < entries[j].log.PID
-		}
-		if entries[i].log.GradleVersion != entries[j].log.GradleVersion {
-			return entries[i].log.GradleVersion < entries[j].log.GradleVersion
-		}
-		return entries[i].log.Path < entries[j].log.Path
-	})
-	out := make([]DaemonLog, len(entries))
-	for i, e := range entries {
-		out[i] = e.log
-	}
+	Sort(out)
 	return out
 }
 

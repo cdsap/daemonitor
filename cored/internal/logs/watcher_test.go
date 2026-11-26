@@ -1,13 +1,79 @@
 package logs_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cdsap/daemonitor/cored/internal/logs"
 )
+
+func TestListOrdersActiveThenRecentLogsDeterministically(t *testing.T) {
+	root := t.TempDir()
+	w := logs.NewWatcher(root)
+	now := time.Unix(1700000000, 0)
+	var want []logs.DaemonLog
+	// Expected order: active even when older, recent history, then PID/path ties.
+	for _, fixture := range []struct {
+		version string
+		pid     int64
+		age     time.Duration
+	}{
+		{"9.0", 90, 3 * time.Hour},
+		{"9.0", 80, 0},
+		{"8.0", 10, time.Hour},
+		{"9.0", 10, time.Hour},
+		{"9.0", 20, time.Hour},
+	} {
+		dir := filepath.Join(root, "daemon", fixture.version)
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(dir, fmt.Sprintf("daemon-%d.out.log", fixture.pid))
+		if err := os.WriteFile(path, []byte("line\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		mtime := now.Add(-fixture.age)
+		if err := os.Chtimes(path, mtime, mtime); err != nil {
+			t.Fatal(err)
+		}
+		want = append(want, logs.DaemonLog{PID: fixture.pid, GradleVersion: fixture.version, Path: path})
+	}
+	if _, err := w.Poll(map[int64]struct{}{90: {}}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 50; i++ {
+		got := w.List()
+		if len(got) != len(want) {
+			t.Fatalf("got %d logs, want %d", len(got), len(want))
+		}
+		// Compare exported metadata; ordering metadata is internal to the watcher.
+		for j := range got {
+			if got[j].PID != want[j].PID || got[j].Path != want[j].Path {
+				t.Fatalf("list %d: got %+v, want %+v", i, got, want)
+			}
+		}
+	}
+	// Refresh must clear activity and pick up changed modification times.
+	if err := os.Chtimes(want[4].Path, now.Add(time.Hour), now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Poll(map[int64]struct{}{}); err != nil {
+		t.Fatal(err)
+	}
+	got := w.List()
+	var pids []int64
+	for _, log := range got {
+		pids = append(pids, log.PID)
+	}
+	if !reflect.DeepEqual(pids, []int64{20, 80, 10, 10, 90}) {
+		t.Fatalf("after refresh: %+v", got)
+	}
+}
 
 func TestParseLogPath(t *testing.T) {
 	log, ok := logs.ParseLogPath("/Users/dev/.gradle/daemon/8.9/daemon-12914.out.log")
