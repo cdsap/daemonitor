@@ -93,7 +93,7 @@ import io.github.cdsap.daemonitor.ui.common.cycleIndex
 private val WIDE_TABLE_MIN_WIDTH = 920.dp
 
 private val COMPACT_COLS = listOf(
-    Col("Type", 2.05f),
+    Col("Type", 2.25f),
     Col("Project", 1.3f),
     Col("PID", 0.8f, end = true),
     Col("RSS", 1.0f, end = true),
@@ -101,7 +101,7 @@ private val COMPACT_COLS = listOf(
     Col("GCT (s)", 0.75f, end = true),
     Col("CPU", 0.65f, end = true),
     Col("Uptime", 0.95f, end = true),
-    Col("Flags", 1.35f),
+    Col("Flags", 1.15f),
 )
 
 private val WIDE_COLS = listOf(
@@ -281,7 +281,7 @@ private fun SummaryHeader(
                 accent = LocalAccentColors.current.warn,
                 onClick = peakPid?.let { pid -> { onSelectPeakMemoryPid(pid) } },
             )
-            StatTile("Projects", state.summary.activeProjectCount.toString(), Modifier.weight(1f), icon = Icons.Filled.FolderOpen, accent = LocalAccentColors.current.brand)
+            StatTile("Attributed projects", state.summary.activeProjectCount.toString(), Modifier.weight(1f), icon = Icons.Filled.FolderOpen, accent = LocalAccentColors.current.brand)
         }
     }
 }
@@ -314,7 +314,7 @@ private fun ProcessRow(
                 if (row.depth > 0 || row.isGroupRoot) {
                     Text(if (row.isGroupRoot) "▾" else "└", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                if (row.depth > 0) Spacer(Modifier.width((row.depth * 10).dp))
+                if (row.depth > 0) Spacer(Modifier.width((row.depth * 4).dp))
                 ProcessTypeIcon(p.type, size = 16.dp)
                 Text(p.type.displayLabel(), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             }
@@ -744,12 +744,28 @@ private fun LogCard(tailState: LogTailState, showMetadata: Boolean, daemonLog: D
             when (tailState) {
                 LogTailState.NoSelection -> Text(
                     "Select a Gradle daemon to see its daemon log. History builds also come from these logs.",
-                    modifier = Modifier.padding(Space.md),
+                    modifier = Modifier.padding(top = Space.sm),
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                LogTailState.Loading -> Text("Loading Gradle daemon log…", modifier = Modifier.padding(Space.md), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                LogTailState.NoLog -> Text("No Gradle daemon log was found for this process.", modifier = Modifier.padding(Space.md), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                is LogTailState.Error -> Text("Gradle daemon log unavailable (${tailState.errorType}).", modifier = Modifier.padding(Space.md), color = LocalAccentColors.current.warn)
+                LogTailState.Loading -> Text(
+                    "Loading Gradle daemon log…",
+                    modifier = Modifier.padding(top = Space.sm),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                LogTailState.NoLog -> Text(
+                    "No Gradle daemon log was found for this process.",
+                    modifier = Modifier.padding(top = Space.sm),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                is LogTailState.Error -> Text(
+                    "Gradle daemon log unavailable (${tailState.errorType}).",
+                    modifier = Modifier.padding(top = Space.sm),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LocalAccentColors.current.warn,
+                )
                 is LogTailState.Available -> LogView(tailState.lines, modifier = Modifier.weight(1f).fillMaxWidth(), autoScroll = true)
             }
         }

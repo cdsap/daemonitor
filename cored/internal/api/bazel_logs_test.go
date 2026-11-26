@@ -7,10 +7,64 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cdsap/daemonitor/cored/internal/logs"
 	"github.com/cdsap/daemonitor/cored/internal/model"
 )
+
+func TestDaemonLogListMergesActiveAndRecentLogsBeforeLimit(t *testing.T) {
+	home, base := t.TempDir(), t.TempDir()
+	now := time.Unix(1700000000, 0)
+	write := func(path string, age time.Duration) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("line\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		mtime := now.Add(-age)
+		if err := os.Chtimes(path, mtime, mtime); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A recent historical Gradle log must not hide either tool's active logs.
+	write(filepath.Join(home, "daemon", "9.0", "daemon-1.out.log"), 0)
+	write(filepath.Join(home, "daemon", "9.0", "daemon-90.out.log"), 2*time.Hour)
+	write(filepath.Join(base, "command.log"), time.Hour)
+	write(filepath.Join(base, "server", "jvm.out"), time.Hour)
+	s := &Server{Logs: logs.NewWatcher(home), BazelLogs: logs.NewBazelWatcher()}
+	if _, err := s.Logs.Poll(map[int64]struct{}{90: {}}); err != nil {
+		t.Fatal(err)
+	}
+	s.BazelLogs.Poll([]model.Process{{PID: 42, Type: "BAZEL_SERVER", BazelOutputBase: base}})
+	wantPIDs := []int64{42, 42, 90, 1}
+	wantSources := []string{"command.log", "server/jvm.out", "", ""}
+	var previous string
+	for i := 0; i < 50; i++ {
+		rec := httptest.NewRecorder()
+		s.handleDaemonLogs(rec, httptest.NewRequest("GET", "/v1/daemon-logs", nil))
+		var payload struct {
+			Logs []logs.DaemonLog `json:"logs"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+			t.Fatal(err)
+		}
+		if rec.Code != 200 || len(payload.Logs) != len(wantPIDs) {
+			t.Fatalf("list: %d %s", rec.Code, rec.Body)
+		}
+		for j, log := range payload.Logs {
+			if log.PID != wantPIDs[j] || log.Source != wantSources[j] {
+				t.Fatalf("position %d: %+v", j, payload.Logs)
+			}
+		}
+		if i > 0 && rec.Body.String() != previous {
+			t.Fatalf("list changed without a poll: %s -> %s", previous, rec.Body)
+		}
+		previous = rec.Body.String()
+	}
+}
 
 func TestBazelDaemonLogEndpoints(t *testing.T) {
 	base := t.TempDir()

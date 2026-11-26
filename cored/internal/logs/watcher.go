@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/cdsap/daemonitor/cored/internal/poll"
 )
@@ -26,6 +27,9 @@ type DaemonLog struct {
 	Path          string `json:"path"`
 	Tool          string `json:"tool,omitempty"`
 	Source        string `json:"source,omitempty"`
+	// Ordering metadata is captured by Poll and is not part of the wire format.
+	active   bool
+	modified time.Time
 }
 
 // Tail is the retained redacted lines for one log, plus parsed build events (U3).
@@ -95,6 +99,9 @@ func (w *Watcher) Discover() ([]DaemonLog, error) {
 				continue
 			}
 			if log, ok := ParseLogPath(filepath.Join(versionPath, f.Name())); ok {
+				if info, err := f.Info(); err == nil {
+					log.modified = info.ModTime()
+				}
 				out = append(out, log)
 			}
 		}
@@ -133,6 +140,7 @@ func (w *Watcher) Poll(activePIDs map[int64]struct{}) (map[int64][]string, error
 	newByPID := make(map[int64][]string)
 	for _, log := range logs {
 		seen[log.Path] = struct{}{}
+		_, log.active = activePIDs[log.PID]
 		w.mu.Lock()
 		w.meta[log.Path] = log
 		w.mu.Unlock()
@@ -162,7 +170,7 @@ func (w *Watcher) Poll(activePIDs map[int64]struct{}) (map[int64][]string, error
 	return newByPID, nil
 }
 
-// List returns currently known daemon logs.
+// List returns known logs ordered by activity and recency from the last poll.
 func (w *Watcher) List() []DaemonLog {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -170,6 +178,7 @@ func (w *Watcher) List() []DaemonLog {
 	for _, log := range w.meta {
 		out = append(out, log)
 	}
+	Sort(out)
 	return out
 }
 

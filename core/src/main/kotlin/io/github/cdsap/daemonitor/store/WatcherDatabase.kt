@@ -80,7 +80,16 @@ class WatcherDatabase private constructor(
     HistoryRepository,
     BuildSampleProvider {
 
-    override fun close() = driver.close()
+    override fun close() {
+        // File-backed JdbcSqliteDriver uses a ThreadLocal connection manager where driver.close()
+        // is a no-op; explicitly closing the current thread's connection releases Windows file locks.
+        runCatching {
+            if (driver.currentTransaction() == null) {
+                driver.closeConnection(driver.getConnection())
+            }
+        }
+        driver.close()
+    }
 
     override fun save(sample: GradleProcess, timestampMs: Long) = insertSample(sample, timestampMs)
 
@@ -89,7 +98,8 @@ class WatcherDatabase private constructor(
     fun insertSample(sample: GradleProcess, timestampMs: Long) {
         val live = sample.liveHeap
         val heapAvailable = live?.available == true
-        db.transaction {
+        try {
+            db.transaction {
             db.watcherQueries.insertProcessCommandLine(sample.commandLine)
             val commandId = db.watcherQueries.processCommandLineId(sample.commandLine).executeAsOne()
             db.watcherQueries.upsertProcessInstance(
@@ -159,6 +169,11 @@ class WatcherDatabase private constructor(
             start_time_ms = sample.startTimeMs,
             status = sample.status,
             )
+            }
+        } finally {
+            if (driver.currentTransaction() == null) {
+                runCatching { driver.closeConnection(driver.getConnection()) }
+            }
         }
     }
 
@@ -400,14 +415,22 @@ class WatcherDatabase private constructor(
             .map { it.toView() }
 
     // Keep both reads in one SQLite snapshot if cored purges history concurrently.
-    private fun readProcessSamples(query: () -> List<Process_samples>): List<Process_samples> = db.transactionWithResult {
-        val rows = query()
-        val ids = rows.mapNotNull { it.command_line_id }.distinct()
-        if (ids.isEmpty()) return@transactionWithResult rows
-        val commands = db.watcherQueries.processCommandLinesByIds(ids).executeAsList()
-            .associate { it.id to it.command_line }
-        rows.map { row ->
-            commands[row.command_line_id]?.let { row.copy(command_line = it) } ?: row
+    private fun readProcessSamples(query: () -> List<Process_samples>): List<Process_samples> = try {
+        db.transactionWithResult {
+            val rows = query()
+            val ids = rows.mapNotNull { it.command_line_id }.distinct()
+            if (ids.isEmpty()) return@transactionWithResult rows
+            val commands = db.watcherQueries.processCommandLinesByIds(ids).executeAsList()
+                .associate { it.id to it.command_line }
+            rows.map { row ->
+                commands[row.command_line_id]?.let { row.copy(command_line = it) } ?: row
+            }
+        }
+    } finally {
+        // Release the thread-local JDBC connection after a read transaction so Windows does not
+        // hold SQLite file locks across test cleanup or file deletion.
+        if (driver.currentTransaction() == null) {
+            runCatching { driver.closeConnection(driver.getConnection()) }
         }
     }
 

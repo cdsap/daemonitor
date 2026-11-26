@@ -195,6 +195,38 @@ func TestFiltersApplyToProcesses(t *testing.T) {
 
 func strPtr(s string) *string { return &s }
 
+func TestFilterLogsAppliesLimitAfterPID(t *testing.T) {
+	items := []logs.DaemonLog{
+		{PID: 1, Path: "daemon-1.out.log"},
+		{PID: 2, Tool: "bazel", Source: "command.log"},
+		{PID: 2, Tool: "bazel", Source: "server/jvm.out"},
+		{PID: 3, Path: "daemon-3.out.log"},
+	}
+	for _, tc := range []struct {
+		name string
+		opts Options
+		want []logs.DaemonLog
+	}{
+		{name: "unlimited", want: items},
+		{name: "limited", opts: Options{Limit: 2}, want: items[:2]},
+		{name: "exact limit", opts: Options{Limit: 4}, want: items},
+		{name: "larger limit", opts: Options{Limit: 5}, want: items},
+		{name: "PID only", opts: Options{PID: 2}, want: items[1:3]},
+		{name: "PID then limit", opts: Options{PID: 2, Limit: 1}, want: items[1:2]},
+		{name: "no matching PID", opts: Options{PID: 9, Limit: 1}, want: items[:0]},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := filterLogs(append([]logs.DaemonLog(nil), items...), tc.opts)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("filterLogs(%+v)=%+v, want %+v", tc.opts, got, tc.want)
+			}
+		})
+	}
+	if got := filterLogs(nil, Options{Limit: 5}); len(got) != 0 {
+		t.Fatalf("empty logs=%+v", got)
+	}
+}
+
 func TestJVMCounterMetricExports(t *testing.T) {
 	count, zero, seconds := int64(27), int64(0), 1.23456789
 	p := model.Process{PID: 42, StartTimeMs: 100, SampledAtMs: 200,

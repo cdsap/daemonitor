@@ -1,6 +1,7 @@
 package io.github.cdsap.daemonitor.store
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import io.github.cdsap.daemonitor.application.HistoryReader
 import io.github.cdsap.daemonitor.application.ProcessSampleQuery
 import io.github.cdsap.daemonitor.domain.BuildSample
 import io.github.cdsap.daemonitor.domain.model.Build
@@ -225,125 +226,129 @@ class WatcherDatabaseTest {
 
     @Test
     fun `sample with null heap round-trips and defaults source to unknown`(@TempDirArg tmp: Path) {
-        val db = WatcherDatabase.open(tmp.resolve("watcher.db"))
-        val p = GradleProcess(
-            pid = 5, parentPid = 1, type = ProcessType.GRADLE_DAEMON,
-            commandLine = "java GradleDaemon", workingDirectory = "/p", projectPath = "/p",
-            cpuPercent = null, rssMemoryMb = 300, maxHeapMb = null, minHeapMb = null,
-            gc = null, startTimeMs = 1, status = "RUNNING",
-            liveHeap = io.github.cdsap.daemonitor.domain.model.LiveJvmHeap.unavailable(1_000),
-        )
-        db.save(p, timestampMs = 1_000)
-        val samples = db.samples(pid = 5, fromMs = 0, toMs = 2_000)
-        assertEquals(1, samples.size)
-        assertEquals(300L, samples[0].rssMemoryMb)
-        val persisted = db.processSamplesForPid(5).single()
-        assertEquals(false, persisted.heapAvailable)
-        assertEquals(null, persisted.heapUsedMb)
-        assertEquals(1_000L, persisted.heapSampledAtMs)
+        WatcherDatabase.open(tmp.resolve("watcher.db")).use { db ->
+            val p = GradleProcess(
+                pid = 5, parentPid = 1, type = ProcessType.GRADLE_DAEMON,
+                commandLine = "java GradleDaemon", workingDirectory = "/p", projectPath = "/p",
+                cpuPercent = null, rssMemoryMb = 300, maxHeapMb = null, minHeapMb = null,
+                gc = null, startTimeMs = 1, status = "RUNNING",
+                liveHeap = io.github.cdsap.daemonitor.domain.model.LiveJvmHeap.unavailable(1_000),
+            )
+            db.save(p, timestampMs = 1_000)
+            val samples = db.samples(pid = 5, fromMs = 0, toMs = 2_000)
+            assertEquals(1, samples.size)
+            assertEquals(300L, samples[0].rssMemoryMb)
+            val persisted = db.processSamplesForPid(5).single()
+            assertEquals(false, persisted.heapAvailable)
+            assertEquals(null, persisted.heapUsedMb)
+            assertEquals(1_000L, persisted.heapSampledAtMs)
+        }
     }
 
     @Test
     fun `live heap metrics round-trip without overwriting rss or xmx`(@TempDirArg tmp: Path) {
-        val db = WatcherDatabase.open(tmp.resolve("watcher.db"))
-        val p = GradleProcess(
-            pid = 11,
-            parentPid = 1,
-            type = ProcessType.GRADLE_DAEMON,
-            commandLine = "java -Xmx2g GradleDaemon",
-            workingDirectory = "/p",
-            projectPath = "/p",
-            cpuPercent = 8.0,
-            rssMemoryMb = 900,
-            maxHeapMb = 2048,
-            minHeapMb = null,
-            gc = "G1",
-            startTimeMs = 1,
-            status = "RUNNING",
-            liveHeap = io.github.cdsap.daemonitor.domain.model.LiveJvmHeap(
-                usedMb = 410,
-                committedMb = 640,
-                maxMb = 2048,
-                sampledAtMs = 2_000,
-                available = true,
-            ),
-        )
-        db.save(p, timestampMs = 2_000)
-        val persisted = db.processSamplesForPid(11).single()
-        assertEquals(900L, persisted.rssMemoryMb)
-        assertEquals(2048L, persisted.maxHeapMb)
-        assertEquals(true, persisted.heapAvailable)
-        assertEquals(410L, persisted.heapUsedMb)
-        assertEquals(640L, persisted.heapCommittedMb)
-        assertEquals(2048L, persisted.heapMaxMb)
-        assertEquals(2_000L, persisted.heapSampledAtMs)
-    }
-
-    @Test
-    fun `extended cored metrics round-trip through local history`(@TempDirArg tmp: Path) {
-        val db = WatcherDatabase.open(tmp.resolve("watcher.db"))
-        db.save(
-            GradleProcess(
-                pid = 12,
+        WatcherDatabase.open(tmp.resolve("watcher.db")).use { db ->
+            val p = GradleProcess(
+                pid = 11,
                 parentPid = 1,
                 type = ProcessType.GRADLE_DAEMON,
-                commandLine = "java GradleDaemon",
+                commandLine = "java -Xmx2g GradleDaemon",
                 workingDirectory = "/p",
                 projectPath = "/p",
-                cpuPercent = 1.0,
-                rssMemoryMb = 256,
-                maxHeapMb = null,
+                cpuPercent = 8.0,
+                rssMemoryMb = 900,
+                maxHeapMb = 2048,
                 minHeapMb = null,
                 gc = "G1",
                 startTimeMs = 1,
                 status = "RUNNING",
-                virtualMemoryMb = 1024,
-                threadCount = 32,
-                readBytes = 4096,
-                majorPageFaults = 2,
-                openFileDescriptors = 17,
-                metaspaceUsedMb = 64,
-                youngGcCount = 5,
-                javaVersion = "21",
-            ),
-            timestampMs = 2_000,
-        )
+                liveHeap = io.github.cdsap.daemonitor.domain.model.LiveJvmHeap(
+                    usedMb = 410,
+                    committedMb = 640,
+                    maxMb = 2048,
+                    sampledAtMs = 2_000,
+                    available = true,
+                ),
+            )
+            db.save(p, timestampMs = 2_000)
+            val persisted = db.processSamplesForPid(11).single()
+            assertEquals(900L, persisted.rssMemoryMb)
+            assertEquals(2048L, persisted.maxHeapMb)
+            assertEquals(true, persisted.heapAvailable)
+            assertEquals(410L, persisted.heapUsedMb)
+            assertEquals(640L, persisted.heapCommittedMb)
+            assertEquals(2048L, persisted.heapMaxMb)
+            assertEquals(2_000L, persisted.heapSampledAtMs)
+        }
+    }
 
-        val sample = db.processSamplesForPid(12).single()
-        assertEquals(1024L, sample.virtualMemoryMb)
-        assertEquals(32L, sample.threadCount)
-        assertEquals(4096L, sample.readBytes)
-        assertEquals(2L, sample.majorPageFaults)
-        assertEquals(17L, sample.openFileDescriptors)
-        assertEquals(64L, sample.metaspaceUsedMb)
-        assertEquals(5L, sample.youngGcCount)
-        assertEquals("21", sample.javaVersion)
-        assertEquals(null, sample.swapMemoryMb)
+    @Test
+    fun `extended cored metrics round-trip through local history`(@TempDirArg tmp: Path) {
+        WatcherDatabase.open(tmp.resolve("watcher.db")).use { db ->
+            db.save(
+                GradleProcess(
+                    pid = 12,
+                    parentPid = 1,
+                    type = ProcessType.GRADLE_DAEMON,
+                    commandLine = "java GradleDaemon",
+                    workingDirectory = "/p",
+                    projectPath = "/p",
+                    cpuPercent = 1.0,
+                    rssMemoryMb = 256,
+                    maxHeapMb = null,
+                    minHeapMb = null,
+                    gc = "G1",
+                    startTimeMs = 1,
+                    status = "RUNNING",
+                    virtualMemoryMb = 1024,
+                    threadCount = 32,
+                    readBytes = 4096,
+                    majorPageFaults = 2,
+                    openFileDescriptors = 17,
+                    metaspaceUsedMb = 64,
+                    youngGcCount = 5,
+                    javaVersion = "21",
+                ),
+                timestampMs = 2_000,
+            )
+
+            val sample = db.processSamplesForPid(12).single()
+            assertEquals(1024L, sample.virtualMemoryMb)
+            assertEquals(32L, sample.threadCount)
+            assertEquals(4096L, sample.readBytes)
+            assertEquals(2L, sample.majorPageFaults)
+            assertEquals(17L, sample.openFileDescriptors)
+            assertEquals(64L, sample.metaspaceUsedMb)
+            assertEquals(5L, sample.youngGcCount)
+            assertEquals("21", sample.javaVersion)
+            assertEquals(null, sample.swapMemoryMb)
+        }
     }
 
     @Test
     fun `kotlin daemon samples are persisted by process type`(@TempDirArg tmp: Path) {
-        val db = WatcherDatabase.open(tmp.resolve("watcher.db"))
-        val p = GradleProcess(
-            pid = 9,
-            parentPid = 1,
-            type = ProcessType.KOTLIN_DAEMON,
-            commandLine = "java org.jetbrains.kotlin.daemon.KotlinCompileDaemon",
-            workingDirectory = "/p",
-            projectPath = "/p",
-            cpuPercent = 12.5,
-            rssMemoryMb = 512,
-            maxHeapMb = 1500,
-            minHeapMb = null,
-            gc = "G1",
-            startTimeMs = 1,
-            status = "RUNNING",
-        )
+        WatcherDatabase.open(tmp.resolve("watcher.db")).use { db ->
+            val p = GradleProcess(
+                pid = 9,
+                parentPid = 1,
+                type = ProcessType.KOTLIN_DAEMON,
+                commandLine = "java org.jetbrains.kotlin.daemon.KotlinCompileDaemon",
+                workingDirectory = "/p",
+                projectPath = "/p",
+                cpuPercent = 12.5,
+                rssMemoryMb = 512,
+                maxHeapMb = 1500,
+                minHeapMb = null,
+                gc = "G1",
+                startTimeMs = 1,
+                status = "RUNNING",
+            )
 
-        db.save(p, timestampMs = 1_000)
+            db.save(p, timestampMs = 1_000)
 
-        assertEquals(1L, db.countByType(ProcessType.KOTLIN_DAEMON))
-        assertEquals(0L, db.countByType(ProcessType.GRADLE_DAEMON))
+            assertEquals(1L, db.countByType(ProcessType.KOTLIN_DAEMON))
+            assertEquals(0L, db.countByType(ProcessType.GRADLE_DAEMON))
+        }
     }
 
     @Test
@@ -584,6 +589,7 @@ class WatcherDatabaseTest {
         val database = WatcherDatabase.open(tmp.resolve("watcher.db"))
         try {
             val builds: BuildRepository = database
+            val history: HistoryReader = builds
             val samples: ProcessSampleRepository = database
             val sampleQueries: ProcessSampleQuery = database
             val retention: RetentionRepository = database
@@ -608,8 +614,8 @@ class WatcherDatabaseTest {
             )
             builds.save(build("port-build", 5_000, project = "/repo"))
 
-            assertEquals(listOf("port-build"), builds.recent().map { it.buildId })
-            assertEquals(listOf("/repo"), builds.distinctProjects())
+            assertEquals(listOf("port-build"), history.recent().map { it.buildId })
+            assertEquals(listOf("/repo"), history.distinctProjects())
             assertEquals(1, builds.search("port", limit = 10).size)
             assertEquals(1, builds.findByDaemon(1, limit = 10).size)
             assertEquals(

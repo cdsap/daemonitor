@@ -589,6 +589,7 @@ func (s *Server) handleDaemonLogs(w http.ResponseWriter, r *http.Request) {
 	if s.BazelLogs != nil {
 		all = append(all, s.BazelLogs.List()...)
 	}
+	logs.Sort(all)
 	writeJSON(w, map[string]any{
 		"logs": all,
 	})
