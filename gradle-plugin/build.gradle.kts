@@ -8,7 +8,7 @@ plugins {
 group = "io.github.cdsap.daemonitor"
 // Independent artifact line from product/cored (1.3.x). Bump this when cutting a
 // product release that ships plugin changes; tag release publishes to Plugin Portal.
-version = "0.1.1"
+version = "0.1.2"
 
 publishing {
     publications {

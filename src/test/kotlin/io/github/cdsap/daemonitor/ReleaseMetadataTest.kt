@@ -12,11 +12,11 @@ import kotlin.test.assertTrue
 
 class ReleaseMetadataTest {
     @Test
-    fun `Gradle project and native package versions are aligned for v1_3_2`() {
+    fun `Gradle project and native package versions are aligned for v1_3_3`() {
         val buildFile = Path.of("build.gradle.kts").readText()
 
-        assertTrue(buildFile.contains("version = \"1.3.2\""), buildFile)
-        assertTrue(buildFile.contains("val nativePackageVersion = \"1.3.2\""), buildFile)
+        assertTrue(buildFile.contains("version = \"1.3.3\""), buildFile)
+        assertTrue(buildFile.contains("val nativePackageVersion = \"1.3.3\""), buildFile)
     }
 
     @Test
@@ -25,12 +25,12 @@ class ReleaseMetadataTest {
         val outputDir = tempDir.resolve("metadata")
 
         val assets = mapOf(
-            "Daemonitor-1.3.2-linux-x64.deb" to "linux package",
-            "Daemonitor-1.3.2-linux-x64.tar.gz" to "linux update",
-            "Daemonitor-1.3.2-windows-x64.msi" to "windows package",
-            "Daemonitor-1.3.2-windows-x64.zip" to "windows update",
-            "Daemonitor-1.3.2-macos-arm64.dmg" to "macos package",
-            "Daemonitor-1.3.2-macos-arm64.zip" to "macos update",
+            "Daemonitor-1.3.3-linux-x64.deb" to "linux package",
+            "Daemonitor-1.3.3-linux-x64.tar.gz" to "linux update",
+            "Daemonitor-1.3.3-windows-x64.msi" to "windows package",
+            "Daemonitor-1.3.3-windows-x64.zip" to "windows update",
+            "Daemonitor-1.3.3-macos-arm64.dmg" to "macos package",
+            "Daemonitor-1.3.3-macos-arm64.zip" to "macos update",
         )
         assets.forEach { (name, content) -> assetsDir.resolve(name).writeText(content) }
 
@@ -39,8 +39,8 @@ class ReleaseMetadataTest {
             "scripts/generate-release-metadata.sh",
             assetsDir.toString(),
             outputDir.toString(),
-            "1.3.2",
-            "v1.3.2",
+            "1.3.3",
+            "v1.3.3",
             "cdsap/daemonitor",
         )
             .redirectErrorStream(true)
@@ -58,8 +58,8 @@ class ReleaseMetadataTest {
 
         val latest = outputDir.resolve("latest.json").readText()
         assertTrue(latest.contains("\"schemaVersion\": 2"), latest)
-        assertTrue(latest.contains("\"version\": \"1.3.2\""), latest)
-        assertTrue(latest.contains("\"tag\": \"v1.3.2\""), latest)
+        assertTrue(latest.contains("\"version\": \"1.3.3\""), latest)
+        assertTrue(latest.contains("\"tag\": \"v1.3.3\""), latest)
         assertTrue(latest.contains("\"platform\": \"linux\""), latest)
         assertTrue(latest.contains("\"platform\": \"windows\""), latest)
         assertTrue(latest.contains("\"platform\": \"macos\""), latest)
@@ -69,11 +69,11 @@ class ReleaseMetadataTest {
         assertTrue(latest.contains("\"role\": \"installer\""), latest)
         assertTrue(
             latest.contains(
-                "\"url\": \"https://github.com/cdsap/daemonitor/releases/download/v1.3.2/Daemonitor-1.3.2-macos-arm64.zip\"",
+                "\"url\": \"https://github.com/cdsap/daemonitor/releases/download/v1.3.3/Daemonitor-1.3.3-macos-arm64.zip\"",
             ),
             latest,
         )
-        assertTrue(latest.contains("\"sha256\": \"${sha256(assetsDir.resolve("Daemonitor-1.3.2-linux-x64.deb"))}\""), latest)
+        assertTrue(latest.contains("\"sha256\": \"${sha256(assetsDir.resolve("Daemonitor-1.3.3-linux-x64.deb"))}\""), latest)
 
         assertEquals(latest, outputDir.resolve("update.json").readText())
     }
@@ -108,7 +108,7 @@ class ReleaseMetadataTest {
         val backfill = Path.of(".github/workflows/publish-gradle-plugin.yml").readText()
 
         assertTrue(pluginBuild.contains("id(\"com.gradle.plugin-publish\")"), pluginBuild)
-        assertTrue(pluginBuild.contains("version = \"0.1.1\""), pluginBuild)
+        assertTrue(pluginBuild.contains("version = \"0.1.2\""), pluginBuild)
         assertTrue(pluginBuild.contains("id = \"io.github.cdsap.daemonitor\""), pluginBuild)
         assertTrue(pluginBuild.contains("printGradlePluginVersion"), pluginBuild)
 
