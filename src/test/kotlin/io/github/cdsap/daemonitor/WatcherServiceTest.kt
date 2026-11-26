@@ -4,6 +4,7 @@ import io.github.cdsap.daemonitor.application.DefaultDaemonitorQueryService
 import io.github.cdsap.daemonitor.application.DaemonLog
 import io.github.cdsap.daemonitor.application.DaemonLogLine
 import io.github.cdsap.daemonitor.application.DaemonLogSource
+import io.github.cdsap.daemonitor.application.DaemonLogTailResult
 import io.github.cdsap.daemonitor.application.ProcessSource
 import io.github.cdsap.daemonitor.application.platform.ProcessExiter
 import io.github.cdsap.daemonitor.application.platform.UrlOpener
@@ -34,6 +35,8 @@ import io.github.cdsap.daemonitor.update.UpdateInstaller
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -158,13 +161,16 @@ class WatcherServiceTest {
             status = "RUNNING",
         )
         val log = DaemonLog(pid = 42, gradleVersion = "8.14.3", path = Path.of("/tmp/daemon-42.out.log"))
+        var expectedLog = log
+        var tailLines = listOf("immediate-tail")
         var tailCalls = 0
         val logSource = object : DaemonLogSource {
             override fun discover(): List<DaemonLog> = listOf(log)
             override fun readNewLines(log: DaemonLog): List<DaemonLogLine> = emptyList()
             override fun tailFor(log: DaemonLog): List<String> {
+                assertEquals(expectedLog, log)
                 tailCalls += 1
-                return listOf("immediate-tail")
+                return tailLines
             }
         }
         val runtime = WatcherRuntime(
@@ -191,18 +197,18 @@ class WatcherServiceTest {
                 DaemonitorMcpServer(DefaultDaemonitorQueryService(database, database, ProcessSource { emptyList() }))
             },
             uiDispatcher = uiDispatcher,
-            ioDispatcher = uiDispatcher,
+            ioDispatcher = StandardTestDispatcher(testScheduler),
             daemonBuildSource = { pid, start, limit -> buildQueries += Triple(pid, start, limit); emptyList() },
         )
         try {
             service.start(backgroundScope)
-            advanceUntilIdle()
+            runCurrent()
             assertEquals(listOf(42L), service.liveViewModel.state.value.processes.map { it.pid })
             assertEquals(LogTailState.NoSelection, service.liveViewModel.state.value.tailState)
             val tailCallsAfterPoll = tailCalls
 
             service.select(42)
-            advanceUntilIdle()
+            runCurrent()
 
             assertTrue(tailCalls > tailCallsAfterPoll)
             assertEquals(listOf("immediate-tail"), service.liveViewModel.state.value.tail)
@@ -210,11 +216,30 @@ class WatcherServiceTest {
             assertEquals(log, service.liveViewModel.state.value.daemonLog)
             assertEquals(listOf(Triple(42L, 1L, 20)), buildQueries)
             assertEquals(RecentBuildsState.Loaded(emptyList()), service.liveViewModel.state.value.recentBuilds)
+            // Selection must use the published metadata snapshot, including an empty readable log.
+            expectedLog = log.copy(path = tmp.resolve("daemon-42.out.log"))
+            tailLines = emptyList()
+            service.liveViewModel.onPoll(listOf(process), daemonLogs = listOf(expectedLog))
+            service.select(42)
+            runCurrent()
+            assertEquals(expectedLog, service.liveViewModel.state.value.daemonLog)
+            assertEquals(LogTailState.Available(emptyList()), service.liveViewModel.state.value.tailState)
+            assertEquals(2, buildQueries.size)
+            // A poll can discover the log while an earlier selection read is still queued.
+            service.liveViewModel.onPoll(listOf(process))
+            service.select(42)
+            service.liveViewModel.onPoll(
+                listOf(process),
+                DaemonLogTailResult.Lines(listOf("fresh poll tail")),
+                listOf(expectedLog),
+            )
+            runCurrent()
+            assertEquals(LogTailState.Available(listOf("fresh poll tail")), service.liveViewModel.state.value.tailState)
             val other = process.copy(pid = 43, type = ProcessType.KOTLIN_DAEMON)
             service.liveViewModel.onPoll(listOf(other))
             service.select(43)
-            advanceUntilIdle()
-            assertEquals(1, buildQueries.size)
+            runCurrent()
+            assertEquals(3, buildQueries.size)
         } finally {
             service.stop()
             database.close()
