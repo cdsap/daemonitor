@@ -109,11 +109,12 @@ type JVMRawValue struct {
 }
 
 type JVMMemoryPool struct {
-	Name      string      `json:"name"`
-	Source    string      `json:"source"`
-	Used      JVMRawValue `json:"used"`
-	Committed JVMRawValue `json:"committed"`
-	Max       JVMRawValue `json:"max"`
+	Name      string       `json:"name"`
+	Source    string       `json:"source"`
+	Used      JVMRawValue  `json:"used"`
+	Committed JVMRawValue  `json:"committed,omitzero"`
+	Max       JVMRawValue  `json:"max"`
+	Peak      *JVMRawValue `json:"peak,omitempty"`
 }
 
 type JITMetrics struct {

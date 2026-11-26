@@ -718,7 +718,8 @@ private fun poolDetail(pool: JvmMemoryPool): String {
     fun value(raw: JvmRawValue?): String = raw?.let {
         "${it.value} ${it.unit}".trimEnd()
     } ?: "unavailable"
-    return "used ${value(pool.used)} · committed ${value(pool.committed)} · max ${value(pool.max)}"
+    return "used ${value(pool.used)} · committed ${value(pool.committed)} · max ${value(pool.max)}" +
+        (pool.peak?.let { " · peak ${value(it)}" } ?: "")
 }
 
 private fun Double?.gcTimeCompact(): String = this?.let { String.format(Locale.ROOT, "%.3f", it) } ?: "—"
@@ -733,21 +734,23 @@ private fun Long?.metricBytes(): String = this?.let {
 
 @Composable
 private fun LogCard(tailState: LogTailState, showMetadata: Boolean, daemonLog: DaemonLog?, modifier: Modifier = Modifier) {
-    SectionCard("Gradle daemon log", modifier) {
-        if (showMetadata) {
-            DetailRow("Gradle version", daemonLog?.gradleVersion?.takeIf { it.isNotBlank() } ?: "Unavailable")
-            DetailRow("Log path", daemonLog?.path?.toString()?.takeIf { it.isNotBlank() } ?: "Unavailable")
-        }
-        when (tailState) {
-            LogTailState.NoSelection -> Text(
-                "Select a Gradle daemon to see its daemon log. History builds also come from these logs.",
-                modifier = Modifier.padding(Space.md),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            LogTailState.Loading -> Text("Loading Gradle daemon log…", modifier = Modifier.padding(Space.md), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            LogTailState.NoLog -> Text("No Gradle daemon log was found for this process.", modifier = Modifier.padding(Space.md), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            is LogTailState.Error -> Text("Gradle daemon log unavailable (${tailState.errorType}).", modifier = Modifier.padding(Space.md), color = LocalAccentColors.current.warn)
-            is LogTailState.Available -> LogView(tailState.lines, modifier = Modifier.fillMaxSize(), autoScroll = true)
+    SectionCard("Gradle daemon log", modifier.testTag("gradle-log-card")) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            if (showMetadata) {
+                DetailRow("Gradle version", daemonLog?.gradleVersion?.takeIf { it.isNotBlank() } ?: "Unavailable")
+                DetailRow("Log path", daemonLog?.path?.toString()?.takeIf { it.isNotBlank() } ?: "Unavailable")
+            }
+            when (tailState) {
+                LogTailState.NoSelection -> Text(
+                    "Select a Gradle daemon to see its daemon log. History builds also come from these logs.",
+                    modifier = Modifier.padding(Space.md),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                LogTailState.Loading -> Text("Loading Gradle daemon log…", modifier = Modifier.padding(Space.md), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                LogTailState.NoLog -> Text("No Gradle daemon log was found for this process.", modifier = Modifier.padding(Space.md), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                is LogTailState.Error -> Text("Gradle daemon log unavailable (${tailState.errorType}).", modifier = Modifier.padding(Space.md), color = LocalAccentColors.current.warn)
+                is LogTailState.Available -> LogView(tailState.lines, modifier = Modifier.weight(1f).fillMaxWidth(), autoScroll = true)
+            }
         }
     }
 }

@@ -248,7 +248,7 @@ internal object GoCoreSnapshotParser {
                 JvmRawValue(number, unit)
             }
             JvmMemoryPool(stringField(pool, "name").orEmpty(), stringField(pool, "source"),
-                value("used"), value("committed"), value("max"))
+                value("used"), value("committed"), value("max"), value("peak"))
         }
 
     /**

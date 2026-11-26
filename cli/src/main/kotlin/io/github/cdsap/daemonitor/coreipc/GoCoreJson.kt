@@ -21,35 +21,24 @@ internal object GoCoreJson {
         return null
     }
 
-    fun extractArray(json: String, name: String): String? {
-        val key = "\"$name\""
-        val keyIndex = json.indexOf(key)
-        if (keyIndex < 0) return null
-        val start = json.indexOf('[', keyIndex)
-        if (start < 0) return null
-        var depth = 0
-        for (i in start until json.length) {
-            when (json[i]) {
-                '[' -> depth++
-                ']' -> {
-                    depth--
-                    if (depth == 0) return json.substring(start + 1, i)
-                }
-            }
-        }
-        return null
-    }
+    fun extractArray(json: String, name: String): String? =
+        extractContainer(json, name, '[', ']')
 
     fun extractStringArray(json: String, name: String): List<String>? {
         val arrayBody = extractArray(json, name) ?: return null
         val out = mutableListOf<String>()
-        val regex = Regex("\"((?:\\\\.|[^\"\\\\])*)\"")
-        for (match in regex.findAll(arrayBody)) {
-            out += match.groupValues[1]
-                .replace("\\\"", "\"")
-                .replace("\\\\", "\\")
-                .replace("\\n", "\n")
-                .replace("\\t", "\t")
+        var i = 0
+        while (i < arrayBody.length) {
+            while (i < arrayBody.length && (arrayBody[i].isWhitespace() || arrayBody[i] == ',')) i++
+            if (i >= arrayBody.length) break
+            if (arrayBody[i] == '"') {
+                val (decoded, next) = decodeJsonStringWithEnd(arrayBody, i + 1)
+                out += decoded
+                i = next
+            } else {
+                // Skip non-string token (e.g. null) safely without looping forever.
+                while (i < arrayBody.length && arrayBody[i] != ',') i++
+            }
         }
         return out
     }
@@ -109,12 +98,15 @@ internal object GoCoreJson {
     }
 
     /** Linear scan — avoids regex StackOverflowError on multi-KB Gradle command lines. */
-    private fun decodeJsonString(source: String, start: Int): String {
+    private fun decodeJsonString(source: String, start: Int): String =
+        decodeJsonStringWithEnd(source, start).first
+
+    private fun decodeJsonStringWithEnd(source: String, start: Int): Pair<String, Int> {
         val out = StringBuilder()
         var i = start
         while (i < source.length) {
             when (val c = source[i]) {
-                '"' -> return out.toString()
+                '"' -> return out.toString() to (i + 1)
                 '\\' -> {
                     i++
                     if (i >= source.length) break
@@ -137,7 +129,7 @@ internal object GoCoreJson {
             }
             i++
         }
-        return out.toString()
+        return out.toString() to source.length
     }
 
     fun numberField(obj: String, name: String): Double? {
