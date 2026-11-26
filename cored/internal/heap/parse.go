@@ -18,6 +18,7 @@ type Sample struct {
 	MeasurementTimes     map[string]int64
 	UsedMB               int64
 	CommittedMB          int64
+	MaxMB                *int64
 	Source               string // "jcmd" | "jstat"
 	GC                   *string
 	MetaspaceUsedMB      *int64
@@ -63,6 +64,7 @@ type MemoryPool struct {
 	Used      RawValue
 	Committed RawValue
 	Max       RawValue
+	Peak      *RawValue
 }
 
 type JITMetrics struct {
@@ -248,7 +250,7 @@ func ParseJinfoFlagsGC(out string) (*string, error) {
 //	garbage-first heap   total reserved 262144K, committed 262144K, used 36447K [...]
 func ParseJcmdHeapInfo(out string) (Sample, error) {
 	var metaspaceUsed, metaspaceCommitted *int64
-	var heapUsed, heapCommitted *int64
+	var heapUsed, heapCommitted, heapMax *int64
 	var gc *string
 	var generationUsedKB, generationTotalKB float64
 	var pools []MemoryPool
@@ -300,6 +302,9 @@ func ParseJcmdHeapInfo(out string) (Sample, error) {
 			continue
 		}
 		heapUsed, heapCommitted = ptrInt64(kbToMB(usedKB)), ptrInt64(kbToMB(committedKB))
+		if reservedKB, okR := findKBToken(line, "reserved"); okR {
+			heapMax = ptrInt64(kbToMB(reservedKB))
+		}
 	}
 	if generationTotalKB > 0 {
 		heapUsed, heapCommitted = ptrInt64(kbToMB(generationUsedKB)), ptrInt64(kbToMB(generationTotalKB))
@@ -307,7 +312,7 @@ func ParseJcmdHeapInfo(out string) (Sample, error) {
 	if heapUsed == nil || heapCommitted == nil {
 		return Sample{}, fmt.Errorf("jcmd GC.heap_info: no heap used/committed line")
 	}
-	return Sample{UsedMB: *heapUsed, CommittedMB: *heapCommitted, Source: "jcmd", GC: gc, MetaspaceUsedMB: metaspaceUsed, MetaspaceCommittedMB: metaspaceCommitted, MemoryPools: pools}, nil
+	return Sample{UsedMB: *heapUsed, CommittedMB: *heapCommitted, MaxMB: heapMax, Source: "jcmd", GC: gc, MetaspaceUsedMB: metaspaceUsed, MetaspaceCommittedMB: metaspaceCommitted, MemoryPools: pools}, nil
 }
 
 func ptrInt64(v int64) *int64 { return &v }
@@ -583,6 +588,8 @@ func parseRawValue(token string) (RawValue, bool) {
 }
 
 // ParseJcmdCodeCache preserves each original CodeHeap name and emitted unit.
+// size is reserved capacity and max_used is peak usage. The summary does not
+// report committed memory, so Committed remains unavailable.
 func ParseJcmdCodeCache(out string) ([]MemoryPool, error) {
 	var pools []MemoryPool
 	for _, line := range strings.Split(out, "\n") {
@@ -592,11 +599,11 @@ func ParseJcmdCodeCache(out string) ([]MemoryPool, error) {
 		}
 		size, ok1 := parseRawValue(m[2])
 		used, ok2 := parseRawValue(m[3])
-		max, ok3 := parseRawValue(m[4])
+		peak, ok3 := parseRawValue(m[4])
 		if !ok1 || !ok2 || !ok3 {
 			continue
 		}
-		pools = append(pools, MemoryPool{Name: m[1], Source: "jcmd", Used: used, Committed: size, Max: max})
+		pools = append(pools, MemoryPool{Name: m[1], Source: "jcmd", Used: used, Max: size, Peak: &peak})
 	}
 	if len(pools) == 0 {
 		return nil, fmt.Errorf("jcmd Compiler.codecache: no code heaps")

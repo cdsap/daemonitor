@@ -92,6 +92,9 @@ func TestParseJcmdHeapInfo(t *testing.T) {
 	if s.CommittedMB != 256 {
 		t.Fatalf("committed MB: got %d want 256", s.CommittedMB)
 	}
+	if s.MaxMB == nil || *s.MaxMB != 256 {
+		t.Fatalf("max MB: got %v want 256", s.MaxMB)
+	}
 	if s.Source != "jcmd" {
 		t.Fatalf("source: %q", s.Source)
 	}
@@ -116,6 +119,25 @@ func TestParseJcmdParallelHeapInfo(t *testing.T) {
 	}
 	if s.CommittedMB != 245 {
 		t.Fatalf("committed MB: got %d want 245", s.CommittedMB)
+	}
+	if s.MaxMB != nil {
+		t.Fatalf("parallel GC heap_info should leave max MB nil, got %d", *s.MaxMB)
+	}
+}
+
+func TestParseJcmdHeapInfoDistinctReservedAndCommitted(t *testing.T) {
+	const g1 = `50527:
+ garbage-first heap   total reserved 1048576K, committed 430080K, used 146710K [0x0000007000800000, 0x0000007040800000)
+  region size 1024K, 16 young (16384K), 15 survivors (15360K)
+ Metaspace       used 161131K, committed 163648K, reserved 1245184K
+  class space    used 21357K, committed 22528K, reserved 1048576K
+`
+	s, err := heap.ParseJcmdHeapInfo(g1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.UsedMB != 143 || s.CommittedMB != 420 || s.MaxMB == nil || *s.MaxMB != 1024 {
+		t.Fatalf("got used=%d committed=%d max=%v want 143/420/1024", s.UsedMB, s.CommittedMB, s.MaxMB)
 	}
 }
 
@@ -325,5 +347,27 @@ func TestParseJcmdCodeCachePreservesPoolNamesAndUnits(t *testing.T) {
 	}
 	if len(pools) != 3 || pools[0].Name != "non-nmethods" || pools[0].Source != "jcmd" || pools[0].Used.Unit != "Kb" || pools[0].Used.Value != 321 {
 		t.Fatalf("pools=%+v", pools)
+	}
+	for i, size := range []float64{5692, 120032, 120032} {
+		peak := heap.RawValue{Value: []float64{400, 5000, 1500}[i], Unit: "Kb"}
+		if pools[i].Peak == nil || *pools[i].Peak != peak {
+			t.Errorf("pool %q peak=%+v, want %+v", pools[i].Name, pools[i].Peak, peak)
+		}
+		if pools[i].Max != (heap.RawValue{Value: size, Unit: "Kb"}) {
+			t.Errorf("pool %q capacity=%+v, want %v Kb", pools[i].Name, pools[i].Max, size)
+		}
+		if pools[i].Committed != (heap.RawValue{}) {
+			t.Errorf("pool %q invents committed memory: %+v", pools[i].Name, pools[i].Committed)
+		}
+	}
+}
+
+func TestParseJcmdCodeCachePreservesZeroPeak(t *testing.T) {
+	pools, err := heap.ParseJcmdCodeCache("CodeHeap 'non-profiled nmethods': size=120048Kb used=0Kb max_used=0Kb free=120048Kb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pools[0].Peak == nil || *pools[0].Peak != (heap.RawValue{Value: 0, Unit: "Kb"}) {
+		t.Fatalf("zero peak unavailable: %+v", pools[0])
 	}
 }

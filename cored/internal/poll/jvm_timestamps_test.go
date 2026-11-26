@@ -11,9 +11,27 @@ import (
 )
 
 func TestLiveHeapUnavailableHasNoMeasurementTime(t *testing.T) {
-	used, committed, _, sampledAt, available := liveHeapFieldsFromSample(heap.Sample{}, heap.FailureTimeout)
-	if used != nil || committed != nil || sampledAt != nil || available {
-		t.Fatalf("failed probe claimed a measurement: used=%v committed=%v at=%v available=%v", used, committed, sampledAt, available)
+	used, committed, max, sampledAt, available := liveHeapFieldsFromSample(heap.Sample{}, heap.FailureTimeout)
+	if used != nil || committed != nil || max != nil || sampledAt != nil || available {
+		t.Fatalf("failed probe claimed a measurement: used=%v committed=%v max=%v at=%v available=%v", used, committed, max, sampledAt, available)
+	}
+}
+
+func TestLiveHeapPropagatesMaxMBWhenReported(t *testing.T) {
+	maxVal := int64(1024)
+	used, committed, max, sampledAt, available := liveHeapFieldsFromSample(heap.Sample{
+		UsedMB:           143,
+		CommittedMB:      420,
+		MaxMB:            &maxVal,
+		MeasurementTimes: map[string]int64{"heap": 5000},
+	}, "")
+	if !available || used == nil || *used != 143 || committed == nil || *committed != 420 || max == nil || *max != 1024 || sampledAt == nil || *sampledAt != 5000 {
+		t.Fatalf("got used=%v committed=%v max=%v at=%v avail=%v", used, committed, max, sampledAt, available)
+	}
+	// When probe does not report max capacity (e.g., jstat or ParallelGC), max stays nil.
+	_, _, nilMax, _, availNoMax := liveHeapFieldsFromSample(heap.Sample{UsedMB: 50, CommittedMB: 100}, "")
+	if !availNoMax || nilMax != nil {
+		t.Fatalf("expected nil max when absent, got max=%v avail=%v", nilMax, availNoMax)
 	}
 }
 

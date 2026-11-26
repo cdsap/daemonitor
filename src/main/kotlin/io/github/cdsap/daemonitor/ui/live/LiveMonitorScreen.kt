@@ -662,7 +662,8 @@ private fun poolDetail(pool: JvmMemoryPool): String {
     fun value(raw: JvmRawValue?): String = raw?.let {
         "${it.value} ${it.unit}".trimEnd()
     } ?: "unavailable"
-    return "used ${value(pool.used)} · committed ${value(pool.committed)} · max ${value(pool.max)}"
+    return "used ${value(pool.used)} · committed ${value(pool.committed)} · max ${value(pool.max)}" +
+        (pool.peak?.let { " · peak ${value(it)}" } ?: "")
 }
 
 private fun Double?.gcTimeCompact(): String = this?.let { String.format(Locale.ROOT, "%.3f", it) } ?: "—"
@@ -677,7 +678,7 @@ private fun Long?.metricBytes(): String = this?.let {
 
 @Composable
 private fun LogCard(tailState: LogTailState, showMetadata: Boolean, daemonLog: DaemonLog?, modifier: Modifier = Modifier) {
-    SectionCard("Gradle daemon log", modifier) {
+    SectionCard("Gradle daemon log", modifier.testTag("gradle-log-card")) {
         Column(modifier = Modifier.fillMaxSize()) {
             if (showMetadata) {
                 DetailRow("Gradle version", daemonLog?.gradleVersion?.takeIf { it.isNotBlank() } ?: "Unavailable")
