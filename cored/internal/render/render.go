@@ -351,8 +351,13 @@ func WriteHistoryPlain(w io.Writer, hist model.History) {
 func WriteLogsPlain(w io.Writer, list []logs.DaemonLog) {
 	fmt.Fprintf(w, "daemon_logs=%d\n", len(list))
 	for _, log := range list {
-		if log.Tool == "bazel" {
-			fmt.Fprintf(w, "  pid=%-7d tool=%s source=%s %s\n", log.PID, log.Tool, log.Source, log.Path)
+		if strings.EqualFold(log.Tool, "bazel") || (log.GradleVersion == "" && log.Tool != "") {
+			tool := strings.ToLower(log.Tool)
+			source := log.Source
+			if source == "" {
+				source = "-"
+			}
+			fmt.Fprintf(w, "  pid=%-7d %s=%-14s %s\n", log.PID, tool, source, log.Path)
 			continue
 		}
 		fmt.Fprintf(w, "  pid=%-7d gradle=%-8s %s\n", log.PID, log.GradleVersion, log.Path)
@@ -361,8 +366,18 @@ func WriteLogsPlain(w io.Writer, list []logs.DaemonLog) {
 
 // WriteLogTailPlain prints a log tail.
 func WriteLogTailPlain(w io.Writer, tail logs.Tail) {
-	fmt.Fprintf(w, "pid=%d gradle=%s lines=%d events=%d\n",
-		tail.PID, tail.GradleVersion, len(tail.Lines), len(tail.Events))
+	if strings.EqualFold(tail.Tool, "bazel") || (tail.GradleVersion == "" && tail.Tool != "") {
+		tool := strings.ToLower(tail.Tool)
+		source := tail.Source
+		if source == "" {
+			source = "-"
+		}
+		fmt.Fprintf(w, "pid=%d %s=%s lines=%d events=%d\n",
+			tail.PID, tool, source, len(tail.Lines), len(tail.Events))
+	} else {
+		fmt.Fprintf(w, "pid=%d gradle=%s lines=%d events=%d\n",
+			tail.PID, tail.GradleVersion, len(tail.Lines), len(tail.Events))
+	}
 	for _, line := range tail.Lines {
 		fmt.Fprintln(w, line)
 	}

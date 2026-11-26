@@ -380,12 +380,46 @@ func TestWriteLogsPlainDistinguishesBazelSourcesFromGradle(t *testing.T) {
 	}
 	want := [][]string{
 		{"pid=1", "gradle=9.0", "daemon-1.out.log"},
-		{"pid=2", "tool=bazel", "source=server/jvm.out", "jvm.out"},
-		{"pid=2", "tool=bazel", "source=command.log", "command.log"},
+		{"pid=2", "bazel=server/jvm.out", "jvm.out"},
+		{"pid=2", "bazel=command.log", "command.log"},
 	}
 	for i, fields := range want {
 		if got := strings.Fields(lines[i+1]); strings.Join(got, " ") != strings.Join(fields, " ") {
 			t.Fatalf("log row=%q, want fields %v", lines[i+1], fields)
 		}
+	}
+}
+
+func TestWriteLogsPlainAndTailDistinguishesGradleAndBazel(t *testing.T) {
+	var buf bytes.Buffer
+	WriteLogsPlain(&buf, []logs.DaemonLog{
+		{PID: 50527, GradleVersion: "9.6.1", Path: "daemon-50527.out.log"},
+		{PID: 50577, Tool: "bazel", Source: "server/jvm.out", Path: "jvm.out"},
+		{PID: 50578, Tool: "bazel", Path: "command.log"},
+	})
+	out := buf.String()
+	if !strings.Contains(out, "pid=50527   gradle=9.6.1    daemon-50527.out.log") {
+		t.Fatalf("missing Gradle log row: %q", out)
+	}
+	if !strings.Contains(out, "pid=50577   bazel=server/jvm.out jvm.out") {
+		t.Fatalf("missing Bazel log row with source: %q", out)
+	}
+	if !strings.Contains(out, "pid=50578   bazel=-") {
+		t.Fatalf("missing Bazel fallback source: %q", out)
+	}
+	if strings.Contains(out, "pid=50577   gradle=") {
+		t.Fatalf("Bazel log rendered blank gradle= label: %q", out)
+	}
+
+	buf.Reset()
+	WriteLogTailPlain(&buf, logs.Tail{
+		PID:    50577,
+		Tool:   "bazel",
+		Source: "server/jvm.out",
+		Lines:  []string{"OpenJDK warning"},
+	})
+	tailOut := buf.String()
+	if !strings.Contains(tailOut, "pid=50577 bazel=server/jvm.out lines=1 events=0") {
+		t.Fatalf("unexpected Bazel tail header: %q", tailOut)
 	}
 }

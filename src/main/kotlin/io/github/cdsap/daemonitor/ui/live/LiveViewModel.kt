@@ -160,7 +160,7 @@ class LiveViewModel(
 
     private fun DaemonLogTailResult.toUiState(): LogTailState = when (this) {
         DaemonLogTailResult.NoLog -> LogTailState.NoLog
-        is DaemonLogTailResult.Lines -> if (lines.isEmpty()) LogTailState.NoLog else LogTailState.Available(lines)
+        is DaemonLogTailResult.Lines -> LogTailState.Available(lines)
         is DaemonLogTailResult.Error -> LogTailState.Error(errorType)
     }
 

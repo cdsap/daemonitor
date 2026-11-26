@@ -1,7 +1,6 @@
 package io.github.cdsap.daemonitor
 
 import io.github.cdsap.daemonitor.application.DaemonBuildSource
-import io.github.cdsap.daemonitor.application.DaemonLog
 import io.github.cdsap.daemonitor.application.DaemonLogTailResult
 import io.github.cdsap.daemonitor.application.HostContextSource
 import io.github.cdsap.daemonitor.application.update.UpdateService
@@ -52,9 +51,6 @@ class WatcherService(
     val historyViewModel = HistoryViewModel()
 
     private val initialSettings = settingsService.load()
-
-    @Volatile
-    private var latestDaemonLogs = emptyList<DaemonLog>()
 
     val settingsViewModel = SettingsViewModel(
         initial = SettingsUiState(
@@ -146,7 +142,6 @@ class WatcherService(
 
     suspend fun pollOnce() {
         val result = monitoringService.poll()
-        latestDaemonLogs = result.daemonLogs
         val selectedTail = selectedDaemonTail(result)
         withContext(uiDispatcher) {
             liveViewModel.onPoll(result.processes, selectedTail, result.daemonLogs)
@@ -160,7 +155,6 @@ class WatcherService(
     internal suspend fun pollSafely() {
         monitoringService.pollSafely(
             onResult = { result ->
-                latestDaemonLogs = result.daemonLogs
                 val selectedTail = selectedDaemonTail(result)
                 withContext(uiDispatcher) {
                     liveViewModel.onPoll(result.processes, selectedTail, result.daemonLogs)
@@ -183,6 +177,8 @@ class WatcherService(
         val source = hostContextSource
         val generation = liveViewModel.select(pid, source != null) ?: return
         val process = (liveViewModel.state.value.detail as? DetailState.Selected)?.process?.takeIf { it.pid == pid } ?: return
+        // Read the same snapshot that supplied the selected process's displayed log metadata.
+        val selectedLog = liveViewModel.state.value.daemonLog
         if (source != null) {
             monitoringService.launchIo {
                 val result = try { ContextState.Loaded(source.capabilities()) } catch (e: CancellationException) { throw e } catch (_: Exception) { ContextState.Error }
@@ -203,8 +199,12 @@ class WatcherService(
         }
         loadRecentBuilds(generation, process)
         monitoringService.launchIo {
-            val tail = runtime.tailFor(latestDaemonLogs, pid)
-            withContext(uiDispatcher) { liveViewModel.onTail(pid, tail) }
+            val tail = runtime.tailFor(listOfNotNull(selectedLog), pid)
+            withContext(uiDispatcher) {
+                if (liveViewModel.isContextSelection(generation) && liveViewModel.state.value.daemonLog == selectedLog) {
+                    liveViewModel.onTail(pid, tail)
+                }
+            }
         }
     }
 

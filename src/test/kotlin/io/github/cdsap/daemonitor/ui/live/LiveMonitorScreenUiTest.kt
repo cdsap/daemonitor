@@ -55,6 +55,53 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalTestApi::class)
 class LiveMonitorScreenUiTest {
     @Test
+    fun `unselected daemon log metadata and status do not overlap`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        setContent {
+            WatcherTheme {
+                Box(Modifier.size(width = 900.dp, height = 600.dp)) {
+                    LiveMonitorScreen(LiveUiState(processes = listOf(sampleProcess()), isLoading = false, isEmpty = false), onSelect = {}, onClearSelection = {})
+                }
+            }
+        }
+        val version = onNodeWithText("Gradle version", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val path = onNodeWithText("Log path", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val status = onNodeWithText("Select a Gradle daemon to see its daemon log.", substring = true)
+        status.assertIsDisplayed()
+        assertTrue(version.height > 0f && path.height > 0f)
+        assertTrue(version.bottom <= path.top, "Metadata rows must not overlap")
+        assertTrue(path.bottom <= status.fetchSemanticsNode().boundsInRoot.top, "Status must follow metadata")
+    }
+
+    @Test
+    fun `available daemon log metadata and body do not overlap`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val process = sampleProcess()
+        val log = DaemonLog(process.pid, "9.6.1", Path.of("/tmp/daemon-${process.pid}.out.log"))
+        val state = LiveUiState(
+            processes = listOf(process), detail = DetailState.Selected(process), daemonLog = log,
+            tailState = LogTailState.Available(listOf("daemon log regression line")), isLoading = false, isEmpty = false,
+        )
+        setContent {
+            WatcherTheme {
+                Box(Modifier.size(width = 900.dp, height = 600.dp)) {
+                    LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+                }
+            }
+        }
+        val version = onNodeWithText("Gradle version", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val path = onNodeWithText("Log path", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        onNodeWithText("9.6.1").assertIsDisplayed()
+        onNodeWithText(log.path.toString()).assertIsDisplayed()
+        val body = onNodeWithText("daemon log regression line")
+        body.assertIsDisplayed()
+        assertTrue(version.height > 0f && path.height > 0f)
+        assertTrue(version.bottom <= path.top, "Metadata rows must not overlap")
+        val pathValue = onNodeWithText(log.path.toString()).fetchSemanticsNode().boundsInRoot
+        assertTrue(maxOf(path.bottom, pathValue.bottom) <= body.fetchSemanticsNode().boundsInRoot.top, "Log body must follow metadata")
+    }
+
+    @Test
     fun `JVM pools and compilation appear only when metrics are available`() = runComposeUiTest {
         mainClock.autoAdvance = false
         val empty = sampleProcess(type = ProcessType.JAVA_GRADLE_RELATED)
@@ -1012,5 +1059,35 @@ class LiveMonitorScreenUiTest {
         val selLine = onNodeWithText("2026-11-25 [DEBUG] [org.gradle.Daemon] ready").fetchSemanticsNode().boundsInRoot
         assertTrue(selVersion.bottom <= selPath.top, "Selected Gradle version ($selVersion) overlapped Log path ($selPath)")
         assertTrue(selPath.bottom <= selLine.top, "Selected Log path ($selPath) overlapped log tail ($selLine)")
+    }
+
+    @Test
+    fun `project column falls back to working directory when project path is null`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val withProject = sampleProcess(pid = 101, projectPath = "/work/checkout-service", workingDirectory = "/work/other")
+        val withWorkDirOnly = sampleProcess(pid = 102, projectPath = null, workingDirectory = "/private/tmp/gradle-app/")
+        val withWindowsWorkDir = sampleProcess(pid = 103, type = ProcessType.TEST_WORKER, projectPath = null, workingDirectory = "C:\\repo\\app\\")
+        val withNeither = sampleProcess(pid = 104, projectPath = null, workingDirectory = null)
+
+        assertEquals("checkout-service", displayProjectLabel(withProject))
+        assertEquals("gradle-app", displayProjectLabel(withWorkDirOnly))
+        assertEquals("app", displayProjectLabel(withWindowsWorkDir))
+        assertNull(displayProjectLabel(withNeither))
+
+        val state = LiveUiState(
+            processes = listOf(withProject, withWorkDirOnly, withWindowsWorkDir, withNeither),
+            isLoading = false,
+            isEmpty = false,
+        )
+        setContent {
+            WatcherTheme {
+                Box(Modifier.size(width = 1180.dp, height = 760.dp)) {
+                    LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+                }
+            }
+        }
+        onNodeWithText("checkout-service").assertExists()
+        onNodeWithText("gradle-app").assertExists()
+        onNodeWithText("app").assertExists()
     }
 }

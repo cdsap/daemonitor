@@ -319,7 +319,8 @@ private fun ProcessRow(
                 Text(p.type.displayLabel(), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             }
         }
-        Cell(p.projectPath?.substringAfterLast('/') ?: "—", cols[colIndex++], muted = p.projectPath == null)
+        val projectLabel = displayProjectLabel(p)
+        Cell(projectLabel ?: "—", cols[colIndex++], muted = projectLabel == null)
         Cell(p.pid.toString(), cols[colIndex++])
         Cell("${p.rssMemoryMb} MB", cols[colIndex++])
         Cell(LiveMetricLabels.liveHeapUsedCompact(p.liveHeap), cols[colIndex++], muted = p.liveHeap?.available != true)
@@ -790,6 +791,16 @@ private fun DetailRow(label: String, value: String) {
         Text(label, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
         Text(value, modifier = Modifier.weight(2f), style = MaterialTheme.typography.bodySmall)
     }
+}
+
+/** Project column label matching Go CLI/TUI `render.ProjectName`: projectPath basename, else workingDirectory basename. */
+internal fun displayProjectLabel(process: GradleProcess): String? {
+    val raw = process.projectPath?.trim()?.takeIf { it.isNotEmpty() }
+        ?: process.workingDirectory?.trim()?.takeIf { it.isNotEmpty() }
+        ?: return null
+    val trimmed = raw.trimEnd('/', '\\')
+    if (trimmed.isEmpty()) return raw
+    return trimmed.substringAfterLast('/').substringAfterLast('\\').ifEmpty { trimmed }
 }
 
 /** Compact, human-readable process uptime: "45s", "12m 03s", "3h 07m", "2d 4h". */
