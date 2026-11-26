@@ -83,6 +83,12 @@ func (s *Store) migrate() error {
 	if err := s.ensureProcessSamplesAlignedWithApp(); err != nil {
 		return err
 	}
+	if _, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS process_command_lines (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  command_line TEXT NOT NULL UNIQUE
+)`); err != nil {
+		return err
+	}
 	if err := s.ensureBuildsAlignedWithApp(); err != nil {
 		return err
 	}
@@ -112,7 +118,8 @@ func (s *Store) migrate() error {
 // v12: optional per-incarnation effective JVM flags document.
 // v13: successful JVM acquisition times by family (null for legacy rows).
 // v14: nullable JIT/class metrics and independent cumulative GC seconds.
-const schemaVersion = 14
+// v15: normalized command lines shared by retained process samples.
+const schemaVersion = 15
 
 func (s *Store) ensureProcessSamplesAlignedWithApp() error {
 	exists, err := s.tableExists("process_samples")
@@ -139,6 +146,7 @@ func (s *Store) createProcessSamplesAppAligned() error {
 	_, err := s.db.Exec(`
 CREATE TABLE IF NOT EXISTS process_samples (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  command_line_id INTEGER,
   timestamp INTEGER NOT NULL,
   host_id TEXT NOT NULL DEFAULT '',
   pid INTEGER NOT NULL,
@@ -225,6 +233,7 @@ CREATE TABLE IF NOT EXISTS process_samples (
 );
 CREATE INDEX IF NOT EXISTS process_samples_ts ON process_samples(timestamp);
 CREATE INDEX IF NOT EXISTS process_samples_pid_ts ON process_samples(pid, timestamp);
+CREATE INDEX IF NOT EXISTS process_samples_command_line ON process_samples(command_line_id);
 `)
 	return err
 }
@@ -234,6 +243,7 @@ func (s *Store) ensureProcessSamplesAdditiveColumns(cols []string) error {
 		col string
 		ddl string
 	}{
+		{"command_line_id", `ALTER TABLE process_samples ADD COLUMN command_line_id INTEGER`},
 		{"jvm_sampled_at_ms", `ALTER TABLE process_samples ADD COLUMN jvm_sampled_at_ms TEXT`},
 		{"jit_present", `ALTER TABLE process_samples ADD COLUMN jit_present INTEGER`},
 		{"jit_compiled_count", `ALTER TABLE process_samples ADD COLUMN jit_compiled_count INTEGER`},
@@ -318,6 +328,7 @@ func (s *Store) ensureProcessSamplesAdditiveColumns(cols []string) error {
 	_, err := s.db.Exec(`
 CREATE INDEX IF NOT EXISTS process_samples_ts ON process_samples(timestamp);
 CREATE INDEX IF NOT EXISTS process_samples_pid_ts ON process_samples(pid, timestamp);
+CREATE INDEX IF NOT EXISTS process_samples_command_line ON process_samples(command_line_id);
 `)
 	return err
 }
@@ -596,7 +607,7 @@ func (s *Store) InsertSnapshotForHost(hostID string, snap model.Snapshot) error 
 
 	stmt, err := tx.Prepare(`
 INSERT INTO process_samples(
-  timestamp, host_id, pid, parent_pid, process_type, command_line,
+  timestamp, host_id, pid, parent_pid, process_type, command_line_id, command_line,
 	working_directory, project_path, rss_memory_mb, virtual_memory_mb, swap_memory_mb, resident_bytes, virtual_bytes,
 	private_committed_bytes, proportional_bytes, physical_footprint_bytes, swap_bytes, peak_resident_bytes,
 	proportional_sampled_at_ms, thread_count,
@@ -610,7 +621,7 @@ INSERT INTO process_samples(
   start_time_ms, automated, subtree_rss_memory_mb, subtree_cpu_percent, owner_pid, owner_start_time_ms, jvm_sampled_at_ms,
   jit_present, jit_compiled_count, jit_failed_count, jit_invalid_count, jit_compilation_time_seconds, classes_present, classes_loaded, classes_unloaded_total, classes_loaded_total, classes_time_seconds, young_gc_time_seconds, full_gc_time_seconds, concurrent_gc_time_seconds, total_gc_time_seconds
 ) VALUES (
- ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+ ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
@@ -623,23 +634,15 @@ INSERT INTO process_samples(
 	}
 	defer stmt.Close()
 
-	// Avoid duplicating multi-KB command lines on every 2s poll when process_instances
-	// already persists the identical command_line for this (host, pid, start_time_ms).
-	lookupInstanceCmd, err := tx.Prepare(`
-SELECT command_line FROM process_instances
-WHERE host_id = ? AND pid = ? AND create_time_ms = ?`)
-	if err != nil {
-		return err
-	}
-	defer lookupInstanceCmd.Close()
-
 	for _, p := range snap.Processes {
-		sampleCmdLine := p.CommandLine
-		if p.StartTimeMs > 0 && p.CommandLine != "" {
-			var existingCmd string
-			if err := lookupInstanceCmd.QueryRow(hostID, p.PID, p.StartTimeMs).Scan(&existingCmd); err == nil && existingCmd == p.CommandLine {
-				sampleCmdLine = ""
-			}
+		// Keep the sample and its dictionary entry atomic. A dictionary preserves
+		// command changes and PID reuse without relying on mutable lifecycle metadata.
+		if _, err := tx.Exec(`INSERT INTO process_command_lines(command_line) VALUES (?) ON CONFLICT(command_line) DO NOTHING`, p.CommandLine); err != nil {
+			return err
+		}
+		var commandID int64
+		if err := tx.QueryRow(`SELECT id FROM process_command_lines WHERE command_line=?`, p.CommandLine).Scan(&commandID); err != nil {
+			return err
 		}
 		// History retains heap/GC timestamps and optional JIT/class timestamps when persisted.
 		var retainedTimes map[string]int64
@@ -686,7 +689,7 @@ WHERE host_id = ? AND pid = ? AND create_time_ms = ?`)
 			classes = *p.Classes
 		}
 		if _, err := stmt.Exec(
-			snap.SampledAtMs, hostID, p.PID, p.ParentPID, p.Type, sampleCmdLine,
+			snap.SampledAtMs, hostID, p.PID, p.ParentPID, p.Type, commandID, "",
 			p.WorkingDirectory, p.ProjectPath, p.RSSMemoryMB, p.VirtualMemoryMB, p.SwapMemoryMB, p.ResidentBytes,
 			p.VirtualBytes, p.PrivateCommittedBytes, p.ProportionalBytes, p.PhysicalFootprintBytes, p.SwapBytes,
 			p.PeakResidentBytes, p.ProportionalSampledAtMs, p.ThreadCount,
@@ -717,6 +720,9 @@ func (s *Store) PurgeOlderThan(retention time.Duration) (int64, error) {
 	n, err := res.RowsAffected()
 	if err != nil {
 		return 0, err
+	}
+	if _, err := s.db.Exec(`DELETE FROM process_command_lines WHERE id NOT IN (SELECT command_line_id FROM process_samples WHERE command_line_id IS NOT NULL)`); err != nil {
+		return n, err
 	}
 	ev, err := s.db.Exec(`DELETE FROM process_events WHERE timestamp_ms < ?`, cutoff)
 	if err != nil {
@@ -782,7 +788,7 @@ func (s *Store) HistoryFiltered(filter HistoryFilter) ([]model.Process, error) {
 	args = append(args, limit)
 	query := `
 SELECT ps.timestamp, ps.pid, ps.parent_pid, ps.process_type, COALESCE(ps.name, ''),
-       COALESCE(NULLIF(ps.command_line, ''), pi.command_line, ''),
+       COALESCE((SELECT command_line FROM process_command_lines WHERE id = ps.command_line_id), NULLIF(ps.command_line, ''), pi.command_line, ''),
 	ps.working_directory, ps.project_path, ps.rss_memory_mb, ps.virtual_memory_mb, ps.swap_memory_mb, ps.resident_bytes, ps.virtual_bytes,
 	ps.private_committed_bytes, ps.proportional_bytes, ps.physical_footprint_bytes, ps.swap_bytes, ps.peak_resident_bytes,
 	ps.proportional_sampled_at_ms, ps.thread_count,

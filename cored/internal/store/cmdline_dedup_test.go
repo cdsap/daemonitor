@@ -64,21 +64,24 @@ func TestInsertSnapshotDeduplicatesCommandLineViaProcessInstances(t *testing.T) 
 		}
 	}
 
-	// Raw DB check: only the first sample stored command_line; subsequent 5 rows stored "".
+	// Raw DB check: all 6 samples stored "" inline while process_command_lines holds one row.
 	rawDB, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer rawDB.Close()
-	var nonEmptyCount, emptyCount int
+	var nonEmptyCount, emptyCount, dictCount int
 	if err := rawDB.QueryRow(`SELECT COUNT(*) FROM process_samples WHERE pid = 4242 AND command_line != ''`).Scan(&nonEmptyCount); err != nil {
 		t.Fatal(err)
 	}
 	if err := rawDB.QueryRow(`SELECT COUNT(*) FROM process_samples WHERE pid = 4242 AND command_line = ''`).Scan(&emptyCount); err != nil {
 		t.Fatal(err)
 	}
-	if nonEmptyCount != 1 || emptyCount != 5 {
-		t.Fatalf("raw command_line counts: nonEmpty=%d empty=%d, want 1 and 5", nonEmptyCount, emptyCount)
+	if err := rawDB.QueryRow(`SELECT COUNT(*) FROM process_command_lines`).Scan(&dictCount); err != nil {
+		t.Fatal(err)
+	}
+	if nonEmptyCount != 0 || emptyCount != 6 || dictCount != 1 {
+		t.Fatalf("raw command_line counts: nonEmpty=%d empty=%d dict=%d, want 0, 6, and 1", nonEmptyCount, emptyCount, dictCount)
 	}
 
 	// HistoryFiltered must still hydrate the full command_line for every returned row.
