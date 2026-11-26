@@ -623,7 +623,24 @@ INSERT INTO process_samples(
 	}
 	defer stmt.Close()
 
+	// Avoid duplicating multi-KB command lines on every 2s poll when process_instances
+	// already persists the identical command_line for this (host, pid, start_time_ms).
+	lookupInstanceCmd, err := tx.Prepare(`
+SELECT command_line FROM process_instances
+WHERE host_id = ? AND pid = ? AND create_time_ms = ?`)
+	if err != nil {
+		return err
+	}
+	defer lookupInstanceCmd.Close()
+
 	for _, p := range snap.Processes {
+		sampleCmdLine := p.CommandLine
+		if p.StartTimeMs > 0 && p.CommandLine != "" {
+			var existingCmd string
+			if err := lookupInstanceCmd.QueryRow(hostID, p.PID, p.StartTimeMs).Scan(&existingCmd); err == nil && existingCmd == p.CommandLine {
+				sampleCmdLine = ""
+			}
+		}
 		// History retains heap/GC timestamps and optional JIT/class timestamps when persisted.
 		var retainedTimes map[string]int64
 		families := []string{"heap", "gc"}
@@ -669,7 +686,7 @@ INSERT INTO process_samples(
 			classes = *p.Classes
 		}
 		if _, err := stmt.Exec(
-			snap.SampledAtMs, hostID, p.PID, p.ParentPID, p.Type, p.CommandLine,
+			snap.SampledAtMs, hostID, p.PID, p.ParentPID, p.Type, sampleCmdLine,
 			p.WorkingDirectory, p.ProjectPath, p.RSSMemoryMB, p.VirtualMemoryMB, p.SwapMemoryMB, p.ResidentBytes,
 			p.VirtualBytes, p.PrivateCommittedBytes, p.ProportionalBytes, p.PhysicalFootprintBytes, p.SwapBytes,
 			p.PeakResidentBytes, p.ProportionalSampledAtMs, p.ThreadCount,
@@ -752,34 +769,37 @@ func (s *Store) HistoryFiltered(filter HistoryFilter) ([]model.Process, error) {
 	}
 	var conds []string
 	var args []any
-	conds = append(conds, "timestamp >= ?")
+	conds = append(conds, "ps.timestamp >= ?")
 	args = append(args, filter.SinceMs)
 	if filter.PID > 0 {
-		conds = append(conds, "pid = ?")
+		conds = append(conds, "ps.pid = ?")
 		args = append(args, filter.PID)
 	}
 	if filter.StartTimeMs > 0 {
-		conds = append(conds, "start_time_ms = ?")
+		conds = append(conds, "ps.start_time_ms = ?")
 		args = append(args, filter.StartTimeMs)
 	}
 	args = append(args, limit)
 	query := `
-SELECT timestamp, pid, parent_pid, process_type, COALESCE(name, ''), command_line,
-	working_directory, project_path, rss_memory_mb, virtual_memory_mb, swap_memory_mb, resident_bytes, virtual_bytes,
-	private_committed_bytes, proportional_bytes, physical_footprint_bytes, swap_bytes, peak_resident_bytes,
-	proportional_sampled_at_ms, thread_count,
-       read_bytes, write_bytes, read_operations, write_operations, minor_page_faults, major_page_faults,
-       voluntary_context_switches, involuntary_context_switches, open_file_descriptors, cpu_percent,
-       cpu_user_seconds_total, cpu_system_seconds_total, cpu_total_seconds_total, cpu_cores_used, logical_processor_count,
-       max_heap_mb, min_heap_mb, gc, heap_used_mb, heap_committed_mb, heap_max_mb, heap_sampled_at_ms,
-       heap_available, metaspace_used_mb, metaspace_committed_mb, young_gc_count, young_gc_time_ms,
-       old_gc_count, old_gc_time_ms, full_gc_count, concurrent_gc_count, total_gc_count, java_version, java_runtime_version, java_vendor,
-       java_vm_name, java_vm_version, os_name, os_arch, active_processor_count,
-       start_time_ms, status, automated, owner_pid, owner_start_time_ms, jvm_sampled_at_ms,
-       jit_present, jit_compiled_count, jit_failed_count, jit_invalid_count, jit_compilation_time_seconds, classes_present, classes_loaded, classes_unloaded_total, classes_loaded_total, classes_time_seconds, young_gc_time_seconds, full_gc_time_seconds, concurrent_gc_time_seconds, total_gc_time_seconds
-FROM process_samples
+SELECT ps.timestamp, ps.pid, ps.parent_pid, ps.process_type, COALESCE(ps.name, ''),
+       COALESCE(NULLIF(ps.command_line, ''), pi.command_line, ''),
+	ps.working_directory, ps.project_path, ps.rss_memory_mb, ps.virtual_memory_mb, ps.swap_memory_mb, ps.resident_bytes, ps.virtual_bytes,
+	ps.private_committed_bytes, ps.proportional_bytes, ps.physical_footprint_bytes, ps.swap_bytes, ps.peak_resident_bytes,
+	ps.proportional_sampled_at_ms, ps.thread_count,
+       ps.read_bytes, ps.write_bytes, ps.read_operations, ps.write_operations, ps.minor_page_faults, ps.major_page_faults,
+       ps.voluntary_context_switches, ps.involuntary_context_switches, ps.open_file_descriptors, ps.cpu_percent,
+       ps.cpu_user_seconds_total, ps.cpu_system_seconds_total, ps.cpu_total_seconds_total, ps.cpu_cores_used, ps.logical_processor_count,
+       ps.max_heap_mb, ps.min_heap_mb, ps.gc, ps.heap_used_mb, ps.heap_committed_mb, ps.heap_max_mb, ps.heap_sampled_at_ms,
+       ps.heap_available, ps.metaspace_used_mb, ps.metaspace_committed_mb, ps.young_gc_count, ps.young_gc_time_ms,
+       ps.old_gc_count, ps.old_gc_time_ms, ps.full_gc_count, ps.concurrent_gc_count, ps.total_gc_count, ps.java_version, ps.java_runtime_version, ps.java_vendor,
+       ps.java_vm_name, ps.java_vm_version, ps.os_name, ps.os_arch, ps.active_processor_count,
+       ps.start_time_ms, ps.status, ps.automated, ps.owner_pid, ps.owner_start_time_ms, ps.jvm_sampled_at_ms,
+       ps.jit_present, ps.jit_compiled_count, ps.jit_failed_count, ps.jit_invalid_count, ps.jit_compilation_time_seconds, ps.classes_present, ps.classes_loaded, ps.classes_unloaded_total, ps.classes_loaded_total, ps.classes_time_seconds, ps.young_gc_time_seconds, ps.full_gc_time_seconds, ps.concurrent_gc_time_seconds, ps.total_gc_time_seconds
+FROM process_samples ps
+LEFT JOIN process_instances pi
+  ON pi.host_id = ps.host_id AND pi.pid = ps.pid AND pi.create_time_ms = ps.start_time_ms AND ps.start_time_ms > 0
 WHERE ` + strings.Join(conds, " AND ") + `
-ORDER BY timestamp DESC, rowid DESC
+ORDER BY ps.timestamp DESC, ps.rowid DESC
 LIMIT ?`
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
