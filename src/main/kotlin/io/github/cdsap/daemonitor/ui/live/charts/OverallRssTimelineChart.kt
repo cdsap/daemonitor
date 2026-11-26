@@ -3,6 +3,9 @@ package io.github.cdsap.daemonitor.ui.live.charts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.LocalScrollbarStyle
+import androidx.compose.foundation.HorizontalScrollbar
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
@@ -40,6 +43,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -154,35 +158,48 @@ fun OverallRssTimelineChart(
                 style = MaterialTheme.typography.labelSmall,
                 color = labelColor,
             )
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(Space.sm),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                series.forEach { item ->
-                    val visible = item.id in visibleIds
-                    val selected = item.pid != null && item.pid == selectedPid
-                    LegendChip(
-                        label = item.label,
-                        color = seriesColors.getValue(item.id),
-                        visible = visible,
-                        selected = selected,
-                        dashed = item.dashed,
-                        onClick = {
-                            val pid = item.pid
-                            if (pid != null && pid != selectedPid) {
-                                onSelectProcess(pid)
-                                visibleIds = visibleIds + item.id
-                            } else {
-                                val nextVisible = if (visible) {
-                                    if (visibleIds.size == 1) visibleIds else visibleIds - item.id
+            val legendScrollState = rememberScrollState()
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(legendScrollState).testTag("visual-legend-strip"),
+                    horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    series.forEach { item ->
+                        val visible = item.id in visibleIds
+                        val selected = item.pid != null && item.pid == selectedPid
+                        LegendChip(
+                            label = item.label,
+                            color = seriesColors.getValue(item.id),
+                            visible = visible,
+                            selected = selected,
+                            dashed = item.dashed,
+                            onClick = {
+                                val pid = item.pid
+                                if (pid != null && pid != selectedPid) {
+                                    onSelectProcess(pid)
+                                    visibleIds = visibleIds + item.id
                                 } else {
-                                    visibleIds + item.id
+                                    val nextVisible = if (visible) {
+                                        if (visibleIds.size == 1) visibleIds else visibleIds - item.id
+                                    } else {
+                                        visibleIds + item.id
+                                    }
+                                    visibleIds = nextVisible
+                                    pid?.let(onSelectProcess)
                                 }
-                                visibleIds = nextVisible
-                                pid?.let(onSelectProcess)
-                            }
-                        },
+                            },
+                        )
+                    }
+                }
+                if (legendScrollState.maxValue > 0) {
+                    HorizontalScrollbar(
+                        adapter = rememberScrollbarAdapter(legendScrollState),
+                        style = LocalScrollbarStyle.current.copy(
+                            unhoverColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            hoverColor = MaterialTheme.colorScheme.onSurface,
+                        ),
+                        modifier = Modifier.fillMaxWidth().padding(top = Space.xs).testTag("visual-legend-scrollbar"),
                     )
                 }
             }

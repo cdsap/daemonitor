@@ -76,7 +76,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 private val COLS = listOf(
-    Col("Started", 1.1f),
+    Col("Started", 2.0f),
     Col("Project", 1.1f),
     Col("Duration", 0.7f, end = true),
     Col("Peak RSS", 1.0f, end = true),
@@ -268,7 +268,13 @@ private fun BuildRow(b: Build, selected: Boolean, onSelect: () -> Unit) {
                     },
                     size = 15.dp,
                 )
-                Text(formatTime(b.startTimeMs), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    formatTime(b.startTimeMs),
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.testTag("history-started-${b.buildId}"),
+                )
             }
         }
         Cell(
@@ -320,7 +326,8 @@ private fun HistoryDetail(build: Build?) {
                 if (bazel) "Bazel build ${build.buildId}" else "Gradle build ${build.buildId}",
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
-                modifier = Modifier.weight(1f, fill = false),
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false).testTag("history-detail-title"),
             )
             StatusPill(build.finalStatus)
         }
@@ -497,7 +504,7 @@ private fun formatBytes(bytes: Long): String = when {
     else -> "$bytes B"
 }
 
-private val TIME_FMT = DateTimeFormatter.ofPattern("MMM d, HH:mm:ss").withZone(ZoneId.systemDefault())
+private val TIME_FMT = DateTimeFormatter.ofPattern("MMM d HH:mm").withZone(ZoneId.systemDefault())
 private fun Build.displayAgent(): String? = agent.takeUnless { inferredSource == Source.IDE }
 private fun formatTime(ms: Long): String = TIME_FMT.format(Instant.ofEpochMilli(ms))
 private fun formatDuration(seconds: Double?): String =
