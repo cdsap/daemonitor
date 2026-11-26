@@ -1041,11 +1041,14 @@ class LiveMonitorScreenUiTest {
             }
         }
 
+        val cardBounds = onNodeWithTag("gradle-log-card").fetchSemanticsNode().boundsInRoot
         val noSelVersion = onNodeWithText("Gradle version").fetchSemanticsNode().boundsInRoot
         val noSelPath = onNodeWithText("Log path").fetchSemanticsNode().boundsInRoot
         val noSelHint = onNodeWithText("Select a Gradle daemon to see its daemon log.", substring = true).fetchSemanticsNode().boundsInRoot
         assertTrue(noSelVersion.bottom <= noSelPath.top, "Gradle version ($noSelVersion) overlapped Log path ($noSelPath)")
         assertTrue(noSelPath.bottom <= noSelHint.top, "Log path ($noSelPath) overlapped empty state ($noSelHint)")
+        assertTrue(noSelHint.bottom <= cardBounds.bottom, "Empty state hint ($noSelHint) clipped outside log card ($cardBounds)")
+        onNodeWithText("ATTRIBUTED PROJECTS").assertExists()
 
         state = state.copy(
             detail = DetailState.Selected(daemon),
