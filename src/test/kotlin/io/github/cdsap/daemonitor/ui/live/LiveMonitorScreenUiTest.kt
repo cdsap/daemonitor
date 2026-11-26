@@ -924,4 +924,46 @@ class LiveMonitorScreenUiTest {
         onNodeWithText("Gradle worker", useUnmergedTree = true).assertExists()
         onNodeWithText("PID").assertExists()
     }
+
+    @Test
+    fun `gradle daemon log card stacks metadata and body without vertical overlap`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val daemon = sampleProcess(pid = 50527)
+        val logPath = Path.of("/Users/dev/.gradle/daemon/9.6.1/daemon-50527.out.log")
+        var state by mutableStateOf(
+            LiveUiState(
+                processes = listOf(daemon),
+                detail = DetailState.NoSelection,
+                tailState = LogTailState.NoSelection,
+                isLoading = false,
+                isEmpty = false,
+            ),
+        )
+        setContent {
+            WatcherTheme {
+                Box(Modifier.size(width = 1180.dp, height = 760.dp)) {
+                    LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+                }
+            }
+        }
+
+        val noSelVersion = onNodeWithText("Gradle version").fetchSemanticsNode().boundsInRoot
+        val noSelPath = onNodeWithText("Log path").fetchSemanticsNode().boundsInRoot
+        val noSelHint = onNodeWithText("Select a Gradle daemon to see its daemon log.", substring = true).fetchSemanticsNode().boundsInRoot
+        assertTrue(noSelVersion.bottom <= noSelPath.top, "Gradle version ($noSelVersion) overlapped Log path ($noSelPath)")
+        assertTrue(noSelPath.bottom <= noSelHint.top, "Log path ($noSelPath) overlapped empty state ($noSelHint)")
+
+        state = state.copy(
+            detail = DetailState.Selected(daemon),
+            daemonLog = DaemonLog(daemon.pid, "9.6.1", logPath),
+            tailState = LogTailState.Available(listOf("2026-11-25 [DEBUG] [org.gradle.Daemon] ready")),
+        )
+        waitForIdle()
+
+        val selVersion = onNodeWithText("Gradle version").fetchSemanticsNode().boundsInRoot
+        val selPath = onNodeWithText("Log path").fetchSemanticsNode().boundsInRoot
+        val selLine = onNodeWithText("2026-11-25 [DEBUG] [org.gradle.Daemon] ready").fetchSemanticsNode().boundsInRoot
+        assertTrue(selVersion.bottom <= selPath.top, "Selected Gradle version ($selVersion) overlapped Log path ($selPath)")
+        assertTrue(selPath.bottom <= selLine.top, "Selected Log path ($selPath) overlapped log tail ($selLine)")
+    }
 }
