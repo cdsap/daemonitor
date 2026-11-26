@@ -691,16 +691,19 @@ func filterProcesses(items []model.Process, opts Options) []model.Process {
 }
 
 func filterLogs(items []logs.DaemonLog, opts Options) []logs.DaemonLog {
-	if opts.PID == 0 {
-		return items
-	}
-	out := items[:0]
-	for _, item := range items {
-		if item.PID == opts.PID {
-			out = append(out, item)
+	if opts.PID != 0 {
+		out := items[:0]
+		for _, item := range items {
+			if item.PID == opts.PID {
+				out = append(out, item)
+			}
 		}
+		items = out
 	}
-	return out
+	if opts.Limit > 0 && len(items) > opts.Limit {
+		items = items[:opts.Limit]
+	}
+	return items
 }
 
 func writeValue(w io.Writer, v any, output string, plain func()) error {

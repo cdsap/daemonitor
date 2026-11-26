@@ -351,6 +351,10 @@ func WriteHistoryPlain(w io.Writer, hist model.History) {
 func WriteLogsPlain(w io.Writer, list []logs.DaemonLog) {
 	fmt.Fprintf(w, "daemon_logs=%d\n", len(list))
 	for _, log := range list {
+		if log.Tool == "bazel" {
+			fmt.Fprintf(w, "  pid=%-7d tool=%s source=%s %s\n", log.PID, log.Tool, log.Source, log.Path)
+			continue
+		}
 		fmt.Fprintf(w, "  pid=%-7d gradle=%-8s %s\n", log.PID, log.GradleVersion, log.Path)
 	}
 }

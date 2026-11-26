@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/cdsap/daemonitor/cored/internal/client"
+	"github.com/cdsap/daemonitor/cored/internal/logs"
 	"github.com/cdsap/daemonitor/cored/internal/model"
 	"github.com/cdsap/daemonitor/cored/internal/platform"
 )
@@ -362,3 +363,29 @@ func TestExportSanitizationDefaultsToBasenames(t *testing.T) {
 }
 
 func strPtr(s string) *string { return &s }
+
+func TestWriteLogsPlainDistinguishesBazelSourcesFromGradle(t *testing.T) {
+	list := []logs.DaemonLog{
+		{PID: 1, GradleVersion: "9.0", Path: "/logs/daemon-1.out.log"},
+		{PID: 2, Tool: "bazel", Source: "server/jvm.out", Path: "/output/server/jvm.out"},
+		{PID: 2, Tool: "bazel", Source: "command.log", Path: "/output/command.log"},
+	}
+	// The CLI strips paths by default; the source must still distinguish Bazel logs.
+	SanitizeLogsForExport(&list, false)
+	var buf bytes.Buffer
+	WriteLogsPlain(&buf, list)
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	if len(lines) != 4 || lines[0] != "daemon_logs=3" {
+		t.Fatalf("unexpected log count: %s", buf.String())
+	}
+	want := [][]string{
+		{"pid=1", "gradle=9.0", "daemon-1.out.log"},
+		{"pid=2", "tool=bazel", "source=server/jvm.out", "jvm.out"},
+		{"pid=2", "tool=bazel", "source=command.log", "command.log"},
+	}
+	for i, fields := range want {
+		if got := strings.Fields(lines[i+1]); strings.Join(got, " ") != strings.Join(fields, " ") {
+			t.Fatalf("log row=%q, want fields %v", lines[i+1], fields)
+		}
+	}
+}
