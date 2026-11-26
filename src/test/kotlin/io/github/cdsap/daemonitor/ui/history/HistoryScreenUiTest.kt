@@ -369,4 +369,23 @@ class HistoryScreenUiTest {
         waitForIdle()
         onNodeWithText("Gradle build b3", substring = true).assertExists()
     }
+
+    @Test
+    fun `status and source pills have enough room for completed and terminal at 1180x760`() {
+        val builds = listOf(
+            sampleBuild(buildId = "g1", projectPath = "/ws/gradle-app", status = FinalStatus.SUCCESS, source = Source.TERMINAL),
+            sampleBuild(buildId = "b1", projectPath = "/ws/bazel-app", status = FinalStatus.COMPLETED_NO_OUTCOME, source = Source.PROFILE, tool = BuildTool.BAZEL),
+        )
+        val state = HistoryUiState(builds = builds, isEmptyResult = false)
+        androidx.compose.ui.test.runSkikoComposeUiTest(
+            androidx.compose.ui.geometry.Size(1180f, 760f),
+            androidx.compose.ui.unit.Density(1f),
+        ) {
+            setContent { WatcherTheme { HistoryScreen(state, onProject = {}, onTimeRange = {}) } }
+            val completedBounds = onNodeWithText("completed").fetchSemanticsNode().boundsInRoot
+            val terminalBounds = onNodeWithText("terminal").fetchSemanticsNode().boundsInRoot
+            kotlin.test.assertTrue(completedBounds.width >= 55f, "completed pill too narrow at 1180dp: $completedBounds")
+            kotlin.test.assertTrue(terminalBounds.width >= 44f, "terminal pill too narrow at 1180dp: $terminalBounds")
+        }
+    }
 }

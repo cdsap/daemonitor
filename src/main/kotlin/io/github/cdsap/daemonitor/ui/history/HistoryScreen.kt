@@ -76,13 +76,13 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 private val COLS = listOf(
-    Col("Started", 2.0f),
-    Col("Project", 1.1f),
-    Col("Duration", 0.7f, end = true),
+    Col("Started", 1.55f),
+    Col("Project", 1.15f),
+    Col("Duration", 0.75f, end = true),
     Col("Peak RSS", 1.0f, end = true),
-    Col("Status", 1.1f),
-    Col("Source", 0.9f),
-    Col("Agent", 1.1f),
+    Col("Status", 1.35f),
+    Col("Source", 1.15f),
+    Col("Agent", 0.95f),
 )
 
 @Composable
