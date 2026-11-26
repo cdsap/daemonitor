@@ -589,6 +589,24 @@ func (s *Server) handleDaemonLogs(w http.ResponseWriter, r *http.Request) {
 	if s.BazelLogs != nil {
 		all = append(all, s.BazelLogs.List()...)
 	}
+	s.mu.RLock()
+	activePIDs := make(map[int64]struct{}, len(s.last.Processes))
+	for _, p := range s.last.Processes {
+		activePIDs[int64(p.PID)] = struct{}{}
+	}
+	s.mu.RUnlock()
+	if len(activePIDs) > 0 && len(all) > 1 {
+		active := make([]logs.DaemonLog, 0, len(all))
+		inactive := make([]logs.DaemonLog, 0, len(all))
+		for _, entry := range all {
+			if _, ok := activePIDs[entry.PID]; ok {
+				active = append(active, entry)
+			} else {
+				inactive = append(inactive, entry)
+			}
+		}
+		all = append(active, inactive...)
+	}
 	writeJSON(w, map[string]any{
 		"logs": all,
 	})
