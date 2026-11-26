@@ -691,14 +691,18 @@ func filterProcesses(items []model.Process, opts Options) []model.Process {
 }
 
 func filterLogs(items []logs.DaemonLog, opts Options) []logs.DaemonLog {
-	if opts.PID == 0 {
-		return items
-	}
-	out := items[:0]
-	for _, item := range items {
-		if item.PID == opts.PID {
-			out = append(out, item)
+	out := items
+	if opts.PID != 0 {
+		filtered := make([]logs.DaemonLog, 0, len(items))
+		for _, item := range items {
+			if item.PID == opts.PID {
+				filtered = append(filtered, item)
+			}
 		}
+		out = filtered
+	}
+	if opts.Limit > 0 && len(out) > opts.Limit {
+		out = out[:opts.Limit]
 	}
 	return out
 }

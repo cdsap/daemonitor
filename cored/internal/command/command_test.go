@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cdsap/daemonitor/cored/internal/logs"
 	"github.com/cdsap/daemonitor/cored/internal/model"
 	"github.com/cdsap/daemonitor/cored/internal/store"
 )
@@ -271,5 +272,31 @@ func TestJVMCounterMetricExports(t *testing.T) {
 		if strings.HasSuffix(r.MetricName, "seconds") && r.Unit != "seconds" {
 			t.Fatalf("unit=%+v", r)
 		}
+	}
+}
+
+func TestFilterLogsAppliesPIDAndLimit(t *testing.T) {
+	items := []logs.DaemonLog{
+		{PID: 101, GradleVersion: "9.6.1", Path: "daemon-101.out.log"},
+		{PID: 102, GradleVersion: "9.6.1", Path: "daemon-102.out.log"},
+		{PID: 103, Tool: "bazel", Source: "server/jvm.out", Path: "jvm.out"},
+		{PID: 103, Tool: "bazel", Source: "command.log", Path: "command.log"},
+	}
+
+	limited := filterLogs(items, Options{Limit: 2})
+	if len(limited) != 2 || limited[0].PID != 101 || limited[1].PID != 102 {
+		t.Fatalf("limit=2 got %+v", limited)
+	}
+	byPID := filterLogs(items, Options{PID: 103})
+	if len(byPID) != 2 || byPID[0].Source != "server/jvm.out" || byPID[1].Source != "command.log" {
+		t.Fatalf("pid=103 got %+v", byPID)
+	}
+	byPIDAndLimit := filterLogs(items, Options{PID: 103, Limit: 1})
+	if len(byPIDAndLimit) != 1 || byPIDAndLimit[0].Source != "server/jvm.out" {
+		t.Fatalf("pid=103 limit=1 got %+v", byPIDAndLimit)
+	}
+	// Caller slice must remain unmodified.
+	if len(items) != 4 || items[0].PID != 101 {
+		t.Fatalf("input slice was mutated: %+v", items)
 	}
 }
