@@ -20,6 +20,7 @@ import androidx.compose.ui.test.runComposeUiTest
 import androidx.compose.ui.test.runSkikoComposeUiTest
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
+import kotlin.test.assertTrue
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.BuildTool
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
@@ -371,21 +372,43 @@ class HistoryScreenUiTest {
     }
 
     @Test
+    fun `history started timestamp and long bazel uuid header fit cleanly at 1180x760`() = runSkikoComposeUiTest(Size(1180f, 760f), Density(1f)) {
+        val bazel = sampleBuild(
+            buildId = "a08a35af-1a07-4345-9f8e-1234567890ab",
+            projectPath = "/private/tmp/bazel-app",
+            source = Source.BEP,
+            agent = null,
+            tool = BuildTool.BAZEL,
+        )
+        val state = HistoryUiState(builds = listOf(bazel), isEmptyResult = false)
+        setContent {
+            WatcherTheme {
+                HistoryScreen(state, onProject = {}, onTimeRange = {})
+            }
+        }
+
+        val startedHeader = onNodeWithText("STARTED").fetchSemanticsNode().boundsInRoot
+        assertTrue(startedHeader.width >= 100f, "STARTED column too narrow at 1180dp: $startedHeader")
+        onNodeWithText("bazel-app").performClick()
+        waitForIdle()
+
+        val titleBounds = onNodeWithText("Bazel build a08a35af-1a07-4345-9f8e-1234567890ab").fetchSemanticsNode().boundsInRoot
+        assertTrue(titleBounds.right <= 1180f, "Build detail title overflowed viewport: $titleBounds")
+    }
+
+    @Test
     fun `status and source pills have enough room for completed and terminal at 1180x760`() {
         val builds = listOf(
             sampleBuild(buildId = "g1", projectPath = "/ws/gradle-app", status = FinalStatus.SUCCESS, source = Source.TERMINAL),
             sampleBuild(buildId = "b1", projectPath = "/ws/bazel-app", status = FinalStatus.COMPLETED_NO_OUTCOME, source = Source.PROFILE, tool = BuildTool.BAZEL),
         )
         val state = HistoryUiState(builds = builds, isEmptyResult = false)
-        androidx.compose.ui.test.runSkikoComposeUiTest(
-            androidx.compose.ui.geometry.Size(1180f, 760f),
-            androidx.compose.ui.unit.Density(1f),
-        ) {
+        runSkikoComposeUiTest(Size(1180f, 760f), Density(1f)) {
             setContent { WatcherTheme { HistoryScreen(state, onProject = {}, onTimeRange = {}) } }
             val completedBounds = onNodeWithText("completed").fetchSemanticsNode().boundsInRoot
             val terminalBounds = onNodeWithText("terminal").fetchSemanticsNode().boundsInRoot
-            kotlin.test.assertTrue(completedBounds.width >= 55f, "completed pill too narrow at 1180dp: $completedBounds")
-            kotlin.test.assertTrue(terminalBounds.width >= 44f, "terminal pill too narrow at 1180dp: $terminalBounds")
+            assertTrue(completedBounds.width >= 55f, "completed pill too narrow at 1180dp: $completedBounds")
+            assertTrue(terminalBounds.width >= 44f, "terminal pill too narrow at 1180dp: $terminalBounds")
         }
     }
 }
