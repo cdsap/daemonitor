@@ -27,8 +27,11 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.requestFocus
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.test.runComposeUiTest
+import androidx.compose.ui.test.runSkikoComposeUiTest
 import androidx.compose.ui.test.swipeUp
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import io.github.cdsap.daemonitor.domain.LiveMetricLabels
 import io.github.cdsap.daemonitor.application.DaemonLog
@@ -924,6 +927,49 @@ class LiveMonitorScreenUiTest {
         onNodeWithText("▾", useUnmergedTree = true).assertExists()
         onNodeWithText("Gradle worker", useUnmergedTree = true).assertExists()
         onNodeWithText("PID").assertExists()
+    }
+
+    @Test
+    fun `live table uses compact columns at default 1180x760 and shows GC breakdown when wide`() {
+        val daemon = sampleProcess(pid = 50527, rssMemoryMb = 1_227)
+        val bazel = sampleProcess(pid = 50577, type = ProcessType.BAZEL_SERVER, projectPath = "/tmp/bazel-app", rssMemoryMb = 315)
+        val state = LiveUiState(
+            processes = listOf(daemon, bazel),
+            detail = DetailState.Selected(bazel),
+            isLoading = false,
+            isEmpty = false,
+        )
+
+        runSkikoComposeUiTest(Size(1180f, 760f), Density(1f)) {
+            mainClock.autoAdvance = false
+            setContent {
+                WatcherTheme {
+                    LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+                }
+            }
+            // Compact table at 1180dp keeps GCT (s) while reserving room for full PID/RSS/Type.
+            onNodeWithText("GCT (S)").assertExists()
+            onNodeWithText("YGCT (S)").assertDoesNotExist()
+            val pidBounds = onNodeWithText("50527").fetchSemanticsNode().boundsInRoot
+            assertTrue(pidBounds.width >= 40f, "PID column too narrow at 1180dp: $pidBounds")
+            // All 5 Bazel detail tabs exist and fit cleanly in the compact tab bar.
+            listOf("overview", "jvm", "os-io", "process", "bazel").forEach { tag ->
+                onNodeWithTag("process-detail-tab-$tag").assertIsDisplayed()
+            }
+        }
+
+        runSkikoComposeUiTest(Size(1600f, 860f), Density(1f)) {
+            mainClock.autoAdvance = false
+            setContent {
+                WatcherTheme {
+                    LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+                }
+            }
+            onNodeWithText("YGCT (S)").assertExists()
+            onNodeWithText("FGCT (S)").assertExists()
+            onNodeWithText("CGCT (S)").assertExists()
+            onNodeWithText("GCT (S)").assertExists()
+        }
     }
 
     @Test
