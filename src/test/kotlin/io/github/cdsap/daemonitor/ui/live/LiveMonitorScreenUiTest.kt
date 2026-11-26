@@ -60,7 +60,7 @@ class LiveMonitorScreenUiTest {
                 "Eden", "jstat", JvmRawValue(0.0, "K"), null, null,
             )),
             codeCache = listOf(JvmMemoryPool(
-                "CodeHeap", "jcmd", JvmRawValue(2.0, "M"), null, null,
+                "CodeHeap", "jcmd", JvmRawValue(2.0, "M"), null, JvmRawValue(120.0, "M"), JvmRawValue(3.0, "M"),
             )),
             jit = JvmJitMetrics(0, null, null, 1.25),
         )
@@ -79,6 +79,7 @@ class LiveMonitorScreenUiTest {
         onNodeWithText("Eden").assertExists()
         onNodeWithText("used 0.0 K · committed unavailable · max unavailable").assertExists()
         onNodeWithText("Code cache · CodeHeap").assertExists()
+        onNodeWithText("used 2.0 M · committed unavailable · max 120.0 M · peak 3.0 M").assertExists()
         onNodeWithText("0 compiled, 1.250 s compilation time").assertExists()
     }
 

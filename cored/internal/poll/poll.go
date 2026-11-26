@@ -472,7 +472,12 @@ func memoryPools(pools []heap.MemoryPool) []model.JVMMemoryPool {
 	}
 	out := make([]model.JVMMemoryPool, 0, len(pools))
 	for _, p := range pools {
-		out = append(out, model.JVMMemoryPool{Name: p.Name, Source: p.Source, Used: rawValue(p.Used), Committed: rawValue(p.Committed), Max: rawValue(p.Max)})
+		pool := model.JVMMemoryPool{Name: p.Name, Source: p.Source, Used: rawValue(p.Used), Committed: rawValue(p.Committed), Max: rawValue(p.Max)}
+		if p.Peak != nil {
+			peak := rawValue(*p.Peak)
+			pool.Peak = &peak
+		}
+		out = append(out, pool)
 	}
 	return out
 }

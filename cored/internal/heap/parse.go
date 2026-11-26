@@ -63,6 +63,7 @@ type MemoryPool struct {
 	Used      RawValue
 	Committed RawValue
 	Max       RawValue
+	Peak      *RawValue
 }
 
 type JITMetrics struct {
@@ -583,6 +584,8 @@ func parseRawValue(token string) (RawValue, bool) {
 }
 
 // ParseJcmdCodeCache preserves each original CodeHeap name and emitted unit.
+// size is reserved capacity and max_used is peak usage. The summary does not
+// report committed memory, so Committed remains unavailable.
 func ParseJcmdCodeCache(out string) ([]MemoryPool, error) {
 	var pools []MemoryPool
 	for _, line := range strings.Split(out, "\n") {
@@ -592,11 +595,11 @@ func ParseJcmdCodeCache(out string) ([]MemoryPool, error) {
 		}
 		size, ok1 := parseRawValue(m[2])
 		used, ok2 := parseRawValue(m[3])
-		max, ok3 := parseRawValue(m[4])
+		peak, ok3 := parseRawValue(m[4])
 		if !ok1 || !ok2 || !ok3 {
 			continue
 		}
-		pools = append(pools, MemoryPool{Name: m[1], Source: "jcmd", Used: used, Committed: size, Max: max})
+		pools = append(pools, MemoryPool{Name: m[1], Source: "jcmd", Used: used, Max: size, Peak: &peak})
 	}
 	if len(pools) == 0 {
 		return nil, fmt.Errorf("jcmd Compiler.codecache: no code heaps")

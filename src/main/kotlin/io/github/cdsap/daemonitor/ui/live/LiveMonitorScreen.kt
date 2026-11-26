@@ -662,7 +662,8 @@ private fun poolDetail(pool: JvmMemoryPool): String {
     fun value(raw: JvmRawValue?): String = raw?.let {
         "${it.value} ${it.unit}".trimEnd()
     } ?: "unavailable"
-    return "used ${value(pool.used)} · committed ${value(pool.committed)} · max ${value(pool.max)}"
+    return "used ${value(pool.used)} · committed ${value(pool.committed)} · max ${value(pool.max)}" +
+        (pool.peak?.let { " · peak ${value(it)}" } ?: "")
 }
 
 private fun Double?.gcTimeCompact(): String = this?.let { String.format(Locale.ROOT, "%.3f", it) } ?: "—"

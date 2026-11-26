@@ -63,6 +63,7 @@ data class JvmMemoryPool(
     val used: JvmRawValue?,
     val committed: JvmRawValue?,
     val max: JvmRawValue?,
+    val peak: JvmRawValue? = null,
 )
 
 data class JvmClassMetrics(
