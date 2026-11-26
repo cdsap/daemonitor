@@ -17,6 +17,7 @@ import (
 	"github.com/cdsap/daemonitor/cored/internal/bazelprofile"
 	"github.com/cdsap/daemonitor/cored/internal/bep"
 	"github.com/cdsap/daemonitor/cored/internal/builds"
+	"github.com/cdsap/daemonitor/cored/internal/heap"
 	"github.com/cdsap/daemonitor/cored/internal/ipc"
 	"github.com/cdsap/daemonitor/cored/internal/logs"
 	"github.com/cdsap/daemonitor/cored/internal/model"
@@ -59,6 +60,9 @@ const (
 )
 
 func NewServer(socketPath, dbPath string, interval, retention time.Duration, gradleUserHome string) (*Server, error) {
+	if interval <= 0 {
+		interval = observe.DefaultCadences().ProcessOS
+	}
 	st, err := store.Open(dbPath)
 	if err != nil {
 		return nil, err
@@ -66,6 +70,7 @@ func NewServer(socketPath, dbPath string, interval, retention time.Duration, gra
 	collector := poll.NewCollector()
 	if interval > 0 {
 		collector.PollInterval = interval
+		collector.Cadences.ProcessOS = interval
 	}
 	bepWatcher := bep.NewWatcher()
 	collector.BazelClientObserved = bepWatcher.ObserveProcess
@@ -113,6 +118,9 @@ func NewServer(socketPath, dbPath string, interval, retention time.Duration, gra
 
 func (s *Server) Run(ctx context.Context) error {
 	defer s.Store.Close()
+	defer s.Collector.Close()
+	ctx, cancelRun := context.WithCancel(ctx)
+	defer cancelRun()
 
 	ln, err := ipc.Default.Listen(s.SocketPath)
 	if err != nil {
@@ -143,8 +151,12 @@ func (s *Server) Run(ctx context.Context) error {
 		_ = srv.Shutdown(shutdownCtx)
 	}()
 
+	// Join the scan loop before closing workers and storage.
+	scanDone := make(chan struct{})
+	defer func() { cancelRun(); <-scanDone }()
 	// Serve immediately so health stays responsive while the first poll/log scan runs.
 	go func() {
+		defer close(scanDone)
 		s.refresh(ctx)
 		s.loop(ctx)
 	}()
@@ -404,14 +416,19 @@ func (s *Server) refreshHost(ctx context.Context) {
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	n, _ := s.Store.Count()
+	s.mu.RLock()
+	sampledAt := s.last.SampledAtMs
+	s.mu.RUnlock()
 	writeJSON(w, model.Health{
-		Status:      "ok",
-		Version:     Version,
-		Socket:      s.SocketPath,
-		SampleCount: n,
-		DBPath:      s.DBPath,
-		RetentionMs: s.Retention.Milliseconds(),
-		PID:         os.Getpid(),
+		ProcessSampleReady: sampledAt > 0,
+		ProcessSampledAtMs: sampledAt,
+		Status:             "ok",
+		Version:            Version,
+		Socket:             s.SocketPath,
+		SampleCount:        n,
+		DBPath:             s.DBPath,
+		RetentionMs:        s.Retention.Milliseconds(),
+		PID:                os.Getpid(),
 	})
 }
 
@@ -445,15 +462,20 @@ func (s *Server) handleSelf(w http.ResponseWriter, _ *http.Request) {
 	probeConcurrency := observe.DefaultJVMProbeConcurrency
 	if s.Collector != nil {
 		cadences = s.Collector.Cadences
-		if s.Collector.ProbeConcurrency > 0 {
+		if s.Collector.ProbeConcurrency >= 2 {
 			probeConcurrency = s.Collector.ProbeConcurrency
 		}
 	}
+	budget := heap.DefaultTimeout
+	if s.Collector != nil && s.Collector.Heap != nil && s.Collector.Heap.Timeout > 0 {
+		budget = s.Collector.Heap.Timeout
+	}
 	writeJSON(w, model.SelfMetrics{
-		SchemaVersion: 1,
-		Platform:      poll.Platform(),
-		SampledAtMs:   time.Now().UnixMilli(),
-		Metrics:       snap,
+		JVMProbeBudgetMs: budget.Milliseconds(),
+		SchemaVersion:    1,
+		Platform:         poll.Platform(),
+		SampledAtMs:      time.Now().UnixMilli(),
+		Metrics:          snap,
 		Cadences: model.CollectorCadences{
 			ProcessOSMs:       cadences.ProcessOS.Milliseconds(),
 			HostMs:            cadences.Host.Milliseconds(),
@@ -485,19 +507,42 @@ func (s *Server) handleProcesses(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
 	sinceMs := time.Now().Add(-15 * time.Minute).UnixMilli()
-	if raw := r.URL.Query().Get("since_ms"); raw != "" {
+	if raw := query.Get("since_ms"); raw != "" {
 		if v, err := strconv.ParseInt(raw, 10, 64); err == nil {
 			sinceMs = v
 		}
 	}
 	limit := defaultQueryLimit
-	if raw := r.URL.Query().Get("limit"); raw != "" {
+	if raw := query.Get("limit"); raw != "" {
 		if v, err := strconv.Atoi(raw); err == nil {
 			limit = boundedLimit(v)
 		}
 	}
-	rows, err := s.Store.History(sinceMs, limit)
+	var pid, startTimeMs int64
+	if raw := query.Get("pid"); raw != "" {
+		v, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || v <= 0 {
+			http.Error(w, "pid must be a positive integer", http.StatusBadRequest)
+			return
+		}
+		pid = v
+	}
+	if raw := query.Get("start_time_ms"); raw != "" {
+		v, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || v <= 0 {
+			http.Error(w, "start_time_ms must be a positive integer", http.StatusBadRequest)
+			return
+		}
+		startTimeMs = v
+	}
+	rows, err := s.Store.HistoryFiltered(store.HistoryFilter{
+		SinceMs:     sinceMs,
+		Limit:       limit,
+		PID:         pid,
+		StartTimeMs: startTimeMs,
+	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -543,6 +588,24 @@ func (s *Server) handleDaemonLogs(w http.ResponseWriter, r *http.Request) {
 	all := s.Logs.List()
 	if s.BazelLogs != nil {
 		all = append(all, s.BazelLogs.List()...)
+	}
+	s.mu.RLock()
+	activePIDs := make(map[int64]struct{}, len(s.last.Processes))
+	for _, p := range s.last.Processes {
+		activePIDs[int64(p.PID)] = struct{}{}
+	}
+	s.mu.RUnlock()
+	if len(activePIDs) > 0 && len(all) > 1 {
+		active := make([]logs.DaemonLog, 0, len(all))
+		inactive := make([]logs.DaemonLog, 0, len(all))
+		for _, entry := range all {
+			if _, ok := activePIDs[entry.PID]; ok {
+				active = append(active, entry)
+			} else {
+				inactive = append(inactive, entry)
+			}
+		}
+		all = append(active, inactive...)
 	}
 	writeJSON(w, map[string]any{
 		"logs": all,

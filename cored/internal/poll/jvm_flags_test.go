@@ -73,9 +73,15 @@ func TestJVMFlagsFailuresPreserveProcessMetrics(t *testing.T) {
 				}
 				return "", errors.New("not supported")
 			}
-			c := &Collector{Heap: p, ProbeConcurrency: 1}
+			c := &Collector{Heap: p, ProbeConcurrency: 2}
+			defer c.Close()
+			now := time.Now().UnixMilli()
+			jobs := []pendingJVM{{idx: 0, proc: child, pid: pid, startMs: start}}
 			rows := []model.Process{{PID: pid, StartTimeMs: start, RSSMemoryMB: 99, GC: ptrString("G1")}}
-			c.applyJVMProbes(context.Background(), rows, []pendingJVM{{idx: 0, proc: child, pid: pid, startMs: start}})
+			c.applyJVMProbes(context.Background(), now, rows, jobs)
+			c.jvmWG.Wait()
+			rows = []model.Process{{PID: pid, StartTimeMs: start, RSSMemoryMB: 99, GC: ptrString("G1")}}
+			c.applyJVMProbes(context.Background(), now, rows, jobs)
 			if len(rows) != 1 || rows[0].RSSMemoryMB != 99 || !rows[0].HeapAvailable || rows[0].HeapUsedMB == nil || *rows[0].HeapUsedMB != 16 || rows[0].JVMFlags == nil || rows[0].JVMFlags.Availability != "unavailable" {
 				t.Fatalf("row=%+v", rows[0])
 			}

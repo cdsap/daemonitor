@@ -693,7 +693,7 @@ func TestDetailsShowOptionalTelemetryAndKeepZeroDistinctFromUnavailable(t *testi
 	p := model.Process{
 		PID: 9, Type: "GRADLE_DAEMON", YoungGCCount: &zero, HeapUsedMB: &zero, SampledAtMs: 2,
 		MemoryPools: []model.JVMMemoryPool{{Name: "G1 Eden Space", Used: model.JVMRawValue{Value: 12, Unit: "M"}, Committed: model.JVMRawValue{Value: 24, Unit: "M"}}},
-		CodeCache:   []model.JVMMemoryPool{{Name: "non-nmethods", Used: model.JVMRawValue{Value: 1.5, Unit: "M"}, Committed: model.JVMRawValue{Value: 4, Unit: "M"}, Max: model.JVMRawValue{Value: 8, Unit: "M"}}},
+		CodeCache:   []model.JVMMemoryPool{{Name: "non-nmethods", Used: model.JVMRawValue{Value: 1.5, Unit: "M"}, Max: model.JVMRawValue{Value: 8, Unit: "M"}, Peak: &model.JVMRawValue{Value: 2, Unit: "M"}}},
 		JIT:         &model.JITMetrics{CompiledCount: &compiled, FailedCount: &failed, InvalidCount: &invalid, CompilationTimeSeconds: &compilationSeconds},
 	}
 	m := NewModel(Config{Now: fixedNow, NoColor: true})
@@ -709,7 +709,7 @@ func TestDetailsShowOptionalTelemetryAndKeepZeroDistinctFromUnavailable(t *testi
 		"PROCESS LIFECYCLE", "HOST RESOURCE CONTEXT", "COLLECTION CAPABILITIES",
 		"Young count    0", "CPUs           0", "CPU usage      0.0%", "Memory used    0 MB",
 		"Other pools    G1 Eden Space 12M/24M",
-		"Code cache     non-nmethods 1.5M/4M (max 8M)",
+		"Code cache     non-nmethods 1.5M/n/a (max 8M) (peak 2M)",
 		"Compilation    4123 compiled, 7 failed, 2 invalid, 48.125 s",
 	} {
 		if !strings.Contains(body, want) {

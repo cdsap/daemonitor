@@ -27,8 +27,11 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.requestFocus
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.test.runComposeUiTest
+import androidx.compose.ui.test.runSkikoComposeUiTest
 import androidx.compose.ui.test.swipeUp
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import io.github.cdsap.daemonitor.domain.LiveMetricLabels
 import io.github.cdsap.daemonitor.application.DaemonLog
@@ -52,6 +55,53 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalTestApi::class)
 class LiveMonitorScreenUiTest {
     @Test
+    fun `unselected daemon log metadata and status do not overlap`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        setContent {
+            WatcherTheme {
+                Box(Modifier.size(width = 900.dp, height = 600.dp)) {
+                    LiveMonitorScreen(LiveUiState(processes = listOf(sampleProcess()), isLoading = false, isEmpty = false), onSelect = {}, onClearSelection = {})
+                }
+            }
+        }
+        val version = onNodeWithText("Gradle version", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val path = onNodeWithText("Log path", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val status = onNodeWithText("Select a Gradle daemon to see its daemon log.", substring = true)
+        status.assertIsDisplayed()
+        assertTrue(version.height > 0f && path.height > 0f)
+        assertTrue(version.bottom <= path.top, "Metadata rows must not overlap")
+        assertTrue(path.bottom <= status.fetchSemanticsNode().boundsInRoot.top, "Status must follow metadata")
+    }
+
+    @Test
+    fun `available daemon log metadata and body do not overlap`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val process = sampleProcess()
+        val log = DaemonLog(process.pid, "9.6.1", Path.of("/tmp/daemon-${process.pid}.out.log"))
+        val state = LiveUiState(
+            processes = listOf(process), detail = DetailState.Selected(process), daemonLog = log,
+            tailState = LogTailState.Available(listOf("daemon log regression line")), isLoading = false, isEmpty = false,
+        )
+        setContent {
+            WatcherTheme {
+                Box(Modifier.size(width = 900.dp, height = 600.dp)) {
+                    LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+                }
+            }
+        }
+        val version = onNodeWithText("Gradle version", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val path = onNodeWithText("Log path", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        onNodeWithText("9.6.1").assertIsDisplayed()
+        onNodeWithText(log.path.toString()).assertIsDisplayed()
+        val body = onNodeWithText("daemon log regression line")
+        body.assertIsDisplayed()
+        assertTrue(version.height > 0f && path.height > 0f)
+        assertTrue(version.bottom <= path.top, "Metadata rows must not overlap")
+        val pathValue = onNodeWithText(log.path.toString()).fetchSemanticsNode().boundsInRoot
+        assertTrue(maxOf(path.bottom, pathValue.bottom) <= body.fetchSemanticsNode().boundsInRoot.top, "Log body must follow metadata")
+    }
+
+    @Test
     fun `JVM pools and compilation appear only when metrics are available`() = runComposeUiTest {
         mainClock.autoAdvance = false
         val empty = sampleProcess(type = ProcessType.JAVA_GRADLE_RELATED)
@@ -60,7 +110,7 @@ class LiveMonitorScreenUiTest {
                 "Eden", "jstat", JvmRawValue(0.0, "K"), null, null,
             )),
             codeCache = listOf(JvmMemoryPool(
-                "CodeHeap", "jcmd", JvmRawValue(2.0, "M"), null, null,
+                "CodeHeap", "jcmd", JvmRawValue(2.0, "M"), null, JvmRawValue(120.0, "M"), JvmRawValue(3.0, "M"),
             )),
             jit = JvmJitMetrics(0, null, null, 1.25),
         )
@@ -79,6 +129,7 @@ class LiveMonitorScreenUiTest {
         onNodeWithText("Eden").assertExists()
         onNodeWithText("used 0.0 K · committed unavailable · max unavailable").assertExists()
         onNodeWithText("Code cache · CodeHeap").assertExists()
+        onNodeWithText("used 2.0 M · committed unavailable · max 120.0 M · peak 3.0 M").assertExists()
         onNodeWithText("0 compiled, 1.250 s compilation time").assertExists()
     }
 
@@ -923,5 +974,123 @@ class LiveMonitorScreenUiTest {
         onNodeWithText("▾", useUnmergedTree = true).assertExists()
         onNodeWithText("Gradle worker", useUnmergedTree = true).assertExists()
         onNodeWithText("PID").assertExists()
+    }
+
+    @Test
+    fun `live table uses compact columns at default 1180x760 and shows GC breakdown when wide`() {
+        val daemon = sampleProcess(pid = 50527, rssMemoryMb = 1_227)
+        val bazel = sampleProcess(pid = 50577, type = ProcessType.BAZEL_SERVER, projectPath = "/tmp/bazel-app", rssMemoryMb = 315)
+        val state = LiveUiState(
+            processes = listOf(daemon, bazel),
+            detail = DetailState.Selected(bazel),
+            isLoading = false,
+            isEmpty = false,
+        )
+
+        runSkikoComposeUiTest(Size(1180f, 760f), Density(1f)) {
+            mainClock.autoAdvance = false
+            setContent {
+                WatcherTheme {
+                    LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+                }
+            }
+            // Compact table at 1180dp keeps GCT (s) while reserving room for full PID/RSS/Type.
+            onNodeWithText("GCT (S)").assertExists()
+            onNodeWithText("YGCT (S)").assertDoesNotExist()
+            val pidBounds = onNodeWithText("50527").fetchSemanticsNode().boundsInRoot
+            assertTrue(pidBounds.width >= 40f, "PID column too narrow at 1180dp: $pidBounds")
+            // All 5 Bazel detail tabs exist and fit cleanly in the compact tab bar.
+            listOf("overview", "jvm", "os-io", "process", "bazel").forEach { tag ->
+                onNodeWithTag("process-detail-tab-$tag").assertIsDisplayed()
+            }
+        }
+
+        runSkikoComposeUiTest(Size(1600f, 860f), Density(1f)) {
+            mainClock.autoAdvance = false
+            setContent {
+                WatcherTheme {
+                    LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+                }
+            }
+            onNodeWithText("YGCT (S)").assertExists()
+            onNodeWithText("FGCT (S)").assertExists()
+            onNodeWithText("CGCT (S)").assertExists()
+            onNodeWithText("GCT (S)").assertExists()
+        }
+    }
+
+    @Test
+    fun `gradle daemon log card stacks metadata and body without vertical overlap`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val daemon = sampleProcess(pid = 50527)
+        val logPath = Path.of("/Users/dev/.gradle/daemon/9.6.1/daemon-50527.out.log")
+        var state by mutableStateOf(
+            LiveUiState(
+                processes = listOf(daemon),
+                detail = DetailState.NoSelection,
+                tailState = LogTailState.NoSelection,
+                isLoading = false,
+                isEmpty = false,
+            ),
+        )
+        setContent {
+            WatcherTheme {
+                Box(Modifier.size(width = 1180.dp, height = 760.dp)) {
+                    LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+                }
+            }
+        }
+
+        val cardBounds = onNodeWithTag("gradle-log-card").fetchSemanticsNode().boundsInRoot
+        val noSelVersion = onNodeWithText("Gradle version").fetchSemanticsNode().boundsInRoot
+        val noSelPath = onNodeWithText("Log path").fetchSemanticsNode().boundsInRoot
+        val noSelHint = onNodeWithText("Select a Gradle daemon to see its daemon log.", substring = true).fetchSemanticsNode().boundsInRoot
+        assertTrue(noSelVersion.bottom <= noSelPath.top, "Gradle version ($noSelVersion) overlapped Log path ($noSelPath)")
+        assertTrue(noSelPath.bottom <= noSelHint.top, "Log path ($noSelPath) overlapped empty state ($noSelHint)")
+        assertTrue(noSelHint.bottom <= cardBounds.bottom, "Empty state hint ($noSelHint) clipped outside log card ($cardBounds)")
+        onNodeWithText("ATTRIBUTED PROJECTS").assertExists()
+
+        state = state.copy(
+            detail = DetailState.Selected(daemon),
+            daemonLog = DaemonLog(daemon.pid, "9.6.1", logPath),
+            tailState = LogTailState.Available(listOf("2026-11-25 [DEBUG] [org.gradle.Daemon] ready")),
+        )
+        waitForIdle()
+
+        val selVersion = onNodeWithText("Gradle version").fetchSemanticsNode().boundsInRoot
+        val selPath = onNodeWithText("Log path").fetchSemanticsNode().boundsInRoot
+        val selLine = onNodeWithText("2026-11-25 [DEBUG] [org.gradle.Daemon] ready").fetchSemanticsNode().boundsInRoot
+        assertTrue(selVersion.bottom <= selPath.top, "Selected Gradle version ($selVersion) overlapped Log path ($selPath)")
+        assertTrue(selPath.bottom <= selLine.top, "Selected Log path ($selPath) overlapped log tail ($selLine)")
+    }
+
+    @Test
+    fun `project column falls back to working directory when project path is null`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val withProject = sampleProcess(pid = 101, projectPath = "/work/checkout-service", workingDirectory = "/work/other")
+        val withWorkDirOnly = sampleProcess(pid = 102, projectPath = null, workingDirectory = "/private/tmp/gradle-app/")
+        val withWindowsWorkDir = sampleProcess(pid = 103, type = ProcessType.TEST_WORKER, projectPath = null, workingDirectory = "C:\\repo\\app\\")
+        val withNeither = sampleProcess(pid = 104, projectPath = null, workingDirectory = null)
+
+        assertEquals("checkout-service", displayProjectLabel(withProject))
+        assertEquals("gradle-app", displayProjectLabel(withWorkDirOnly))
+        assertEquals("app", displayProjectLabel(withWindowsWorkDir))
+        assertNull(displayProjectLabel(withNeither))
+
+        val state = LiveUiState(
+            processes = listOf(withProject, withWorkDirOnly, withWindowsWorkDir, withNeither),
+            isLoading = false,
+            isEmpty = false,
+        )
+        setContent {
+            WatcherTheme {
+                Box(Modifier.size(width = 1180.dp, height = 760.dp)) {
+                    LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+                }
+            }
+        }
+        onNodeWithText("checkout-service").assertExists()
+        onNodeWithText("gradle-app").assertExists()
+        onNodeWithText("app").assertExists()
     }
 }

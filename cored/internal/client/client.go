@@ -78,12 +78,34 @@ func (c *Client) Processes(ctx context.Context) (model.Snapshot, error) {
 	return snap, err
 }
 
+// HistoryQuery describes filters supported by /v1/processes/history.
+type HistoryQuery struct {
+	SinceMs     int64
+	Limit       int
+	PID         int64
+	StartTimeMs int64
+}
+
 // History fetches recent process history.
 func (c *Client) History(ctx context.Context, sinceMs int64, limit int) (model.History, error) {
-	path := "/v1/processes/history?since_ms=" + strconv.FormatInt(sinceMs, 10) +
-		"&limit=" + strconv.Itoa(limit)
+	return c.HistoryFiltered(ctx, HistoryQuery{SinceMs: sinceMs, Limit: limit})
+}
+
+// HistoryFiltered fetches recent process history with optional PID / incarnation filters.
+func (c *Client) HistoryFiltered(ctx context.Context, query HistoryQuery) (model.History, error) {
+	params := url.Values{}
+	params.Set("since_ms", strconv.FormatInt(query.SinceMs, 10))
+	if query.Limit > 0 {
+		params.Set("limit", strconv.Itoa(query.Limit))
+	}
+	if query.PID > 0 {
+		params.Set("pid", strconv.FormatInt(query.PID, 10))
+	}
+	if query.StartTimeMs > 0 {
+		params.Set("start_time_ms", strconv.FormatInt(query.StartTimeMs, 10))
+	}
 	var hist model.History
-	err := c.getJSON(ctx, path, &hist)
+	err := c.getJSON(ctx, "/v1/processes/history?"+params.Encode(), &hist)
 	return hist, err
 }
 

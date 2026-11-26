@@ -18,6 +18,7 @@ type Sample struct {
 	MeasurementTimes     map[string]int64
 	UsedMB               int64
 	CommittedMB          int64
+	MaxMB                *int64
 	Source               string // "jcmd" | "jstat"
 	GC                   *string
 	MetaspaceUsedMB      *int64
@@ -63,6 +64,7 @@ type MemoryPool struct {
 	Used      RawValue
 	Committed RawValue
 	Max       RawValue
+	Peak      *RawValue
 }
 
 type JITMetrics struct {
@@ -248,9 +250,10 @@ func ParseJinfoFlagsGC(out string) (*string, error) {
 //	garbage-first heap   total reserved 262144K, committed 262144K, used 36447K [...]
 func ParseJcmdHeapInfo(out string) (Sample, error) {
 	var metaspaceUsed, metaspaceCommitted *int64
-	var heapUsed, heapCommitted *int64
+	var heapUsed, heapCommitted, heapMax *int64
 	var gc *string
 	var generationUsedKB, generationTotalKB float64
+	var generationReservedBytes uint64
 	var pools []MemoryPool
 	for _, line := range strings.Split(out, "\n") {
 		lower := strings.ToLower(line)
@@ -265,6 +268,9 @@ func ParseJcmdHeapInfo(out string) (Sample, error) {
 			if used, ok := findKBToken(line, "used"); ok {
 				generationUsedKB += used
 			}
+			if reserved, ok := parseGenerationReservedBytes(line); ok {
+				generationReservedBytes += reserved
+			}
 		}
 		if strings.Contains(lower, "def new generation") || strings.Contains(lower, "tenured generation") {
 			gc = ptrString("Serial")
@@ -273,6 +279,9 @@ func ParseJcmdHeapInfo(out string) (Sample, error) {
 			}
 			if used, ok := findKBToken(line, "used"); ok {
 				generationUsedKB += used
+			}
+			if reserved, ok := parseGenerationReservedBytes(line); ok {
+				generationReservedBytes += reserved
 			}
 		}
 		if strings.Contains(lower, "shenandoah") {
@@ -300,14 +309,55 @@ func ParseJcmdHeapInfo(out string) (Sample, error) {
 			continue
 		}
 		heapUsed, heapCommitted = ptrInt64(kbToMB(usedKB)), ptrInt64(kbToMB(committedKB))
+		if reservedKB, okR := findKBToken(line, "reserved"); okR {
+			heapMax = ptrInt64(kbToMB(reservedKB))
+		}
 	}
 	if generationTotalKB > 0 {
 		heapUsed, heapCommitted = ptrInt64(kbToMB(generationUsedKB)), ptrInt64(kbToMB(generationTotalKB))
+		if heapMax == nil && generationReservedBytes > 0 {
+			heapMax = ptrInt64(int64(generationReservedBytes / (1024 * 1024)))
+		}
 	}
 	if heapUsed == nil || heapCommitted == nil {
 		return Sample{}, fmt.Errorf("jcmd GC.heap_info: no heap used/committed line")
 	}
-	return Sample{UsedMB: *heapUsed, CommittedMB: *heapCommitted, Source: "jcmd", GC: gc, MetaspaceUsedMB: metaspaceUsed, MetaspaceCommittedMB: metaspaceCommitted, MemoryPools: pools}, nil
+	return Sample{UsedMB: *heapUsed, CommittedMB: *heapCommitted, MaxMB: heapMax, Source: "jcmd", GC: gc, MetaspaceUsedMB: metaspaceUsed, MetaspaceCommittedMB: metaspaceCommitted, MemoryPools: pools}, nil
+}
+
+// parseGenerationReservedBytes extracts the reserved span (reservedEnd - low) from
+// HotSpot's 3-address generation bounds `[0x<low>, 0x<committedEnd>, 0x<reservedEnd>)`
+// emitted by ParallelGC (PSYoungGen/ParOldGen) and SerialGC (def new/tenured).
+func parseGenerationReservedBytes(line string) (uint64, bool) {
+	open := strings.IndexByte(line, '[')
+	if open < 0 {
+		return 0, false
+	}
+	rest := line[open+1:]
+	closeIdx := strings.IndexAny(rest, ")]")
+	if closeIdx < 0 {
+		return 0, false
+	}
+	parts := strings.Split(rest[:closeIdx], ",")
+	if len(parts) != 3 {
+		return 0, false
+	}
+	var addrs [3]uint64
+	for i, part := range parts {
+		token := strings.TrimSpace(part)
+		if !strings.HasPrefix(token, "0x") && !strings.HasPrefix(token, "0X") {
+			return 0, false
+		}
+		v, err := strconv.ParseUint(token[2:], 16, 64)
+		if err != nil {
+			return 0, false
+		}
+		addrs[i] = v
+	}
+	if addrs[1] < addrs[0] || addrs[2] < addrs[1] || addrs[2] <= addrs[0] {
+		return 0, false
+	}
+	return addrs[2] - addrs[0], true
 }
 
 func ptrInt64(v int64) *int64 { return &v }
@@ -583,6 +633,8 @@ func parseRawValue(token string) (RawValue, bool) {
 }
 
 // ParseJcmdCodeCache preserves each original CodeHeap name and emitted unit.
+// size is reserved capacity and max_used is peak usage. The summary does not
+// report committed memory, so Committed remains unavailable.
 func ParseJcmdCodeCache(out string) ([]MemoryPool, error) {
 	var pools []MemoryPool
 	for _, line := range strings.Split(out, "\n") {
@@ -592,11 +644,11 @@ func ParseJcmdCodeCache(out string) ([]MemoryPool, error) {
 		}
 		size, ok1 := parseRawValue(m[2])
 		used, ok2 := parseRawValue(m[3])
-		max, ok3 := parseRawValue(m[4])
+		peak, ok3 := parseRawValue(m[4])
 		if !ok1 || !ok2 || !ok3 {
 			continue
 		}
-		pools = append(pools, MemoryPool{Name: m[1], Source: "jcmd", Used: used, Committed: size, Max: max})
+		pools = append(pools, MemoryPool{Name: m[1], Source: "jcmd", Used: used, Max: size, Peak: &peak})
 	}
 	if len(pools) == 0 {
 		return nil, fmt.Errorf("jcmd Compiler.codecache: no code heaps")

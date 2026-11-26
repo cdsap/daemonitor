@@ -92,6 +92,9 @@ func TestParseJcmdHeapInfo(t *testing.T) {
 	if s.CommittedMB != 256 {
 		t.Fatalf("committed MB: got %d want 256", s.CommittedMB)
 	}
+	if s.MaxMB == nil || *s.MaxMB != 256 {
+		t.Fatalf("max MB: got %v want 256", s.MaxMB)
+	}
 	if s.Source != "jcmd" {
 		t.Fatalf("source: %q", s.Source)
 	}
@@ -116,6 +119,91 @@ func TestParseJcmdParallelHeapInfo(t *testing.T) {
 	}
 	if s.CommittedMB != 245 {
 		t.Fatalf("committed MB: got %d want 245", s.CommittedMB)
+	}
+	if s.MaxMB != nil {
+		t.Fatalf("parallel GC heap_info without 3-address reserved bounds should leave max MB nil, got %d", *s.MaxMB)
+	}
+}
+
+func TestParseJcmdParallelHeapInfoReservedAddressRanges(t *testing.T) {
+	// Live HotSpot jcmd GC.heap_info captures from KotlinCompileDaemon (-Xmx1024m and -Xmx512m).
+	const parallel1024 = `12090:
+ PSYoungGen      total 229376K, used 192121K [0x0000000152b00000, 0x0000000162b00000, 0x0000000168000000)
+  eden space 196608K, 97% used [0x0000000152b00000,0x000000015e69e7e0,0x000000015eb00000)
+  from space 32768K, 0% used [0x0000000160b00000,0x0000000160b00000,0x0000000162b00000)
+  to   space 32768K, 0% used [0x000000015eb00000,0x000000015eb00000,0x0000000160b00000)
+ ParOldGen       total 524288K, used 37857K [0x0000000128000000, 0x0000000148000000, 0x0000000152b00000)
+  object space 524288K, 7% used [0x0000000128000000,0x000000012a4f8750,0x0000000148000000)
+ Metaspace       used 76336K, committed 76864K, reserved 458752K
+  class space    used 9027K, committed 9280K, reserved 327680K
+`
+	s, err := heap.ParseJcmdHeapInfo(parallel1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.GC == nil || *s.GC != "Parallel" {
+		t.Fatalf("gc: %v", s.GC)
+	}
+	if s.UsedMB != 224 || s.CommittedMB != 736 || s.MaxMB == nil || *s.MaxMB != 1024 {
+		t.Fatalf("1024m parallel: got used=%d committed=%d max=%v want 224/736/1024", s.UsedMB, s.CommittedMB, s.MaxMB)
+	}
+
+	const parallel512 = `84392:
+ PSYoungGen      total 146432K, used 12969K [0x0000000148580000, 0x0000000152e00000, 0x0000000153000000)
+ ParOldGen       total 349696K, used 324589K [0x0000000133000000, 0x0000000148580000, 0x0000000148580000)
+ Metaspace       used 113723K, committed 114496K, reserved 458752K
+`
+	s512, err := heap.ParseJcmdHeapInfo(parallel512)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s512.UsedMB != 329 || s512.CommittedMB != 484 || s512.MaxMB == nil || *s512.MaxMB != 512 {
+		t.Fatalf("512m parallel: got used=%d committed=%d max=%v want 329/484/512", s512.UsedMB, s512.CommittedMB, s512.MaxMB)
+	}
+}
+
+func TestParseJcmdSerialHeapInfoReservedAddressRanges(t *testing.T) {
+	const serial = `7777:
+ def new generation   total 78656K, used 12000K [0x00000007e0000000, 0x00000007e5550000, 0x00000007eaab0000)
+ tenured generation   total 174784K, used 40000K [0x00000007eaab0000, 0x00000007f5550000, 0x0000000800000000)
+ Metaspace       used 10240K, committed 11264K, reserved 1114112K
+`
+	s, err := heap.ParseJcmdHeapInfo(serial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.GC == nil || *s.GC != "Serial" {
+		t.Fatalf("gc: %v", s.GC)
+	}
+	if s.MaxMB == nil || *s.MaxMB != 512 {
+		t.Fatalf("serial max MB: got %v want 512", s.MaxMB)
+	}
+
+	const malformed = `7778:
+ PSYoungGen      total 10240K, used 1024K [0x0000000200000000, 0x0000000100000000, 0x0000000050000000)
+`
+	sm, err := heap.ParseJcmdHeapInfo(malformed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sm.MaxMB != nil {
+		t.Fatalf("inverted bounds must leave max MB nil, got %d", *sm.MaxMB)
+	}
+}
+
+func TestParseJcmdHeapInfoDistinctReservedAndCommitted(t *testing.T) {
+	const g1 = `50527:
+ garbage-first heap   total reserved 1048576K, committed 430080K, used 146710K [0x0000007000800000, 0x0000007040800000)
+  region size 1024K, 16 young (16384K), 15 survivors (15360K)
+ Metaspace       used 161131K, committed 163648K, reserved 1245184K
+  class space    used 21357K, committed 22528K, reserved 1048576K
+`
+	s, err := heap.ParseJcmdHeapInfo(g1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.UsedMB != 143 || s.CommittedMB != 420 || s.MaxMB == nil || *s.MaxMB != 1024 {
+		t.Fatalf("got used=%d committed=%d max=%v want 143/420/1024", s.UsedMB, s.CommittedMB, s.MaxMB)
 	}
 }
 
@@ -325,5 +413,27 @@ func TestParseJcmdCodeCachePreservesPoolNamesAndUnits(t *testing.T) {
 	}
 	if len(pools) != 3 || pools[0].Name != "non-nmethods" || pools[0].Source != "jcmd" || pools[0].Used.Unit != "Kb" || pools[0].Used.Value != 321 {
 		t.Fatalf("pools=%+v", pools)
+	}
+	for i, size := range []float64{5692, 120032, 120032} {
+		peak := heap.RawValue{Value: []float64{400, 5000, 1500}[i], Unit: "Kb"}
+		if pools[i].Peak == nil || *pools[i].Peak != peak {
+			t.Errorf("pool %q peak=%+v, want %+v", pools[i].Name, pools[i].Peak, peak)
+		}
+		if pools[i].Max != (heap.RawValue{Value: size, Unit: "Kb"}) {
+			t.Errorf("pool %q capacity=%+v, want %v Kb", pools[i].Name, pools[i].Max, size)
+		}
+		if pools[i].Committed != (heap.RawValue{}) {
+			t.Errorf("pool %q invents committed memory: %+v", pools[i].Name, pools[i].Committed)
+		}
+	}
+}
+
+func TestParseJcmdCodeCachePreservesZeroPeak(t *testing.T) {
+	pools, err := heap.ParseJcmdCodeCache("CodeHeap 'non-profiled nmethods': size=120048Kb used=0Kb max_used=0Kb free=120048Kb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pools[0].Peak == nil || *pools[0].Peak != (heap.RawValue{Value: 0, Unit: "Kb"}) {
+		t.Fatalf("zero peak unavailable: %+v", pools[0])
 	}
 }

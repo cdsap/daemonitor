@@ -5,11 +5,14 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -17,6 +20,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -31,8 +36,6 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -40,6 +43,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -49,6 +53,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -85,19 +90,33 @@ import io.github.cdsap.daemonitor.ui.common.StatTile
 import io.github.cdsap.daemonitor.ui.common.TableHeader
 import io.github.cdsap.daemonitor.ui.common.cycleIndex
 
-private val COLS = listOf(
-    Col("Type", 1.2f),
-    Col("Project", 1.5f),
-    Col("PID", 0.55f, end = true),
-    Col("RSS", 0.75f, end = true),
-    Col("Heap used", 0.85f, end = true),
-    Col("YGCT (s)", 0.8f, end = true),
-    Col("FGCT (s)", 0.8f, end = true),
-    Col("CGCT (s)", 0.8f, end = true),
-    Col("GCT (s)", 0.8f, end = true),
-    Col("CPU", 0.55f, end = true),
-    Col("Uptime", 0.85f, end = true),
-    Col("Flags", 1.4f),
+private val WIDE_TABLE_MIN_WIDTH = 920.dp
+
+private val COMPACT_COLS = listOf(
+    Col("Type", 2.25f),
+    Col("Project", 1.3f),
+    Col("PID", 0.8f, end = true),
+    Col("RSS", 1.0f, end = true),
+    Col("Heap", 0.95f, end = true),
+    Col("GCT (s)", 0.75f, end = true),
+    Col("CPU", 0.65f, end = true),
+    Col("Uptime", 0.95f, end = true),
+    Col("Flags", 1.15f),
+)
+
+private val WIDE_COLS = listOf(
+    Col("Type", 2.0f),
+    Col("Project", 1.4f),
+    Col("PID", 0.85f, end = true),
+    Col("RSS", 0.95f, end = true),
+    Col("Heap used", 0.95f, end = true),
+    Col("YGCT (s)", 0.75f, end = true),
+    Col("FGCT (s)", 0.75f, end = true),
+    Col("CGCT (s)", 0.75f, end = true),
+    Col("GCT (s)", 0.75f, end = true),
+    Col("CPU", 0.65f, end = true),
+    Col("Uptime", 0.95f, end = true),
+    Col("Flags", 1.2f),
 )
 
 @Composable
@@ -154,7 +173,7 @@ fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit, onClearSelec
                     color = MaterialTheme.colorScheme.surface,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 ) {
-                    Column(
+                    BoxWithConstraints(
                         modifier = Modifier
                             .fillMaxSize()
                             .focusRequester(listFocus)
@@ -169,20 +188,26 @@ fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit, onClearSelec
                                 }
                             },
                     ) {
-                        TableHeader(COLS)
-                        LazyColumn(modifier = Modifier.fillMaxSize()) {
-                            items(displayRows, key = { it.targetPid }) { row ->
-                                ProcessRow(
-                                    row,
-                                    row.targetPid == selectedPid,
-                                    row.process.pid in concurrent,
-                                    nowMs,
-                                    state::isPermissionDegraded,
-                                ) { pid ->
-                                    onSelect(pid)
-                                    listFocus.requestFocus()
+                        val showGcBreakdown = maxWidth >= WIDE_TABLE_MIN_WIDTH
+                        val cols = if (showGcBreakdown) WIDE_COLS else COMPACT_COLS
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            TableHeader(cols)
+                            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                                items(displayRows, key = { it.targetPid }) { row ->
+                                    ProcessRow(
+                                        row,
+                                        cols,
+                                        showGcBreakdown,
+                                        row.targetPid == selectedPid,
+                                        row.process.pid in concurrent,
+                                        nowMs,
+                                        state::isPermissionDegraded,
+                                    ) { pid ->
+                                        onSelect(pid)
+                                        listFocus.requestFocus()
+                                    }
+                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                                 }
-                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                             }
                         }
                     }
@@ -256,7 +281,7 @@ private fun SummaryHeader(
                 accent = LocalAccentColors.current.warn,
                 onClick = peakPid?.let { pid -> { onSelectPeakMemoryPid(pid) } },
             )
-            StatTile("Projects", state.summary.activeProjectCount.toString(), Modifier.weight(1f), icon = Icons.Filled.FolderOpen, accent = LocalAccentColors.current.brand)
+            StatTile("Attributed projects", state.summary.activeProjectCount.toString(), Modifier.weight(1f), icon = Icons.Filled.FolderOpen, accent = LocalAccentColors.current.brand)
         }
     }
 }
@@ -264,6 +289,8 @@ private fun SummaryHeader(
 @Composable
 private fun ProcessRow(
     row: LiveProcessRow,
+    cols: List<Col>,
+    showGcBreakdown: Boolean,
     selected: Boolean,
     concurrent: Boolean,
     nowMs: Long,
@@ -281,27 +308,31 @@ private fun ProcessRow(
         horizontalArrangement = Arrangement.spacedBy(Space.sm),
         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
     ) {
-        CellSlot(COLS[0]) {
+        var colIndex = 0
+        CellSlot(cols[colIndex++]) {
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
                 if (row.depth > 0 || row.isGroupRoot) {
                     Text(if (row.isGroupRoot) "▾" else "└", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                if (row.depth > 0) Spacer(Modifier.width((row.depth * 12).dp))
+                if (row.depth > 0) Spacer(Modifier.width((row.depth * 4).dp))
                 ProcessTypeIcon(p.type, size = 16.dp)
                 Text(p.type.displayLabel(), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             }
         }
-        Cell(p.projectPath?.substringAfterLast('/') ?: "—", COLS[1], muted = p.projectPath == null)
-        Cell(p.pid.toString(), COLS[2])
-        Cell("${p.rssMemoryMb} MB", COLS[3])
-        Cell(LiveMetricLabels.liveHeapUsedCompact(p.liveHeap), COLS[4], muted = p.liveHeap?.available != true)
-        Cell(p.youngGcTimeSeconds.gcTimeCompact(), COLS[5], muted = p.youngGcTimeSeconds == null)
-        Cell(p.fullGcTimeSeconds.gcTimeCompact(), COLS[6], muted = p.fullGcTimeSeconds == null)
-        Cell(p.concurrentGcTimeSeconds.gcTimeCompact(), COLS[7], muted = p.concurrentGcTimeSeconds == null)
-        Cell(p.totalGcTimeSeconds.gcTimeCompact(), COLS[8], muted = p.totalGcTimeSeconds == null)
-        Cell(LiveMetricLabels.cpuCompact(p.cpuPercent), COLS[9], muted = p.cpuPercent == null)
-        Cell(formatUptime(p.startTimeMs, nowMs), COLS[10])
-        Row(modifier = Modifier.weight(COLS[11].weight), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
+        val projectLabel = displayProjectLabel(p)
+        Cell(projectLabel ?: "—", cols[colIndex++], muted = projectLabel == null)
+        Cell(p.pid.toString(), cols[colIndex++])
+        Cell("${p.rssMemoryMb} MB", cols[colIndex++])
+        Cell(LiveMetricLabels.liveHeapUsedCompact(p.liveHeap), cols[colIndex++], muted = p.liveHeap?.available != true)
+        if (showGcBreakdown) {
+            Cell(p.youngGcTimeSeconds.gcTimeCompact(), cols[colIndex++], muted = p.youngGcTimeSeconds == null)
+            Cell(p.fullGcTimeSeconds.gcTimeCompact(), cols[colIndex++], muted = p.fullGcTimeSeconds == null)
+            Cell(p.concurrentGcTimeSeconds.gcTimeCompact(), cols[colIndex++], muted = p.concurrentGcTimeSeconds == null)
+        }
+        Cell(p.totalGcTimeSeconds.gcTimeCompact(), cols[colIndex++], muted = p.totalGcTimeSeconds == null)
+        Cell(LiveMetricLabels.cpuCompact(p.cpuPercent), cols[colIndex++], muted = p.cpuPercent == null)
+        Cell(formatUptime(p.startTimeMs, nowMs), cols[colIndex++])
+        Row(modifier = Modifier.weight(cols[colIndex].weight), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
             Badges.memoryBadge(p.rssMemoryMb)?.let { MemoryBadge(it) }
             if (concurrent) ConcurrentBadge()
             if (p.automated) AutomatedBadge()
@@ -405,19 +436,45 @@ private fun ProcessDetailInspector(
                 children.forEach { child -> ChildProcessRow(child) }
             }
         }
-        TabRow(
-            selectedTabIndex = tabs.indexOf(activeTab).coerceAtLeast(0),
-            modifier = Modifier.fillMaxWidth(),
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .selectableGroup()
+                .padding(top = Space.xs),
+            horizontalArrangement = Arrangement.spacedBy(Space.xs),
         ) {
             tabs.forEach { tab ->
-                Tab(
-                    selected = activeTab == tab,
-                    onClick = { selectedTab = tab },
-                    modifier = Modifier.testTag("process-detail-tab-${tab.tag}"),
-                    text = { Text(tab.label, maxLines = 1) },
-                )
+                val isSelected = activeTab == tab
+                Column(
+                    modifier = Modifier
+                        .selectable(
+                            selected = isSelected,
+                            role = Role.Tab,
+                            onClick = { selectedTab = tab },
+                        )
+                        .testTag("process-detail-tab-${tab.tag}")
+                        .padding(horizontal = Space.sm, vertical = Space.xs),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        tab.label,
+                        maxLines = 1,
+                        softWrap = false,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .height(2.dp)
+                            .width(if (isSelected) 28.dp else 0.dp)
+                            .background(MaterialTheme.colorScheme.primary),
+                    )
+                }
             }
         }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).testTag("process-detail-scroll")) {
             when (activeTab) {
                 InspectorTab.OVERVIEW -> {
@@ -662,7 +719,8 @@ private fun poolDetail(pool: JvmMemoryPool): String {
     fun value(raw: JvmRawValue?): String = raw?.let {
         "${it.value} ${it.unit}".trimEnd()
     } ?: "unavailable"
-    return "used ${value(pool.used)} · committed ${value(pool.committed)} · max ${value(pool.max)}"
+    return "used ${value(pool.used)} · committed ${value(pool.committed)} · max ${value(pool.max)}" +
+        (pool.peak?.let { " · peak ${value(it)}" } ?: "")
 }
 
 private fun Double?.gcTimeCompact(): String = this?.let { String.format(Locale.ROOT, "%.3f", it) } ?: "—"
@@ -677,21 +735,39 @@ private fun Long?.metricBytes(): String = this?.let {
 
 @Composable
 private fun LogCard(tailState: LogTailState, showMetadata: Boolean, daemonLog: DaemonLog?, modifier: Modifier = Modifier) {
-    SectionCard("Gradle daemon log", modifier) {
-        if (showMetadata) {
-            DetailRow("Gradle version", daemonLog?.gradleVersion?.takeIf { it.isNotBlank() } ?: "Unavailable")
-            DetailRow("Log path", daemonLog?.path?.toString()?.takeIf { it.isNotBlank() } ?: "Unavailable")
-        }
-        when (tailState) {
-            LogTailState.NoSelection -> Text(
-                "Select a Gradle daemon to see its daemon log. History builds also come from these logs.",
-                modifier = Modifier.padding(Space.md),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            LogTailState.Loading -> Text("Loading Gradle daemon log…", modifier = Modifier.padding(Space.md), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            LogTailState.NoLog -> Text("No Gradle daemon log was found for this process.", modifier = Modifier.padding(Space.md), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            is LogTailState.Error -> Text("Gradle daemon log unavailable (${tailState.errorType}).", modifier = Modifier.padding(Space.md), color = LocalAccentColors.current.warn)
-            is LogTailState.Available -> LogView(tailState.lines, modifier = Modifier.fillMaxSize(), autoScroll = true)
+    SectionCard("Gradle daemon log", modifier.testTag("gradle-log-card")) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            if (showMetadata) {
+                DetailRow("Gradle version", daemonLog?.gradleVersion?.takeIf { it.isNotBlank() } ?: "Unavailable")
+                DetailRow("Log path", daemonLog?.path?.toString()?.takeIf { it.isNotBlank() } ?: "Unavailable")
+            }
+            when (tailState) {
+                LogTailState.NoSelection -> Text(
+                    "Select a Gradle daemon to see its daemon log. History builds also come from these logs.",
+                    modifier = Modifier.padding(top = Space.sm),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                LogTailState.Loading -> Text(
+                    "Loading Gradle daemon log…",
+                    modifier = Modifier.padding(top = Space.sm),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                LogTailState.NoLog -> Text(
+                    "No Gradle daemon log was found for this process.",
+                    modifier = Modifier.padding(top = Space.sm),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                is LogTailState.Error -> Text(
+                    "Gradle daemon log unavailable (${tailState.errorType}).",
+                    modifier = Modifier.padding(top = Space.sm),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LocalAccentColors.current.warn,
+                )
+                is LogTailState.Available -> LogView(tailState.lines, modifier = Modifier.weight(1f).fillMaxWidth(), autoScroll = true)
+            }
         }
     }
 }
@@ -731,6 +807,16 @@ private fun DetailRow(label: String, value: String) {
         Text(label, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
         Text(value, modifier = Modifier.weight(2f), style = MaterialTheme.typography.bodySmall)
     }
+}
+
+/** Project column label matching Go CLI/TUI `render.ProjectName`: projectPath basename, else workingDirectory basename. */
+internal fun displayProjectLabel(process: GradleProcess): String? {
+    val raw = process.projectPath?.trim()?.takeIf { it.isNotEmpty() }
+        ?: process.workingDirectory?.trim()?.takeIf { it.isNotEmpty() }
+        ?: return null
+    val trimmed = raw.trimEnd('/', '\\')
+    if (trimmed.isEmpty()) return raw
+    return trimmed.substringAfterLast('/').substringAfterLast('\\').ifEmpty { trimmed }
 }
 
 /** Compact, human-readable process uptime: "45s", "12m 03s", "3h 07m", "2d 4h". */

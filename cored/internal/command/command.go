@@ -35,6 +35,7 @@ type Options struct {
 	JSON               bool
 	Details            bool
 	Output             string
+	FormatExplicit     bool
 	OutputPath         string
 	Since              time.Duration
 	Limit              int
@@ -128,6 +129,11 @@ func ParseArgs(argv []string) (Options, error) {
 	if err := fs.Parse(flagArgs); err != nil {
 		return opts, err
 	}
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "format" {
+			opts.FormatExplicit = true
+		}
+	})
 	if opts.Output != "plain" && opts.Output != "json" && opts.Output != "jsonl" && opts.Output != "csv" {
 		return opts, fmt.Errorf("invalid --format %q (want plain, json, jsonl, or csv)", opts.Output)
 	}
@@ -241,6 +247,16 @@ func Run(ctx context.Context, opts Options, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "daemonitor-cli: --watch is only valid with ps")
 			return 2
 		}
+		if cmd == "export" {
+			if opts.OutputPath == "" {
+				fmt.Fprintln(stderr, "daemonitor-cli: export requires --output PATH")
+				return 2
+			}
+			if opts.JSON || (opts.FormatExplicit && opts.Output != "jsonl") {
+				fmt.Fprintf(stderr, "daemonitor-cli: format %s is not supported for export (supported: jsonl)\n", opts.Output)
+				return 2
+			}
+		}
 		if opts.Watch {
 			return runWatch(ctx, opts, stdout, stderr)
 		}
@@ -305,7 +321,7 @@ func runOneShot(ctx context.Context, opts Options, cmd string, args []string, st
 		if limit == 0 {
 			limit = 200
 		}
-		hist, err := c.History(ctx, sinceMs, limit)
+		hist, err := c.HistoryFiltered(ctx, client.HistoryQuery{SinceMs: sinceMs, Limit: limit, PID: opts.PID})
 		if err != nil {
 			fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
 			return 1
@@ -401,7 +417,7 @@ func runOneShot(ctx context.Context, opts Options, cmd string, args []string, st
 			}
 			return 0
 		}
-		hist, err := c.History(ctx, historySince(opts).UnixMilli(), boundedLimit(opts.Limit))
+		hist, err := c.HistoryFiltered(ctx, client.HistoryQuery{SinceMs: historySince(opts).UnixMilli(), Limit: boundedLimit(opts.Limit), PID: opts.PID})
 		if err != nil {
 			fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
 			return 1
@@ -441,6 +457,10 @@ func runOneShot(ctx context.Context, opts Options, cmd string, args []string, st
 			fmt.Fprintln(stderr, "daemonitor-cli: export requires --output PATH")
 			return 2
 		}
+		if opts.JSON || (opts.FormatExplicit && opts.Output != "jsonl") {
+			fmt.Fprintf(stderr, "daemonitor-cli: format %s is not supported for export (supported: jsonl)\n", opts.Output)
+			return 2
+		}
 		return exportTelemetry(ctx, c, opts, stdout, stderr)
 	default:
 		return 2
@@ -458,9 +478,10 @@ func metricRecords(processes []model.Process) []model.MetricRecord {
 	rows := make([]model.MetricRecord, 0, len(processes)*8)
 	for _, p := range processes {
 		identity := fmt.Sprintf("%d:%d", p.PID, p.StartTimeMs)
+		sampledAt := p.SampledAtMs
 		add := func(name, unit string, value any) {
 			rows = append(rows, model.MetricRecord{SchemaVersion: 1, MetricName: name, Unit: unit, Value: value,
-				Source: "daemonitor-cored/history", CollectionTimeMs: p.SampledAtMs, ProcessIdentity: identity, PID: p.PID})
+				Source: "daemonitor-cored/history", CollectionTimeMs: sampledAt, ProcessIdentity: identity, PID: p.PID})
 		}
 		add("process.memory.rss_mb", "MB", p.RSSMemoryMB)
 		add("process.memory.virtual_mb", "MB", p.VirtualMemoryMB)
@@ -631,7 +652,7 @@ func exportTelemetry(ctx context.Context, c *client.Client, opts Options, stdout
 	defer file.Close()
 	enc := json.NewEncoder(file)
 	start := historySince(opts).UnixMilli()
-	hist, err := c.History(ctx, start, boundedLimit(opts.Limit))
+	hist, err := c.HistoryFiltered(ctx, client.HistoryQuery{SinceMs: start, Limit: boundedLimit(opts.Limit), PID: opts.PID})
 	if err != nil {
 		fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
 		return 1
@@ -690,14 +711,18 @@ func filterProcesses(items []model.Process, opts Options) []model.Process {
 }
 
 func filterLogs(items []logs.DaemonLog, opts Options) []logs.DaemonLog {
-	if opts.PID == 0 {
-		return items
-	}
-	out := items[:0]
-	for _, item := range items {
-		if item.PID == opts.PID {
-			out = append(out, item)
+	out := items
+	if opts.PID != 0 {
+		filtered := make([]logs.DaemonLog, 0, len(items))
+		for _, item := range items {
+			if item.PID == opts.PID {
+				filtered = append(filtered, item)
+			}
 		}
+		out = filtered
+	}
+	if opts.Limit > 0 && len(out) > opts.Limit {
+		out = out[:opts.Limit]
 	}
 	return out
 }
