@@ -1,6 +1,6 @@
 package io.github.cdsap.daemonitor
 
-import io.github.cdsap.daemonitor.application.BuildHistoryReader
+import io.github.cdsap.daemonitor.application.HistoryReader
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.Source
@@ -10,7 +10,7 @@ import kotlin.test.assertEquals
 class HistoryServiceTest {
     @Test
     fun `history and projects read from the build history reader`() {
-        val builds = FakeBuildHistoryReader(
+        val builds = FakeHistoryReader(
             listOf(
                 build("b1", startMs = 1_000, project = "/proj/a"),
                 build("b2", startMs = 3_000, project = "/proj/b"),
@@ -42,9 +42,9 @@ class HistoryServiceTest {
         agentProvider = null,
     )
 
-    private class FakeBuildHistoryReader(
+    private class FakeHistoryReader(
         private val stored: List<Build>,
-    ) : BuildHistoryReader {
+    ) : HistoryReader {
         override fun recent(): List<Build> = stored.sortedByDescending { it.startTimeMs }
 
         override fun distinctProjects(): List<String> =

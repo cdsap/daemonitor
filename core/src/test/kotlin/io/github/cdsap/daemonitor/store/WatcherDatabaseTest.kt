@@ -1,6 +1,7 @@
 package io.github.cdsap.daemonitor.store
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import io.github.cdsap.daemonitor.application.HistoryReader
 import io.github.cdsap.daemonitor.application.ProcessSampleQuery
 import io.github.cdsap.daemonitor.domain.BuildSample
 import io.github.cdsap.daemonitor.domain.model.Build
@@ -511,6 +512,7 @@ class WatcherDatabaseTest {
         val database = WatcherDatabase.open(tmp.resolve("watcher.db"))
         try {
             val builds: BuildRepository = database
+            val history: HistoryReader = builds
             val samples: ProcessSampleRepository = database
             val sampleQueries: ProcessSampleQuery = database
             val retention: RetentionRepository = database
@@ -535,8 +537,8 @@ class WatcherDatabaseTest {
             )
             builds.save(build("port-build", 5_000, project = "/repo"))
 
-            assertEquals(listOf("port-build"), builds.recent().map { it.buildId })
-            assertEquals(listOf("/repo"), builds.distinctProjects())
+            assertEquals(listOf("port-build"), history.recent().map { it.buildId })
+            assertEquals(listOf("/repo"), history.distinctProjects())
             assertEquals(1, builds.search("port", limit = 10).size)
             assertEquals(1, builds.findByDaemon(1, limit = 10).size)
             assertEquals(

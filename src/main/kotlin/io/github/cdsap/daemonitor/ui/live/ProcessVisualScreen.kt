@@ -3,6 +3,9 @@ package io.github.cdsap.daemonitor.ui.live
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.LocalScrollbarStyle
+import androidx.compose.foundation.HorizontalScrollbar
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -264,39 +267,52 @@ private fun ProcessSelectionStrip(
     onSelect: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier
-            .horizontalScroll(rememberScrollState())
-            .testTag("visual-process-strip"),
-        horizontalArrangement = Arrangement.spacedBy(Space.xs),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        processes.forEach { process ->
-            val selected = process.pid == selectedPid
-            val border = if (selected) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.outlineVariant
+    val scrollState = rememberScrollState()
+    Column(modifier = modifier) {
+        Row(
+            modifier = Modifier.fillMaxWidth()
+                .horizontalScroll(scrollState)
+                .testTag("visual-process-strip"),
+            horizontalArrangement = Arrangement.spacedBy(Space.xs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            processes.forEach { process ->
+                val selected = process.pid == selectedPid
+                val border = if (selected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.outlineVariant
+                }
+                Text(
+                    text = "${process.type.displayLabel()} · ${process.pid}",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .border(1.dp, border, RoundedCornerShape(Radius.sm))
+                        .background(
+                            if (selected) {
+                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+                            } else {
+                                MaterialTheme.colorScheme.surface
+                            },
+                            RoundedCornerShape(Radius.sm),
+                        )
+                        .clickable { onSelect(process.pid) }
+                        .padding(horizontal = Space.sm, vertical = Space.xs)
+                        .testTag("visual-process-${process.pid}"),
+                )
             }
-            Text(
-                text = "${process.type.displayLabel()} · ${process.pid}",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .border(1.dp, border, RoundedCornerShape(Radius.sm))
-                    .background(
-                        if (selected) {
-                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
-                        } else {
-                            MaterialTheme.colorScheme.surface
-                        },
-                        RoundedCornerShape(Radius.sm),
-                    )
-                    .clickable { onSelect(process.pid) }
-                    .padding(horizontal = Space.sm, vertical = Space.xs)
-                    .testTag("visual-process-${process.pid}"),
+        }
+        if (scrollState.maxValue > 0) {
+            HorizontalScrollbar(
+                adapter = rememberScrollbarAdapter(scrollState),
+                style = LocalScrollbarStyle.current.copy(
+                    unhoverColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    hoverColor = MaterialTheme.colorScheme.onSurface,
+                ),
+                modifier = Modifier.fillMaxWidth().padding(top = Space.xs).testTag("visual-process-scrollbar"),
             )
         }
     }
