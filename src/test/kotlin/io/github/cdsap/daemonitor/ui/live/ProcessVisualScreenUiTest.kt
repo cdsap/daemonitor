@@ -153,6 +153,32 @@ class ProcessVisualScreenUiTest {
     }
 
     @Test
+    fun `process selection strip wraps across rows when many processes are active`() = runSkikoComposeUiTest(Size(1180f, 760f), Density(1f)) {
+        mainClock.autoAdvance = false
+        val processes = (1..12).map { i ->
+            process(
+                pid = 50000L + i,
+                type = if (i % 3 == 0) ProcessType.BAZEL_SERVER else if (i % 2 == 0) ProcessType.KOTLIN_DAEMON else ProcessType.GRADLE_DAEMON,
+                project = "proj-$i",
+                rss = 1000L - i * 40L,
+                heap = 2048,
+                used = 300,
+                cpu = 5.0,
+            )
+        }
+        setContent {
+            WatcherTheme {
+                ProcessVisualScreen(liveState(processes, timelineFor(processes)))
+            }
+        }
+
+        val firstBounds = onNodeWithTag("visual-process-50001").fetchSemanticsNode().boundsInRoot
+        val lastBounds = onNodeWithTag("visual-process-50012").fetchSemanticsNode().boundsInRoot
+        kotlin.test.assertTrue(lastBounds.top > firstBounds.top, "Expected chips to wrap to a second row: first=$firstBounds last=$lastBounds")
+        kotlin.test.assertTrue(lastBounds.right <= 1180f, "Wrapped chip clipped past right edge: $lastBounds")
+    }
+
+    @Test
     fun `visual screen preserves empty state`() = runVisualUiTest {
         setContent {
             WatcherTheme {

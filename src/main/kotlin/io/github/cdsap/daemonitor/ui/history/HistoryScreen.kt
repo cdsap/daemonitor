@@ -76,13 +76,13 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 private val COLS = listOf(
-    Col("Started", 1.1f),
-    Col("Project", 1.1f),
-    Col("Duration", 0.7f, end = true),
-    Col("Peak RSS", 1.0f, end = true),
-    Col("Status", 1.1f),
+    Col("Started", 1.35f),
+    Col("Project", 1.15f),
+    Col("Duration", 0.75f, end = true),
+    Col("Peak RSS", 0.95f, end = true),
+    Col("Status", 1.15f),
     Col("Source", 0.9f),
-    Col("Agent", 1.1f),
+    Col("Agent", 0.9f),
 )
 
 @Composable
@@ -320,6 +320,7 @@ private fun HistoryDetail(build: Build?) {
                 if (bazel) "Bazel build ${build.buildId}" else "Gradle build ${build.buildId}",
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false),
             )
             StatusPill(build.finalStatus)
@@ -472,7 +473,7 @@ private fun HistorySection(label: String) {
 private fun DetailRow(label: String, value: String) {
     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
         Text(label, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-        Text(value, modifier = Modifier.weight(2f), style = MaterialTheme.typography.bodySmall, maxLines = 1)
+        Text(value, modifier = Modifier.weight(2f), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -497,7 +498,7 @@ private fun formatBytes(bytes: Long): String = when {
     else -> "$bytes B"
 }
 
-private val TIME_FMT = DateTimeFormatter.ofPattern("MMM d, HH:mm:ss").withZone(ZoneId.systemDefault())
+private val TIME_FMT = DateTimeFormatter.ofPattern("MMM d HH:mm").withZone(ZoneId.systemDefault())
 private fun Build.displayAgent(): String? = agent.takeUnless { inferredSource == Source.IDE }
 private fun formatTime(ms: Long): String = TIME_FMT.format(Instant.ofEpochMilli(ms))
 private fun formatDuration(seconds: Double?): String =
