@@ -18,6 +18,7 @@ type Sample struct {
 	MeasurementTimes     map[string]int64
 	UsedMB               int64
 	CommittedMB          int64
+	MaxMB                *int64
 	Source               string // "jcmd" | "jstat"
 	GC                   *string
 	MetaspaceUsedMB      *int64
@@ -248,7 +249,7 @@ func ParseJinfoFlagsGC(out string) (*string, error) {
 //	garbage-first heap   total reserved 262144K, committed 262144K, used 36447K [...]
 func ParseJcmdHeapInfo(out string) (Sample, error) {
 	var metaspaceUsed, metaspaceCommitted *int64
-	var heapUsed, heapCommitted *int64
+	var heapUsed, heapCommitted, heapMax *int64
 	var gc *string
 	var generationUsedKB, generationTotalKB float64
 	var pools []MemoryPool
@@ -300,6 +301,9 @@ func ParseJcmdHeapInfo(out string) (Sample, error) {
 			continue
 		}
 		heapUsed, heapCommitted = ptrInt64(kbToMB(usedKB)), ptrInt64(kbToMB(committedKB))
+		if reservedKB, okR := findKBToken(line, "reserved"); okR {
+			heapMax = ptrInt64(kbToMB(reservedKB))
+		}
 	}
 	if generationTotalKB > 0 {
 		heapUsed, heapCommitted = ptrInt64(kbToMB(generationUsedKB)), ptrInt64(kbToMB(generationTotalKB))
@@ -307,7 +311,7 @@ func ParseJcmdHeapInfo(out string) (Sample, error) {
 	if heapUsed == nil || heapCommitted == nil {
 		return Sample{}, fmt.Errorf("jcmd GC.heap_info: no heap used/committed line")
 	}
-	return Sample{UsedMB: *heapUsed, CommittedMB: *heapCommitted, Source: "jcmd", GC: gc, MetaspaceUsedMB: metaspaceUsed, MetaspaceCommittedMB: metaspaceCommitted, MemoryPools: pools}, nil
+	return Sample{UsedMB: *heapUsed, CommittedMB: *heapCommitted, MaxMB: heapMax, Source: "jcmd", GC: gc, MetaspaceUsedMB: metaspaceUsed, MetaspaceCommittedMB: metaspaceCommitted, MemoryPools: pools}, nil
 }
 
 func ptrInt64(v int64) *int64 { return &v }

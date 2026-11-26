@@ -627,7 +627,11 @@ func liveHeapFieldsFromSample(sample heap.Sample, probeFailure string) (used, co
 	}
 	u := sample.UsedMB
 	c := sample.CommittedMB
-	return &u, &c, nil, sampledAt, true
+	if sample.MaxMB != nil {
+		m := *sample.MaxMB
+		max = &m
+	}
+	return &u, &c, max, sampledAt, true
 }
 
 func probeDiagnostics(diagnostics []heap.Diagnostic, terminalFailure string) []model.ProbeDiagnostic {

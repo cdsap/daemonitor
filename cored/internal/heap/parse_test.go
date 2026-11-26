@@ -92,6 +92,9 @@ func TestParseJcmdHeapInfo(t *testing.T) {
 	if s.CommittedMB != 256 {
 		t.Fatalf("committed MB: got %d want 256", s.CommittedMB)
 	}
+	if s.MaxMB == nil || *s.MaxMB != 256 {
+		t.Fatalf("max MB: got %v want 256", s.MaxMB)
+	}
 	if s.Source != "jcmd" {
 		t.Fatalf("source: %q", s.Source)
 	}
@@ -116,6 +119,25 @@ func TestParseJcmdParallelHeapInfo(t *testing.T) {
 	}
 	if s.CommittedMB != 245 {
 		t.Fatalf("committed MB: got %d want 245", s.CommittedMB)
+	}
+	if s.MaxMB != nil {
+		t.Fatalf("parallel GC heap_info should leave max MB nil, got %d", *s.MaxMB)
+	}
+}
+
+func TestParseJcmdHeapInfoDistinctReservedAndCommitted(t *testing.T) {
+	const g1 = `50527:
+ garbage-first heap   total reserved 1048576K, committed 430080K, used 146710K [0x0000007000800000, 0x0000007040800000)
+  region size 1024K, 16 young (16384K), 15 survivors (15360K)
+ Metaspace       used 161131K, committed 163648K, reserved 1245184K
+  class space    used 21357K, committed 22528K, reserved 1048576K
+`
+	s, err := heap.ParseJcmdHeapInfo(g1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.UsedMB != 143 || s.CommittedMB != 420 || s.MaxMB == nil || *s.MaxMB != 1024 {
+		t.Fatalf("got used=%d committed=%d max=%v want 143/420/1024", s.UsedMB, s.CommittedMB, s.MaxMB)
 	}
 }
 
