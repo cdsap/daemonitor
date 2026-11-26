@@ -1,7 +1,9 @@
 package io.github.cdsap.daemonitor.ui.live
 
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.onAllNodesWithText
@@ -9,6 +11,7 @@ import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.runSkikoComposeUiTest
 import androidx.compose.ui.unit.Density
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
@@ -19,6 +22,52 @@ import kotlin.test.Test
 
 @OptIn(ExperimentalTestApi::class)
 class ProcessVisualScreenUiTest {
+
+    @Test
+    fun `overflow strips show scrollbars and reach the last process and legend at default window size`() =
+        runSkikoComposeUiTest(Size(1180f, 760f), Density(1f)) {
+            mainClock.autoAdvance = false
+            val types = listOf(ProcessType.GRADLE_DAEMON, ProcessType.BAZEL_SERVER, ProcessType.KOTLIN_DAEMON)
+            val processes = (0 until 12).map { index ->
+                process(
+                    pid = 100L + index, type = types[index % types.size], project = "checkout-$index",
+                    rss = 1024L - index, heap = 4096, used = 700, cpu = 24.0,
+                )
+            }
+            setContent {
+                WatcherTheme { ProcessVisualScreen(liveState(processes, timelineFor(processes))) }
+            }
+            onNodeWithTag("visual-process-scrollbar").assertIsDisplayed()
+            onNodeWithTag("visual-legend-scrollbar").assertIsDisplayed()
+            onNodeWithTag("visual-process-strip").performSemanticsAction(SemanticsActions.ScrollBy) {
+                it(100_000f, 0f)
+            }
+            mainClock.advanceTimeBy(1_000)
+            waitForIdle()
+            mainClock.advanceTimeBy(1_000)
+            onNodeWithTag("visual-process-111").assertIsDisplayed().performClick()
+            onNodeWithText("PID 111 · RSS 1013 MB", substring = true).assertExists()
+            onNodeWithTag("visual-legend-strip").performSemanticsAction(SemanticsActions.ScrollBy) {
+                it(100_000f, 0f)
+            }
+            mainClock.advanceTimeBy(1_000)
+            waitForIdle()
+            mainClock.advanceTimeBy(1_000)
+            onNodeWithText("Kotlin daemon · checkout-11 · PID 111 · Heap limit")
+                .assertIsDisplayed().assertIsSelected()
+        }
+
+    @Test
+    fun `process strip hides scrollbar when all chips fit`() = runVisualUiTest {
+        val processes = listOf(
+            process(100, ProcessType.GRADLE_DAEMON, "checkout", 1024, 4096, 700, 24.0),
+        )
+        setContent {
+            WatcherTheme { ProcessVisualScreen(liveState(processes, timelineFor(processes))) }
+        }
+        onNodeWithTag("visual-process-strip").assertIsDisplayed()
+        onNodeWithTag("visual-process-scrollbar").assertDoesNotExist()
+    }
 
     @Test
     fun `visual screen renders memory mode timeline without tile strip`() = runVisualUiTest {
@@ -150,32 +199,6 @@ class ProcessVisualScreenUiTest {
         onNodeWithText("PID 101 · RSS 768 MB · Heap 400 MB · Limit 1536 MB", substring = true).assertExists()
         onAllNodesWithText("Kotlin daemon · design-system · PID 101 · RSS").onFirst().assertIsSelected()
         onAllNodesWithText("Gradle daemon · checkout · PID 100 · RSS").onFirst().assertIsNotSelected()
-    }
-
-    @Test
-    fun `process selection strip wraps across rows when many processes are active`() = runSkikoComposeUiTest(Size(1180f, 760f), Density(1f)) {
-        mainClock.autoAdvance = false
-        val processes = (1..12).map { i ->
-            process(
-                pid = 50000L + i,
-                type = if (i % 3 == 0) ProcessType.BAZEL_SERVER else if (i % 2 == 0) ProcessType.KOTLIN_DAEMON else ProcessType.GRADLE_DAEMON,
-                project = "proj-$i",
-                rss = 1000L - i * 40L,
-                heap = 2048,
-                used = 300,
-                cpu = 5.0,
-            )
-        }
-        setContent {
-            WatcherTheme {
-                ProcessVisualScreen(liveState(processes, timelineFor(processes)))
-            }
-        }
-
-        val firstBounds = onNodeWithTag("visual-process-50001").fetchSemanticsNode().boundsInRoot
-        val lastBounds = onNodeWithTag("visual-process-50012").fetchSemanticsNode().boundsInRoot
-        kotlin.test.assertTrue(lastBounds.top > firstBounds.top, "Expected chips to wrap to a second row: first=$firstBounds last=$lastBounds")
-        kotlin.test.assertTrue(lastBounds.right <= 1180f, "Wrapped chip clipped past right edge: $lastBounds")
     }
 
     @Test

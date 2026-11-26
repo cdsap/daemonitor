@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"sync"
 
 	"github.com/cdsap/daemonitor/cored/internal/model"
@@ -61,6 +60,8 @@ func (w *BazelWatcher) Poll(processes []model.Process) {
 				w.files[key] = log
 			}
 			seen[key] = true
+			log.meta.active = true
+			log.meta.modified = info.ModTime()
 			// On read errors retain only previously redacted lines and retry next poll.
 			_ = log.read()
 		}
@@ -79,12 +80,7 @@ func (w *BazelWatcher) List() []DaemonLog {
 	for _, log := range w.files {
 		out = append(out, log.meta)
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].PID != out[j].PID {
-			return out[i].PID < out[j].PID
-		}
-		return out[i].Source < out[j].Source
-	})
+	Sort(out)
 	return out
 }
 

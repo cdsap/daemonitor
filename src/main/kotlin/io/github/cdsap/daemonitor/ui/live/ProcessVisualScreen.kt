@@ -3,19 +3,18 @@ package io.github.cdsap.daemonitor.ui.live
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.LocalScrollbarStyle
+import androidx.compose.foundation.HorizontalScrollbar
+import androidx.compose.foundation.rememberScrollbarAdapter
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
@@ -261,7 +260,6 @@ private fun VisualDashboard(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ProcessSelectionStrip(
     processes: List<GradleProcess>,
@@ -269,16 +267,14 @@ private fun ProcessSelectionStrip(
     onSelect: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Box(
-        modifier = modifier
-            .heightIn(max = 68.dp)
-            .verticalScroll(rememberScrollState())
-            .testTag("visual-process-strip"),
-    ) {
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
+    val scrollState = rememberScrollState()
+    Column(modifier = modifier) {
+        Row(
+            modifier = Modifier.fillMaxWidth()
+                .horizontalScroll(scrollState)
+                .testTag("visual-process-strip"),
             horizontalArrangement = Arrangement.spacedBy(Space.xs),
-            verticalArrangement = Arrangement.spacedBy(Space.xs),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             processes.forEach { process ->
                 val selected = process.pid == selectedPid
@@ -308,6 +304,16 @@ private fun ProcessSelectionStrip(
                         .testTag("visual-process-${process.pid}"),
                 )
             }
+        }
+        if (scrollState.maxValue > 0) {
+            HorizontalScrollbar(
+                adapter = rememberScrollbarAdapter(scrollState),
+                style = LocalScrollbarStyle.current.copy(
+                    unhoverColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    hoverColor = MaterialTheme.colorScheme.onSurface,
+                ),
+                modifier = Modifier.fillMaxWidth().padding(top = Space.xs).testTag("visual-process-scrollbar"),
+            )
         }
     }
 }

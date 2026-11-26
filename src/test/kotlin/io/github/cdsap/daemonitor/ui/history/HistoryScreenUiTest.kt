@@ -5,15 +5,20 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.requestFocus
 import androidx.compose.ui.test.runComposeUiTest
 import androidx.compose.ui.test.runSkikoComposeUiTest
-import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.performClick
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
 import kotlin.test.assertTrue
 import io.github.cdsap.daemonitor.domain.model.Build
@@ -55,6 +60,52 @@ class HistoryScreenUiTest {
         agentProvider = "Anthropic",
         tool = tool,
     )
+
+    @Test
+    fun `started timestamp includes minutes without ellipsis at default window size`() =
+        runSkikoComposeUiTest(Size(1180f, 760f), Density(1f)) {
+            val build = sampleBuild().copy(
+                startTimeMs = java.time.ZonedDateTime.of(
+                    2026, 11, 25, 14, 51, 32, 0, java.time.ZoneId.systemDefault(),
+                ).toInstant().toEpochMilli(),
+            )
+            setContent {
+                WatcherTheme {
+                    HistoryScreen(HistoryUiState(builds = listOf(build), isEmptyResult = false), {}, {})
+                }
+            }
+            onNodeWithText("Nov 25 14:51").assertIsDisplayed()
+            val layouts = mutableListOf<TextLayoutResult>()
+            onNodeWithTag("history-started-b1", useUnmergedTree = true).performSemanticsAction(SemanticsActions.GetTextLayoutResult) {
+                it(layouts)
+            }
+            kotlin.test.assertEquals(1, layouts.size)
+            val layout = layouts.single()
+            kotlin.test.assertTrue(layout.getLineRight(0) <= layout.size.width)
+            kotlin.test.assertEquals("Nov 25 14:51".length, layout.getLineEnd(0, visibleEnd = true))
+            kotlin.test.assertFalse(layouts.single().isLineEllipsized(0))
+        }
+
+    @Test
+    fun `bazel UUID detail title ellipsizes before the status badge at default window size`() =
+        runSkikoComposeUiTest(Size(1180f, 760f), Density(1f)) {
+            val build = sampleBuild(buildId = "a08a35af-1a07-4345-a7ed-0239c4d748ce", tool = BuildTool.BAZEL)
+            setContent {
+                WatcherTheme {
+                    HistoryScreen(HistoryUiState(builds = listOf(build), isEmptyResult = false), {}, {})
+                }
+            }
+            onNodeWithText("my-app").performClick()
+            val layouts = mutableListOf<TextLayoutResult>()
+            onNodeWithTag("history-detail-title").assertIsDisplayed()
+                .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            kotlin.test.assertEquals(1, layouts.size)
+            kotlin.test.assertEquals(androidx.compose.ui.text.style.TextOverflow.Ellipsis, layouts.single().layoutInput.overflow)
+            val title = onNodeWithTag("history-detail-title").fetchSemanticsNode().boundsInRoot
+            val status = onAllNodesWithText("success").onLast().assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            kotlin.test.assertTrue(title.right <= status.left)
+            onNodeWithText("Bazel build ${build.buildId}").assertExists()
+        }
 
     @Test
     fun `a build row renders project, status pill and agent`() = runComposeUiTest {
@@ -343,5 +394,21 @@ class HistoryScreenUiTest {
 
         val titleBounds = onNodeWithText("Bazel build a08a35af-1a07-4345-9f8e-1234567890ab").fetchSemanticsNode().boundsInRoot
         assertTrue(titleBounds.right <= 1180f, "Build detail title overflowed viewport: $titleBounds")
+    }
+
+    @Test
+    fun `status and source pills have enough room for completed and terminal at 1180x760`() {
+        val builds = listOf(
+            sampleBuild(buildId = "g1", projectPath = "/ws/gradle-app", status = FinalStatus.SUCCESS, source = Source.TERMINAL),
+            sampleBuild(buildId = "b1", projectPath = "/ws/bazel-app", status = FinalStatus.COMPLETED_NO_OUTCOME, source = Source.PROFILE, tool = BuildTool.BAZEL),
+        )
+        val state = HistoryUiState(builds = builds, isEmptyResult = false)
+        runSkikoComposeUiTest(Size(1180f, 760f), Density(1f)) {
+            setContent { WatcherTheme { HistoryScreen(state, onProject = {}, onTimeRange = {}) } }
+            val completedBounds = onNodeWithText("completed").fetchSemanticsNode().boundsInRoot
+            val terminalBounds = onNodeWithText("terminal").fetchSemanticsNode().boundsInRoot
+            assertTrue(completedBounds.width >= 55f, "completed pill too narrow at 1180dp: $completedBounds")
+            assertTrue(terminalBounds.width >= 44f, "terminal pill too narrow at 1180dp: $terminalBounds")
+        }
     }
 }

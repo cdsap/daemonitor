@@ -76,13 +76,13 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 private val COLS = listOf(
-    Col("Started", 1.35f),
+    Col("Started", 1.55f),
     Col("Project", 1.15f),
     Col("Duration", 0.75f, end = true),
-    Col("Peak RSS", 0.95f, end = true),
-    Col("Status", 1.15f),
-    Col("Source", 0.9f),
-    Col("Agent", 0.9f),
+    Col("Peak RSS", 1.0f, end = true),
+    Col("Status", 1.35f),
+    Col("Source", 1.15f),
+    Col("Agent", 0.95f),
 )
 
 @Composable
@@ -268,7 +268,13 @@ private fun BuildRow(b: Build, selected: Boolean, onSelect: () -> Unit) {
                     },
                     size = 15.dp,
                 )
-                Text(formatTime(b.startTimeMs), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    formatTime(b.startTimeMs),
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.testTag("history-started-${b.buildId}"),
+                )
             }
         }
         Cell(
@@ -321,7 +327,7 @@ private fun HistoryDetail(build: Build?) {
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
+                modifier = Modifier.weight(1f, fill = false).testTag("history-detail-title"),
             )
             StatusPill(build.finalStatus)
         }

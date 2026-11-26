@@ -3,9 +3,10 @@ package io.github.cdsap.daemonitor.ui.live.charts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.LocalScrollbarStyle
 import androidx.compose.foundation.HorizontalScrollbar
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollbarAdapter
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -42,6 +43,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -156,10 +158,10 @@ fun OverallRssTimelineChart(
                 style = MaterialTheme.typography.labelSmall,
                 color = labelColor,
             )
-            val legendScroll = rememberScrollState()
+            val legendScrollState = rememberScrollState()
             Column(modifier = Modifier.fillMaxWidth()) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(legendScroll),
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(legendScrollState).testTag("visual-legend-strip"),
                     horizontalArrangement = Arrangement.spacedBy(Space.sm),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -190,10 +192,14 @@ fun OverallRssTimelineChart(
                         )
                     }
                 }
-                if (legendScroll.maxValue > 0) {
+                if (legendScrollState.maxValue > 0) {
                     HorizontalScrollbar(
-                        adapter = rememberScrollbarAdapter(legendScroll),
-                        modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                        adapter = rememberScrollbarAdapter(legendScrollState),
+                        style = LocalScrollbarStyle.current.copy(
+                            unhoverColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            hoverColor = MaterialTheme.colorScheme.onSurface,
+                        ),
+                        modifier = Modifier.fillMaxWidth().padding(top = Space.xs).testTag("visual-legend-scrollbar"),
                     )
                 }
             }

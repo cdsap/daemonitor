@@ -16,7 +16,11 @@ func (darwinCollector) CollectProcess(ctx context.Context, process ProcessIdenti
 	// logical I/O or let them obscure the native disk measurements.
 	out.LogicalReadBytesTotal = IntUnavailable(Unsupported, "macOS does not expose logical process I/O")
 	out.LogicalWriteBytesTotal = IntUnavailable(Unsupported, "macOS does not expose logical process I/O")
-	out.DiskReadBytesTotal, out.DiskWriteBytesTotal = collectDarwinDiskIO(process.PID, out.SampledAtMs)
+	rusage := collectDarwinRusage(process.PID, out.SampledAtMs)
+	out.DiskReadBytesTotal = rusage.diskRead
+	out.DiskWriteBytesTotal = rusage.diskWrite
+	out.PhysicalFootprintBytes = rusage.physFootprint
+	out.PeakResidentBytes = rusage.peakResident
 	return out
 }
 
@@ -26,8 +30,10 @@ func (darwinCollector) CollectHost(ctx context.Context) HostMetrics {
 
 func (darwinCollector) Capabilities() []MetricCapability {
 	caps := baseCapabilities()
-	setCapability(caps, "process.memory.physical_footprint_bytes", NotCollected, "proc_pid_rusage",
-		"macOS ri_phys_footprint (native collection pending)")
+	setCapability(caps, "process.memory.physical_footprint_bytes", Available, "proc_pid_rusage",
+		"macOS ri_phys_footprint via proc_pid_rusage")
+	setCapability(caps, "process.memory.peak_resident_bytes", Available, "proc_pid_rusage",
+		"macOS ri_lifetime_max_phys_footprint via proc_pid_rusage")
 	setCapability(caps, "process.io.disk_read_bytes_total", Available, "proc_pid_rusage",
 		"macOS storage bytes read via proc_pid_rusage")
 	setCapability(caps, "process.io.disk_write_bytes_total", Available, "proc_pid_rusage",

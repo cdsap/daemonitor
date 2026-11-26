@@ -162,6 +162,85 @@ func TestInsertHistoryAndPurge(t *testing.T) {
 	}
 }
 
+func TestCommandLinesAreNormalizedWithoutChangingHistory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "commands.sqlite")
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := "java -cp " + strings.Repeat("/long/classpath.jar:", 500)
+	for i := 0; i < 20; i++ {
+		if err := s.InsertSnapshotForHost("host", model.Snapshot{SampledAtMs: int64(i + 1), Processes: []model.Process{{PID: 7, StartTimeMs: 1, CommandLine: command, Status: "R"}}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bytes int
+	if err := db.QueryRow(`SELECT SUM(length(command_line)) FROM process_samples`).Scan(&bytes); err != nil {
+		t.Fatal(err)
+	}
+	if bytes != 0 {
+		t.Fatalf("sample command-line bytes=%d, want 0", bytes)
+	}
+	var commands int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM process_command_lines`).Scan(&commands); err != nil || commands != 1 {
+		t.Fatalf("commands=%d err=%v", commands, err)
+	}
+	// Legacy rows and normalized rows must coexist without rewriting old history.
+	if _, err := db.Exec(`INSERT INTO process_samples(timestamp, pid, parent_pid, process_type, command_line, rss_memory_mb, status) VALUES (21, 7, 0, 'JAVA', 'legacy', 1, 'R')`); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+	s, err = store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	for _, p := range []model.Process{{PID: 7, StartTimeMs: 1, CommandLine: "changed", Status: "R"}, {PID: 7, StartTimeMs: 2, CommandLine: "reused", Status: "R"}, {PID: 8, CommandLine: "unknown start", Status: "R"}} {
+		if err := s.InsertSnapshot(model.Snapshot{SampledAtMs: 22, Processes: []model.Process{p}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	history, err := s.History(0, 100)
+	if err != nil || len(history) != 24 {
+		t.Fatalf("history length=%d err=%v", len(history), err)
+	}
+	for i, p := range history {
+		want := command
+		if i >= 20 {
+			want = []string{"legacy", "changed", "reused", "unknown start"}[i-20]
+		}
+		if p.CommandLine != want {
+			t.Fatalf("row %d command line differs", i)
+		}
+	}
+	// Keep one shared command alive while removing the old samples and commands.
+	if err := s.InsertSnapshot(model.Snapshot{SampledAtMs: time.Now().UnixMilli(), Processes: []model.Process{{PID: 9, CommandLine: command, Status: "R"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.PurgeOlderThan(time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	history, err = s.History(0, 100)
+	if err != nil || len(history) != 1 || history[0].CommandLine != command {
+		t.Fatalf("retained history length=%d err=%v", len(history), err)
+	}
+	db, err = sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := db.QueryRow(`SELECT COUNT(*) FROM process_command_lines`).Scan(&commands); err != nil || commands != 1 {
+		t.Fatalf("commands after purge=%d err=%v", commands, err)
+	}
+}
+
 func TestPurgeOlderThanDeletesOldBuilds(t *testing.T) {
 	dir := t.TempDir()
 	s, err := store.Open(filepath.Join(dir, "builds-purge.sqlite"))
@@ -547,8 +626,20 @@ INSERT INTO process_samples(
 	if err != nil || len(hist) != 1 {
 		t.Fatalf("hist=%d err=%v", len(hist), err)
 	}
-	if hist[0].SampledAtMs != 500 || hist[0].PID != 11 {
+	if hist[0].SampledAtMs != 500 || hist[0].PID != 11 || hist[0].CommandLine != "GradleDaemon" {
 		t.Fatalf("row=%+v", hist[0])
+	}
+	if err := s.InsertSnapshot(model.Snapshot{SampledAtMs: 600, Processes: []model.Process{{PID: 11, StartTimeMs: 1, CommandLine: "GradleDaemon", Status: "R"}}}); err != nil {
+		t.Fatal(err)
+	}
+	hist, err = s.History(0, 10)
+	if err != nil || len(hist) != 2 {
+		t.Fatalf("migrated history length=%d err=%v", len(hist), err)
+	}
+	for _, p := range hist {
+		if p.CommandLine != "GradleDaemon" {
+			t.Fatalf("migrated command line=%q", p.CommandLine)
+		}
 	}
 }
 
