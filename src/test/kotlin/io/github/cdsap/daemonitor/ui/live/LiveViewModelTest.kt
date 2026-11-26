@@ -210,17 +210,22 @@ class LiveViewModelTest {
     }
 
     @Test
-    fun `missing and empty tails become an explicit empty state`() {
+    fun `missing log and readable empty log have distinct states`() {
         val vm = LiveViewModel()
         vm.onPoll(listOf(proc(1)))
         vm.select(1)
         vm.onTail(1, DaemonLogTailResult.NoLog)
         assertEquals(LogTailState.NoLog, vm.state.value.tailState)
 
+        val log = DaemonLog(1, "9.6.1", Path.of("/tmp/daemon-1.out.log"))
+        vm.onPoll(listOf(proc(1)), daemonLogs = listOf(log))
         vm.select(1)
         vm.onTail(1, DaemonLogTailResult.Lines(emptyList()))
-        assertEquals(LogTailState.NoLog, vm.state.value.tailState)
+        assertEquals(log, vm.state.value.daemonLog)
+        assertEquals(LogTailState.Available(emptyList()), vm.state.value.tailState)
         assertEquals(emptyList(), vm.state.value.tail)
+        vm.onPoll(listOf(proc(1)), DaemonLogTailResult.Lines(emptyList()), listOf(log))
+        assertEquals(LogTailState.Available(emptyList()), vm.state.value.tailState)
     }
 
     @Test
