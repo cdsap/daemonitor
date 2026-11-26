@@ -35,6 +35,7 @@ type Options struct {
 	JSON               bool
 	Details            bool
 	Output             string
+	FormatExplicit     bool
 	OutputPath         string
 	Since              time.Duration
 	Limit              int
@@ -128,6 +129,11 @@ func ParseArgs(argv []string) (Options, error) {
 	if err := fs.Parse(flagArgs); err != nil {
 		return opts, err
 	}
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "format" {
+			opts.FormatExplicit = true
+		}
+	})
 	if opts.Output != "plain" && opts.Output != "json" && opts.Output != "jsonl" && opts.Output != "csv" {
 		return opts, fmt.Errorf("invalid --format %q (want plain, json, jsonl, or csv)", opts.Output)
 	}
@@ -240,6 +246,16 @@ func Run(ctx context.Context, opts Options, stdout, stderr io.Writer) int {
 		if opts.Watch && cmd != "ps" {
 			fmt.Fprintln(stderr, "daemonitor-cli: --watch is only valid with ps")
 			return 2
+		}
+		if cmd == "export" {
+			if opts.OutputPath == "" {
+				fmt.Fprintln(stderr, "daemonitor-cli: export requires --output PATH")
+				return 2
+			}
+			if opts.JSON || (opts.FormatExplicit && opts.Output != "jsonl") {
+				fmt.Fprintf(stderr, "daemonitor-cli: format %s is not supported for export (supported: jsonl)\n", opts.Output)
+				return 2
+			}
 		}
 		if opts.Watch {
 			return runWatch(ctx, opts, stdout, stderr)
@@ -439,6 +455,10 @@ func runOneShot(ctx context.Context, opts Options, cmd string, args []string, st
 	case "export":
 		if opts.OutputPath == "" {
 			fmt.Fprintln(stderr, "daemonitor-cli: export requires --output PATH")
+			return 2
+		}
+		if opts.JSON || (opts.FormatExplicit && opts.Output != "jsonl") {
+			fmt.Fprintf(stderr, "daemonitor-cli: format %s is not supported for export (supported: jsonl)\n", opts.Output)
 			return 2
 		}
 		return exportTelemetry(ctx, c, opts, stdout, stderr)
