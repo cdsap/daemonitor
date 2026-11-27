@@ -57,6 +57,8 @@ const (
 	defaultQueryLimit      = 100
 	maxQueryLimit          = 500
 	maxIncludeMetricsLimit = 20
+	maxSessionNameBytes    = 256
+	maxSessionProcesses    = 256
 )
 
 func NewServer(socketPath, dbPath string, interval, retention time.Duration, gradleUserHome string) (*Server, error) {
@@ -143,7 +145,13 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/v1/observation-sessions/open", s.handleObservationSessionOpen)
 	mux.HandleFunc("/v1/observation-sessions/close", s.handleObservationSessionClose)
 
-	srv := &http.Server{Handler: mux}
+	srv := &http.Server{
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -324,6 +332,10 @@ func (s *Server) handleObservationSessionOpen(w http.ResponseWriter, r *http.Req
 		http.Error(w, "name is required", http.StatusBadRequest)
 		return
 	}
+	if len(req.Name) > maxSessionNameBytes {
+		http.Error(w, "name must not exceed 256 bytes", http.StatusBadRequest)
+		return
+	}
 	if req.Association != sessions.AssociationConfirmed && req.Association != sessions.AssociationInferred {
 		http.Error(w, "association must be confirmed or inferred", http.StatusBadRequest)
 		return
@@ -338,9 +350,16 @@ func (s *Server) handleObservationSessionOpen(w http.ResponseWriter, r *http.Req
 				req.Processes = append(req.Processes, sessions.ProcessRef{
 					HostID: req.HostID, PID: int64(process.PID), StartTimeMs: process.StartTimeMs, ProcessType: process.Type,
 				})
+				if len(req.Processes) > maxSessionProcesses {
+					break
+				}
 			}
 		}
 		s.mu.RUnlock()
+	}
+	if len(req.Processes) > maxSessionProcesses {
+		http.Error(w, "processes must not exceed 256 entries", http.StatusBadRequest)
+		return
 	}
 	for i := range req.Processes {
 		if req.Processes[i].HostID == "" {
