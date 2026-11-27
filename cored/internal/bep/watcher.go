@@ -3,6 +3,7 @@ package bep
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"strings"
@@ -10,6 +11,13 @@ import (
 
 	"github.com/cdsap/daemonitor/cored/internal/builds"
 	"github.com/shirou/gopsutil/v4/process"
+)
+
+const (
+	maxFileBytes = 32 * 1024 * 1024
+	// Poll budgets include prefix checks; larger streams resume next poll.
+	maxFilePollBytes = 256 * 1024
+	maxPollBytes     = 1024 * 1024
 )
 
 // Watcher discovers opportunistic BEP sinks and closes builds from JSON or binary files.
@@ -98,13 +106,17 @@ func (w *Watcher) Poll(ctx context.Context) ([]builds.Build, error) {
 	}
 
 	var closed []builds.Build
+	budget := int64(maxPollBytes)
 	for _, tf := range w.files {
+		if budget < 64 || ctx.Err() != nil {
+			break
+		}
 		if tf.sink.Format != FormatJSON && tf.sink.Format != FormatBinary {
 			continue
 		}
 		// A malformed event must not discard builds already decoded in this
 		// poll. File/read errors are opportunistic and retried next tick.
-		buildsClosed, _ := w.readFile(tf)
+		buildsClosed, _ := w.readFile(tf, &budget)
 		for _, b := range buildsClosed {
 			if b.BuildID == "" {
 				continue
@@ -134,19 +146,49 @@ func buildDetailRank(b builds.Build) int {
 	return 2
 }
 
-func (w *Watcher) readFile(tf *trackedFile) ([]builds.Build, error) {
-	f, err := os.Open(tf.sink.Path)
+// openSink validates both the path and the opened descriptor. The identity
+// check rejects replacements between Lstat and open, before any bytes are read.
+func openSink(path string) (*os.File, os.FileInfo, error) {
+	before, err := os.Lstat(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	valid := func(info os.FileInfo) bool {
+		return info.Mode().IsRegular() && info.Size() >= 0 && info.Size() <= maxFileBytes && ownedFile(info)
+	}
+	if !valid(before) {
+		return nil, nil, errors.New("BEP sink is not a user-owned bounded regular file")
+	}
+	f, err := openSinkFile(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	info, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return nil, nil, err
+	}
+	if !valid(info) || !os.SameFile(before, info) {
+		f.Close()
+		return nil, nil, errors.New("BEP sink changed or is unsafe")
+	}
+	return f, info, nil
+}
+
+func (w *Watcher) readFile(tf *trackedFile, budget *int64) ([]builds.Build, error) {
+	if *budget < 64 {
+		return nil, nil
+	}
+	f, info, err := openSink(tf.sink.Path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-
-	info, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
+	remaining := min(*budget, int64(maxFilePollBytes))
 	size := info.Size()
 	prefix := make([]byte, min(size, 64))
+	*budget -= int64(len(prefix))
+	remaining -= int64(len(prefix))
 	if _, err := f.ReadAt(prefix, 0); err != nil && err != io.EOF {
 		return nil, err
 	}
@@ -167,9 +209,11 @@ func (w *Watcher) readFile(tf *trackedFile) ([]builds.Build, error) {
 	tf.state.ambientEnvNames = w.ambientEnvNames
 	var closed []builds.Build
 	var parseErr error
-	for tf.offset < size {
-		chunk := make([]byte, min(size-tf.offset, 64*1024))
+	for tf.offset < size && remaining > 0 {
+		chunk := make([]byte, min(size-tf.offset, 64*1024, remaining))
 		n, err := f.Read(chunk)
+		*budget -= int64(n)
+		remaining -= int64(n)
 		if n == 0 {
 			if err == nil {
 				err = io.ErrNoProgress
@@ -214,7 +258,8 @@ func applyClientAttribution(closed []builds.Build, c clientObservation) {
 	}
 }
 
-// DiscoverFromProcesses scrapes live process argv for BEP file flags.
+// DiscoverFromProcesses scrapes Bazel client argv for BEP file flags.
+// On Unix, ownership must be established before reading argv or cwd.
 func DiscoverFromProcesses(ctx context.Context) ([]Sink, error) {
 	pids, err := process.PidsWithContext(ctx)
 	if err != nil {
@@ -229,14 +274,14 @@ func DiscoverFromProcesses(ctx context.Context) ([]Sink, error) {
 		default:
 		}
 		p, err := process.NewProcessWithContext(ctx, pid)
-		if err != nil {
+		if err != nil || !ownedProcess(ctx, p) {
 			continue
 		}
 		cmdline, err := p.CmdlineWithContext(ctx)
 		if err != nil || cmdline == "" {
 			continue
 		}
-		if !LooksLikeBazelClient(cmdline) && !hasBEPFlag(cmdline) {
+		if !LooksLikeBazelClient(cmdline) {
 			continue
 		}
 		cwd, _ := p.CwdWithContext(ctx)
