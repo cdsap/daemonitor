@@ -53,15 +53,17 @@ class PublicWebsiteTest {
     @Test
     fun `landing page covers hero features privacy download and metadata`() {
         listOf(
-            "Daemonitor — Activity Monitor for Gradle and Bazel builds",
+            "Daemonitor — Activity Monitor for Gradle, Bazel, and Kotlin Toolchain builds",
             "meta name=\"description\"",
             "property=\"og:title\"",
             "property=\"og:description\"",
             "property=\"og:image\"",
             "rel=\"icon\"",
-            "Activity Monitor for Gradle and Bazel builds",
-            "local Activity Monitor for Gradle and Bazel builds",
+            "Activity Monitor for Gradle, Bazel, and Kotlin Toolchain builds",
+            "local Activity Monitor for Gradle, Bazel, and Kotlin Toolchain builds",
             "Bazel servers, tests, and workers",
+            "Kotlin Toolchain CLI",
+            "kotlin build|test|run",
             "never enables BEP itself",
             "Download desktop app",
             "Install CLI",
