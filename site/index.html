@@ -3,21 +3,21 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Daemonitor — Activity Monitor for Gradle and Bazel builds</title>
-  <meta name="description" content="Daemonitor is a local Activity Monitor for Gradle and Bazel builds. See active processes, CPU and memory usage, build history, and which IDE, terminal, or AI coding agent triggered each Gradle build.">
+  <title>Daemonitor — Activity Monitor for Gradle, Bazel, and Kotlin Toolchain builds</title>
+  <meta name="description" content="Daemonitor is a local Activity Monitor for Gradle, Bazel, and Kotlin Toolchain builds. See active processes, CPU and memory usage, build history, and which IDE, terminal, or AI coding agent triggered each build.">
   <meta name="theme-color" content="#f8f9fa" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#212529" media="(prefers-color-scheme: dark)">
 
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Daemonitor">
   <meta property="og:url" content="https://cdsap.github.io/daemonitor/">
-  <meta property="og:title" content="Daemonitor — Activity Monitor for Gradle and Bazel builds">
-  <meta property="og:description" content="Daemonitor is a local Activity Monitor for Gradle and Bazel builds. See active processes, CPU and memory usage, build history, and which IDE, terminal, or AI coding agent triggered each Gradle build.">
+  <meta property="og:title" content="Daemonitor — Activity Monitor for Gradle, Bazel, and Kotlin Toolchain builds">
+  <meta property="og:description" content="Daemonitor is a local Activity Monitor for Gradle, Bazel, and Kotlin Toolchain builds. See active processes, CPU and memory usage, build history, and which IDE, terminal, or AI coding agent triggered each build.">
   <meta property="og:image" content="https://cdsap.github.io/daemonitor/assets/live-monitor.png">
 
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Daemonitor — Activity Monitor for Gradle and Bazel builds">
-  <meta name="twitter:description" content="Daemonitor is a local Activity Monitor for Gradle and Bazel builds. See active processes, CPU and memory usage, build history, and which IDE, terminal, or AI coding agent triggered each Gradle build.">
+  <meta name="twitter:title" content="Daemonitor — Activity Monitor for Gradle, Bazel, and Kotlin Toolchain builds">
+  <meta name="twitter:description" content="Daemonitor is a local Activity Monitor for Gradle, Bazel, and Kotlin Toolchain builds. See active processes, CPU and memory usage, build history, and which IDE, terminal, or AI coding agent triggered each build.">
   <meta name="twitter:image" content="https://cdsap.github.io/daemonitor/assets/live-monitor.png">
 
   <link rel="icon" type="image/png" href="assets/favicon.png">
@@ -53,7 +53,7 @@
       </div>
       <div class="jq-hero-copy">
         <h1 id="promise" class="jq-promise">
-          Daemonitor is a local Activity Monitor for Gradle and Bazel builds.
+          Daemonitor is a local Activity Monitor for Gradle, Bazel, and Kotlin Toolchain builds.
         </h1>
         <div class="cta-row">
           <a class="button button-primary" href="https://github.com/cdsap/daemonitor/releases/latest" rel="noopener noreferrer">
@@ -68,7 +68,8 @@
     <section class="jq-prose" aria-label="About">
       <p>
         Daemonitor is like Activity Monitor for local build processes — Gradle daemons,
-        wrappers, Kotlin daemons, and workers alongside Bazel servers, tests, and workers —
+        wrappers, Kotlin daemons, and workers alongside Bazel servers, tests, and workers,
+        plus Kotlin Toolchain CLI (<code>kotlin build|test|run</code>) runs —
         with RSS, CPU, heap, and uptime on the machine where the build runs.
       </p>
       <p>
@@ -87,7 +88,7 @@
     <p class="jq-center">
       Go read the <a href="cli.html">CLI options</a> for more, or grab packages from
       <a href="https://github.com/cdsap/daemonitor/releases/latest" rel="noopener noreferrer">GitHub Releases</a>.
-      Gradle and Bazel share Live Monitor, Visual timelines, Build History, and the CLI hierarchy.
+      Gradle, Bazel, and Kotlin Toolchain share Live Monitor, Visual timelines, and the CLI.
     </p>
 
     <section class="section surfaces" id="surfaces" aria-labelledby="surfaces-heading">
@@ -102,16 +103,16 @@
 
         <div class="aspect-tabs" role="tablist" aria-label="Surfaces">
           <button type="button" role="tab" id="tab-cli" aria-selected="true" aria-controls="panel-cli"
-            data-copy="CLI — live process table for Gradle and Bazel. Bubble Tea TUI; No JDK required; works over SSH.">CLI</button>
+            data-copy="CLI — live process table for Gradle, Bazel, and Kotlin Toolchain. Bubble Tea TUI; No JDK required; works over SSH.">CLI</button>
           <button type="button" role="tab" id="tab-desktop" aria-selected="false" aria-controls="panel-desktop"
-            data-copy="Desktop Live Monitor — Gradle JVMs and Bazel servers, tests, and workers in one table.">Desktop</button>
+            data-copy="Desktop Live Monitor — Gradle JVMs, Bazel servers, tests, and workers, and Kotlin Toolchain CLI processes in one table.">Desktop</button>
           <button type="button" role="tab" id="tab-visual" aria-selected="false" aria-controls="panel-visual"
-            data-copy="Visual timelines — Memory / CPU / I/O / GC for concurrent Gradle and Bazel processes.">Visual</button>
+            data-copy="Visual timelines — Memory / CPU / I/O / GC for concurrent Gradle, Bazel, and Kotlin Toolchain processes.">Visual</button>
           <button type="button" role="tab" id="tab-history" aria-selected="false" aria-controls="panel-history"
             data-copy="Build History — Gradle from daemon logs; Bazel BEP rows when already emitted; filter by tool.">History</button>
         </div>
         <p class="aspect-copy" id="aspect-copy" aria-live="polite">
-          <strong>CLI</strong> — live process table for Gradle and Bazel. Bubble Tea TUI; No JDK required; works over SSH.
+          <strong>CLI</strong> — live process table for Gradle, Bazel, and Kotlin Toolchain. Bubble Tea TUI; No JDK required; works over SSH.
         </p>
 
         <div class="surface-grid aspect-panels">
@@ -178,15 +179,16 @@
           <h3>Live Monitor</h3>
           <p>
             Desktop Live Monitor lists Gradle daemons, wrappers, Kotlin daemons, and workers
-            alongside Bazel servers, tests, and workers — with RSS, CPU, uptime, and
+            alongside Bazel servers, tests, and workers, plus Kotlin Toolchain CLI
+            (<code>kotlin build|test|run</code>) processes — with RSS, CPU, uptime, and
             memory-pressure badges.
           </p>
         </article>
         <article>
           <h3>Visual timelines</h3>
           <p>
-            Memory, CPU, I/O, and GC modes with live / 15m / 1h windows so concurrent Gradle
-            and Bazel processes are easy to compare.
+            Memory, CPU, I/O, and GC modes with live / 15m / 1h windows so concurrent Gradle,
+            Bazel, and Kotlin Toolchain processes are easy to compare.
           </p>
         </article>
         <article>
@@ -250,7 +252,8 @@ daemonitor-cli</code></pre>
         <h2 id="mcp-heading">MCP</h2>
         <p>
           Optional local, read-only MCP so compatible tools can inspect retained build history
-          and currently visible Gradle and Bazel processes — without leaving the machine.
+          and currently visible Gradle, Bazel, and Kotlin Toolchain processes — without leaving
+          the machine.
         </p>
       </div>
     </section>
@@ -349,7 +352,7 @@ plugins {
     <div class="footer-inner footer-line">
       <p>
         <span class="footer-brand-inline">Daemonitor</span>
-        · local Activity Monitor for Gradle and Bazel builds
+        · local Activity Monitor for Gradle, Bazel, and Kotlin Toolchain builds
         ·
         <a href="https://github.com/cdsap/daemonitor" rel="noopener noreferrer">GitHub</a>
         ·

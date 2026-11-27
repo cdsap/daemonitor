@@ -4,11 +4,12 @@
 
 # Daemonitor
 
-> Activity Monitor for Gradle and Bazel builds — what's building now, and what built recently.
+> Activity Monitor for Gradle, Bazel, and Kotlin Toolchain builds — what's building now, and what built recently.
 
 Daemonitor watches local build processes: Gradle daemons, wrappers, Kotlin daemons, and Gradle
-workers, plus Bazel servers, tests, and workers. Use the **desktop app** for a full Activity
-Monitor UI, or the **CLI** for the same live view in a terminal (including over SSH).
+workers, Bazel servers, tests, and workers, plus Kotlin Toolchain CLI (`kotlin build|test|run`)
+runs. Use the **desktop app** for a full Activity Monitor UI, or the **CLI** for the same live
+view in a terminal (including over SSH).
 
 Everything stays local. Command lines and logs are redacted before storage. The only outbound
 network use is GitHub Releases update checks and installer downloads you approve.
