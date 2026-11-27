@@ -16,7 +16,7 @@ class GitHubReleaseUpdateSource(
         platform = platform,
         architecture = architecture,
     ),
-    private val client: HttpClient = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build(),
+    private val client: HttpClient = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build(),
 ) : UpdateSource {
     override suspend fun check(currentVersion: String): UpdateCheckResult = withContext(Dispatchers.IO) {
         if (platform == DesktopPlatform.UNKNOWN || architecture == CpuArchitecture.UNKNOWN) {
@@ -67,15 +67,13 @@ class GitHubReleaseUpdateSource(
             ?: assets.firstOrNull { it.name == "latest.json" }
 
     private fun fetchUpdateMetadata(url: String): ReleaseUpdateMetadata? {
-        val request = HttpRequest.newBuilder()
-            .uri(URI(url))
-            .header("Accept", "application/json")
-            .header("User-Agent", "Daemonitor")
-            .GET()
-            .build()
-        val response = client.send(request, HttpResponse.BodyHandlers.ofString())
-        if (response.statusCode() !in 200..299) return null
-        return ReleaseUpdateMetadataJsonParser.parse(response.body())
+        val response = fetchGitHubAsset(client, url, "application/json")
+        val body = response.body().use { input ->
+            val bytes = input.readNBytes(1024 * 1024 + 1)
+            require(bytes.size <= 1024 * 1024) { "Update metadata exceeds size limit" }
+            bytes.toString(Charsets.UTF_8)
+        }
+        return ReleaseUpdateMetadataJsonParser.parse(body)
     }
 }
 
@@ -427,4 +425,36 @@ internal object ReleaseUpdateMetadataJsonParser {
         replace("\\/", "/")
             .replace("\\\"", "\"")
             .replace("\\\\", "\\")
+}
+
+/** Validate every hop before sending a request, including GitHub's asset CDN redirects. */
+internal fun fetchGitHubAsset(
+    client: HttpClient,
+    url: String,
+    accept: String,
+): HttpResponse<java.io.InputStream> {
+    require(client.followRedirects() == HttpClient.Redirect.NEVER) { "Automatic redirects are not allowed" }
+    var uri = URI(url)
+    repeat(6) {
+        require(uri.scheme.equals("https", ignoreCase = true) && uri.userInfo == null &&
+            uri.port in listOf(-1, 443) && uri.host?.lowercase() in setOf(
+                "github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com",
+            )
+        ) { "Refusing update URL outside GitHub HTTPS hosts" }
+        val request = HttpRequest.newBuilder(uri)
+            .header("Accept", accept)
+            .header("User-Agent", "Daemonitor")
+            .GET().build()
+        val response = client.send(request, HttpResponse.BodyHandlers.ofInputStream())
+        if (response.statusCode() in 200..299) return response
+        response.body().close()
+        require(response.statusCode() in listOf(301, 302, 303, 307, 308)) {
+            "GitHub download failed with HTTP ${response.statusCode()}"
+        }
+        val location = response.headers().firstValue("Location").orElseThrow {
+            IllegalArgumentException("Missing redirect location")
+        }
+        uri = uri.resolve(location)
+    }
+    error("Too many GitHub download redirects")
 }
