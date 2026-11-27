@@ -6,8 +6,10 @@ import io.github.cdsap.daemonitor.persistence.AppearancePreference
 import io.github.cdsap.daemonitor.persistence.Settings
 import io.github.cdsap.daemonitor.persistence.SettingsRepository
 import io.github.cdsap.daemonitor.platform.AppDirectories
+import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
 import java.security.SecureRandom
 import java.util.Base64
 import java.util.Properties
@@ -24,6 +26,8 @@ import kotlin.io.path.outputStream
 class SettingsStore(private val path: Path = AppDirectories.system.settingsPath) : SettingsRepository {
 
     override fun load(): Settings {
+        // Do not reuse a stored token if its permissions cannot be secured.
+        restrictPermissions()
         if (!path.exists()) return Settings(mcpToken = newMcpToken())
         val props = Properties()
         runCatching { path.inputStream().use { props.load(it) } }
@@ -48,7 +52,24 @@ class SettingsStore(private val path: Path = AppDirectories.system.settingsPath)
 
     override fun save(settings: Settings) {
         runCatching {
-            Files.createDirectories(path.parent)
+            val parent = path.toAbsolutePath().parent
+            val posix = path.fileSystem.supportedFileAttributeViews().contains("posix")
+            if (posix) {
+                Files.createDirectories(parent, PosixFilePermissions.asFileAttribute(DIRECTORY_PERMISSIONS))
+            } else {
+                Files.createDirectories(parent)
+            }
+            restrictPermissions()
+            // Apply permissions at creation, before any token bytes can be written.
+            try {
+                if (posix) {
+                    Files.createFile(path, PosixFilePermissions.asFileAttribute(FILE_PERMISSIONS))
+                } else {
+                    Files.createFile(path)
+                }
+            } catch (_: FileAlreadyExistsException) {
+                if (posix) Files.setPosixFilePermissions(path, FILE_PERMISSIONS)
+            }
             val mcpToken = settings.mcpToken.ifBlank { newMcpToken() }
             val props = Properties().apply {
                 setProperty(KEY_RETENTION, settings.retentionDays.toString())
@@ -61,7 +82,16 @@ class SettingsStore(private val path: Path = AppDirectories.system.settingsPath)
         }
     }
 
+    private fun restrictPermissions() {
+        if (!path.fileSystem.supportedFileAttributeViews().contains("posix")) return
+        val parent = path.toAbsolutePath().parent
+        if (parent.exists()) Files.setPosixFilePermissions(parent, DIRECTORY_PERMISSIONS)
+        if (path.exists()) Files.setPosixFilePermissions(path, FILE_PERMISSIONS)
+    }
+
     private companion object {
+        val DIRECTORY_PERMISSIONS = PosixFilePermissions.fromString("rwx------")
+        val FILE_PERMISSIONS = PosixFilePermissions.fromString("rw-------")
         const val KEY_RETENTION = "retentionDays"
         const val KEY_APPEARANCE = "appearance"
         const val KEY_MCP_ENABLED = "mcpEnabled"

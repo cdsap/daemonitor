@@ -5,14 +5,51 @@ import io.github.cdsap.daemonitor.config.RetentionPolicy
 import io.github.cdsap.daemonitor.persistence.AppearancePreference
 import io.github.cdsap.daemonitor.persistence.Settings
 import io.github.cdsap.daemonitor.persistence.SettingsRepository
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.io.TempDir
+import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFileAttributeView
+import java.nio.file.attribute.PosixFilePermissions
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 
 class SettingsStoreTest {
+
+    @Test
+    fun `save creates owner-only settings and data directory`(@TempDir tmp: Path) {
+        assumeTrue(Files.getFileStore(tmp).supportsFileAttributeView(PosixFileAttributeView::class.java))
+        val path = tmp.resolve("data/settings.properties")
+
+        SettingsStore(path).save(Settings(mcpToken = "test-token"))
+
+        assertEquals(PosixFilePermissions.fromString("rwx------"), Files.getPosixFilePermissions(path.parent))
+        assertEquals(PosixFilePermissions.fromString("rw-------"), Files.getPosixFilePermissions(path))
+        assertEquals("test-token", SettingsStore(path).load().mcpToken)
+    }
+
+    @Test
+    fun `load and save restrict existing settings permissions`(@TempDir tmp: Path) {
+        assumeTrue(Files.getFileStore(tmp).supportsFileAttributeView(PosixFileAttributeView::class.java))
+        val path = tmp.resolve("data/settings.properties")
+        Files.createDirectory(path.parent)
+        Files.writeString(path, "mcpToken=test-token\n")
+
+        for (load in listOf(true, false)) {
+            Files.setPosixFilePermissions(path.parent, PosixFilePermissions.fromString("rwxr-xr-x"))
+            Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rw-r--r--"))
+            if (load) {
+                assertEquals("test-token", SettingsStore(path).load().mcpToken)
+            } else {
+                SettingsStore(path).save(Settings(mcpToken = "test-token"))
+            }
+
+            assertEquals(PosixFilePermissions.fromString("rwx------"), Files.getPosixFilePermissions(path.parent))
+            assertEquals(PosixFilePermissions.fromString("rw-------"), Files.getPosixFilePermissions(path))
+        }
+    }
 
     @Test
     fun `missing file returns defaults`(@TempDir tmp: Path) {
