@@ -1,5 +1,7 @@
 package io.github.cdsap.daemonitor
 
+import java.nio.charset.StandardCharsets
+import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.exists
 import kotlin.io.path.readText
@@ -26,7 +28,8 @@ class PublishGradlePluginWorkflowTest {
     fun `validation accepts only version tags`(@TempDir tempDir: Path) {
         val validation = script(step("Validate publication ref"))
         listOf("v0.0.0", "v1.3.3", "v12.34.567").forEach { ref ->
-            assertEquals(0, runScript(validation, ref, tempDir).first, ref)
+            val (exitCode, output) = runScript(validation, ref, tempDir)
+            assertEquals(0, exitCode, "$ref\n$output")
         }
         listOf(
             "", "main", "refs/tags/v1.3.3", "1.3.3", "v1.3", "v1x3x3", "v1.3.3-rc1",
@@ -64,22 +67,35 @@ class PublishGradlePluginWorkflowTest {
         .joinToString("\n") { it.removePrefix("          ") }
 
     private fun runScript(script: String, ref: String, directory: Path): Pair<Int, String> {
-        val bash = if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
+        val isWindows = System.getProperty("os.name").startsWith("Windows", ignoreCase = true)
+        val bash = if (isWindows) {
             listOf("C:\\Program Files\\Git\\bin\\bash.exe", "C:\\Program Files\\Git\\usr\\bin\\bash.exe")
                 .firstOrNull { Path.of(it).exists() } ?: "bash"
         } else {
             "bash"
         }
-        val process = ProcessBuilder(bash, "-c", script)
-            .directory(directory.toFile())
-            .redirectErrorStream(true)
-            .apply {
-                environment()["INPUT_REF"] = ref
-                environment()["PLUGIN_VERSION"] = "0.1.2"
-                environment()["GITHUB_STEP_SUMMARY"] = directory.resolve("summary").toString()
+        // Write to a temporary LF-delimited file instead of passing a multi-line quoted string to
+        // `bash -c`, which Windows CreateProcess / MSYS2 quote handling mangles.
+        val scriptFile = Files.createTempFile("publish-workflow-test-", ".sh")
+        try {
+            Files.writeString(scriptFile, script.replace("\r\n", "\n") + "\n", StandardCharsets.UTF_8)
+            val scriptArg = scriptFile.toAbsolutePath().toString().let { if (isWindows) it.replace('\\', '/') else it }
+            val summaryPath = directory.resolve("summary").toAbsolutePath().toString().let {
+                if (isWindows) it.replace('\\', '/') else it
             }
-            .start()
-        val output = process.inputStream.bufferedReader().use { it.readText() }
-        return process.waitFor() to output
+            val process = ProcessBuilder(bash, scriptArg)
+                .directory(directory.toFile())
+                .redirectErrorStream(true)
+                .apply {
+                    environment()["INPUT_REF"] = ref
+                    environment()["PLUGIN_VERSION"] = "0.1.2"
+                    environment()["GITHUB_STEP_SUMMARY"] = summaryPath
+                }
+                .start()
+            val output = process.inputStream.bufferedReader().use { it.readText() }
+            return process.waitFor() to output
+        } finally {
+            Files.deleteIfExists(scriptFile)
+        }
     }
 }
