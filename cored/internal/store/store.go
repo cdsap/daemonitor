@@ -27,6 +27,9 @@ func Open(path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("create db dir: %w", err)
 	}
+	if err := os.Chmod(filepath.Dir(path), 0o700); err != nil {
+		return nil, fmt.Errorf("restrict db dir permissions: %w", err)
+	}
 	// _pragma query params apply before first use; WAL allows the app to read while core writes.
 	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(%d)&_pragma=journal_mode(WAL)", path, busyTimeoutMs)
 	db, err := sql.Open("sqlite", dsn)
@@ -46,9 +49,15 @@ func Open(path string) (*Store, error) {
 	}
 	// SQLite files can contain command lines, paths, and diagnostic metadata.
 	// Do not rely on the process umask for this privacy boundary.
-	if err := os.Chmod(path, 0o600); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("restrict db permissions: %w", err)
+	for _, file := range []string{path, path + "-wal", path + "-shm"} {
+		if err := os.Chmod(file, 0o600); err != nil {
+			// SQLite may remove sidecars when another connection closes.
+			if file != path && os.IsNotExist(err) {
+				continue
+			}
+			_ = db.Close()
+			return nil, fmt.Errorf("restrict db file permissions: %w", err)
+		}
 	}
 	return s, nil
 }

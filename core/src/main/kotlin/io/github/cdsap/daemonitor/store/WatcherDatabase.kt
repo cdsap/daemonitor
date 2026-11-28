@@ -46,6 +46,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFileAttributeView
 import java.nio.file.attribute.PosixFilePermissions
 import java.util.Properties
 import kotlin.io.path.absolutePathString
@@ -569,7 +570,16 @@ class WatcherDatabase private constructor(
             ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
         ): WatcherDatabase {
             val isNew = !path.exists()
-            Files.createDirectories(path.parent)
+            val directoryPermissions = PosixFilePermissions.fromString("rwx------")
+            try {
+                Files.createDirectories(path.parent, PosixFilePermissions.asFileAttribute(directoryPermissions))
+            } catch (_: UnsupportedOperationException) {
+                // Windows and other non-POSIX filesystems do not accept POSIX attributes.
+                Files.createDirectories(path.parent)
+            }
+            if (Files.getFileAttributeView(path.parent, PosixFileAttributeView::class.java) != null) {
+                Files.setPosixFilePermissions(path.parent, directoryPermissions)
+            }
 
             // Pass busy_timeout via JDBC properties (not getConnection()+PRAGMA): borrowing a
             // raw connection during open can leave the SQLite file locked on Windows after close,
@@ -583,10 +593,10 @@ class WatcherDatabase private constructor(
             if (isNew) {
                 driver.execute(null, "PRAGMA auto_vacuum = INCREMENTAL", 0)
                 WatcherDb.Schema.create(driver)
-                hardenFilePrivacy(path)
             } else {
                 migrateInPlace(driver)
             }
+            hardenFilePrivacy(path, excludeFromTimeMachine = isNew)
             return WatcherDatabase(WatcherDb(driver), driver, ioDispatcher)
         }
 
@@ -813,13 +823,19 @@ class WatcherDatabase private constructor(
         private fun Long.coerceQueryLimit(): Long = coerceIn(1, MAX_QUERY_LIMIT)
 
         /** Owner-only file permissions + Time Machine exclusion (KTD-7/Privacy). Best-effort. */
-        private fun hardenFilePrivacy(path: Path) {
-            runCatching {
-                Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rw-------"))
-            }
-            runCatching {
-                ProcessBuilder("tmutil", "addexclusion", path.parent.absolutePathString())
-                    .start().waitFor()
+        private fun hardenFilePrivacy(path: Path, excludeFromTimeMachine: Boolean) {
+            // Sidecars may be absent or disappear when another SQLite connection closes.
+            listOf(path, path.resolveSibling("${path.fileName}-wal"), path.resolveSibling("${path.fileName}-shm"))
+                .forEach { file ->
+                    runCatching {
+                        Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rw-------"))
+                    }
+                }
+            if (excludeFromTimeMachine) {
+                runCatching {
+                    ProcessBuilder("tmutil", "addexclusion", path.parent.absolutePathString())
+                        .start().waitFor()
+                }
             }
         }
 
