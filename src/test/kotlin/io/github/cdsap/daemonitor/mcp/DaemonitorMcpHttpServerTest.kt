@@ -2,8 +2,9 @@ package io.github.cdsap.daemonitor.mcp
 
 import io.github.cdsap.daemonitor.application.DefaultDaemonitorQueryService
 import io.github.cdsap.daemonitor.application.ProcessSource
+import io.github.cdsap.daemonitor.json.Json
+import io.github.cdsap.daemonitor.json.JsonObject
 import io.github.cdsap.daemonitor.store.WatcherDatabase
-import org.junit.jupiter.api.io.TempDir
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -12,6 +13,7 @@ import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import org.junit.jupiter.api.io.TempDir
 
 class DaemonitorMcpHttpServerTest {
 
@@ -23,11 +25,12 @@ class DaemonitorMcpHttpServerTest {
             val response = post(
                 endpoint = server.endpoint,
                 token = TOKEN,
-                body = """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2026-07-28"}}""",
+                body = """{"jsonrpc":"2.0","id":9007199254740993,"method":"initialize","params":{"protocolVersion":"2026-07-28"}}""",
             )
 
             assertEquals(200, response.statusCode())
             val json = Json.parse(response.body()) as JsonObject
+            assertEquals(9007199254740993L, json.long("id"))
             assertEquals("daemonitor", json.obj("result")!!.obj("serverInfo")!!.string("name"))
         } finally {
             server.close()

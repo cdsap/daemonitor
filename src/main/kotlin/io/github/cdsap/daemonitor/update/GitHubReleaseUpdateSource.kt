@@ -1,6 +1,8 @@
 package io.github.cdsap.daemonitor.update
 
 import io.github.cdsap.daemonitor.application.update.UpdateSource
+import io.github.cdsap.daemonitor.json.Json
+import io.github.cdsap.daemonitor.json.JsonObject
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -282,152 +284,44 @@ private fun toCandidate(
 }
 
 internal object GitHubReleaseJsonParser {
-    private val tagPattern = Regex(""""tag_name"\s*:\s*"([^"]+)"""")
-    private val releaseUrlPattern = Regex(""""html_url"\s*:\s*"([^"]+)"""")
-    private val assetPattern = Regex(
-        """"name"\s*:\s*"([^"]+)".*?"browser_download_url"\s*:\s*"([^"]+)"""",
-        setOf(RegexOption.DOT_MATCHES_ALL),
-    )
-
     fun parse(json: String): GitHubRelease? {
-        val version = tagPattern.find(json)?.groupValues?.get(1) ?: return null
-        val releaseUrl = releaseUrlPattern.find(json)?.groupValues?.get(1) ?: return null
-        val assetsJson = json.substringAfter(""""assets"""", missingDelimiterValue = "")
-        val assets = assetPattern.findAll(assetsJson).map { match ->
+        val root = runCatching { Json.parse(json) as? JsonObject }.getOrNull() ?: return null
+        val version = root.string("tag_name") ?: return null
+        val releaseUrl = root.string("html_url") ?: return null
+        val assets = root.array("assets")?.values.orEmpty().filterIsInstance<JsonObject>().mapNotNull { asset ->
             GitHubReleaseAsset(
-                name = match.groupValues[1].jsonUnescape(),
-                downloadUrl = match.groupValues[2].jsonUnescape(),
+                name = asset.string("name") ?: return@mapNotNull null,
+                downloadUrl = asset.string("browser_download_url") ?: return@mapNotNull null,
             )
-        }.toList()
-        return GitHubRelease(version = version, releaseUrl = releaseUrl.jsonUnescape(), assets = assets)
+        }
+        return GitHubRelease(version, releaseUrl, assets)
     }
-
-    private fun String.jsonUnescape(): String =
-        replace("\\/", "/")
-            .replace("\\\"", "\"")
-            .replace("\\\\", "\\")
 }
 
 internal object ReleaseUpdateMetadataJsonParser {
+    private val sha256Pattern = Regex("[a-f0-9]{64}")
+
     fun parse(json: String): ReleaseUpdateMetadata? {
-        val schemaVersion = json.intField("schemaVersion") ?: return null
-        if (schemaVersion !in 1..2) return null
-        val version = json.stringField("version") ?: return null
-        val tag = json.stringField("tag") ?: return null
-        val assetsJson = json.arrayField("assets") ?: return null
-        val assets = assetsJson.objectValues().mapNotNull { assetJson ->
-            val sha256 = assetJson.stringField("sha256")?.lowercase()
-            if (sha256 == null || !sha256.matches(Regex("[a-f0-9]{64}"))) return@mapNotNull null
+        val root = runCatching { Json.parse(json) as? JsonObject }.getOrNull() ?: return null
+        val schemaVersion = root.long("schemaVersion") ?: return null
+        if (schemaVersion !in 1L..2L) return null
+        val version = root.string("version") ?: return null
+        val tag = root.string("tag") ?: return null
+        val assets = root.array("assets")?.values ?: return null
+        val parsedAssets = assets.filterIsInstance<JsonObject>().mapNotNull { asset ->
+            val sha256 = asset.string("sha256")?.lowercase() ?: return@mapNotNull null
+            if (!sha256Pattern.matches(sha256)) return@mapNotNull null
             ReleaseUpdateAsset(
-                platform = assetJson.stringField("platform") ?: return@mapNotNull null,
-                fileName = assetJson.stringField("fileName") ?: return@mapNotNull null,
-                url = assetJson.stringField("url") ?: return@mapNotNull null,
+                platform = asset.string("platform") ?: return@mapNotNull null,
+                fileName = asset.string("fileName") ?: return@mapNotNull null,
+                url = asset.string("url") ?: return@mapNotNull null,
                 sha256 = sha256,
-                sizeBytes = assetJson.longField("size") ?: return@mapNotNull null,
-                arch = assetJson.stringField("arch"),
-                role = assetJson.stringField("role"),
+                sizeBytes = asset.long("size")?.takeIf { it >= 0 } ?: return@mapNotNull null,
+                arch = asset.string("arch"),
+                role = asset.string("role"),
             )
-        }.toList()
-        if (assets.isEmpty()) return null
-        return ReleaseUpdateMetadata(
-            schemaVersion = schemaVersion,
-            version = version,
-            tag = tag,
-            assets = assets,
-        )
-    }
-
-    private fun String.stringField(name: String): String? {
-        val valueStart = valueStart(name) ?: return null
-        if (getOrNull(valueStart) != '"') return null
-        val start = valueStart + 1
-        var index = start
-        var escaped = false
-        while (index < length) {
-            val char = this[index]
-            if (char == '"' && !escaped) {
-                return substring(start, index).jsonUnescape()
-            }
-            escaped = char == '\\' && !escaped
-            if (char != '\\') escaped = false
-            index++
         }
-        return null
+        if (parsedAssets.isEmpty()) return null
+        return ReleaseUpdateMetadata(schemaVersion.toInt(), version, tag, parsedAssets)
     }
-
-    private fun String.intField(name: String): Int? =
-        longField(name)?.toInt()
-
-    private fun String.longField(name: String): Long? {
-        val start = valueStart(name) ?: return null
-        var end = start
-        while (end < length && this[end].isDigit()) end++
-        return substring(start, end).toLongOrNull()
-    }
-
-    private fun String.arrayField(name: String): String? {
-        val valueStart = valueStart(name) ?: return null
-        if (getOrNull(valueStart) != '[') return null
-        var depth = 0
-        var inString = false
-        var escaped = false
-        for (index in valueStart until length) {
-            val char = this[index]
-            if (char == '"' && !escaped) inString = !inString
-            if (!inString) {
-                if (char == '[') depth++
-                if (char == ']') {
-                    depth--
-                    if (depth == 0) return substring(valueStart + 1, index)
-                }
-            }
-            escaped = char == '\\' && !escaped
-            if (char != '\\') escaped = false
-        }
-        return null
-    }
-
-    private fun String.objectValues(): List<String> {
-        val objects = mutableListOf<String>()
-        var start = -1
-        var depth = 0
-        var inString = false
-        var escaped = false
-        for (index in indices) {
-            val char = this[index]
-            if (char == '"' && !escaped) inString = !inString
-            if (!inString) {
-                if (char == '{') {
-                    if (depth == 0) start = index
-                    depth++
-                }
-                if (char == '}') {
-                    depth--
-                    if (depth == 0 && start >= 0) {
-                        objects += substring(start, index + 1)
-                        start = -1
-                    }
-                }
-            }
-            escaped = char == '\\' && !escaped
-            if (char != '\\') escaped = false
-        }
-        return objects
-    }
-
-    private fun String.valueStart(name: String): Int? {
-        val key = """"$name""""
-        val keyStart = indexOf(key)
-        if (keyStart < 0) return null
-        val colon = indexOf(':', startIndex = keyStart + key.length)
-        if (colon < 0) return null
-        var index = colon + 1
-        while (index < length && this[index].isWhitespace()) index++
-        return index.takeIf { it < length }
-    }
-
-    private fun String.jsonUnescape(): String =
-        replace("\\/", "/")
-            .replace("\\\"", "\"")
-            .replace("\\\\", "\\")
 }

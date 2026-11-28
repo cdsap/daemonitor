@@ -8,6 +8,20 @@ import kotlin.test.assertTrue
 
 class BazelBuildTelemetryParserTest {
     @Test
+    fun `decodes unicode and preserves exact window counters`() {
+        val profile = assertNotNull(BazelBuildTelemetryParser.parseProfile(
+            """{"bazel_version":"\u0038.1","phase_seconds":{"\u0061nalysis":1.2e-3}}""",
+        ))
+        assertEquals("8.1", profile.bazelVersion)
+        assertEquals(0.0012, profile.phaseSeconds["analysis"])
+        val window = BazelBuildTelemetryParser.parseWindowSummaries(
+            """[{"pid":9007199254740993,"delta_total_gc_count":9223372036854775807}]""",
+        ).single()
+        assertEquals(9007199254740993L, window.pid)
+        assertEquals(Long.MAX_VALUE, window.deltaTotalGcCount)
+    }
+
+    @Test
     fun `parses profile details and window summaries`() {
         val profile = assertNotNull(
             BazelBuildTelemetryParser.parseProfile(
