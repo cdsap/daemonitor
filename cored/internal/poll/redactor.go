@@ -15,9 +15,9 @@ var (
 	envAssignment   = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)=(.*)$`)
 	authCredentials = regexp.MustCompile(`(?i)\b(Bearer|Basic)([\t ]+)\S+`)
 	// scheme://user:pass@host
-	urlCreds  = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9+.\-]*://)([^/@\s:]+):([^/@\s]+)@`)
-	wsSplit   = regexp.MustCompile(`\s+`)
-	logPieces = regexp.MustCompile(`(\s+)|(\S+)`)
+	urlCreds      = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9+.\-]*://)([^/@\s:]+):([^/@\s]+)@`)
+	wsSplit       = regexp.MustCompile(`\s+`)
+	logLinePieces = regexp.MustCompile(`(\s+)|(\S+)`)
 )
 
 // RedactCommandLine mirrors Kotlin Redactor.redactCommandLine (KTD-7).
@@ -92,7 +92,7 @@ func isWrapperKey(key string) bool {
 func RedactLogLine(line string) string {
 	masked := authCredentials.ReplaceAllString(maskURLCredentials(line), "${1}${2}"+redactMask)
 	// Split keeping whitespace separators, like Kotlin's (?<=\s)|(?=\s).
-	pieces := logPieces.FindAllString(masked, -1)
+	pieces := logLinePieces.FindAllString(masked, -1)
 	for i, piece := range pieces {
 		if strings.TrimSpace(piece) == "" {
 			continue

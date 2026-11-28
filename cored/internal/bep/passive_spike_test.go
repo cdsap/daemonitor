@@ -277,11 +277,9 @@ func TestPassiveSpikeLogEvidenceAndRedaction(t *testing.T) {
 	if got := poll.RedactLogLine(line); got != "INFO: --remote_password=*** https://***:***@example.invalid/build" {
 		t.Fatalf("redaction: %s", got)
 	}
-	// Characterize the existing limitation. Arbitrary application output is
-	// not safe to retain just because RedactLogLine was called.
-	unsupported := "Authorization: Bearer fixture-value"
-	if poll.RedactLogLine(unsupported) != unsupported {
-		t.Fatal("update report: redactor now handles free-text bearer values")
+	bearer := "Authorization: Bearer fixture-value"
+	if got := poll.RedactLogLine(bearer); got != "Authorization: Bearer ***" {
+		t.Fatalf("bearer redaction: %s", got)
 	}
 	jvm := string(spikeFixture(t, "jvm-out.txt"))
 	if !strings.Contains(jvm, "GC(0)") || strings.Contains(jvm, "Invocation ID:") {

@@ -11,6 +11,34 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class GoCoreSnapshotParserTest {
+    @Test
+    fun `retains exact longs and scientific metrics without matching nested fields`() {
+        val process = GoCoreSnapshotParser.parseProcesses("""{"processes":[{
+            "nested":{"pid":99},"pid":9007199254740993,"type":"GRADLE_DAEMON",
+            "start_time_ms":9223372036854775807,"cpu_percent":1.25e-3,
+            "command_line":"\u263a \b\f",
+            "classes":{"loaded":9007199254740993},
+            "memory_pools":[{"name":"pool } [","used":{"value":1.5e2,"unit":"bytes"}}]
+        }]}""").single()
+        assertEquals(9007199254740993L, process.pid)
+        assertEquals(Long.MAX_VALUE, process.startTimeMs)
+        assertEquals(0.00125, process.cpuPercent)
+        assertEquals("☺ \b\u000c", process.commandLine)
+        assertEquals(9007199254740993L, process.classes?.loaded)
+        assertEquals(150.0, process.memoryPools.single().used?.value)
+        val host = GoCoreSnapshotParser.parseHost("""{
+            "sampled_at_ms":9007199254740993,
+            "logical_processors":{"availability":"available","value":8},
+            "cpu_usage_percent":{"availability":"available","value":0},
+            "memory_used_bytes":{"availability":"unsupported","value":100},
+            "memory_total_bytes":{"availability":"available","value":9007199254740993}
+        }""")
+        assertEquals(8L, host.logicalProcessors)
+        assertEquals(0.0, host.cpuPercent)
+        assertNull(host.memoryUsedBytes)
+        assertEquals(9007199254740993L, host.memoryTotalBytes)
+    }
+
 
     @Test
     fun `parses complete health snapshot`() {

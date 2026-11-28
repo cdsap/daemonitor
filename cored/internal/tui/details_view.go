@@ -2,8 +2,9 @@ package tui
 
 import (
 	"fmt"
+	"maps"
 	"math"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -658,12 +659,7 @@ func bazelPhaseSummary(build client.BuildRecord) string {
 		}
 	}
 	if len(parts) == 0 && build.BazelProfile != nil && len(build.BazelProfile.PhaseSeconds) > 0 {
-		keys := make([]string, 0, len(build.BazelProfile.PhaseSeconds))
-		for k := range build.BazelProfile.PhaseSeconds {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
+		for _, k := range slices.Sorted(maps.Keys(build.BazelProfile.PhaseSeconds)) {
 			if len(parts) == 3 {
 				break
 			}
@@ -751,12 +747,7 @@ func detailLog(m Model, width int) []string {
 		}
 		return []string{"Gradle log is available but empty."}
 	}
-	lines := m.detailTail.Lines
-	result := make([]string, 0, len(lines)+1)
-	for _, line := range lines {
-		result = append(result, line)
-	}
-	return result
+	return slices.Clone(m.detailTail.Lines)
 }
 
 func splitDetailHeight(total, panes int) []int {

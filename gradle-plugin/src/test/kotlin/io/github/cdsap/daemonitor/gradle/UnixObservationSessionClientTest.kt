@@ -91,8 +91,8 @@ class UnixObservationSessionClientTest {
             awaitReady(ready, bindError, socket)
             val client = UnixObservationSessionClient(socket, Duration.ofSeconds(2))
             client.open("{}")
-            client.close("session/with-unsafe-id")
-            assertTrue(request[0]!!.contains("\"name\":\"session/with-unsafe-id\""))
+            client.close("session/with-unsafe-id\u0000\b\u000c\n\"\\")
+            assertTrue(request[0]!!.endsWith("{\"name\":\"session/with-unsafe-id\\u0000\\b\\f\\n\\\"\\\\\"}"))
         } finally {
             server.join(2_000)
             Files.deleteIfExists(socket)

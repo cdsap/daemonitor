@@ -242,6 +242,33 @@ class SettingsViewModelTest {
         )
     }
 
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun `cancelling checkForUpdates does not overwrite state with Failed and close cancels scope`() = runTest {
+        val childScope = kotlinx.coroutines.CoroutineScope(
+            kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.test.StandardTestDispatcher(testScheduler),
+        )
+        val vm = SettingsViewModel(
+            updateService = UpdateService(
+                checkForUpdate = CheckForUpdate(
+                    source = UpdateSource { throw kotlinx.coroutines.CancellationException("cancelled") },
+                    currentVersion = { "1.3.3" },
+                ),
+                prepareUpdate = PrepareUpdate(UpdateInstaller { _, _ -> null }),
+                applyUpdate = ApplyUpdate(UpdateApplier {}, ProcessExiter {}),
+                urlOpener = UrlOpener {},
+            ),
+            scope = childScope,
+        )
+
+        vm.checkForUpdates()
+        advanceUntilIdle()
+
+        assertEquals(UpdateUiState.Checking, vm.state.value.updateState)
+        vm.close()
+        kotlin.test.assertFalse(childScope.coroutineContext[kotlinx.coroutines.Job]!!.isActive)
+    }
+
     private fun updateViewModel(
         result: UpdateCheckResult,
         scope: TestScope,

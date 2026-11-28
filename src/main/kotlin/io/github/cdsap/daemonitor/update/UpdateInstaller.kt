@@ -233,42 +233,43 @@ private suspend fun downloadAndVerify(
     Files.createDirectories(updateDirectory)
     val tempPath = updateDirectory.resolve("${candidate.assetName}.download")
     val finalPath = updateDirectory.resolve(candidate.assetName)
-    val client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build()
-    val request = HttpRequest.newBuilder()
-        .uri(URI(candidate.downloadUrl))
-        .header("User-Agent", "Daemonitor")
-        .GET()
-        .build()
-    val response = client.send(request, HttpResponse.BodyHandlers.ofInputStream())
-    if (response.statusCode() !in 200..299) {
-        error("Download failed with HTTP ${response.statusCode()}")
-    }
+    HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build().use { client ->
+        val request = HttpRequest.newBuilder()
+            .uri(URI(candidate.downloadUrl))
+            .header("User-Agent", "Daemonitor")
+            .GET()
+            .build()
+        val response = client.send(request, HttpResponse.BodyHandlers.ofInputStream())
+        response.body().use { input ->
+            if (response.statusCode() !in 200..299) {
+                error("Download failed with HTTP ${response.statusCode()}")
+            }
 
-    val expectedBytes = candidate.sizeBytes
-        ?: response.headers().firstValueAsLong("Content-Length").orElse(-1).takeIf { it > 0 }
-    val digest = MessageDigest.getInstance("SHA-256")
-    var downloadedBytes = 0L
-    response.body().use { input ->
-        tempPath.outputStream().use { output ->
-            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-            while (true) {
-                val read = input.read(buffer)
-                if (read < 0) break
-                output.write(buffer, 0, read)
-                digest.update(buffer, 0, read)
-                downloadedBytes += read
-                onProgress(expectedBytes?.let { downloadedBytes.toDouble() / it.toDouble() })
+            val expectedBytes = candidate.sizeBytes
+                ?: response.headers().firstValueAsLong("Content-Length").orElse(-1).takeIf { it > 0 }
+            val digest = MessageDigest.getInstance("SHA-256")
+            var downloadedBytes = 0L
+            tempPath.outputStream().use { output ->
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    output.write(buffer, 0, read)
+                    digest.update(buffer, 0, read)
+                    downloadedBytes += read
+                    onProgress(expectedBytes?.let { downloadedBytes.toDouble() / it.toDouble() })
+                }
+            }
+
+            if (expectedBytes != null && downloadedBytes != expectedBytes) {
+                Files.deleteIfExists(tempPath)
+                error("Downloaded ${downloadedBytes} bytes; expected ${expectedBytes}")
+            }
+            if (!UpdateDownloadVerifier.matches(digest.digest(), expectedSha256)) {
+                Files.deleteIfExists(tempPath)
+                error("Downloaded installer checksum did not match release metadata")
             }
         }
-    }
-
-    if (expectedBytes != null && downloadedBytes != expectedBytes) {
-        Files.deleteIfExists(tempPath)
-        error("Downloaded ${downloadedBytes} bytes; expected ${expectedBytes}")
-    }
-    if (!UpdateDownloadVerifier.matches(digest.digest(), expectedSha256)) {
-        Files.deleteIfExists(tempPath)
-        error("Downloaded installer checksum did not match release metadata")
     }
     Files.move(
         tempPath,
