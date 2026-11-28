@@ -103,7 +103,7 @@ func TestConnectToRunningServer(t *testing.T) {
 }
 
 func TestConnectWrapsErrorsAndUsesCustomStderr(t *testing.T) {
-	sock := ipc.TempEndpoint(t, "wrap")
+	sock := ipctest.TempEndpoint(t, "wrap")
 	startErr := errors.New("boom")
 	var stderr bytes.Buffer
 	_, err := Connect(context.Background(), Options{
