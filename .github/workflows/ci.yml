@@ -330,13 +330,14 @@ jobs:
 
       - name: Test Go packages
         working-directory: cored
-        run: go test ./...
+        run: |
+          go test ./...
+          go test -tags docscreenshot ./cmd/docscreenshot ./internal/tui -run TestRenderCliDocsScreenshotShowsGradleAndBazelTable
 
       - name: Build binaries
         working-directory: cored
         run: |
           go build -o bin/daemonitor-cored ./cmd/daemonitor-cored
-          go build -o bin/daemonitor-corectl ./cmd/daemonitor-corectl
           go build -o bin/daemonitor-cli ./cmd/daemonitor-cli
 
       - name: Native CLI PTY smoke

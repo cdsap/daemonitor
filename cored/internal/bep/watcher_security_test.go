@@ -109,8 +109,8 @@ func TestWatcherBoundsTrackedFilesAndSeenRank(t *testing.T) {
 		p := filepath.Join(t.TempDir(), fmt.Sprintf("bep-%d.json", i))
 		w.observeClient(clientObservation{Sink: Sink{Path: p, Format: FormatJSON}})
 	}
-	if got := w.WatchedCount(); got > maxTrackedFiles {
-		t.Fatalf("WatchedCount=%d want <= %d", got, maxTrackedFiles)
+	if got := w.watchedCount(); got > maxTrackedFiles {
+		t.Fatalf("watchedCount=%d want <= %d", got, maxTrackedFiles)
 	}
 
 	// Evict stale missing files after TTL expires.
@@ -118,8 +118,8 @@ func TestWatcherBoundsTrackedFilesAndSeenRank(t *testing.T) {
 	if _, err := w.Poll(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if got := w.WatchedCount(); got != 0 {
-		t.Fatalf("stale missing files not evicted: WatchedCount=%d", got)
+	if got := w.watchedCount(); got != 0 {
+		t.Fatalf("stale missing files not evicted: watchedCount=%d", got)
 	}
 
 	// Verify seenRank eviction keeps the map bounded.
@@ -165,8 +165,15 @@ func TestWatcherSkipProcessScanAndConcurrentObserve(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < 30; i++ {
-			_ = w.WatchedCount()
+			_ = w.watchedCount()
 		}
 	}()
 	wg.Wait()
+}
+
+// watchedCount reads tracked paths under the same lock as Poll.
+func (w *Watcher) watchedCount() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return len(w.files)
 }

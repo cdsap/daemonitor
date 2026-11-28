@@ -17,7 +17,6 @@ class PollMonitoring(
     private val logSource: DaemonLogSource,
     private val samples: ProcessSampleWriter,
     private val buildProcessingMode: BuildProcessingMode,
-    private val retentionPolicy: RetentionPolicy,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
     /** Compatibility constructor for direct application-layer callers. */
@@ -44,7 +43,6 @@ class PollMonitoring(
             clock = clock,
             retainedBuilds = retainedBuilds,
         ),
-        retentionPolicy = retentionPolicy,
         clock = clock,
     )
 

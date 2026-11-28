@@ -105,6 +105,18 @@ class ProcessVisualScreenUiTest {
     }
 
     @Test
+    fun `visual RSS total uses current processes before timeline samples arrive`() = runVisualUiTest {
+        val processes = listOf(
+            process(100, ProcessType.GRADLE_DAEMON, "checkout", 1024, 4096, 700, 24.0),
+            process(101, ProcessType.GRADLE_WORKER, "checkout", 512, null, null, 64.0),
+        )
+        setContent {
+            WatcherTheme { ProcessVisualScreen(liveState(processes, emptyList())) }
+        }
+        onNodeWithText("Total 1536 MB RSS · 2 processes").assertExists()
+    }
+
+    @Test
     fun `metric mode switch shows io series instead of memory totals`() = runVisualUiTest {
         val processes = listOf(
             process(pid = 100, type = ProcessType.GRADLE_DAEMON, project = "checkout", rss = 1024, heap = 4096, used = 700, cpu = 24.0),

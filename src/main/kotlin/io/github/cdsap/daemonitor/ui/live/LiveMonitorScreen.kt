@@ -121,7 +121,7 @@ private val WIDE_COLS = listOf(
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit, onClearSelection: () -> Unit) {
+fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit) {
     var groupedView by remember { mutableStateOf(false) }
     val selectedPid = when (val d = state.detail) {
         is DetailState.Selected -> d.process.pid
@@ -218,7 +218,7 @@ fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit, onClearSelec
                     when {
                         showsDaemonLogCard(state.detail) -> {
                             Spacer(Modifier.padding(Space.xs))
-                            LogCard(state.tailState, showMetadata = true, state.daemonLog, modifier = Modifier.weight(1f).fillMaxWidth())
+                            LogCard(state.tailState, state.daemonLog, modifier = Modifier.weight(1f).fillMaxWidth())
                         }
                         showsBazelLogCard(state.detail) -> {
                             Spacer(Modifier.padding(Space.xs))
@@ -734,13 +734,11 @@ private fun Long?.metricBytes(): String = this?.let {
 } ?: "unavailable"
 
 @Composable
-private fun LogCard(tailState: LogTailState, showMetadata: Boolean, daemonLog: DaemonLog?, modifier: Modifier = Modifier) {
+private fun LogCard(tailState: LogTailState, daemonLog: DaemonLog?, modifier: Modifier = Modifier) {
     SectionCard("Gradle daemon log", modifier.testTag("gradle-log-card")) {
         Column(modifier = Modifier.fillMaxSize()) {
-            if (showMetadata) {
-                DetailRow("Gradle version", daemonLog?.gradleVersion?.takeIf { it.isNotBlank() } ?: "Unavailable")
-                DetailRow("Log path", daemonLog?.path?.toString()?.takeIf { it.isNotBlank() } ?: "Unavailable")
-            }
+            DetailRow("Gradle version", daemonLog?.gradleVersion?.takeIf { it.isNotBlank() } ?: "Unavailable")
+            DetailRow("Log path", daemonLog?.path?.toString()?.takeIf { it.isNotBlank() } ?: "Unavailable")
             when (tailState) {
                 LogTailState.NoSelection -> Text(
                     "Select a Gradle daemon to see its daemon log. History builds also come from these logs.",

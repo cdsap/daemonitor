@@ -93,7 +93,6 @@ class PollMonitoringTest {
             processSource = processSource,
             logSource = logSource,
             samples = samples,
-            retentionPolicy = RetentionPolicy.DEFAULT,
             buildProcessingMode = MonitoringMode.Local.buildProcessingMode(
                 builds = builds,
                 aggregator = BuildAggregator(),
@@ -326,7 +325,6 @@ class PollMonitoringTest {
             processSource = FakeProcessSource(listOf(gradleDaemon(pid = 42))),
             logSource = logSource,
             samples = RecordingSampleWriter(),
-            retentionPolicy = RetentionPolicy.DEFAULT,
             buildProcessingMode = MonitoringMode.RemoteBuilds(object : BuildSource {
                 override fun recentBuilds(limit: Int) = listOf(remote, stale)
             }).buildProcessingMode(
@@ -364,7 +362,6 @@ class PollMonitoringTest {
             processSource = FakeProcessSource(listOf(gradleDaemon(pid = 7))),
             logSource = logSource,
             samples = samples,
-            retentionPolicy = RetentionPolicy.DEFAULT,
             buildProcessingMode = MonitoringMode.SharedCoreOwnedPersistence.buildProcessingMode(
                 builds = builds,
                 aggregator = BuildAggregator(),
@@ -390,7 +387,6 @@ class PollMonitoringTest {
             processSource = FakeProcessSource(listOf(gradleDaemon(pid = 7))),
             logSource = FakeDaemonLogSource(emptyList()),
             samples = RecordingSampleWriter(),
-            retentionPolicy = RetentionPolicy.DEFAULT,
             buildProcessingMode = MonitoringMode.SharedCoreOwnedPersistence.buildProcessingMode(
                 builds = RecordingBuildWriter(),
                 aggregator = BuildAggregator(),

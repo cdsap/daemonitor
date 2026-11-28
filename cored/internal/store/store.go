@@ -922,7 +922,3 @@ ORDER BY timestamp ASC`, pid, startMs, endMs)
 func (s *Store) ProcessSamplesColumns() ([]string, error) {
 	return s.tableColumns("process_samples")
 }
-
-func DefaultDBPath(dir string) string {
-	return fmt.Sprintf("%s/daemonitor-core.sqlite", dir)
-}

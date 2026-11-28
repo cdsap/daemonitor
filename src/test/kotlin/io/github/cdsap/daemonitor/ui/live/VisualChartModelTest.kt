@@ -5,7 +5,6 @@ import io.github.cdsap.daemonitor.domain.model.LiveJvmHeap
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class VisualChartModelTest {
@@ -16,41 +15,6 @@ class VisualChartModelTest {
         assertEquals("Bazel server / Process detail", ProcessType.BAZEL_SERVER.detailPanelTitle())
         assertEquals("Gradle daemon / Process detail", ProcessType.GRADLE_DAEMON.detailPanelTitle())
         assertEquals("Process detail", ProcessType.GRADLE_WORKER.detailPanelTitle())
-    }
-
-    @Test
-    fun `bars expose rss live used and optional heap limit with shared scale`() {
-        val data = VisualChartModel.fromProcesses(
-            listOf(
-                process(pid = 1, rss = 512, heapLimit = 4096, heapUsed = 256),
-                process(pid = 2, rss = 8192, heapLimit = null, heapUsed = null),
-            ),
-        )
-
-        assertEquals(8704L, data.totalRssMb)
-        assertEquals(512L, data.bars[0].rssMb)
-        assertEquals(256L, data.bars[0].heapUsedMb)
-        assertEquals(4096L, data.bars[0].heapLimitMb)
-        assertEquals(0.0625f, data.bars[0].rssFraction)
-        assertEquals(0.5f, data.bars[0].heapLimitFraction)
-        assertEquals(1.0f, data.bars[1].rssFraction)
-        assertNull(data.bars[1].heapUsedMb)
-        assertNull(data.bars[1].heapLimitMb)
-        assertNull(data.bars[1].heapUsedFraction)
-        assertNull(data.bars[1].heapLimitFraction)
-    }
-
-    @Test
-    fun `missing heap values stay unavailable`() {
-        val bar = VisualChartModel.fromProcesses(
-            listOf(process(pid = 12, rss = 180, heapLimit = null, heapUsed = null)),
-        ).bars.single()
-
-        assertEquals(180L, bar.rssMb)
-        assertNull(bar.heapUsedMb)
-        assertNull(bar.heapLimitMb)
-        assertNull(bar.heapUsedFraction)
-        assertNull(bar.heapLimitFraction)
     }
 
     @Test
@@ -220,13 +184,6 @@ class VisualChartModelTest {
                 it.pid == 1L && (it.metric == TimelineMetric.HEAP_USED || it.metric == TimelineMetric.HEAP_LIMIT)
             },
         )
-    }
-
-    @Test
-    fun `empty process list returns empty chart data`() {
-        val data = VisualChartModel.fromProcesses(emptyList())
-        assertEquals(0L, data.totalRssMb)
-        assertEquals(emptyList(), data.bars)
     }
 
     private fun process(

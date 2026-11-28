@@ -211,7 +211,6 @@ class WatcherServiceTest {
             runCurrent()
 
             assertTrue(tailCalls > tailCallsAfterPoll)
-            assertEquals(listOf("immediate-tail"), service.liveViewModel.state.value.tail)
             assertEquals(LogTailState.Available(listOf("immediate-tail")), service.liveViewModel.state.value.tailState)
             assertEquals(log, service.liveViewModel.state.value.daemonLog)
             assertEquals(listOf(Triple(42L, 1L, 20)), buildQueries)

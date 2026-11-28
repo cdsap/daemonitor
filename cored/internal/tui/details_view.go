@@ -942,16 +942,6 @@ func memoryAssessmentText(assessment analysis.Assessment) string {
 	}
 }
 
-func buildSummary(build client.BuildRecord) string {
-	duration := "-"
-	if build.DurationSeconds != nil {
-		duration = fmt.Sprintf("%.1fs", math.Round(*build.DurationSeconds*10)/10)
-	}
-	return fmt.Sprintf("%s project=%s duration=%s start=%s source=%s agent=%s",
-		na(build.FinalStatus), na(build.ProjectPath), duration, formatStart(build.StartTimeMs),
-		na(build.InferredSource), na(build.Agent))
-}
-
 func rssTrend(samples []model.Process, pid int32) string {
 	values := make([]int64, 0, len(samples))
 	for _, sample := range samples {
@@ -984,14 +974,6 @@ func rssTrend(samples []model.Process, pid int32) string {
 		b.WriteRune(levels[index])
 	}
 	return b.String() + fmt.Sprintf("  %s–%s", render.RSSText(minValue), render.RSSText(maxValue))
-}
-
-func writeField(b *strings.Builder, label, value string) {
-	fmt.Fprintf(b, "  %-14s %s\n", label+":", value)
-}
-
-func writeDetailField(b *strings.Builder, width int, label, value string) {
-	writeField(b, label, truncateWidth(value, max(1, width-18)))
 }
 
 func na(s string) string {

@@ -21,6 +21,9 @@ func TestLooksLikeBazelClient(t *testing.T) {
 		{"echo bazel --build_event_json_file=/tmp/events", false},
 		{"sh -c bazel build --build_event_json_file=/tmp/events", false},
 		{"", false},
+		{" \t\n", false},
+		{"env", false},
+		{"env FOO=1", false},
 	}
 	for _, tc := range cases {
 		if got := bep.LooksLikeBazelClient(tc.in); got != tc.want {
