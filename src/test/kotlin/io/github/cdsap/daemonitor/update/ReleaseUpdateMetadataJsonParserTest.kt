@@ -6,6 +6,21 @@ import kotlin.test.assertIs
 import kotlin.test.assertNull
 
 class ReleaseUpdateMetadataJsonParserTest {
+    @Test
+    fun `preserves large asset sizes and decodes escapes`() {
+        val json = """{"schemaVersion":2,"version":"1.0","tag":"v1.0","assets":[{
+            "platform":"linux","fileName":"a\u002ebin","url":"https:\/\/example.com\/a",
+            "sha256":"${"a".repeat(64)}","size":9007199254740993
+        }]}"""
+        val asset = requireNotNull(ReleaseUpdateMetadataJsonParser.parse(json)).assets.single()
+        assertEquals(9007199254740993L, asset.sizeBytes)
+        assertEquals("a.bin", asset.fileName)
+        assertEquals("https://example.com/a", asset.url)
+        assertNull(ReleaseUpdateMetadataJsonParser.parse(json.replace("9007199254740993", "9223372036854775808")))
+        assertNull(ReleaseUpdateMetadataJsonParser.parse(json.replace("9007199254740993", "1.5")))
+        assertNull(ReleaseUpdateMetadataJsonParser.parse(json.replace("9007199254740993", "-1")))
+        assertNull(ReleaseUpdateMetadataJsonParser.parse(json.replace("\"schemaVersion\":2", "\"schemaVersion\":4294967298")))
+    }
 
     @Test
     fun `parses update metadata assets with checksums`() {
