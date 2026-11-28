@@ -25,7 +25,9 @@ func (darwinCollector) CollectProcess(ctx context.Context, process ProcessIdenti
 }
 
 func (darwinCollector) CollectHost(ctx context.Context) HostMetrics {
-	return collectHostGopsutil(ctx)
+	out := collectHostGopsutil(ctx)
+	out.MemoryPressureLevel, out.ThermalState = collectDarwinHostContext(out.SampledAtMs)
+	return out
 }
 
 func (darwinCollector) Capabilities() []MetricCapability {
@@ -43,5 +45,9 @@ func (darwinCollector) Capabilities() []MetricCapability {
 	setCapability(caps, "process.io.logical_write_bytes_total", Unsupported, "proc_pid_rusage",
 		"macOS proc_pid_rusage exposes disk I/O, not logical write bytes")
 	setCapability(caps, "process.handles.count", Unsupported, "", "")
+	setCapability(caps, "host.memory.pressure_level", Available, "sysctl:kern.memorystatus_vm_pressure_level",
+		"macOS VM memory pressure level (normal/warn/critical)")
+	setCapability(caps, "host.thermal.state", Available, "notify:thermalpressurelevel",
+		"macOS thermal pressure level (nominal/moderate/heavy/trapping/sleeping)")
 	return caps
 }

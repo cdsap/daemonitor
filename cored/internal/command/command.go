@@ -42,6 +42,7 @@ type Options struct {
 	PID                int64
 	Project            string
 	Status             string
+	Ecosystem          string
 	IncludeLogs        bool
 	IncludeProjectPath bool
 	Watch              bool
@@ -50,11 +51,12 @@ type Options struct {
 	Help               bool
 	Version            bool
 	Args               []string
+	CommandArgs        []string
 }
 
 var knownCommands = map[string]bool{
 	"top": true, "ps": true, "history": true, "builds": true, "logs": true, "health": true,
-	"metrics": true, "events": true, "host": true, "export": true,
+	"metrics": true, "events": true, "host": true, "export": true, "observe": true, "sessions": true,
 }
 
 var flagsWithValue = map[string]bool{
@@ -65,6 +67,7 @@ var flagsWithValue = map[string]bool{
 	"-pid": true, "--pid": true,
 	"-project": true, "--project": true,
 	"-status": true, "--status": true,
+	"-ecosystem": true, "--ecosystem": true,
 	"-include-logs": false, "--include-logs": false,
 	"-include-project-path": false, "--include-project-path": false,
 	"-until": true, "--until": true,
@@ -77,11 +80,17 @@ const maxQueryWindow = 7 * 24 * time.Hour
 
 // ParseArgs parses argv into options and remaining command args.
 // Flags may appear before or after the subcommand (e.g. `ps --json`).
+// Arguments after `--` are preserved verbatim in CommandArgs (used by `observe`).
 func ParseArgs(argv []string) (Options, error) {
 	var positionals []string
 	var flagArgs []string
+	var commandArgs []string
 	for i := 0; i < len(argv); i++ {
 		a := argv[i]
+		if a == "--" {
+			commandArgs = append([]string(nil), argv[i+1:]...)
+			break
+		}
 		if strings.HasPrefix(a, "-") {
 			flagArgs = append(flagArgs, a)
 			name, _, hasEq := strings.Cut(a, "=")
@@ -116,6 +125,7 @@ func ParseArgs(argv []string) (Options, error) {
 	fs.Int64Var(&opts.PID, "pid", 0, "Filter by process or daemon PID")
 	fs.StringVar(&opts.Project, "project", "", "Filter by project path or name")
 	fs.StringVar(&opts.Status, "status", "", "Filter builds by final status")
+	fs.StringVar(&opts.Ecosystem, "ecosystem", "", "Filter by ecosystem (xcode, gradle, bazel)")
 	fs.BoolVar(&opts.IncludeLogs, "include-logs", false, "Include retained build log snippets")
 	fs.BoolVar(&opts.IncludeProjectPath, "include-project-path", false, "Include full project paths in exports")
 	fs.BoolVar(&opts.Watch, "watch", false, "Continuously refresh a non-interactive ps snapshot")
@@ -150,6 +160,7 @@ func ParseArgs(argv []string) (Options, error) {
 		return opts, fmt.Errorf("unexpected arguments: %v", fs.Args())
 	}
 	opts.Args = positionals
+	opts.CommandArgs = commandArgs
 	if os.Getenv("NO_COLOR") != "" {
 		opts.NoColor = true
 	}
@@ -178,6 +189,8 @@ Commands:
   events           Show bounded redacted lifecycle events
   host             Show host metrics
   export           Export bounded telemetry as JSONL to --output
+  observe -- CMD   Run CMD inside a persisted observation session and print summary
+  sessions [id]    List persisted build observation sessions or show one session
 
 Options:
   --socket PATH            Use an explicit core IPC endpoint (Unix socket or Windows named pipe)
@@ -192,6 +205,7 @@ Options:
   --pid PID                Filter by process or daemon PID
   --project TEXT           Filter by project path or name
   --status TEXT            Filter builds by final status
+  --ecosystem NAME         Filter by build ecosystem (xcode, gradle, bazel)
   --include-logs           Include retained build log snippets
   --include-project-path   Include full project paths in exports (default: basename only)
   --watch                  Continuously refresh non-interactive ps output
@@ -242,7 +256,9 @@ func Run(ctx context.Context, opts Options, stdout, stderr io.Writer) int {
 			return 2
 		}
 		return runTUI(ctx, opts, stderr)
-	case "ps", "history", "builds", "logs", "health", "metrics", "events", "host", "export":
+	case "observe":
+		return runObserve(ctx, opts, rest, stdout, stderr)
+	case "ps", "history", "builds", "logs", "health", "metrics", "events", "host", "export", "sessions":
 		if opts.Watch && cmd != "ps" {
 			fmt.Fprintln(stderr, "daemonitor-cli: --watch is only valid with ps")
 			return 2
@@ -462,6 +478,8 @@ func runOneShot(ctx context.Context, opts Options, cmd string, args []string, st
 			return 2
 		}
 		return exportTelemetry(ctx, c, opts, stdout, stderr)
+	case "sessions":
+		return runSessions(ctx, c, opts, args, stdout, stderr)
 	default:
 		return 2
 	}
@@ -708,8 +726,12 @@ func historySince(opts Options) time.Time {
 func filterProcesses(items []model.Process, opts Options) []model.Process {
 	out := items[:0]
 	needle := strings.ToLower(opts.Project)
+	eco := strings.ToLower(strings.TrimSpace(opts.Ecosystem))
 	for _, p := range items {
 		if opts.PID > 0 && int64(p.PID) != opts.PID {
+			continue
+		}
+		if eco != "" && !matchesProcessEcosystem(p.Type, eco) {
 			continue
 		}
 		if needle != "" && !strings.Contains(strings.ToLower(render.ProjectName(p)), needle) && !strings.Contains(strings.ToLower(p.CommandLine), needle) {
@@ -718,6 +740,19 @@ func filterProcesses(items []model.Process, opts Options) []model.Process {
 		out = append(out, p)
 	}
 	return out
+}
+
+func matchesProcessEcosystem(procType, eco string) bool {
+	switch eco {
+	case "xcode":
+		return strings.HasPrefix(procType, "XCODE_")
+	case "bazel":
+		return strings.HasPrefix(procType, "BAZEL_")
+	case "gradle":
+		return !strings.HasPrefix(procType, "XCODE_") && !strings.HasPrefix(procType, "BAZEL_")
+	default:
+		return true
+	}
 }
 
 func filterLogs(items []logs.DaemonLog, opts Options) []logs.DaemonLog {

@@ -12,6 +12,7 @@ import (
 	"github.com/cdsap/daemonitor/cored/internal/logs"
 	"github.com/cdsap/daemonitor/cored/internal/model"
 	"github.com/cdsap/daemonitor/cored/internal/platform"
+	"github.com/cdsap/daemonitor/cored/internal/sessions"
 )
 
 // SanitizeSnapshotForExport keeps exports useful while avoiding full local
@@ -467,6 +468,10 @@ func WriteHostPlain(w io.Writer, host platform.HostMetrics) {
 	fmt.Fprintf(w, "memory_used=%s\n", plainBytesMetric(host.MemoryUsedBytes))
 	fmt.Fprintf(w, "memory_available=%s\n", plainBytesMetric(host.MemoryAvailableBytes))
 	fmt.Fprintf(w, "memory_total=%s\n", plainBytesMetric(host.MemoryTotalBytes))
+	fmt.Fprintf(w, "swap_used=%s\n", plainBytesMetric(host.SwapUsedBytes))
+	fmt.Fprintf(w, "swap_total=%s\n", plainBytesMetric(host.SwapTotalBytes))
+	fmt.Fprintf(w, "memory_pressure=%s\n", plainStringMetric(host.MemoryPressureLevel))
+	fmt.Fprintf(w, "thermal_state=%s\n", plainStringMetric(host.ThermalState))
 	fmt.Fprintf(w, "commit_used=%s\n", plainBytesMetric(host.CommitUsedBytes))
 	fmt.Fprintf(w, "commit_limit=%s\n", plainBytesMetric(host.CommitLimitBytes))
 	fmt.Fprintf(w, "load1=%s load5=%s load15=%s\n",
@@ -498,6 +503,13 @@ func plainBytesMetric(m platform.IntMetric) string {
 		return "n/a"
 	}
 	return RSSText(*m.Value / (1024 * 1024))
+}
+
+func plainStringMetric(m platform.StringMetric) string {
+	if m.Value == nil || m.Availability != platform.Available || strings.TrimSpace(*m.Value) == "" {
+		return "n/a"
+	}
+	return *m.Value
 }
 
 // TypeDisplay maps API type codes to short labels.
@@ -701,6 +713,81 @@ func basename(path string) string {
 		return path[i+1:]
 	}
 	return path
+}
+
+// WriteSessionsPlain prints a compact table of persisted build observation sessions.
+func WriteSessionsPlain(w io.Writer, list []sessions.BuildSessionSummary) {
+	fmt.Fprintf(w, "sessions=%d\n", len(list))
+	if len(list) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "%-20s %-8s %-8s %-12s %8s %9s %8s %5s  %s\n",
+		"SESSION", "SYSTEM", "MODE", "OUTCOME", "PEAK RSS", "FOOTPRINT", "CPU(s)", "PAR", "PROJECT")
+	for _, s := range list {
+		cpuText := "n/a"
+		if s.TotalCPUSeconds != nil {
+			cpuText = fmt.Sprintf("%.1fs", *s.TotalCPUSeconds)
+		}
+		project := basename(s.RootProjectPath)
+		if project == "" {
+			project = "—"
+		}
+		fmt.Fprintf(w, "%-20s %-8s %-8s %-12s %8s %9s %8s %5d  %s\n",
+			truncate(s.SessionID, 20),
+			valueOrDash(s.Ecosystem),
+			valueOrDash(s.Mode),
+			valueOrDash(s.Outcome),
+			RSSText(s.TotalPeakRSSMB),
+			BytesCompactText(s.TotalPeakFootprintBytes),
+			cpuText,
+			s.MaxParallelism,
+			truncate(project, 32),
+		)
+	}
+}
+
+// WriteSessionSummaryPlain prints a full build observation session summary with role rollups.
+func WriteSessionSummaryPlain(w io.Writer, s sessions.BuildSessionSummary) {
+	durText := "running"
+	if s.EndedAtMs > 0 && s.EndedAtMs >= s.StartedAtMs {
+		durText = fmt.Sprintf("%.2fs", float64(s.EndedAtMs-s.StartedAtMs)/1000.0)
+	}
+	cpuText := "n/a"
+	if s.TotalCPUSeconds != nil {
+		cpuText = fmt.Sprintf("%.2fs", *s.TotalCPUSeconds)
+	}
+	fmt.Fprintf(w, "session=%s ecosystem=%s mode=%s outcome=%s duration=%s\n",
+		s.SessionID, valueOrDash(s.Ecosystem), valueOrDash(s.Mode), valueOrDash(s.Outcome), durText)
+	if s.RootProjectPath != "" {
+		fmt.Fprintf(w, "project=%s\n", s.RootProjectPath)
+	}
+	fmt.Fprintf(w, "peak_rss=%s peak_footprint=%s total_cpu=%s max_parallelism=%d observed_processes=%d disk_read=%s disk_write=%s\n",
+		RSSText(s.TotalPeakRSSMB),
+		BytesCompactText(s.TotalPeakFootprintBytes),
+		cpuText,
+		s.MaxParallelism,
+		s.ObservedProcessCount,
+		BytesCompactText(s.TotalDiskReadBytes),
+		BytesCompactText(s.TotalDiskWriteBytes),
+	)
+	if s.ConcurrentOverlap {
+		fmt.Fprintln(w, "warning: concurrent same-ecosystem build overlapped this session; non-anchored processes are marked ambiguous")
+	}
+	if len(s.Roles) > 0 {
+		fmt.Fprintf(w, "\n%-21s %5s %5s %8s %9s %8s %8s %8s\n",
+			"ROLE", "PROCS", "PAR", "PEAK RSS", "FOOTPRINT", "CPU(s)", "DISK R", "DISK W")
+		for _, r := range s.Roles {
+			rCPU := "n/a"
+			if r.TotalCPUSeconds != nil {
+				rCPU = fmt.Sprintf("%.1fs", *r.TotalCPUSeconds)
+			}
+			fmt.Fprintf(w, "%-21s %5d %5d %8s %9s %8s %8s %8s\n",
+				TypeDisplay(r.Role), r.ObservedProcesses, r.MaxParallelism,
+				RSSText(r.PeakRSSMB), BytesCompactText(r.PeakFootprintBytes),
+				rCPU, BytesCompactText(r.DiskReadBytes), BytesCompactText(r.DiskWriteBytes),
+			)
+		}
+	}
 }
 
 func truncate(s string, n int) string {

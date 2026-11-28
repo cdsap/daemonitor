@@ -109,6 +109,9 @@ func (s *Store) migrate() error {
 	if err := s.ensureObservationSessions(); err != nil {
 		return err
 	}
+	if err := s.ensureBuildObservationSessions(); err != nil {
+		return err
+	}
 	if err := s.ensureBazelBuildDetails(); err != nil {
 		return err
 	}
@@ -131,7 +134,8 @@ func (s *Store) migrate() error {
 // v14: nullable JIT/class metrics and independent cumulative GC seconds.
 // v15: normalized command lines shared by retained process samples.
 // v16: disk_read_bytes and disk_write_bytes on process_samples for native/macOS I/O.
-const schemaVersion = 16
+// v17: build_observation_sessions and build_session_process_links for Xcode/build sessions.
+const schemaVersion = 17
 
 func (s *Store) ensureProcessSamplesAlignedWithApp() error {
 	exists, err := s.tableExists("process_samples")
@@ -770,6 +774,8 @@ func (s *Store) PurgeOlderThan(retention time.Duration) (int64, error) {
 	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
+	_, _ = s.db.Exec(`DELETE FROM build_session_process_links WHERE session_id IN (SELECT session_id FROM build_observation_sessions WHERE started_at_ms < ?)`, cutoff)
+	_, _ = s.db.Exec(`DELETE FROM build_observation_sessions WHERE started_at_ms < ?`, cutoff)
 	return n + evN + instN + buildsN, nil
 }
 
@@ -779,6 +785,7 @@ type HistoryFilter struct {
 	Limit       int
 	PID         int64
 	StartTimeMs int64
+	ProcessType string
 }
 
 func (s *Store) History(sinceMs int64, limit int) ([]model.Process, error) {
@@ -803,6 +810,10 @@ func (s *Store) HistoryFiltered(filter HistoryFilter) ([]model.Process, error) {
 	if filter.StartTimeMs > 0 {
 		conds = append(conds, "ps.start_time_ms = ?")
 		args = append(args, filter.StartTimeMs)
+	}
+	if strings.TrimSpace(filter.ProcessType) != "" {
+		conds = append(conds, "ps.process_type = ?")
+		args = append(args, strings.TrimSpace(filter.ProcessType))
 	}
 	args = append(args, limit)
 	query := `
