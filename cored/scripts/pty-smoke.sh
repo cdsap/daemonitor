@@ -15,15 +15,15 @@ if [[ ! -x "$BIN" ]]; then
   BIN="$GO_CORE/bin/daemonitor-cli"
 fi
 
+WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/daemonitor-pty.XXXXXX")"
+chmod 700 "$WORKDIR"
 if [[ -z "$SOCK" ]]; then
-  SOCK="$(mktemp "${TMPDIR:-/tmp}/daemonitor-pty.XXXXXX")"
-  rm -f "$SOCK"
-  SOCK="${SOCK}.sock"
+  SOCK="$WORKDIR/core.sock"
 fi
-DB="$(mktemp "${TMPDIR:-/tmp}/daemonitor-pty.XXXXXX.db")"
+DB="$WORKDIR/core.db"
 cleanup() {
   [[ -n "${CORED_PID:-}" ]] && kill "$CORED_PID" 2>/dev/null || true
-  rm -f "$SOCK" "$DB"
+  rm -rf "$WORKDIR"
 }
 trap cleanup EXIT
 

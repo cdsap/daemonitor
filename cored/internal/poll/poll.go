@@ -107,6 +107,8 @@ type Collector struct {
 	ProbeConcurrency      int
 	PollInterval          time.Duration
 	lastSnapshotTime      time.Time
+	cachedHost            platform.HostMetrics
+	cachedHostAt          time.Time
 	// BazelClientObserved inspects Pass 0 argv before JVM probes can delay discovery.
 	BazelClientObserved func(context.Context, *process.Process, string, int64)
 }
@@ -149,7 +151,35 @@ func (c *Collector) HostMetrics(ctx context.Context) platform.HostMetrics {
 	if c == nil || c.Platform == nil {
 		return platform.HostMetrics{}
 	}
-	return c.Platform.CollectHost(ctx)
+	host := c.Platform.CollectHost(ctx)
+	c.mu.Lock()
+	c.cachedHost = host
+	c.cachedHostAt = time.Now()
+	c.mu.Unlock()
+	return host
+}
+
+func (c *Collector) hostSnapshot(ctx context.Context, now time.Time) platform.HostMetrics {
+	if c == nil || c.Platform == nil {
+		return platform.HostMetrics{}
+	}
+	ttl := c.Cadences.Host
+	if ttl <= 0 {
+		ttl = observe.DefaultCadences().Host
+	}
+	c.mu.Lock()
+	if !c.cachedHostAt.IsZero() && now.Sub(c.cachedHostAt) < ttl {
+		host := c.cachedHost
+		c.mu.Unlock()
+		return host
+	}
+	c.mu.Unlock()
+	host := c.Platform.CollectHost(ctx)
+	c.mu.Lock()
+	c.cachedHost = host
+	c.cachedHostAt = now
+	c.mu.Unlock()
+	return host
 }
 
 func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
@@ -455,10 +485,7 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 		c.Heap.EvictMissing(seenPIDs)
 	}
 
-	host := platform.HostMetrics{}
-	if c.Platform != nil {
-		host = c.Platform.CollectHost(ctx)
-	}
+	host := c.hostSnapshot(ctx, nowTime)
 	return model.Snapshot{SampledAtMs: now, Host: host, Processes: out}, nil
 }
 

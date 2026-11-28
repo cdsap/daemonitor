@@ -50,8 +50,10 @@ if [[ "${1:-}" == "--inside-docker" ]]; then
 fi
 
 cd "$ROOT"
-SOCK="${TMPDIR:-/tmp}/daemonitor-dual-run-linux.sock"
-DB="${TMPDIR:-/tmp}/daemonitor-dual-run-linux.sqlite"
+WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/daemonitor-dual-run.XXXXXX")"
+chmod 700 "$WORKDIR"
+SOCK="$WORKDIR/core.sock"
+DB="$WORKDIR/core.sqlite"
 rm -f "$SOCK" "$DB"
 
 echo "==> warming Gradle daemon (creates GRADLE_DAEMON to compare)"
@@ -71,7 +73,7 @@ CORE_PID=$!
 cleanup() {
   kill "$CORE_PID" 2>/dev/null || true
   wait "$CORE_PID" 2>/dev/null || true
-  rm -f "$SOCK"
+  rm -rf "$WORKDIR"
 }
 trap cleanup EXIT
 

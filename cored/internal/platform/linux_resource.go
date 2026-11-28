@@ -143,10 +143,9 @@ func collectLinuxPSI(resource string, now int64) SomePSI {
 		}
 		row := map[string]float64{}
 		for _, field := range fields[1:] {
-			pair := strings.SplitN(field, "=", 2)
-			if len(pair) == 2 {
-				if v, e := strconv.ParseFloat(pair[1], 64); e == nil {
-					row[pair[0]] = v
+			if k, rawVal, ok := strings.Cut(field, "="); ok {
+				if v, e := strconv.ParseFloat(rawVal, 64); e == nil {
+					row[k] = v
 				}
 			}
 		}

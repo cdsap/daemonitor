@@ -13,8 +13,9 @@ var (
 	// -Pkey=value | -Dkey=value | --key=value
 	propFlag = regexp.MustCompile(`^(--|-[PD])([^=\s]+)=(.*)$`)
 	// scheme://user:pass@host
-	urlCreds = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9+.\-]*://)([^/@\s:]+):([^/@\s]+)@`)
-	wsSplit  = regexp.MustCompile(`\s+`)
+	urlCreds      = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9+.\-]*://)([^/@\s:]+):([^/@\s]+)@`)
+	wsSplit       = regexp.MustCompile(`\s+`)
+	logLinePieces = regexp.MustCompile(`(\s+)|(\S+)`)
 )
 
 // RedactCommandLine mirrors Kotlin Redactor.redactCommandLine (KTD-7).
@@ -67,7 +68,7 @@ func RedactToken(token string) string {
 func RedactLogLine(line string) string {
 	urlMasked := maskURLCredentials(line)
 	// Split keeping whitespace separators, like Kotlin's (?<=\s)|(?=\s).
-	pieces := regexp.MustCompile(`(\s+)|(\S+)`).FindAllString(urlMasked, -1)
+	pieces := logLinePieces.FindAllString(urlMasked, -1)
 	for i, piece := range pieces {
 		if strings.TrimSpace(piece) == "" {
 			continue
