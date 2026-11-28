@@ -1,5 +1,6 @@
 package io.github.cdsap.daemonitor.coreipc
 
+import java.io.ByteArrayOutputStream
 import java.io.InterruptedIOException
 import java.net.SocketTimeoutException
 import java.net.StandardProtocolFamily
@@ -45,19 +46,20 @@ internal fun unixHttpGet(
     timeoutMs: Int = UNIX_HTTP_TIMEOUT_MS,
 ): String {
     requireGoCoreSocket(socketPath)
+    val deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs.toLong())
     return try {
         val address = UnixDomainSocketAddress.of(socketPath)
         SocketChannel.open(StandardProtocolFamily.UNIX).use { channel ->
             channel.configureBlocking(false)
             if (!channel.connect(address)) {
-                awaitChannel(channel, SelectionKey.OP_CONNECT, timeoutMs, "connect")
+                awaitChannel(channel, SelectionKey.OP_CONNECT, deadlineNanos, timeoutMs, "connect")
                 if (!channel.finishConnect()) {
                     throw SocketTimeoutException("connect timed out after ${timeoutMs}ms")
                 }
             }
             val request = "GET $path HTTP/1.0\r\nHost: localhost\r\nAccept: application/json\r\n\r\n"
-            writeFully(channel, ByteBuffer.wrap(request.toByteArray(StandardCharsets.US_ASCII)), timeoutMs)
-            val text = readUntilEof(channel, timeoutMs)
+            writeFully(channel, ByteBuffer.wrap(request.toByteArray(StandardCharsets.US_ASCII)), deadlineNanos, timeoutMs)
+            val text = readUntilEof(channel, deadlineNanos, timeoutMs)
             parseGoCoreHttpResponse(text)
         }
     } catch (e: GoCoreUnavailableException) {
@@ -92,39 +94,36 @@ internal fun parseGoCoreHttpResponse(text: String): String {
     return text.substring(split + 4)
 }
 
-private fun writeFully(channel: SocketChannel, buffer: ByteBuffer, timeoutMs: Int) {
+private fun writeFully(channel: SocketChannel, buffer: ByteBuffer, deadlineNanos: Long, timeoutMs: Int) {
     while (buffer.hasRemaining()) {
-        awaitChannel(channel, SelectionKey.OP_WRITE, timeoutMs, "write")
+        awaitChannel(channel, SelectionKey.OP_WRITE, deadlineNanos, timeoutMs, "write")
         if (channel.write(buffer) < 0) {
             throw SocketTimeoutException("write failed after ${timeoutMs}ms")
         }
     }
 }
 
-private fun readUntilEof(channel: SocketChannel, timeoutMs: Int): String {
+private fun readUntilEof(channel: SocketChannel, deadlineNanos: Long, timeoutMs: Int): String {
     val buffer = ByteBuffer.allocate(64 * 1024)
-    val raw = StringBuilder()
+    val raw = ByteArrayOutputStream()
     while (true) {
-        awaitChannel(channel, SelectionKey.OP_READ, timeoutMs, "read")
+        awaitChannel(channel, SelectionKey.OP_READ, deadlineNanos, timeoutMs, "read")
         val read = channel.read(buffer)
         if (read < 0) break
         if (read == 0) continue
         buffer.flip()
-        val bytes = ByteArray(buffer.remaining())
-        buffer.get(bytes)
-        raw.append(String(bytes, StandardCharsets.UTF_8))
+        raw.write(buffer.array(), buffer.arrayOffset() + buffer.position(), buffer.remaining())
         buffer.clear()
     }
-    return raw.toString()
+    return raw.toString(StandardCharsets.UTF_8)
 }
 
-private fun awaitChannel(channel: SocketChannel, ops: Int, timeoutMs: Int, opName: String) {
+private fun awaitChannel(channel: SocketChannel, ops: Int, deadlineNanos: Long, timeoutMs: Int, opName: String) {
     Selector.open().use { selector ->
         val key = channel.register(selector, ops)
         try {
-            val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs.toLong())
             while (true) {
-                val remaining = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime())
+                val remaining = TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime())
                 if (remaining <= 0L) {
                     throw SocketTimeoutException("$opName timed out after ${timeoutMs}ms")
                 }

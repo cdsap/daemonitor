@@ -234,13 +234,15 @@ internal fun stopDaemonitorCored(socket: Path, pid: Long?): Boolean {
         }
     }
     val socketAbs = socket.toAbsolutePath().toString()
-    ProcessHandle.allProcesses().forEach { handle ->
-        val cmd = handle.info().commandLine().orElseGet {
-            handle.info().command().orElse("")
-        }
-        if (cmd.contains("daemonitor-cored") && cmd.contains(socketAbs)) {
-            handle.destroy()
-            stopped = true
+    ProcessHandle.allProcesses().use { processes ->
+        processes.forEach { handle ->
+            val cmd = handle.info().commandLine().orElseGet {
+                handle.info().command().orElse("")
+            }
+            if (cmd.contains("daemonitor-cored") && cmd.contains(socketAbs)) {
+                handle.destroy()
+                stopped = true
+            }
         }
     }
     return stopped

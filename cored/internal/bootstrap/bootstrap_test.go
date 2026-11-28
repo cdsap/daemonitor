@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"github.com/cdsap/daemonitor/cored/internal/api"
-	"github.com/cdsap/daemonitor/cored/internal/ipc"
+	"github.com/cdsap/daemonitor/cored/internal/ipctest"
 )
 
 func TestConnectAutostartDisabled(t *testing.T) {
-	sock := ipc.TempEndpoint(t, "missing")
+	sock := ipctest.TempEndpoint(t, "missing")
 	_, err := Connect(context.Background(), Options{
 		Socket:    sock,
 		Autostart: false,
@@ -64,7 +64,7 @@ func TestCoredArgsIncludesDefaultRetention(t *testing.T) {
 }
 
 func TestConnectToRunningServer(t *testing.T) {
-	sock := ipc.TempEndpoint(t, "boot")
+	sock := ipctest.TempEndpoint(t, "boot")
 	db := filepath.Join(t.TempDir(), "watcher.db")
 
 	ctx, cancel := context.WithCancel(context.Background())

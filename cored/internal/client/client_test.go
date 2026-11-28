@@ -11,7 +11,7 @@ import (
 
 	"github.com/cdsap/daemonitor/cored/internal/api"
 	"github.com/cdsap/daemonitor/cored/internal/client"
-	"github.com/cdsap/daemonitor/cored/internal/ipc"
+	"github.com/cdsap/daemonitor/cored/internal/ipctest"
 )
 
 type recordingTransport struct {
@@ -72,7 +72,7 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
 
 func TestClientProcessesAgainstLiveServer(t *testing.T) {
-	socket := ipc.TempEndpoint(t, "cli")
+	socket := ipctest.TempEndpoint(t, "cli")
 	db := filepath.Join(t.TempDir(), "watcher.db")
 
 	ctx, cancel := context.WithCancel(context.Background())

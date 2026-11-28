@@ -713,7 +713,12 @@ INSERT INTO process_samples(
 
 func (s *Store) PurgeOlderThan(retention time.Duration) (int64, error) {
 	cutoff := time.Now().Add(-retention).UnixMilli()
-	res, err := s.db.Exec(`DELETE FROM process_samples WHERE timestamp < ?`, cutoff)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	res, err := tx.Exec(`DELETE FROM process_samples WHERE timestamp < ?`, cutoff)
 	if err != nil {
 		return 0, err
 	}
@@ -721,35 +726,38 @@ func (s *Store) PurgeOlderThan(retention time.Duration) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	if _, err := s.db.Exec(`DELETE FROM process_command_lines WHERE id NOT IN (SELECT command_line_id FROM process_samples WHERE command_line_id IS NOT NULL)`); err != nil {
-		return n, err
+	if _, err := tx.Exec(`DELETE FROM process_command_lines WHERE id NOT IN (SELECT command_line_id FROM process_samples WHERE command_line_id IS NOT NULL)`); err != nil {
+		return 0, err
 	}
-	ev, err := s.db.Exec(`DELETE FROM process_events WHERE timestamp_ms < ?`, cutoff)
+	ev, err := tx.Exec(`DELETE FROM process_events WHERE timestamp_ms < ?`, cutoff)
 	if err != nil {
-		return n, err
+		return 0, err
 	}
 	evN, err := ev.RowsAffected()
 	if err != nil {
-		return n, err
+		return 0, err
 	}
-	inst, err := s.db.Exec(`DELETE FROM process_instances WHERE last_observed_ms < ?`, cutoff)
+	inst, err := tx.Exec(`DELETE FROM process_instances WHERE last_observed_ms < ?`, cutoff)
 	if err != nil {
-		return n + evN, err
+		return 0, err
 	}
 	instN, err := inst.RowsAffected()
 	if err != nil {
-		return n + evN, err
+		return 0, err
 	}
-	if _, err := s.db.Exec(`DELETE FROM bazel_build_details WHERE build_id IN (SELECT build_id FROM builds WHERE start_time < ?)`, cutoff); err != nil {
-		return n + evN + instN, err
+	if _, err := tx.Exec(`DELETE FROM bazel_build_details WHERE build_id IN (SELECT build_id FROM builds WHERE start_time < ?)`, cutoff); err != nil {
+		return 0, err
 	}
-	buildsRes, err := s.db.Exec(`DELETE FROM builds WHERE start_time < ?`, cutoff)
+	buildsRes, err := tx.Exec(`DELETE FROM builds WHERE start_time < ?`, cutoff)
 	if err != nil {
-		return n + evN + instN, err
+		return 0, err
 	}
 	buildsN, err := buildsRes.RowsAffected()
 	if err != nil {
-		return n + evN + instN, err
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
 	}
 	return n + evN + instN + buildsN, nil
 }
