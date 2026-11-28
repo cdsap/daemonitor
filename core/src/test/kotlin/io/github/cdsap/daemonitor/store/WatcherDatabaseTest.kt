@@ -1,7 +1,7 @@
 package io.github.cdsap.daemonitor.store
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
-import io.github.cdsap.daemonitor.application.HistoryReader
+import io.github.cdsap.daemonitor.application.BuildHistoryReader
 import io.github.cdsap.daemonitor.application.ProcessSampleQuery
 import io.github.cdsap.daemonitor.domain.BuildSample
 import io.github.cdsap.daemonitor.domain.model.Build
@@ -627,7 +627,7 @@ class WatcherDatabaseTest {
         val database = WatcherDatabase.open(tmp.resolve("watcher.db"))
         try {
             val builds: BuildRepository = database
-            val history: HistoryReader = builds
+            val history: BuildHistoryReader = builds
             val samples: ProcessSampleRepository = database
             val sampleQueries: ProcessSampleQuery = database
             val retention: RetentionRepository = database
