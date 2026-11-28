@@ -24,6 +24,7 @@ import kotlinx.coroutines.test.runTest
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFileAttributeView
+import java.nio.file.attribute.PosixFilePermissions
 import kotlin.io.path.exists
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -487,6 +488,43 @@ class WatcherDatabaseTest {
             if (view != null) {
                 val perms = view.readAttributes().permissions().map { it.name }
                 assertTrue(perms.none { it.startsWith("GROUP") || it.startsWith("OTHERS") }, perms.toString())
+            }
+        }
+    }
+
+    @Test
+    fun `data directory is owner-only on creation and reopen`(@TempDirArg tmp: Path) {
+        if (Files.getFileAttributeView(tmp, PosixFileAttributeView::class.java) == null) return
+        val dir = tmp.resolve("data")
+        val path = dir.resolve("watcher.db")
+        WatcherDatabase.open(path).use {
+            assertEquals(PosixFilePermissions.fromString("rwx------"), Files.getPosixFilePermissions(dir))
+        }
+        Files.setPosixFilePermissions(dir, PosixFilePermissions.fromString("rwxr-xr-x"))
+        WatcherDatabase.open(path).use {
+            assertEquals(PosixFilePermissions.fromString("rwx------"), Files.getPosixFilePermissions(dir))
+        }
+    }
+
+    @Test
+    fun `reopen restricts existing database and WAL sidecars`(@TempDirArg tmp: Path) {
+        if (Files.getFileAttributeView(tmp, PosixFileAttributeView::class.java) == null) return
+        val path = tmp.resolve("watcher.db")
+        WatcherDatabase.open(path).close()
+        java.sql.DriverManager.getConnection("jdbc:sqlite:$path").use { connection ->
+            connection.createStatement().use { statement ->
+                statement.execute("PRAGMA journal_mode = WAL")
+                statement.execute("CREATE TABLE privacy_test (value TEXT)")
+            }
+            val files = listOf(path, tmp.resolve("watcher.db-wal"), tmp.resolve("watcher.db-shm"))
+            files.forEach {
+                assertTrue(Files.exists(it), "missing SQLite file: $it")
+                Files.setPosixFilePermissions(it, PosixFilePermissions.fromString("rw-r--r--"))
+            }
+            WatcherDatabase.open(path).use {
+                files.forEach {
+                    assertEquals(PosixFilePermissions.fromString("rw-------"), Files.getPosixFilePermissions(it), "$it")
+                }
             }
         }
     }

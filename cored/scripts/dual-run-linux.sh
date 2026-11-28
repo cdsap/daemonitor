@@ -50,8 +50,10 @@ if [[ "${1:-}" == "--inside-docker" ]]; then
 fi
 
 cd "$ROOT"
-SOCK="${TMPDIR:-/tmp}/daemonitor-dual-run-linux.sock"
-DB="${TMPDIR:-/tmp}/daemonitor-dual-run-linux.sqlite"
+WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/daemonitor-dual-run.XXXXXX")"
+chmod 700 "$WORKDIR"
+SOCK="$WORKDIR/core.sock"
+DB="$WORKDIR/core.sqlite"
 rm -f "$SOCK" "$DB"
 
 echo "==> warming Gradle daemon (creates GRADLE_DAEMON to compare)"
@@ -62,7 +64,7 @@ echo "==> building Go core"
   cd cored
   mkdir -p bin
   go build -o bin/daemonitor-cored ./cmd/daemonitor-cored
-  go build -o bin/daemonitor-corectl ./cmd/daemonitor-corectl
+  go build -o bin/daemonitor-cli ./cmd/daemonitor-cli
 )
 
 echo "==> starting daemonitor-cored"
@@ -71,7 +73,7 @@ CORE_PID=$!
 cleanup() {
   kill "$CORE_PID" 2>/dev/null || true
   wait "$CORE_PID" 2>/dev/null || true
-  rm -f "$SOCK"
+  rm -rf "$WORKDIR"
 }
 trap cleanup EXIT
 
@@ -83,11 +85,11 @@ done
 
 # Second poll window so Go CPU deltas and daemon classification settle.
 sleep 2
-JSON=1 cored/bin/daemonitor-corectl -socket "$SOCK" health | grep -q '"status": "ok"'
+cored/bin/daemonitor-cli -socket "$SOCK" health --json --no-autostart | grep -q '"status": "ok"'
 echo "==> Go snapshot"
-cored/bin/daemonitor-corectl -socket "$SOCK" processes
-cored/bin/daemonitor-corectl -socket "$SOCK" logs | head -20 || true
-cored/bin/daemonitor-corectl -socket "$SOCK" builds | head -20 || true
+cored/bin/daemonitor-cli -socket "$SOCK" ps --json --no-autostart
+cored/bin/daemonitor-cli -socket "$SOCK" logs --json --no-autostart | head -20 || true
+cored/bin/daemonitor-cli -socket "$SOCK" builds --json --no-autostart | head -20 || true
 
 LOG="${TMPDIR:-/tmp}/daemonitor-dual-run-linux.log"
 echo "==> JVM vs Go honesty test"

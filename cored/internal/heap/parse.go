@@ -79,8 +79,6 @@ type JITMetrics struct {
 type ClassMetrics struct {
 	LoadedClasses      *int64
 	UnloadedClasses    *int64
-	LoadedBytes        *RawValue
-	UnloadedBytes      *RawValue
 	ClassTimeSeconds   *float64
 	LoadedClassesTotal *int64 // Loaded + cumulative unloaded; nil when either source is absent.
 }
@@ -226,12 +224,17 @@ func ParseJcmdVMInfo(out string) (version, vendor *string, processors *int64) {
 // jinfo emits one VM flag per line; all other flags are intentionally ignored.
 func ParseJinfoFlags(out string) (gc *string) {
 	for _, match := range jinfoGCFlag.FindAllStringSubmatch(out, -1) {
-		name, ok := map[string]string{
-			"G1": "G1", "Parallel": "Parallel", "Serial": "Serial",
-			"Shenandoah": "Shenandoah", "Z": "ZGC",
-		}[match[1]]
-		if ok {
-			gc = ptr.String(name)
+		switch match[1] {
+		case "G1":
+			gc = ptr.String("G1")
+		case "Parallel":
+			gc = ptr.String("Parallel")
+		case "Serial":
+			gc = ptr.String("Serial")
+		case "Shenandoah":
+			gc = ptr.String("Shenandoah")
+		case "Z":
+			gc = ptr.String("ZGC")
 		}
 	}
 	return gc
@@ -586,15 +589,15 @@ func ParseJstatClass(out string) (ClassMetrics, error) {
 func ParsePerfCounterSafepoints(out string) (SafepointMetrics, error) {
 	var m SafepointMetrics
 	for _, line := range strings.Split(out, "\n") {
-		parts := strings.SplitN(strings.TrimSpace(line), "=", 2)
-		if len(parts) != 2 {
+		key, rawVal, ok := strings.Cut(strings.TrimSpace(line), "=")
+		if !ok {
 			continue
 		}
-		v, err := strconv.ParseInt(strings.TrimSpace(parts[1]), 10, 64)
+		v, err := strconv.ParseInt(strings.TrimSpace(rawVal), 10, 64)
 		if err != nil {
 			continue
 		}
-		switch strings.TrimSpace(parts[0]) {
+		switch strings.TrimSpace(key) {
 		case "sun.rt.safepoints":
 			m.SafepointCount = &v
 		case "sun.rt.safepointTime":

@@ -1,10 +1,9 @@
 package io.github.cdsap.daemonitor.mcp
 
-import io.github.cdsap.daemonitor.AppContainer
 import io.github.cdsap.daemonitor.BuildInfo
 import io.github.cdsap.daemonitor.application.BazelBuildDetailsRecord
-import io.github.cdsap.daemonitor.application.DaemonitorQueryService
 import io.github.cdsap.daemonitor.application.BuildHistoryEntry
+import io.github.cdsap.daemonitor.application.DaemonitorQueryService
 import io.github.cdsap.daemonitor.application.HistoryEntry
 import io.github.cdsap.daemonitor.application.ObservationSessionHistoryEntry
 import io.github.cdsap.daemonitor.application.ProcessSampleView
@@ -12,6 +11,17 @@ import io.github.cdsap.daemonitor.domain.Redactor
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.BuildTool
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
+import io.github.cdsap.daemonitor.json.Json
+import io.github.cdsap.daemonitor.json.JsonArray
+import io.github.cdsap.daemonitor.json.JsonBoolean
+import io.github.cdsap.daemonitor.json.JsonNumber
+import io.github.cdsap.daemonitor.json.JsonObject
+import io.github.cdsap.daemonitor.json.JsonString
+import io.github.cdsap.daemonitor.json.JsonValue
+import io.github.cdsap.daemonitor.json.jsonArray
+import io.github.cdsap.daemonitor.json.jsonNumberOrNull
+import io.github.cdsap.daemonitor.json.jsonObject
+import io.github.cdsap.daemonitor.json.jsonStringOrNull
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.InputStream
@@ -387,18 +397,6 @@ class DaemonitorMcpServer(
         private const val DEFAULT_LIMIT = 50L
         private const val MAX_LIMIT = 200L
         private const val MAX_INCLUDE_METRICS_LIMIT = 20L
-    }
-}
-
-object DaemonitorMcpStdio {
-    fun run(
-        container: AppContainer = AppContainer(),
-        input: InputStream = System.`in`,
-        output: OutputStream = System.out,
-    ) {
-        container.use {
-            McpMessageStream(input, output).serve(it.createMcpServer())
-        }
     }
 }
 

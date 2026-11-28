@@ -10,6 +10,13 @@ import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.domain.model.Source
+import io.github.cdsap.daemonitor.json.Json
+import io.github.cdsap.daemonitor.json.JsonBoolean
+import io.github.cdsap.daemonitor.json.JsonNull
+import io.github.cdsap.daemonitor.json.JsonNumber
+import io.github.cdsap.daemonitor.json.JsonObject
+import io.github.cdsap.daemonitor.json.JsonString
+import io.github.cdsap.daemonitor.json.jsonObject
 import io.github.cdsap.daemonitor.store.WatcherDatabase
 import java.nio.file.Path
 import kotlin.test.Test
@@ -137,14 +144,14 @@ class DaemonitorMcpServerTest {
         assertEquals("GRADLE_DAEMON", samples.single().string("processType"))
         assertEquals(300L, samples.single().long("heapUsedMb"))
         assertEquals(1_000L, samples.single().long("startTimeMs"))
-        assertEquals(JsonNumber(0.0), samples.single().values["youngGcTimeSeconds"])
-        assertEquals(JsonNumber(0.123456789), samples.single().values["fullGcTimeSeconds"])
+        assertEquals(0.0, samples.single().number("youngGcTimeSeconds"))
+        assertEquals(0.123456789, samples.single().number("fullGcTimeSeconds"))
         assertEquals(JsonNull, samples.single().values["concurrentGcTimeSeconds"])
         val jit = samples.single().values["jit"] as JsonObject
         assertEquals(17L, jit.long("compiledCount"))
         assertEquals(0L, jit.long("failedCount"))
         assertEquals(JsonNull, jit.values["invalidCount"])
-        assertEquals(JsonNumber(1.23456789), jit.values["compilationTimeSeconds"])
+        assertEquals(1.23456789, jit.number("compilationTimeSeconds"))
         val classes = samples.single().values["classes"] as JsonObject
         assertEquals(17L, classes.long("loaded"))
         assertEquals(3L, classes.long("unloadedTotal"))

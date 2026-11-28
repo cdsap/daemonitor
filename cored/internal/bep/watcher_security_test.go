@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestWatcherRejectsUnsafeFiles(t *testing.T) {
@@ -93,4 +95,85 @@ func TestWatcherPollHasSharedBudget(t *testing.T) {
 	if consumed <= 0 || consumed > maxPollBytes {
 		t.Fatalf("poll consumed %d bytes", consumed)
 	}
+}
+
+func TestWatcherBoundsTrackedFilesAndSeenRank(t *testing.T) {
+	w := NewWatcher()
+	w.SkipProcessScan = true
+	base := time.Unix(1700000000, 0)
+	cur := base
+	w.now = func() time.Time { return cur }
+
+	for i := 0; i < maxTrackedFiles+40; i++ {
+		cur = cur.Add(time.Second)
+		p := filepath.Join(t.TempDir(), fmt.Sprintf("bep-%d.json", i))
+		w.observeClient(clientObservation{Sink: Sink{Path: p, Format: FormatJSON}})
+	}
+	if got := w.watchedCount(); got > maxTrackedFiles {
+		t.Fatalf("watchedCount=%d want <= %d", got, maxTrackedFiles)
+	}
+
+	// Evict stale missing files after TTL expires.
+	cur = cur.Add(staleTrackedFileTTL + time.Second)
+	if _, err := w.Poll(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if got := w.watchedCount(); got != 0 {
+		t.Fatalf("stale missing files not evicted: watchedCount=%d", got)
+	}
+
+	// Verify seenRank eviction keeps the map bounded.
+	w.mu.Lock()
+	for i := 0; i < maxSeenRank+50; i++ {
+		w.seenSeq++
+		w.seenRank[fmt.Sprintf("b-%d", i)] = seenEntry{rank: 2, seq: w.seenSeq}
+	}
+	w.evictSeenRankLocked()
+	gotRank := len(w.seenRank)
+	w.mu.Unlock()
+	if gotRank > maxSeenRank {
+		t.Fatalf("seenRank=%d want <= %d", gotRank, maxSeenRank)
+	}
+}
+
+func TestWatcherSkipProcessScanAndConcurrentObserve(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bep.json")
+	body := `{"started":{"uuid":"conc-1","startTimeMillis":"100","serverPid":"7"}}` + "\n" +
+		`{"finished":{"finishTimeMillis":"200","exitCode":{"name":"SUCCESS"}}}` + "\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w := NewWatcher()
+	w.SkipProcessScan = true
+	sink := Sink{Path: path, Format: FormatJSON, ClientPID: 12}
+	w.observeClient(clientObservation{Sink: sink, StartTimeMs: 90, ObservedAtMs: 250})
+
+	var wg sync.WaitGroup
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 30; i++ {
+			_, _ = w.Poll(t.Context())
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 30; i++ {
+			w.observeClient(clientObservation{Sink: sink, StartTimeMs: 90, ObservedAtMs: 250})
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 30; i++ {
+			_ = w.watchedCount()
+		}
+	}()
+	wg.Wait()
+}
+
+// watchedCount reads tracked paths under the same lock as Poll.
+func (w *Watcher) watchedCount() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return len(w.files)
 }

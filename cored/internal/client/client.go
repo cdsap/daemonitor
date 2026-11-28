@@ -57,13 +57,6 @@ func (c *Client) Capabilities(ctx context.Context) (model.Capabilities, error) {
 	return caps, err
 }
 
-// Self fetches /v1/self collector overhead metrics.
-func (c *Client) Self(ctx context.Context) (model.SelfMetrics, error) {
-	var self model.SelfMetrics
-	err := c.getJSON(ctx, "/v1/self", &self)
-	return self, err
-}
-
 // Host fetches the latest machine-level metrics from `/v1/host`.
 func (c *Client) Host(ctx context.Context) (platform.HostMetrics, error) {
 	var host platform.HostMetrics
@@ -227,11 +220,6 @@ func (c *Client) BuildsFiltered(ctx context.Context, query BuildQuery) (BuildsPa
 	var payload BuildsPayload
 	err := c.getJSON(ctx, path, &payload)
 	return payload, err
-}
-
-// BuildsForDaemonPID fetches history for the daemon currently observed for a PID.
-func (c *Client) BuildsForDaemonPID(ctx context.Context, pid int64, limit int) (BuildsPayload, error) {
-	return c.BuildsFiltered(ctx, BuildQuery{Limit: limit, PID: pid})
 }
 
 // BuildsForDaemon fetches recent builds from the selected daemon lifetime.

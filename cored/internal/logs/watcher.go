@@ -2,6 +2,7 @@ package logs
 
 import (
 	"crypto/sha256"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -82,7 +83,7 @@ func (w *Watcher) Discover() ([]DaemonLog, error) {
 	root := filepath.Join(w.gradleUserHome, "daemon")
 	entries, err := os.ReadDir(root)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, err
@@ -237,21 +238,6 @@ func (w *Watcher) DaemonIdentity(pid int64) string {
 	return ""
 }
 
-// AllTails returns tails for every known log.
-func (w *Watcher) AllTails() []Tail {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	out := make([]Tail, 0, len(w.meta))
-	for path, log := range w.meta {
-		lines := []string{}
-		if r := w.tails[path]; r != nil {
-			lines = r.slice()
-		}
-		out = append(out, makeTail(log, lines))
-	}
-	return out
-}
-
 func makeTail(log DaemonLog, lines []string) Tail {
 	return Tail{
 		PID:           log.PID,
@@ -338,7 +324,7 @@ func (w *Watcher) readNewLines(path string) ([]string, error) {
 				}
 			}
 		}
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -361,16 +347,16 @@ func (w *Watcher) readNewLines(path string) ([]string, error) {
 	if after.Size() != info.Size() || !after.ModTime().Equal(info.ModTime()) {
 		return nil, io.ErrUnexpectedEOF
 	}
+	redacted := make([]string, 0, len(lines))
+	for _, line := range lines {
+		redacted = append(redacted, poll.RedactLogLine(line))
+	}
 	// Publish only after the read and its anchor belong to a stable file.
 	w.checkpoints[path] = logCheckpoint{info: info, anchorStart: anchorStart, anchor: sha256.Sum256(anchor)}
 	w.offsets[path] = pos
 	delete(w.leftovers, path)
 	if len(partial) > 0 {
 		w.leftovers[path] = append([]byte{}, partial...)
-	}
-	redacted := make([]string, 0, len(lines))
-	for _, line := range lines {
-		redacted = append(redacted, poll.RedactLogLine(line))
 	}
 	r := w.tails[path]
 	if r == nil || reset {
@@ -395,22 +381,42 @@ func startsAtLineBoundary(f *os.File, from int64) bool {
 }
 
 type ring struct {
-	max  int
-	data []string
+	max   int
+	head  int
+	count int
+	data  []string
 }
 
-func newRing(max int) *ring { return &ring{max: max, data: make([]string, 0, max)} }
+func newRing(max int) *ring {
+	if max < 0 {
+		max = 0
+	}
+	return &ring{max: max, data: make([]string, max)}
+}
 
 func (r *ring) push(line string) {
-	if len(r.data) >= r.max {
-		r.data = r.data[1:]
+	if r.max <= 0 {
+		return
 	}
-	r.data = append(r.data, line)
+	idx := (r.head + r.count) % r.max
+	r.data[idx] = line
+	if r.count < r.max {
+		r.count++
+	} else {
+		r.head = (r.head + 1) % r.max
+	}
 }
 
 func (r *ring) slice() []string {
-	out := make([]string, len(r.data))
-	copy(out, r.data)
+	out := make([]string, r.count)
+	if r.count == 0 {
+		return out
+	}
+	first := min(r.count, r.max-r.head)
+	copy(out, r.data[r.head:r.head+first])
+	if r.count > first {
+		copy(out[first:], r.data[:r.count-first])
+	}
 	return out
 }
 

@@ -5,6 +5,7 @@ package io.github.cdsap.daemonitor
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -29,7 +30,9 @@ import io.github.cdsap.daemonitor.ui.live.LiveMonitorScreen
 import io.github.cdsap.daemonitor.ui.live.ProcessVisualScreen
 import io.github.cdsap.daemonitor.ui.settings.SettingsScreen
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Application entry point (U1 scaffold, wired in U7). Obtains a wired [WatcherService] from the
@@ -60,28 +63,58 @@ private fun launchDesktop(
     options: DesktopLaunchOptions,
     resolved: GoCoreResolveResult,
 ) = application {
+    var container by remember { mutableStateOf<AppContainer?>(null) }
     var service by remember { mutableStateOf<WatcherService?>(null) }
+    val shutdownDesktop = {
+        val activeService = service
+        val activeContainer = container
+        service = null
+        container = null
+        if (activeService != null || activeContainer != null) {
+            runBlocking(Dispatchers.IO) {
+                withTimeoutOrNull(2_000L) { activeService?.stop() }
+                runCatching { activeContainer?.close() }
+            }
+        }
+    }
     val windowState = rememberWindowState(
         size = DpSize(1180.dp, 760.dp),
         position = WindowPosition(Alignment.Center),
     )
 
     Window(
-        onCloseRequest = ::exitApplication,
+        onCloseRequest = {
+            shutdownDesktop()
+            exitApplication()
+        },
         state = windowState,
         title = "Daemonitor",
         icon = painterResource("icon/daemonitor.png"),
     ) {
+        DisposableEffect(Unit) {
+            onDispose { shutdownDesktop() }
+        }
         LaunchedEffect(Unit) {
-            service = withContext(Dispatchers.IO) {
-                options.openContainer(resolved).createDesktopService()
+            val (openedContainer, createdService) = withContext(Dispatchers.IO) {
+                val opened = options.openContainer(resolved)
+                try {
+                    opened to opened.createDesktopService()
+                } catch (error: Throwable) {
+                    runCatching { opened.close() }
+                    throw error
+                }
             }
+            container = openedContainer
+            service = createdService
         }
         DaemonitorContent(
             service = service,
             onSwitchToHeadless = {
                 runCatching { HeadlessModeSwitcher.launch() }
-                    .onSuccess { exitApplication() }
+                    .onSuccess {
+                        shutdownDesktop()
+                        exitApplication()
+                    }
                     .onFailure { it.printStackTrace() }
             },
         )
@@ -117,7 +150,6 @@ internal fun DaemonitorContent(
                     LiveMonitorScreen(
                         state = liveState,
                         onSelect = service::select,
-                        onClearSelection = service.liveViewModel::clearSelection,
                     )
                 },
                 visualContent = {

@@ -61,7 +61,7 @@ class LiveMonitorScreenUiTest {
         setContent {
             WatcherTheme {
                 Box(Modifier.size(width = 900.dp, height = 600.dp)) {
-                    LiveMonitorScreen(LiveUiState(processes = listOf(sampleProcess()), isLoading = false, isEmpty = false), onSelect = {}, onClearSelection = {})
+                    LiveMonitorScreen(LiveUiState(processes = listOf(sampleProcess()), isLoading = false, isEmpty = false), onSelect = {})
                 }
             }
         }
@@ -86,7 +86,7 @@ class LiveMonitorScreenUiTest {
         setContent {
             WatcherTheme {
                 Box(Modifier.size(width = 900.dp, height = 600.dp)) {
-                    LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+                    LiveMonitorScreen(state, onSelect = {})
                 }
             }
         }
@@ -119,7 +119,7 @@ class LiveMonitorScreenUiTest {
         setContent {
             WatcherTheme {
                 LiveMonitorScreen(LiveUiState(processes = listOf(selected), detail = DetailState.Selected(selected),
-                    isLoading = false, isEmpty = false), onSelect = {}, onClearSelection = {})
+                    isLoading = false, isEmpty = false), onSelect = {})
             }
         }
         onNodeWithTag("process-detail-tab-jvm").performClick()
@@ -139,7 +139,7 @@ class LiveMonitorScreenUiTest {
         mainClock.autoAdvance = false
         val daemon = sampleProcess()
         var state by mutableStateOf(LiveUiState(processes = listOf(daemon), detail = DetailState.Selected(daemon), isLoading = false, isEmpty = false))
-        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
+        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}) } }
         onNodeWithTag("process-detail-vitals").assertExists()
         onNodeWithText("Virtual memory").assertExists()
         onNodeWithText("Working dir").assertDoesNotExist()
@@ -172,7 +172,7 @@ class LiveMonitorScreenUiTest {
         var state by mutableStateOf(
             LiveUiState(processes = listOf(first), detail = DetailState.Selected(first), isLoading = false, isEmpty = false),
         )
-        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
+        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}) } }
 
         onNodeWithTag("process-detail-tab-jvm").performClick()
         onNodeWithTag("process-detail-tab-jvm").assertIsSelected()
@@ -202,7 +202,7 @@ class LiveMonitorScreenUiTest {
             WatcherTheme {
                 LiveMonitorScreen(
                     LiveUiState(processes = listOf(selected), detail = DetailState.Selected(selected), isLoading = false, isEmpty = false),
-                    onSelect = {}, onClearSelection = {},
+                    onSelect = {},
                 )
             }
         }
@@ -233,7 +233,7 @@ class LiveMonitorScreenUiTest {
             daemonLog = DaemonLog(daemon.pid, "8.14.3", logPath),
             tailState = LogTailState.Available(listOf("tail line")), isLoading = false, isEmpty = false,
         ))
-        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
+        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}) } }
         onNodeWithText("Gradle version").assertExists()
         onNodeWithText("8.14.3").assertExists()
         onNodeWithText(logPath.toString()).assertExists()
@@ -310,7 +310,7 @@ class LiveMonitorScreenUiTest {
         setContent {
             WatcherTheme(appearance = AppearancePreference.DARK) {
                 Box(Modifier.size(width = 1100.dp, height = 700.dp)) {
-                    LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+                    LiveMonitorScreen(state, onSelect = {})
                 }
             }
         }
@@ -356,7 +356,7 @@ class LiveMonitorScreenUiTest {
                 io.github.cdsap.daemonitor.application.MetricCapability("host.cpu.other", "unsupported"),
             )),
         )
-        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
+        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}) } }
         onNodeWithTag("process-detail-tab-os-io").performClick()
         onNodeWithText("Host context").assertExists()
         onNodeWithText("0.0%").assertExists()
@@ -411,7 +411,7 @@ class LiveMonitorScreenUiTest {
         mainClock.autoAdvance = false
         val daemon = sampleProcess()
         var state by mutableStateOf(LiveUiState(processes = listOf(daemon), detail = DetailState.Selected(daemon), recentBuilds = RecentBuildsState.Loading, isLoading = false, isEmpty = false))
-        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
+        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}) } }
         onNodeWithTag("process-detail-tab-gradle").performClick()
         onNodeWithText("Loading recent builds…").assertExists()
         state = state.copy(recentBuilds = RecentBuildsState.Loaded(emptyList()))
@@ -432,7 +432,7 @@ class LiveMonitorScreenUiTest {
     fun `first render shows scanning state before the first poll`() = runComposeUiTest {
         mainClock.autoAdvance = false
 
-        setContent { WatcherTheme { LiveMonitorScreen(LiveUiState(), onSelect = {}, onClearSelection = {}) } }
+        setContent { WatcherTheme { LiveMonitorScreen(LiveUiState(), onSelect = {}) } }
 
         onNodeWithText("Scanning for Gradle and Bazel processes...").assertExists()
     }
@@ -445,7 +445,7 @@ class LiveMonitorScreenUiTest {
             pollError = PollError(failedAtMs = 1234, errorType = "IOException"),
         )
 
-        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
+        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}) } }
 
         onNodeWithText("DEGRADED").assertExists()
         onNodeWithText("MONITORING").assertDoesNotExist()
@@ -465,7 +465,7 @@ class LiveMonitorScreenUiTest {
         )
         setContent {
             WatcherTheme(appearance = AppearancePreference.DARK) {
-                LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+                LiveMonitorScreen(state, onSelect = {})
             }
         }
 
@@ -505,7 +505,7 @@ class LiveMonitorScreenUiTest {
 
         setContent {
             WatcherTheme(appearance = AppearancePreference.DARK) {
-                LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+                LiveMonitorScreen(state, onSelect = {})
             }
         }
 
@@ -536,7 +536,7 @@ class LiveMonitorScreenUiTest {
             isLoading = false,
             isEmpty = false,
         )
-        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
+        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}) } }
 
         listOf(
             "CPU user time" to "10.250 s",
@@ -558,7 +558,7 @@ class LiveMonitorScreenUiTest {
             isLoading = false,
             isEmpty = false,
         )
-        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
+        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}) } }
 
         listOf("CPU user time", "CPU system time", "CPU total time", "Cores used", "Logical processors")
             .forEach { label ->
@@ -578,7 +578,7 @@ class LiveMonitorScreenUiTest {
             isEmpty = false,
         )
 
-        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
+        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}) } }
 
         onNodeWithTag("process-detail-tab-jvm").performClick()
         onNodeWithText("Java runtime").assertExists()
@@ -603,7 +603,7 @@ class LiveMonitorScreenUiTest {
             resourceScope = "process",
         )
         val state = LiveUiState(processes = listOf(process), detail = DetailState.Selected(process), isLoading = false, isEmpty = false)
-        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
+        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}) } }
 
         onNodeWithText("CPU user time").assertExists()
         onNodeWithText("0.000 s").assertExists()
@@ -656,7 +656,7 @@ class LiveMonitorScreenUiTest {
         setContent {
             WatcherTheme {
                 Box(Modifier.size(width = 900.dp, height = 600.dp)) {
-                    LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+                    LiveMonitorScreen(state, onSelect = {})
                 }
             }
         }
@@ -683,7 +683,7 @@ class LiveMonitorScreenUiTest {
             isEmpty = false,
         )
 
-        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
+        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}) } }
 
         onNodeWithTag("child-processes").assertDoesNotExist()
         onNodeWithText("CHILD PROCESSES").assertDoesNotExist()
@@ -705,7 +705,7 @@ class LiveMonitorScreenUiTest {
             ),
         )
 
-        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}, onClearSelection = {}) } }
+        setContent { WatcherTheme { LiveMonitorScreen(state, onSelect = {}) } }
         onNodeWithText("Gradle daemon · PID 200").assertExists()
 
         state = state.copy(
@@ -736,7 +736,7 @@ class LiveMonitorScreenUiTest {
         setContent {
             WatcherTheme {
                 Box(Modifier.size(width = 500.dp, height = 600.dp)) {
-                    LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+                    LiveMonitorScreen(state, onSelect = {})
                 }
             }
         }
@@ -757,7 +757,7 @@ class LiveMonitorScreenUiTest {
         )
         setContent {
             WatcherTheme(appearance = AppearancePreference.DARK) {
-                LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+                LiveMonitorScreen(state, onSelect = {})
             }
         }
 
@@ -787,7 +787,7 @@ class LiveMonitorScreenUiTest {
         setContent {
             WatcherTheme(appearance = AppearancePreference.DARK) {
                 Box(Modifier.size(width = 900.dp, height = 600.dp)) {
-                    LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+                    LiveMonitorScreen(state, onSelect = {})
                 }
             }
         }
@@ -836,7 +836,6 @@ class LiveMonitorScreenUiTest {
                         } ?: DetailState.NoSelection,
                     ),
                     onSelect = { selectedPid = it },
-                    onClearSelection = { selectedPid = null },
                 )
             }
         }
@@ -892,7 +891,7 @@ class LiveMonitorScreenUiTest {
         )
         setContent {
             WatcherTheme(appearance = AppearancePreference.DARK) {
-                LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+                LiveMonitorScreen(state, onSelect = {})
             }
         }
 
@@ -932,7 +931,6 @@ class LiveMonitorScreenUiTest {
                         } ?: DetailState.NoSelection,
                     ),
                     onSelect = { selectedPid = it },
-                    onClearSelection = { selectedPid = null },
                 )
             }
         }
@@ -964,7 +962,7 @@ class LiveMonitorScreenUiTest {
         setContent {
             WatcherTheme {
                 Box(Modifier.size(width = 900.dp, height = 600.dp)) {
-                    LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+                    LiveMonitorScreen(state, onSelect = {})
                 }
             }
         }
@@ -992,7 +990,7 @@ class LiveMonitorScreenUiTest {
             mainClock.autoAdvance = false
             setContent {
                 WatcherTheme {
-                    LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+                    LiveMonitorScreen(state, onSelect = {})
                 }
             }
             // Compact table at 1180dp keeps GCT (s) while reserving room for full PID/RSS/Type.
@@ -1010,7 +1008,7 @@ class LiveMonitorScreenUiTest {
             mainClock.autoAdvance = false
             setContent {
                 WatcherTheme {
-                    LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+                    LiveMonitorScreen(state, onSelect = {})
                 }
             }
             onNodeWithText("YGCT (S)").assertExists()
@@ -1037,7 +1035,7 @@ class LiveMonitorScreenUiTest {
         setContent {
             WatcherTheme {
                 Box(Modifier.size(width = 1180.dp, height = 760.dp)) {
-                    LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+                    LiveMonitorScreen(state, onSelect = {})
                 }
             }
         }
@@ -1086,7 +1084,7 @@ class LiveMonitorScreenUiTest {
         setContent {
             WatcherTheme {
                 Box(Modifier.size(width = 1180.dp, height = 760.dp)) {
-                    LiveMonitorScreen(state, onSelect = {}, onClearSelection = {})
+                    LiveMonitorScreen(state, onSelect = {})
                 }
             }
         }

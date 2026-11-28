@@ -9,14 +9,13 @@ First-class Go module at `cored/` (`github.com/cdsap/daemonitor/cored`). Ships:
 
 1. `daemonitor-cored` — long-running collector + SQLite + socket API
 2. `daemonitor-cli` — native Bubble Tea TUI + one-shot/query/JSON commands (thin client)
-3. `daemonitor-corectl` — small diagnostic client (commands mirrored in `daemonitor-cli`)
 
 ## Why
 
 Today CLI + desktop share a Kotlin/JVM core (JDK required, heavier RSS). The product idea:
 
 1. `daemonitor-cored` — long-running Go collector + SQLite
-2. `daemonitor-corectl` / Kotlin CLI / Compose desktop — clients over IPC
+2. `daemonitor-cli` / Kotlin CLI / Compose desktop — clients over IPC
 
 ## Scope
 
@@ -36,7 +35,6 @@ cd cored
 go mod tidy
 go build -o bin/daemonitor-cored ./cmd/daemonitor-cored
 go build -o bin/daemonitor-cli ./cmd/daemonitor-cli
-go build -o bin/daemonitor-corectl ./cmd/daemonitor-corectl
 
 ./bin/daemonitor-cored                 # terminal 1 — defaults to app data dir
 ./bin/daemonitor-cli ps --json         # terminal 2 — one-shot
@@ -45,7 +43,7 @@ go build -o bin/daemonitor-corectl ./cmd/daemonitor-corectl
 ./bin/daemonitor-cli builds --pid 12345  # show that daemon's build history
 ./bin/daemonitor-cli ps --watch --until 1m --format jsonl
 ./bin/daemonitor-cli top               # interactive TUI (TTY)
-./bin/daemonitor-corectl health
+./bin/daemonitor-cli health --json
 ```
 
 Or via Gradle (embeds cored next to the CLI):

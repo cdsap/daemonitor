@@ -88,7 +88,6 @@ data class LiveUiState(
     val detail: DetailState = DetailState.NoSelection,
     val host: ContextState<HostContext> = ContextState.Unavailable,
     val capabilities: ContextState<List<MetricCapability>> = ContextState.Unavailable,
-    val tail: List<String> = emptyList(),
     val tailState: LogTailState = LogTailState.NoSelection,
     val daemonLog: DaemonLog? = null,
     val recentBuilds: RecentBuildsState = RecentBuildsState.Unavailable,

@@ -24,7 +24,7 @@ func ParseBinaryStream(r io.Reader) ([]builds.Build, error) {
 	var closed []builds.Build
 	for {
 		size, err := binary.ReadUvarint(reader)
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return closed, nil
 		}
 		if err != nil {

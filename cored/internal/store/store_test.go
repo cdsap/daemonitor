@@ -286,18 +286,42 @@ func TestOpenRestrictsDatabasePermissions(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX file modes are not enforced on Windows")
 	}
-	path := filepath.Join(t.TempDir(), "private.sqlite")
+	dir := filepath.Join(t.TempDir(), "data")
+	path := filepath.Join(dir, "private.sqlite")
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	info, err := os.Stat(path)
+	assertMode := func(path string, want os.FileMode) {
+		t.Helper()
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode().Perm(); got != want {
+			t.Errorf("%s permissions=%o want %o", path, got, want)
+		}
+	}
+	for _, file := range []string{path, path + "-wal", path + "-shm"} {
+		assertMode(file, 0o600)
+		if err := os.Chmod(file, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assertMode(dir, 0o700)
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Keep the original connection open so SQLite retains real WAL/SHM files.
+	reopened, err := store.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := info.Mode().Perm(); got != 0o600 {
-		t.Fatalf("database permissions=%o want 600", got)
+	defer reopened.Close()
+	assertMode(dir, 0o700)
+	for _, file := range []string{path, path + "-wal", path + "-shm"} {
+		assertMode(file, 0o600)
 	}
 }
 

@@ -32,13 +32,11 @@ import io.github.cdsap.daemonitor.persistence.ProcessSampleRepository
 import io.github.cdsap.daemonitor.persistence.RetainedProcessSampleRepository
 import io.github.cdsap.daemonitor.persistence.RetentionRepository
 import io.github.cdsap.daemonitor.persistence.HistoryRepository
-import io.github.cdsap.daemonitor.persistence.CollectionCapability
 import io.github.cdsap.daemonitor.persistence.MetricDefinition
 import io.github.cdsap.daemonitor.persistence.MetricSample
 import io.github.cdsap.daemonitor.persistence.NormalizedMetricSample
 import io.github.cdsap.daemonitor.persistence.ProcessEvent
 import io.github.cdsap.daemonitor.persistence.ProcessInstance
-import io.github.cdsap.daemonitor.persistence.ResourceScope
 import io.github.cdsap.daemonitor.platform.AppDirectories
 import io.github.cdsap.daemonitor.store.db.Process_samples
 import io.github.cdsap.daemonitor.store.db.WatcherDb
@@ -48,6 +46,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFileAttributeView
 import java.nio.file.attribute.PosixFilePermissions
 import java.util.Properties
 import kotlin.io.path.absolutePathString
@@ -236,21 +235,6 @@ class WatcherDatabase private constructor(
             process_type = event.processType,
             source = event.source,
             metadata_json = event.metadataJson,
-        )
-    }
-
-    fun upsertResourceScope(scope: ResourceScope) {
-        db.watcherQueries.upsertResourceScope(
-            scope.scopeId, scope.scopeType, scope.identity, scope.metadataJson,
-            scope.firstObservedAtMs, scope.lastObservedAtMs,
-        )
-    }
-
-    fun upsertCollectionCapability(capability: CollectionCapability) {
-        db.watcherQueries.upsertCollectionCapability(
-            capability.capabilityId, capability.name, capability.source,
-            if (capability.supported) 1L else 0L, if (capability.available) 1L else 0L,
-            capability.detailsJson, capability.updatedAtMs,
         )
     }
 
@@ -485,19 +469,11 @@ class WatcherDatabase private constructor(
             hydrateBuilds(rows)
         }
 
-    fun buildsSinceFlow(startMs: Long): Flow<List<Build>> =
-        db.watcherQueries.buildsSince(startMs).asFlow().mapToList(ioDispatcher).map { rows ->
-            hydrateBuilds(rows)
-        }
-
     private fun hydrateBuilds(rows: List<io.github.cdsap.daemonitor.store.db.Builds>): List<Build> {
         val bazelIds = rows.filter { it.tool.equals(BuildTool.BAZEL.name, ignoreCase = true) }.map { it.build_id }
         val detailsById = if (bazelIds.isEmpty()) emptyMap() else bazelBuildDetailsByIds(bazelIds)
         return rows.map { it.toDomain(detailsById[it.build_id]) }
     }
-
-    fun distinctProjectsFlow(): Flow<List<String>> =
-        db.watcherQueries.distinctProjects().asFlow().mapToList(ioDispatcher)
 
     override fun bazelBuildDetailsByIds(buildIds: List<String>): Map<String, BazelBuildDetailsRecord> {
         val ids = buildIds.filter { it.isNotBlank() }.distinct()
@@ -594,7 +570,16 @@ class WatcherDatabase private constructor(
             ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
         ): WatcherDatabase {
             val isNew = !path.exists()
-            Files.createDirectories(path.parent)
+            val directoryPermissions = PosixFilePermissions.fromString("rwx------")
+            try {
+                Files.createDirectories(path.parent, PosixFilePermissions.asFileAttribute(directoryPermissions))
+            } catch (_: UnsupportedOperationException) {
+                // Windows and other non-POSIX filesystems do not accept POSIX attributes.
+                Files.createDirectories(path.parent)
+            }
+            if (Files.getFileAttributeView(path.parent, PosixFileAttributeView::class.java) != null) {
+                Files.setPosixFilePermissions(path.parent, directoryPermissions)
+            }
 
             // Pass busy_timeout via JDBC properties (not getConnection()+PRAGMA): borrowing a
             // raw connection during open can leave the SQLite file locked on Windows after close,
@@ -608,10 +593,10 @@ class WatcherDatabase private constructor(
             if (isNew) {
                 driver.execute(null, "PRAGMA auto_vacuum = INCREMENTAL", 0)
                 WatcherDb.Schema.create(driver)
-                hardenFilePrivacy(path)
             } else {
                 migrateInPlace(driver)
             }
+            hardenFilePrivacy(path, excludeFromTimeMachine = isNew)
             return WatcherDatabase(WatcherDb(driver), driver, ioDispatcher)
         }
 
@@ -838,13 +823,19 @@ class WatcherDatabase private constructor(
         private fun Long.coerceQueryLimit(): Long = coerceIn(1, MAX_QUERY_LIMIT)
 
         /** Owner-only file permissions + Time Machine exclusion (KTD-7/Privacy). Best-effort. */
-        private fun hardenFilePrivacy(path: Path) {
-            runCatching {
-                Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rw-------"))
-            }
-            runCatching {
-                ProcessBuilder("tmutil", "addexclusion", path.parent.absolutePathString())
-                    .start().waitFor()
+        private fun hardenFilePrivacy(path: Path, excludeFromTimeMachine: Boolean) {
+            // Sidecars may be absent or disappear when another SQLite connection closes.
+            listOf(path, path.resolveSibling("${path.fileName}-wal"), path.resolveSibling("${path.fileName}-shm"))
+                .forEach { file ->
+                    runCatching {
+                        Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rw-------"))
+                    }
+                }
+            if (excludeFromTimeMachine) {
+                runCatching {
+                    ProcessBuilder("tmutil", "addexclusion", path.parent.absolutePathString())
+                        .start().waitFor()
+                }
             }
         }
 

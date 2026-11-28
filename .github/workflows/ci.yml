@@ -330,13 +330,14 @@ jobs:
 
       - name: Test Go packages
         working-directory: cored
-        run: go test ./...
+        run: |
+          go test ./...
+          go test -tags docscreenshot ./cmd/docscreenshot ./internal/tui -run TestRenderCliDocsScreenshotShowsGradleAndBazelTable
 
       - name: Build binaries
         working-directory: cored
         run: |
           go build -o bin/daemonitor-cored ./cmd/daemonitor-cored
-          go build -o bin/daemonitor-corectl ./cmd/daemonitor-corectl
           go build -o bin/daemonitor-cli ./cmd/daemonitor-cli
 
       - name: Native CLI PTY smoke
@@ -348,18 +349,20 @@ jobs:
         working-directory: cored
         run: |
           set -euo pipefail
+          WORKDIR=$(mktemp -d "${TMPDIR:-/tmp}/daemonitor-json.XXXXXX")
           if [[ "${RUNNER_OS}" == "Windows" ]]; then
             SOCK="//./pipe/daemonitor-ci-json-$$"
           else
-            SOCK=$(mktemp -u "${TMPDIR:-/tmp}/daemonitor-json-XXXXXX.sock")
+            chmod 700 "$WORKDIR"
+            SOCK="$WORKDIR/core.sock"
           fi
-          DB=$(mktemp "${TMPDIR:-/tmp}/daemonitor-json-XXXXXX.db")
+          DB="$WORKDIR/core.db"
           ./bin/daemonitor-cored -socket "$SOCK" -db "$DB" -interval 200ms >/dev/null 2>&1 &
           CORED_PID=$!
           cleanup() {
             kill "$CORED_PID" 2>/dev/null || true
             wait "$CORED_PID" 2>/dev/null || true
-            rm -f "$SOCK" "$DB" "${DB}-wal" "${DB}-shm"
+            rm -rf "$WORKDIR"
           }
           trap cleanup EXIT
           out=""

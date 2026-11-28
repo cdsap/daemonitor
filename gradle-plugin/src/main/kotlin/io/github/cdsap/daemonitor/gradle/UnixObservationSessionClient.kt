@@ -1,5 +1,8 @@
 package io.github.cdsap.daemonitor.gradle
 
+import io.github.cdsap.daemonitor.json.JsonString
+import io.github.cdsap.daemonitor.json.jsonObject
+
 import java.io.ByteArrayOutputStream
 import java.net.StandardProtocolFamily
 import java.net.UnixDomainSocketAddress
@@ -34,7 +37,7 @@ class UnixObservationSessionClient(
     fun close(sessionId: String, bodyJson: String = "{}"): HttpResult {
         require(sessionId.isNotBlank()) { "sessionId must not be blank" }
         val requestBody = if (bodyJson.trim() == "{}") {
-            "{\"name\":\"${escapeJson(sessionId)}\"}"
+            jsonObject("name" to JsonString(sessionId)).stringify()
         } else {
             bodyJson
         }
@@ -144,20 +147,6 @@ class UnixObservationSessionClient(
             ?.toIntOrNull()
         return contentLength != null && raw.size - (headerEnd + 4) >= contentLength
     }
-
-    private fun escapeJson(value: String): String = buildString {
-        value.forEach { character ->
-            when (character) {
-                '\\' -> append("\\\\")
-                '"' -> append("\\\"")
-                '\n' -> append("\\n")
-                '\r' -> append("\\r")
-                '\t' -> append("\\t")
-                else -> append(character)
-            }
-        }
-    }
-
 }
 
 data class HttpResult(val status: Int, val body: String) {

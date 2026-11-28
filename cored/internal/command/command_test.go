@@ -332,3 +332,23 @@ func TestFilterLogsAppliesPIDAndLimit(t *testing.T) {
 		t.Fatalf("input slice was mutated: %+v", items)
 	}
 }
+
+func TestWriteValueJSONLEmitsSingleLine(t *testing.T) {
+	var out bytes.Buffer
+	payload := map[string]any{"status": "ok", "version": "1.3.3"}
+	if err := writeValue(&out, payload, "jsonl", func() { t.Fatal("plain should not run") }); err != nil {
+		t.Fatal(err)
+	}
+	raw := out.String()
+	lines := strings.Split(strings.TrimSuffix(raw, "\n"), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("expected single JSONL line, got %d lines: %q", len(lines), raw)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(lines[0]), &decoded); err != nil {
+		t.Fatalf("invalid JSONL: %v (%q)", err, raw)
+	}
+	if decoded["status"] != "ok" {
+		t.Fatalf("unexpected decoded payload: %+v", decoded)
+	}
+}

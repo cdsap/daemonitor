@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"strings"
 
 	"github.com/cdsap/daemonitor/cored/internal/builds"
@@ -212,7 +213,7 @@ func (s *Store) SummarizeBuilds(filters BuildFilters) (BuildSummary, error) {
 		value := average.Float64
 		summary.AverageDurationSeconds = &value
 	}
-	if err := s.db.QueryRow(`SELECT final_status FROM builds`+where+` ORDER BY start_time DESC LIMIT 1`, args...).Scan(&summary.LatestStatus); err != nil && err != sql.ErrNoRows {
+	if err := s.db.QueryRow(`SELECT final_status FROM builds`+where+` ORDER BY start_time DESC LIMIT 1`, args...).Scan(&summary.LatestStatus); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return summary, err
 	}
 	return summary, nil

@@ -3,7 +3,9 @@ package logs
 import (
 	"bytes"
 	"crypto/sha256"
+	"errors"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"sync"
@@ -33,16 +35,22 @@ type bazelLog struct {
 // Reads and retained lines are bounded; incomplete raw lines are never retained.
 // It neither invokes Bazel nor opens the output_base lock.
 type BazelWatcher struct {
-	mu    sync.Mutex
-	files map[bazelLogKey]*bazelLog
+	pollMu sync.Mutex
+	mu     sync.Mutex
+	files  map[bazelLogKey]*bazelLog
 }
 
 func NewBazelWatcher() *BazelWatcher { return &BazelWatcher{files: make(map[bazelLogKey]*bazelLog)} }
 
 func (w *BazelWatcher) Poll(processes []model.Process) {
+	w.pollMu.Lock()
+	defer w.pollMu.Unlock()
+
 	w.mu.Lock()
-	defer w.mu.Unlock()
-	seen := make(map[bazelLogKey]bool)
+	prev := maps.Clone(w.files)
+	w.mu.Unlock()
+
+	nextFiles := make(map[bazelLogKey]*bazelLog, len(prev))
 	for _, p := range processes {
 		if p.Type != "BAZEL_SERVER" || !filepath.IsAbs(p.BazelOutputBase) {
 			continue
@@ -54,23 +62,36 @@ func (w *BazelWatcher) Poll(processes []model.Process) {
 			if err != nil || !info.Mode().IsRegular() {
 				continue
 			}
-			log := w.files[key]
-			if log == nil || log.meta.Path != path || log.startTime != p.StartTimeMs {
-				log = &bazelLog{meta: DaemonLog{PID: key.pid, Path: path, Tool: "bazel", Source: source}, startTime: p.StartTimeMs, tail: newRing(defaultTailLines)}
-				w.files[key] = log
+			existing := prev[key]
+			var log *bazelLog
+			if existing == nil || existing.meta.Path != path || existing.startTime != p.StartTimeMs {
+				log = &bazelLog{
+					meta:      DaemonLog{PID: key.pid, Path: path, Tool: "bazel", Source: source},
+					startTime: p.StartTimeMs,
+					tail:      newRing(defaultTailLines),
+				}
+			} else {
+				copied := *existing
+				log = &copied
 			}
-			seen[key] = true
 			log.meta.active = true
 			log.meta.modified = info.ModTime()
 			// On read errors retain only previously redacted lines and retry next poll.
 			_ = log.read()
+			nextFiles[key] = log
 		}
 	}
-	for key := range w.files {
-		if !seen[key] {
-			delete(w.files, key)
-		}
-	}
+
+	w.mu.Lock()
+	w.files = nextFiles
+	w.mu.Unlock()
+}
+
+// HasPID reports whether any Bazel server log is currently tracked for pid.
+func (w *BazelWatcher) HasPID(pid int64) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.files[bazelLogKey{pid, "command.log"}] != nil || w.files[bazelLogKey{pid, "server/jvm.out"}] != nil
 }
 
 func (w *BazelWatcher) List() []DaemonLog {
@@ -136,7 +157,7 @@ func (l *bazelLog) read() error {
 	}
 	buf := make([]byte, info.Size()-from)
 	n, err := f.ReadAt(buf, from)
-	if err != nil && err != io.EOF {
+	if err != nil && !errors.Is(err, io.EOF) {
 		return err
 	}
 	buf = buf[:n]

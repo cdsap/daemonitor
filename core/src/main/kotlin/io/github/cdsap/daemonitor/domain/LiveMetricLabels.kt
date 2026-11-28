@@ -61,13 +61,6 @@ object LiveMetricLabels {
         ProcessType.TEST_WORKER -> "Gradle test workers"
         ProcessType.GRADLE_WORKER -> "Gradle workers"
         ProcessType.UNKNOWN_GRADLE_WORKER -> "unknown Gradle workers"
-        ProcessType.JAVA_GRADLE_RELATED -> "non-daemon JVMs"
-        ProcessType.KOTLIN_TOOLCHAIN -> "Kotlin Toolchain"
-        ProcessType.GRADLE_DAEMON,
-        ProcessType.KOTLIN_DAEMON,
-        ProcessType.BAZEL_SERVER,
-        ProcessType.BAZEL_TEST,
-        ProcessType.BAZEL_WORKER,
-        -> "daemons"
+        else -> "non-daemon JVMs"
     }
 }

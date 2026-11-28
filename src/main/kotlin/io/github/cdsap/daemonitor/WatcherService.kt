@@ -81,6 +81,7 @@ class WatcherService(
      */
     suspend fun stop() {
         mcpController.stop()
+        settingsViewModel.close()
         monitoringService.stop()
     }
 

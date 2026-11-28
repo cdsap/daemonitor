@@ -14,7 +14,7 @@ shelling to HotSpot tools — no Kotlin Attach/JMX on the Go client path.
 | Fallback | `jstat -gc <pid>` | `used = S0U+S1U+EU+OU`, `committed = S0C+S1C+EC+OC` (KB → MB) |
 
 Package: `cored/internal/heap` (parsers + cached `Prober`).  
-CLI: `cored/cmd/daemonitor-heapprobe`.
+The historical `daemonitor-heapprobe` spike binary has been retired. Live heap probing now runs through `daemonitor-cored`; inspect it with `daemonitor-cli ps --details`.
 
 **Wired into** `internal/poll` → `/v1/processes` (`heap_used_mb`, `heap_committed_mb`,
 `heap_available`, …) → Kotlin `GoCoreProcessSource` / CLI-desktop HEAP USED / HEAP CMT.
@@ -52,9 +52,9 @@ cd cored
 go test ./internal/heap/ ./internal/poll/ -count=1
 
 # Against a live HotSpot PID (same UID; JDK tools on PATH / JAVA_HOME):
-go build -o bin/daemonitor-heapprobe ./cmd/daemonitor-heapprobe
-./bin/daemonitor-heapprobe <pid>
-# → pid=… source=jcmd used_mb=… committed_mb=…
+go build -o bin/daemonitor-cored ./cmd/daemonitor-cored
+go build -o bin/daemonitor-cli ./cmd/daemonitor-cli
+./bin/daemonitor-cli ps --details
 ```
 
 Needs `jcmd` and/or `jstat` (JDK `bin/`, usually next to `java` or under `JAVA_HOME`).

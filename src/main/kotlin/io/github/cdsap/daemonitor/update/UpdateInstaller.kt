@@ -4,16 +4,19 @@ import io.github.cdsap.daemonitor.platform.AppDirectories
 import java.awt.Desktop
 import java.net.URI
 import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
+import java.nio.file.FileVisitResult
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.SimpleFileVisitor
 import java.nio.file.StandardCopyOption
+import java.nio.file.StandardOpenOption.CREATE_NEW
+import java.nio.file.attribute.BasicFileAttributes
 import java.security.MessageDigest
+import java.util.zip.GZIPInputStream
 import java.util.zip.ZipInputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlin.io.path.outputStream
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 
 data class StagedUpdate(
     val candidate: UpdateCandidate,
@@ -33,6 +36,7 @@ class DesktopUpdateInstaller(
     private val downloader: suspend (UpdateCandidate, Path, (Double?) -> Unit) -> Path = ::downloadAndVerify,
 ) : UpdateInstaller {
     override suspend fun prepare(candidate: UpdateCandidate, onProgress: (Double?) -> Unit): StagedUpdate? {
+        validateUpdatePaths(candidate)
         validateCandidate(candidate)
         val artifact = downloader(candidate, updateDirectory, onProgress)
         return when (candidate.installMode) {
@@ -103,7 +107,9 @@ class DesktopUpdateApplier(
         }
 
         val command = when (staged.installation.platform) {
-            DesktopPlatform.WINDOWS -> listOf("cmd.exe", "/c", helper.toString())
+            DesktopPlatform.WINDOWS -> listOf(
+                "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", helper.toString(),
+            )
             else -> listOf("/bin/bash", helper.toString())
         }
         processStarter(command, helper.parent)
@@ -159,42 +165,35 @@ class DesktopUpdateApplier(
     }
 
     private fun writeWindowsHelper(staged: StagedUpdate, installRoot: Path): Path {
-        val helper = staged.artifactPath.parent.resolve("apply-update.cmd")
-        val relaunch = staged.installation.relaunchCommand.joinToString(" ") { windowsQuote(it) }
-        val stagedDir = staged.artifactPath.parent.resolve("staged")
+        val helper = safeChild(staged.artifactPath.parent, "apply-update.ps1")
+        val backupRoot = Files.createTempDirectory(staged.artifactPath.parent, "rollback-")
+        val relaunch = staged.installation.relaunchCommand
+        require(relaunch.isNotEmpty()) { "Relaunch command is missing" }
+        val arguments = relaunch.drop(1).joinToString(", ") { powershellLiteral(windowsArgument(it)) }
         Files.writeString(
             helper,
-            """
-            @echo off
-            setlocal
-            set PID=$processId
-            set APP_PATH=${windowsQuote(installRoot.toString())}
-            set STAGED=${windowsQuote(staged.payloadPath.toString())}
-            rem Clear leftovers from older helpers that kept a sibling .pre-update folder.
-            if exist "%APP_PATH%.pre-update" rmdir /s /q "%APP_PATH%.pre-update"
-            set BACKUP=%TEMP%\daemonitor-pre-update-%RANDOM%%RANDOM%
-            if exist "%BACKUP%" rmdir /s /q "%BACKUP%"
-            :wait
-            tasklist /FI "PID eq %PID%" 2>NUL | find "%PID%" >NUL
-            if not errorlevel 1 (
-              timeout /t 1 /nobreak >NUL
-              goto wait
-            )
-            if not exist "%APP_PATH%" exit /b 1
-            if not exist "%STAGED%" exit /b 1
-            move /Y "%APP_PATH%" "%BACKUP%"
-            if errorlevel 1 exit /b 1
-            move /Y "%STAGED%" "%APP_PATH%"
-            if errorlevel 1 (
-              move /Y "%BACKUP%" "%APP_PATH%"
-              exit /b 1
-            )
-            rem Remove the rollback backup before relaunch so a failed start cannot leave it behind.
-            rmdir /s /q "%BACKUP%"
-            start "" $relaunch
-            rmdir /s /q ${windowsQuote(stagedDir.toString())}
-            del /f /q ${windowsQuote(staged.artifactPath.toString())}
-            del /f /q "%~f0"
+            "\uFEFF" + """
+            ${"$"}ErrorActionPreference = 'Stop'
+            ${"$"}appPath = ${powershellLiteral(installRoot.toString())}
+            ${"$"}staged = ${powershellLiteral(staged.payloadPath.toString())}
+            ${"$"}backupRoot = ${powershellLiteral(backupRoot.toString())}
+            ${"$"}backup = Join-Path ${"$"}backupRoot 'previous'
+            ${"$"}legacyBackup = ${"$"}appPath + '.pre-update'
+            if (Test-Path -LiteralPath ${"$"}legacyBackup) { Remove-Item -LiteralPath ${"$"}legacyBackup -Recurse -Force }
+            Wait-Process -Id $processId -ErrorAction SilentlyContinue
+            if (!(Test-Path -LiteralPath ${"$"}appPath) -or !(Test-Path -LiteralPath ${"$"}staged)) { exit 1 }
+            Move-Item -LiteralPath ${"$"}appPath -Destination ${"$"}backup
+            try {
+                Move-Item -LiteralPath ${"$"}staged -Destination ${"$"}appPath
+            } catch {
+                Move-Item -LiteralPath ${"$"}backup -Destination ${"$"}appPath
+                throw
+            }
+            Remove-Item -LiteralPath ${"$"}backupRoot -Recurse -Force
+            Start-Process -FilePath ${powershellLiteral(relaunch.first())}${if (arguments.isEmpty()) "" else " -ArgumentList @($arguments)"}
+            Remove-Item -LiteralPath ${powershellLiteral(staged.artifactPath.parent.resolve("staged").toString())} -Recurse -Force
+            Remove-Item -LiteralPath ${powershellLiteral(staged.artifactPath.toString())} -Force
+            Remove-Item -LiteralPath ${"$"}PSCommandPath -Force
             """.trimIndent(),
         )
         return helper
@@ -221,63 +220,62 @@ private suspend fun downloadAndVerify(
     updateDirectory: Path,
     onProgress: (Double?) -> Unit,
 ): Path = withContext(Dispatchers.IO) {
+    validateUpdatePaths(candidate)
     val expectedSha256 = candidate.sha256
         ?: error("Release checksum is unavailable; refusing to install ${candidate.assetName}")
     require(expectedSha256.matches(Regex("[a-fA-F0-9]{64}"))) {
         "Release checksum is invalid for ${candidate.assetName}"
     }
-    require(candidate.downloadUrl.startsWith("https://github.com/cdsap/daemonitor/")) {
-        "Refusing to download an update from an unexpected host"
+    require(candidate.sizeBytes == null || candidate.sizeBytes in 1..MAX_DOWNLOAD_BYTES) {
+        "Update download exceeds size limit"
     }
-
+    val downloadUri = URI(candidate.downloadUrl)
+    require(downloadUri.host == "github.com" && downloadUri.path.startsWith("/cdsap/daemonitor/")) {
+        "Refusing update download outside the Daemonitor repository"
+    }
     Files.createDirectories(updateDirectory)
-    val tempPath = updateDirectory.resolve("${candidate.assetName}.download")
-    val finalPath = updateDirectory.resolve(candidate.assetName)
-    val client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build()
-    val request = HttpRequest.newBuilder()
-        .uri(URI(candidate.downloadUrl))
-        .header("User-Agent", "Daemonitor")
-        .GET()
-        .build()
-    val response = client.send(request, HttpResponse.BodyHandlers.ofInputStream())
-    if (response.statusCode() !in 200..299) {
-        error("Download failed with HTTP ${response.statusCode()}")
-    }
-
-    val expectedBytes = candidate.sizeBytes
-        ?: response.headers().firstValueAsLong("Content-Length").orElse(-1).takeIf { it > 0 }
+    val tempPath = safeChild(updateDirectory, "${candidate.assetName}.download")
+    val finalPath = safeChild(updateDirectory, candidate.assetName)
     val digest = MessageDigest.getInstance("SHA-256")
     var downloadedBytes = 0L
-    response.body().use { input ->
-        tempPath.outputStream().use { output ->
-            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-            while (true) {
-                val read = input.read(buffer)
-                if (read < 0) break
-                output.write(buffer, 0, read)
-                digest.update(buffer, 0, read)
-                downloadedBytes += read
-                onProgress(expectedBytes?.let { downloadedBytes.toDouble() / it.toDouble() })
+    try {
+        HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build().use { client ->
+            val response = fetchGitHubAsset(client, candidate.downloadUrl, "application/octet-stream")
+            response.body().use { input ->
+                val expectedBytes = candidate.sizeBytes
+                    ?: response.headers().firstValueAsLong("Content-Length").orElse(-1).takeIf { it > 0 }
+                require(expectedBytes == null || expectedBytes in 1..MAX_DOWNLOAD_BYTES) { "Update download exceeds size limit" }
+                Files.newOutputStream(tempPath, CREATE_NEW).use { output ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        require(downloadedBytes <= MAX_DOWNLOAD_BYTES - read) { "Update download exceeds size limit" }
+                        output.write(buffer, 0, read)
+                        digest.update(buffer, 0, read)
+                        downloadedBytes += read
+                        onProgress(expectedBytes?.let { downloadedBytes.toDouble() / it.toDouble() })
+                    }
+                }
+                if (expectedBytes != null && downloadedBytes != expectedBytes) {
+                    error("Downloaded ${downloadedBytes} bytes; expected ${expectedBytes}")
+                }
             }
         }
-    }
-
-    if (expectedBytes != null && downloadedBytes != expectedBytes) {
+        if (!UpdateDownloadVerifier.matches(digest.digest(), expectedSha256)) {
+            error("Downloaded installer checksum did not match release metadata")
+        }
+        Files.move(
+            tempPath,
+            finalPath,
+            StandardCopyOption.REPLACE_EXISTING,
+            StandardCopyOption.ATOMIC_MOVE,
+        )
+        onProgress(1.0)
+        finalPath
+    } finally {
         Files.deleteIfExists(tempPath)
-        error("Downloaded ${downloadedBytes} bytes; expected ${expectedBytes}")
     }
-    if (!UpdateDownloadVerifier.matches(digest.digest(), expectedSha256)) {
-        Files.deleteIfExists(tempPath)
-        error("Downloaded installer checksum did not match release metadata")
-    }
-    Files.move(
-        tempPath,
-        finalPath,
-        StandardCopyOption.REPLACE_EXISTING,
-        StandardCopyOption.ATOMIC_MOVE,
-    )
-    onProgress(1.0)
-    finalPath
 }
 
 internal fun extractUpdatePayload(
@@ -285,9 +283,23 @@ internal fun extractUpdatePayload(
     artifact: Path,
     updateDirectory: Path,
 ): Path {
-    val extractRoot = updateDirectory.resolve("staged").resolve(candidate.version)
+    validateUpdatePaths(candidate)
+    val stagedRoot = safeChild(updateDirectory, "staged")
+    val extractRoot = safeChild(stagedRoot, candidate.version)
     if (Files.exists(extractRoot)) {
-        extractRoot.toFile().deleteRecursively()
+        // walkFileTree does not follow symlinks, including ones left in an old staging tree.
+        Files.walkFileTree(extractRoot, object : SimpleFileVisitor<Path>() {
+            override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
+                Files.delete(file)
+                return FileVisitResult.CONTINUE
+            }
+
+            override fun postVisitDirectory(dir: Path, error: java.io.IOException?): FileVisitResult {
+                if (error != null) throw error
+                Files.delete(dir)
+                return FileVisitResult.CONTINUE
+            }
+        })
     }
     Files.createDirectories(extractRoot)
 
@@ -337,29 +349,137 @@ private fun findPayload(extractRoot: Path, platform: DesktopPlatform): Path? {
     }
 }
 
+private const val MAX_DOWNLOAD_BYTES = 1024L * 1024 * 1024
+private const val MAX_EXTRACTED_BYTES = 2L * 1024 * 1024 * 1024
+private const val MAX_ARCHIVE_ENTRIES = 100_000
+
+private fun validateUpdatePaths(candidate: UpdateCandidate) {
+    require(candidate.version.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+([.-][0-9A-Za-z.-]+)?"))) {
+        "Invalid update version"
+    }
+    require(candidate.assetName.matches(Regex("[A-Za-z0-9._-]+")) && candidate.assetName !in listOf(".", "..")) {
+        "Invalid update asset filename"
+    }
+}
+
+private fun safeChild(base: Path, name: String): Path {
+    val root = base.toAbsolutePath().normalize()
+    val child = root.resolve(name).normalize()
+    require(child.startsWith(root) && child != root) { "Refusing path outside update directory" }
+    var path: Path? = child
+    while (path != null) {
+        require(!Files.isSymbolicLink(path)) { "Refusing symbolic link in update path" }
+        path = path.parent
+        if (path == root.parent) break
+    }
+    return child
+}
+
+private fun archivePath(target: Path, name: String): Path {
+    require(name.isNotEmpty() && !name.startsWith("/") && !name.contains('\\') && !name.contains(':') &&
+        name.split('/').none { it == ".." }
+    ) { "Refusing unsafe archive path" }
+    // A tar created from '.' may have a harmless root directory entry.
+    if (name.trimEnd('/') == ".") return target
+    return safeChild(target, name)
+}
+
+private class ExtractionBudget {
+    private var remaining = MAX_EXTRACTED_BYTES
+    private var entries = 0
+
+    fun next() {
+        require(++entries <= MAX_ARCHIVE_ENTRIES) { "Update archive has too many entries" }
+    }
+
+    fun copy(input: java.io.InputStream, path: Path) {
+        Files.createDirectories(path.parent)
+        Files.newOutputStream(path, CREATE_NEW).use { output ->
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                require(count <= remaining) { "Update archive exceeds extracted size limit" }
+                remaining -= count
+                output.write(buffer, 0, count)
+            }
+        }
+    }
+}
+
 private fun unzip(archive: Path, target: Path) {
+    val budget = ExtractionBudget()
     ZipInputStream(Files.newInputStream(archive)).use { zip ->
         while (true) {
             val entry = zip.nextEntry ?: break
-            val outPath = target.resolve(entry.name).normalize()
-            require(outPath.startsWith(target)) { "Refusing to extract path outside staging directory" }
+            budget.next()
+            val outPath = archivePath(target, entry.name)
             if (entry.isDirectory) {
                 Files.createDirectories(outPath)
+                require(zip.read() == -1) { "Refusing zip directory containing data" }
             } else {
-                Files.createDirectories(outPath.parent)
-                Files.copy(zip, outPath, StandardCopyOption.REPLACE_EXISTING)
+                budget.copy(zip, outPath)
             }
             zip.closeEntry()
         }
     }
 }
 
+// Include tar headers and PAX/GNU metadata in the expansion budget, before the
+// archive reader can allocate memory for an extended name or metadata entry.
+private class ExpandedTarInputStream(input: java.io.InputStream) : java.io.FilterInputStream(input) {
+    private var remaining = MAX_EXTRACTED_BYTES
+
+    override fun read(): Int {
+        val value = `in`.read()
+        if (value >= 0) {
+            require(remaining > 0) { "Update archive exceeds extracted size limit" }
+            remaining--
+        }
+        return value
+    }
+
+    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+        val count = `in`.read(buffer, offset, minOf(length.toLong(), remaining + 1).toInt())
+        if (count > 0) {
+            require(count <= remaining) { "Update archive exceeds extracted size limit" }
+            remaining -= count
+        }
+        return count
+    }
+
+    override fun skip(count: Long): Long {
+        // FilterInputStream.skip would bypass accounting.
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        var skipped = 0L
+        while (skipped < count) {
+            val read = read(buffer, 0, minOf(buffer.size.toLong(), count - skipped).toInt())
+            if (read < 0) break
+            skipped += read
+        }
+        return skipped
+    }
+}
+
 private fun untarGzip(archive: Path, target: Path) {
-    val result = ProcessBuilder("tar", "-xzf", archive.toString(), "-C", target.toString())
-        .redirectErrorStream(true)
-        .start()
-    val output = result.inputStream.bufferedReader().use { it.readText() }
-    check(result.waitFor() == 0) { "Failed to extract update archive: $output" }
+    val budget = ExtractionBudget()
+    TarArchiveInputStream(ExpandedTarInputStream(GZIPInputStream(Files.newInputStream(archive)))).use { tar ->
+        while (true) {
+            val entry = tar.nextEntry ?: break
+            budget.next()
+            require(!entry.isSymbolicLink && !entry.isLink && !entry.isSparse &&
+                (entry.isDirectory || entry.isFile) && tar.canReadEntryData(entry)
+            ) { "Refusing unsupported tar entry" }
+            require(entry.size in 0..MAX_EXTRACTED_BYTES) { "Update archive exceeds extracted size limit" }
+            val outPath = archivePath(target, entry.name)
+            if (entry.isDirectory) {
+                Files.createDirectories(outPath)
+            } else {
+                budget.copy(tar, outPath)
+                if (entry.mode and 0b001001001 != 0) outPath.toFile().setExecutable(true, false)
+            }
+        }
+    }
 }
 
 private fun Path.writeExecutable(contents: String) {
@@ -370,8 +490,17 @@ private fun Path.writeExecutable(contents: String) {
 private fun shellEscape(value: String): String =
     "'" + value.replace("'", "'\"'\"'") + "'"
 
-private fun windowsQuote(value: String): String =
-    "\"${value.replace("\"", "\\\"")}\""
+// Windows native argument quoting; PowerShell receives this as data, never cmd source.
+private fun windowsArgument(value: String): String {
+    val escaped = Regex("(\\\\*)\"").replace(value) { match ->
+        "\\".repeat(match.groupValues[1].length * 2 + 1) + "\""
+    }
+    val trailingSlashes = escaped.takeLastWhile { it == '\\' }.length
+    return "\"" + escaped + "\\".repeat(trailingSlashes) + "\""
+}
+
+private fun powershellLiteral(value: String): String =
+    "'" + value.replace("'", "''") + "'"
 
 internal object UpdateDownloadVerifier {
     fun matches(actualDigest: ByteArray, expectedSha256: String): Boolean =
