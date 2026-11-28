@@ -8,7 +8,7 @@ import (
 const redactMask = "***"
 
 var (
-	denyMulti = []string{"password", "secret", "token", "credential", "apikey"}
+	denyMulti = []string{"password", "secret", "token", "credential", "apikey", "authenticationkey"}
 	keyWord   = regexp.MustCompile(`(^|[^a-z])key([^a-z]|$)`)
 	// -Pkey=value | -Dkey=value | --key=value
 	propFlag        = regexp.MustCompile(`^(--|-[PD])([^=\s]+)=(.*)$`)

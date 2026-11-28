@@ -41,9 +41,115 @@ object GradleProcessClassifier {
 
             isJava(cl) && hasGradleRuntimeMarker(cl) -> ProcessType.JAVA_GRADLE_RELATED
 
+            else -> classifyXcode(cl)
+        }
+    }
+
+    fun isXcodeType(type: ProcessType): Boolean = when (type) {
+        ProcessType.XCODE_BUILD,
+        ProcessType.XCODE_BUILD_SERVICE,
+        ProcessType.XCODE_COMPILER,
+        ProcessType.XCODE_TOOL,
+        -> true
+        else -> false
+    }
+
+    /**
+     * Classifies an Xcode build-execution process from its command line (mirrors Go `ClassifyXcode`).
+     * Excludes interactive `Xcode.app` GUI and unscoped generic compilers/tools.
+     */
+    fun classifyXcode(commandLine: String): ProcessType? {
+        val head = extractCommandHead(commandLine)
+        if (head.isEmpty()) return null
+        return when (pathBase(head)) {
+            "xcodebuild" -> ProcessType.XCODE_BUILD
+            "SWBBuildService", "XCBBuildService" -> ProcessType.XCODE_BUILD_SERVICE
+            "swift-frontend", "swiftc" ->
+                if (isXcodeToolchainPath(head) || isCommandLineToolsPath(head)) ProcessType.XCODE_COMPILER else null
+            "clang", "clang++" -> when {
+                isXcodeAppPath(head) -> ProcessType.XCODE_COMPILER
+                isCommandLineToolsPath(head) && hasXcodeBuildArgs(commandLine) -> ProcessType.XCODE_COMPILER
+                else -> null
+            }
+            "ld", "ld-prime" -> when {
+                isXcodeAppPath(head) -> ProcessType.XCODE_TOOL
+                isCommandLineToolsPath(head) && hasXcodeBuildArgs(commandLine) -> ProcessType.XCODE_TOOL
+                else -> null
+            }
+            "actool", "ibtool", "ibtoold", "dsymutil", "momc", "mapc", "metal", "metallib",
+            "appintentsmetadataprocessor", "clang-stat-cache", "swift-driver", "tapi",
+            -> if (isXcodeToolchainPath(head)) ProcessType.XCODE_TOOL else null
             else -> null
         }
     }
+
+    fun extractXcodeProjectPath(commandLine: String, cwd: String?): String? {
+        val tokens = commandLine.trim().split(Regex("""\s+"""))
+        for (i in 0 until tokens.size - 1) {
+            if (tokens[i] in setOf("-workspace", "-project", "-package-path")) {
+                val candidate = tokens[i + 1].trim('"', '\'')
+                if (candidate.isEmpty() || candidate.startsWith("-")) continue
+                return if (!candidate.startsWith("/") && !cwd.isNullOrBlank()) {
+                    joinPosixPath(cwd, candidate)
+                } else {
+                    candidate
+                }
+            }
+        }
+        return cwd
+    }
+
+    private fun joinPosixPath(base: String, relative: String): String {
+        val raw = "${base.trimEnd('/')}/$relative"
+        val absolute = raw.startsWith("/")
+        val parts = ArrayDeque<String>()
+        for (segment in raw.split('/')) {
+            when {
+                segment.isEmpty() || segment == "." -> Unit
+                segment == ".." -> if (parts.isNotEmpty() && parts.last() != "..") {
+                    parts.removeLast()
+                } else if (!absolute) {
+                    parts.addLast(segment)
+                }
+                else -> parts.addLast(segment)
+            }
+        }
+        val joined = parts.joinToString("/")
+        return if (absolute) "/$joined" else joined.ifEmpty { "." }
+    }
+
+    private fun extractCommandHead(commandLine: String): String {
+        val s = commandLine.trim()
+        if (s.isEmpty()) return ""
+        if (s[0] == '"' || s[0] == '\'') {
+            val end = s.indexOf(s[0], 1)
+            return if (end > 0) s.substring(1, end) else s.substring(1)
+        }
+        val appIdx = s.indexOf(".app/Contents/")
+        if (appIdx >= 0 && !s.substring(0, appIdx).contains(" -")) {
+            val restStart = appIdx + ".app/Contents/".length
+            val sp = s.indexOfAny(charArrayOf(' ', '\t', '\r', '\n'), restStart)
+            return if (sp >= 0) s.substring(0, sp) else s
+        }
+        val sp = s.indexOfAny(charArrayOf(' ', '\t', '\r', '\n'))
+        return if (sp >= 0) s.substring(0, sp) else s
+    }
+
+    private fun pathBase(p: String): String = p.trimEnd('/').substringAfterLast('/')
+
+    private fun isXcodeAppPath(head: String): Boolean =
+        head.contains(".app/Contents/Developer/") || head.contains(".xctoolchain/usr/bin/")
+
+    private fun isCommandLineToolsPath(head: String): Boolean =
+        head.contains("/Library/Developer/CommandLineTools/")
+
+    private fun isXcodeToolchainPath(head: String): Boolean =
+        isXcodeAppPath(head) || isCommandLineToolsPath(head)
+
+    private fun hasXcodeBuildArgs(commandLine: String): Boolean =
+        commandLine.contains("DerivedData") ||
+            commandLine.contains(".platform/Developer/SDKs/") ||
+            commandLine.contains("XcodeDefault.xctoolchain")
 
     private fun containsGradlewInvocation(cl: String): Boolean =
         GRADLEW_INVOCATION.containsMatchIn(cl)

@@ -163,6 +163,19 @@ class HistoryScreenUiTest {
     }
 
     @Test
+    fun `xcode tool filter empty state explains xcodebuild capture`() = runComposeUiTest {
+        val state = HistoryUiState(
+            filter = HistoryFilter(tool = ToolFilter.XCODE),
+            builds = emptyList(),
+            isEmptyResult = true,
+        )
+        setContent { WatcherTheme { HistoryScreen(state, onProject = {}, onTimeRange = {}) } }
+        onNodeWithText(
+            "No Xcode builds match the current filters. History is captured from observed xcodebuild runs.",
+        ).assertExists()
+    }
+
+    @Test
     fun `gradle tool filter empty state does not mention bazel retention`() = runComposeUiTest {
         val state = HistoryUiState(
             filter = HistoryFilter(tool = ToolFilter.GRADLE),

@@ -117,17 +117,30 @@ func aggregateGroup(root model.Process, children []model.Process) model.Process 
 		cpu = *root.CPUPercent
 		cpuAvailable = true
 	}
+	var footprint int64
+	footprintAvailable := false
+	if root.PhysicalFootprintBytes != nil {
+		footprint = *root.PhysicalFootprintBytes
+		footprintAvailable = true
+	}
 	for _, child := range children {
 		aggregate.RSSMemoryMB += child.RSSMemoryMB
 		if child.CPUPercent != nil {
 			cpu += *child.CPUPercent
 			cpuAvailable = true
 		}
+		if child.PhysicalFootprintBytes != nil {
+			footprint += *child.PhysicalFootprintBytes
+			footprintAvailable = true
+		}
 	}
 	if cpuAvailable {
 		aggregate.CPUPercent = &cpu
 	} else {
 		aggregate.CPUPercent = nil
+	}
+	if footprintAvailable {
+		aggregate.PhysicalFootprintBytes = &footprint
 	}
 	if root.Type == "BAZEL_SERVER" && root.SubtreeRSSMemoryMB != nil {
 		aggregate.RSSMemoryMB = *root.SubtreeRSSMemoryMB
@@ -200,7 +213,7 @@ func (h *processHierarchy) setExpanded(id processIdentity, expanded bool) {
 
 func isHierarchyRootType(kind string) bool {
 	switch kind {
-	case "GRADLE_DAEMON", "BAZEL_SERVER":
+	case "GRADLE_DAEMON", "BAZEL_SERVER", "XCODE_BUILD_SERVICE":
 		return true
 	default:
 		return false

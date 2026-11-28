@@ -129,6 +129,8 @@ func collectHostGopsutil(ctx context.Context) HostMetrics {
 	out.Resource = unavailableResources(ScopeHost, NotCollected, sourceGopsutil)
 	out.CommitUsedBytes = IntUnavailable(Unsupported, sourceGopsutil)
 	out.CommitLimitBytes = IntUnavailable(Unsupported, sourceGopsutil)
+	out.MemoryPressureLevel = StringUnavailable(Unsupported, sourceGopsutil)
+	out.ThermalState = StringUnavailable(Unsupported, sourceGopsutil)
 	out.PSICPU = unavailablePSI(Unsupported, sourceGopsutil)
 	out.PSIMemory = unavailablePSI(Unsupported, sourceGopsutil)
 	out.PSIIO = unavailablePSI(Unsupported, sourceGopsutil)
@@ -158,6 +160,14 @@ func collectHostGopsutil(ctx context.Context) HostMetrics {
 		out.MemoryTotalBytes = IntUnavailable(a, sourceGopsutil)
 		out.MemoryAvailableBytes = IntUnavailable(a, sourceGopsutil)
 		out.MemoryUsedBytes = IntUnavailable(a, sourceGopsutil)
+	}
+	if sw, err := mem.SwapMemoryWithContext(ctx); err == nil && sw != nil {
+		out.SwapTotalBytes = IntAvailable(int64(sw.Total), now, sourceGopsutil)
+		out.SwapUsedBytes = IntAvailable(int64(sw.Used), now, sourceGopsutil)
+	} else {
+		a := mapOptionalErr(err)
+		out.SwapTotalBytes = IntUnavailable(a, sourceGopsutil)
+		out.SwapUsedBytes = IntUnavailable(a, sourceGopsutil)
 	}
 	if avg, err := load.AvgWithContext(ctx); err == nil && avg != nil {
 		out.Load1 = RealAvailable(avg.Load1, now, sourceGopsutil)
@@ -207,6 +217,10 @@ func baseCapabilities() []MetricCapability {
 		cap("host.memory.total_bytes", "bytes", "Host memory total", Available),
 		cap("host.memory.available_bytes", "bytes", "Host memory available", Available),
 		cap("host.memory.used_bytes", "bytes", "Host memory used", Available),
+		cap("host.memory.swap_total_bytes", "bytes", "Host swap total", Available),
+		cap("host.memory.swap_used_bytes", "bytes", "Host swap used", Available),
+		cap("host.memory.pressure_level", "level", "Host memory pressure level", Unsupported),
+		cap("host.thermal.state", "level", "Host thermal pressure state", Unsupported),
 		cap("host.memory.commit_used_bytes", "bytes", "Committed virtual memory in use", Unsupported),
 		cap("host.memory.commit_limit_bytes", "bytes", "Committed virtual memory limit", Unsupported),
 		cap("host.load.1", "load", "One-minute load average", Unsupported),

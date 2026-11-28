@@ -13,7 +13,9 @@ internal data class LiveProcessRow(
 )
 
 private fun ProcessType.isHierarchyRoot(): Boolean =
-    this == ProcessType.GRADLE_DAEMON || this == ProcessType.BAZEL_SERVER
+    this == ProcessType.GRADLE_DAEMON ||
+        this == ProcessType.BAZEL_SERVER ||
+        this == ProcessType.XCODE_BUILD_SERVICE
 
 /**
  * Builds the desktop equivalent of the TUI's grouped view.

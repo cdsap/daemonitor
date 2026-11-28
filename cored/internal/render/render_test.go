@@ -77,6 +77,10 @@ func TestTypeDisplayForGradleWorkerKinds(t *testing.T) {
 		{kind: "GRADLE_WORKER", want: "Gradle worker"},
 		{kind: "UNKNOWN_GRADLE_WORKER", want: "Unknown Gradle worker"},
 		{kind: "KOTLIN_TOOLCHAIN", want: "Kotlin Toolchain"},
+		{kind: "XCODE_BUILD", want: "Xcode build"},
+		{kind: "XCODE_BUILD_SERVICE", want: "Xcode build service"},
+		{kind: "XCODE_COMPILER", want: "Xcode compiler"},
+		{kind: "XCODE_TOOL", want: "Xcode tool"},
 	} {
 		t.Run(tc.kind, func(t *testing.T) {
 			if got := TypeDisplay(tc.kind); got != tc.want {
@@ -436,6 +440,52 @@ func TestWriteHostPlainUnavailableLogicalProcessors(t *testing.T) {
 		WriteHostPlain(&buf, platform.HostMetrics{LogicalProcessors: metric})
 		if !strings.Contains(buf.String(), "logical_processors=n/a\n") {
 			t.Fatalf("metric %+v rendered as available: %s", metric, buf.String())
+		}
+	}
+}
+
+func TestWriteProcessesPlainNativeXcodeOmitsJVMColumns(t *testing.T) {
+	fp := int64(256 * 1024 * 1024)
+	dr := int64(12 * 1024 * 1024)
+	dw := int64(4 * 1024 * 1024)
+	var buf bytes.Buffer
+	WriteProcessesPlain(&buf, model.Snapshot{
+		SampledAtMs: 1000,
+		Processes: []model.Process{
+			{PID: 500, Type: "XCODE_COMPILER", RSSMemoryMB: 300, PhysicalFootprintBytes: &fp, DiskReadBytes: &dr, DiskWriteBytes: &dw},
+		},
+	})
+	out := buf.String()
+	for _, want := range []string{"FOOTPR", "DISK_R", "DISK_W", "Xcode compiler", "256 MB", "12 MB", "4 MB"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("native plain output missing %q:\n%s", want, out)
+		}
+	}
+	for _, forbidden := range []string{" GC ", " XMX "} {
+		if strings.Contains(out, forbidden) {
+			t.Fatalf("native plain output must omit JVM column %q:\n%s", forbidden, out)
+		}
+	}
+}
+
+func TestWriteProcessesDetailedPlainOmitsJVMFieldsForXcode(t *testing.T) {
+	dr, dw := int64(4096), int64(8192)
+	var buf bytes.Buffer
+	WriteProcessesDetailedPlain(&buf, model.Snapshot{
+		SampledAtMs: 1000,
+		Processes: []model.Process{
+			{PID: 600, Type: "XCODE_BUILD", RSSMemoryMB: 50, DiskReadBytes: &dr, DiskWriteBytes: &dw},
+		},
+	})
+	out := buf.String()
+	for _, want := range []string{"type=Xcode build", "disk_read_bytes=4096", "disk_write_bytes=8192"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in:\n%s", want, out)
+		}
+	}
+	for _, forbidden := range []string{"max_heap_mb=", "java_version=", "young_gc_count="} {
+		if strings.Contains(out, forbidden) {
+			t.Fatalf("native detailed output must omit %q:\n%s", forbidden, out)
 		}
 	}
 }

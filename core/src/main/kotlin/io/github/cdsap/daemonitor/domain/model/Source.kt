@@ -17,4 +17,5 @@ enum class Source {
 enum class BuildTool {
     GRADLE,
     BAZEL,
+    XCODE,
 }

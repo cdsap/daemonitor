@@ -55,6 +55,10 @@ fun ProcessTypeIcon(type: ProcessType, modifier: Modifier = Modifier, size: Dp =
         ProcessType.GRADLE_WORKER -> Emoji("⚙️", size, tagged)
         ProcessType.UNKNOWN_GRADLE_WORKER -> Emoji("⚙️", size, tagged)
         ProcessType.JAVA_GRADLE_RELATED -> Emoji("☕", size, tagged)
+        ProcessType.XCODE_BUILD -> Emoji("🔨", size, tagged)
+        ProcessType.XCODE_BUILD_SERVICE -> Emoji("🏗️", size, tagged)
+        ProcessType.XCODE_COMPILER -> Emoji("⚡", size, tagged)
+        ProcessType.XCODE_TOOL -> Emoji("🔧", size, tagged)
     }
 }
 

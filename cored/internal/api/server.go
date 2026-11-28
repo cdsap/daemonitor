@@ -43,23 +43,33 @@ type Server struct {
 	Profiles   *bazelprofile.Watcher
 	Store      *store.Store
 	Agg        *builds.Aggregator
+	Sessions   *sessions.BuildSessionRegistry
 	Retention  time.Duration
 
 	mu           sync.RWMutex
 	last         model.Snapshot
 	lastHost     platform.HostMetrics
 	prevActive   map[int64]struct{}
+	passiveXcode map[passiveXcodeKey]string
 	interval     time.Duration
+	baseInterval time.Duration
 	hostInterval time.Duration
 	lastHostAt   time.Time
+}
+
+type passiveXcodeKey struct {
+	pid     int32
+	startMs int64
 }
 
 const (
 	defaultQueryLimit      = 100
 	maxQueryLimit          = 500
+	maxHistoryQueryLimit   = 5000
 	maxIncludeMetricsLimit = 20
 	maxSessionNameBytes    = 256
 	maxSessionProcesses    = 256
+	fastPollInterval       = time.Second
 )
 
 func NewServer(socketPath, dbPath string, interval, retention time.Duration, gradleUserHome string) (*Server, error) {
@@ -104,11 +114,14 @@ func NewServer(socketPath, dbPath string, interval, retention time.Duration, gra
 		BEP:          bepWatcher,
 		Profiles:     bazelprofile.NewWatcher(),
 		Store:        st,
+		Sessions:     sessions.NewBuildSessionRegistry(st, st),
 		Retention:    retention,
 		interval:     interval,
+		baseInterval: interval,
 		hostInterval: collector.Cadences.Host,
 		last:         model.Snapshot{Processes: []model.Process{}},
 		prevActive:   map[int64]struct{}{},
+		passiveXcode: map[passiveXcodeKey]string{},
 	}
 	s.Agg = builds.NewAggregator(
 		func(pid, startMs, endMs int64) []builds.Sample {
@@ -146,6 +159,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/v1/builds", s.handleBuilds)
 	mux.HandleFunc("/v1/observation-sessions/open", s.handleObservationSessionOpen)
 	mux.HandleFunc("/v1/observation-sessions/close", s.handleObservationSessionClose)
+	mux.HandleFunc("/v1/sessions", s.handleSessions)
+	mux.HandleFunc("/v1/sessions/", s.handleSessionByID)
 
 	srv := &http.Server{
 		Handler:           mux,
@@ -179,7 +194,8 @@ func (s *Server) Run(ctx context.Context) error {
 }
 
 func (s *Server) loop(ctx context.Context) {
-	t := time.NewTicker(s.interval)
+	currentInterval := s.interval
+	t := time.NewTicker(currentInterval)
 	defer t.Stop()
 	purgeEvery := time.NewTicker(30 * time.Second)
 	defer purgeEvery.Stop()
@@ -195,12 +211,46 @@ func (s *Server) loop(ctx context.Context) {
 			return
 		case <-t.C:
 			s.refresh(ctx)
+			desired := s.desiredPollInterval()
+			if desired != currentInterval {
+				currentInterval = desired
+				t.Reset(currentInterval)
+				if s.Collector != nil {
+					s.Collector.PollInterval = currentInterval
+				}
+			}
 		case <-hostTick.C:
 			s.refreshHost(ctx)
 		case <-purgeEvery.C:
 			_, _ = s.Store.PurgeOlderThan(s.Retention)
 		}
 	}
+}
+
+func (s *Server) desiredPollInterval() time.Duration {
+	base := s.baseInterval
+	if base <= 0 {
+		base = s.interval
+	}
+	if base <= fastPollInterval {
+		return base
+	}
+	if s.Sessions != nil && s.Sessions.ActiveCount() > 0 {
+		return fastPollInterval
+	}
+	s.mu.RLock()
+	hasXcodeBuild := false
+	for _, p := range s.last.Processes {
+		if p.Type == poll.TypeXcodeBuild {
+			hasXcodeBuild = true
+			break
+		}
+	}
+	s.mu.RUnlock()
+	if hasXcodeBuild {
+		return fastPollInterval
+	}
+	return base
 }
 
 func (s *Server) refresh(ctx context.Context) {
@@ -279,6 +329,235 @@ func (s *Server) refresh(ctx context.Context) {
 	s.prevActive = active
 	s.last = snap
 	s.mu.Unlock()
+
+	s.syncPassiveXcodeSessions(snap, hostID)
+}
+
+func (s *Server) syncPassiveXcodeSessions(snap model.Snapshot, hostID string) {
+	if s.Sessions == nil {
+		return
+	}
+	seenXcode := make(map[passiveXcodeKey]model.Process)
+	for _, p := range snap.Processes {
+		if p.Type == poll.TypeXcodeBuild {
+			seenXcode[passiveXcodeKey{pid: p.PID, startMs: p.StartTimeMs}] = p
+		}
+	}
+
+	s.mu.Lock()
+	// Open passive sessions for newly discovered xcodebuild invocations not already
+	// owned by an explicit `daemonitor-cli observe` session.
+	for key, p := range seenXcode {
+		if _, tracked := s.passiveXcode[key]; tracked {
+			continue
+		}
+		if s.Sessions.HasActiveAnchor(p.PID) {
+			continue
+		}
+		project := ""
+		if p.ProjectPath != nil {
+			project = *p.ProjectPath
+		} else if p.WorkingDirectory != nil {
+			project = *p.WorkingDirectory
+		}
+		startedAt := snap.SampledAtMs
+		if p.StartTimeMs > 0 && p.StartTimeMs < startedAt {
+			startedAt = p.StartTimeMs
+		}
+		if opened, err := s.Sessions.Open(sessions.BuildSessionOpenRequest{
+			Ecosystem:         "xcode",
+			Mode:              "passive",
+			RootProjectPath:   project,
+			CommandLine:       p.CommandLine,
+			HostID:            hostID,
+			AnchorPID:         p.PID,
+			AnchorStartTimeMs: p.StartTimeMs,
+			StartedAtMs:       startedAt,
+		}); err == nil && opened != nil {
+			s.passiveXcode[key] = opened.SessionID
+		}
+	}
+
+	var toClose []struct {
+		key       passiveXcodeKey
+		sessionID string
+	}
+	for key, sessID := range s.passiveXcode {
+		if _, alive := seenXcode[key]; !alive {
+			toClose = append(toClose, struct {
+				key       passiveXcodeKey
+				sessionID string
+			}{key: key, sessionID: sessID})
+			delete(s.passiveXcode, key)
+		}
+	}
+	s.mu.Unlock()
+
+	for _, item := range toClose {
+		summary, err := s.Sessions.Close(item.sessionID, sessions.BuildSessionCloseRequest{
+			EndedAtMs: snap.SampledAtMs,
+			Outcome:   "completed_no_outcome",
+		})
+		if err == nil && summary != nil {
+			s.persistXcodeBuildFromSession(item.key.pid, *summary)
+		}
+	}
+}
+
+func (s *Server) persistXcodeBuildFromSession(anchorPID int32, summary sessions.BuildSessionSummary) {
+	if s.Store == nil || !strings.EqualFold(summary.Ecosystem, "xcode") {
+		return
+	}
+	endMs := summary.EndedAtMs
+	durSec := float64(endMs-summary.StartedAtMs) / 1000.0
+	if durSec < 0 {
+		durSec = 0
+	}
+	status := builds.StatusCompletedNoOutcome
+	switch strings.ToLower(summary.Outcome) {
+	case "success":
+		status = builds.StatusSuccess
+	case "failed", "failure":
+		status = builds.StatusFailed
+	case "interrupted":
+		status = builds.StatusInterrupted
+	}
+	var peakMem *int64
+	if summary.TotalPeakRSSMB > 0 {
+		v := summary.TotalPeakRSSMB
+		peakMem = &v
+	}
+	var cmdPtr *string
+	if summary.CommandLine != "" {
+		c := summary.CommandLine
+		cmdPtr = &c
+	}
+	pid := int64(anchorPID)
+	if pid <= 0 && len(summary.Processes) > 0 {
+		pid = int64(summary.Processes[0].PID)
+	}
+	_ = s.Store.InsertBuild(builds.Build{
+		BuildID:         summary.SessionID,
+		DaemonPID:       pid,
+		DaemonIdentity:  "xcode:" + summary.SessionID,
+		CommandLine:     cmdPtr,
+		ProjectPath:     summary.RootProjectPath,
+		StartTimeMs:     summary.StartedAtMs,
+		EndTimeMs:       &endMs,
+		DurationSeconds: &durSec,
+		PeakMemoryMB:    peakMem,
+		InferredSource:  builds.SourceTerminal,
+		FinalStatus:     status,
+		Tool:            builds.ToolXcode,
+	})
+}
+
+func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
+	if s.Sessions == nil {
+		http.Error(w, "sessions unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		ecosystem := r.URL.Query().Get("ecosystem")
+		limit := 50
+		if raw := r.URL.Query().Get("limit"); raw != "" {
+			if v, err := strconv.Atoi(raw); err == nil && v > 0 {
+				limit = v
+			}
+		}
+		list, err := s.Sessions.List(ecosystem, limit)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{
+			"count":    len(list),
+			"sessions": list,
+		})
+	case http.MethodPost:
+		var req sessions.BuildSessionOpenRequest
+		if err := decodeJSONBody(r, &req); err != nil {
+			http.Error(w, "malformed session body: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.CommandLine != "" {
+			req.CommandLine = poll.RedactCommandLine(req.CommandLine)
+		}
+		if req.HostID == "" {
+			req.HostID = platform.LocalHostID()
+		}
+		opened, err := s.Sessions.Open(req)
+		if err != nil {
+			if err == sessions.ErrBuildSessionDuplicateOpen {
+				http.Error(w, err.Error(), http.StatusConflict)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(opened)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
+	if s.Sessions == nil {
+		http.Error(w, "sessions unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	rest := strings.TrimPrefix(r.URL.Path, "/v1/sessions/")
+	parts := strings.Split(strings.Trim(rest, "/"), "/")
+	if len(parts) == 0 || parts[0] == "" {
+		http.NotFound(w, r)
+		return
+	}
+	sessionID := parts[0]
+
+	if len(parts) == 1 && r.Method == http.MethodGet {
+		summary, err := s.Sessions.Get(sessionID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if summary == nil {
+			http.Error(w, "session not found", http.StatusNotFound)
+			return
+		}
+		writeJSON(w, summary)
+		return
+	}
+
+	if len(parts) == 2 && parts[1] == "close" && r.Method == http.MethodPost {
+		var req sessions.BuildSessionCloseRequest
+		if r.Body != nil && r.ContentLength != 0 {
+			if err := decodeJSONBody(r, &req); err != nil {
+				http.Error(w, "malformed close body: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+		summary, err := s.Sessions.Close(sessionID, req)
+		if err != nil {
+			if err == sessions.ErrBuildSessionNotFound {
+				http.Error(w, err.Error(), http.StatusNotFound)
+				return
+			}
+			if err == sessions.ErrBuildSessionAlreadyClosed && summary != nil {
+				writeJSON(w, summary)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		s.persistXcodeBuildFromSession(0, *summary)
+		writeJSON(w, summary)
+		return
+	}
+
+	http.NotFound(w, r)
 }
 
 func (s *Server) persistBazelBuild(b builds.Build) {
@@ -545,7 +824,11 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	limit := defaultQueryLimit
 	if raw := query.Get("limit"); raw != "" {
 		if v, err := strconv.Atoi(raw); err == nil {
-			limit = boundedLimit(v)
+			if v > 0 && v <= maxHistoryQueryLimit {
+				limit = v
+			} else {
+				limit = boundedLimit(v)
+			}
 		}
 	}
 	var pid, startTimeMs int64
@@ -570,6 +853,7 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		Limit:       limit,
 		PID:         pid,
 		StartTimeMs: startTimeMs,
+		ProcessType: query.Get("type"),
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

@@ -40,6 +40,8 @@ type Process struct {
 	ThreadCount                *int64   `json:"thread_count"`
 	ReadBytes                  *int64   `json:"read_bytes"`
 	WriteBytes                 *int64   `json:"write_bytes"`
+	DiskReadBytes              *int64   `json:"disk_read_bytes"`
+	DiskWriteBytes             *int64   `json:"disk_write_bytes"`
 	ReadOperations             *int64   `json:"read_operations"`
 	WriteOperations            *int64   `json:"write_operations"`
 	MinorPageFaults            *int64   `json:"minor_page_faults"`

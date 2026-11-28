@@ -56,11 +56,24 @@ object LiveMetricLabels {
         else -> false
     }
 
+    fun isJvmProcessType(type: ProcessType): Boolean = when (type) {
+        ProcessType.XCODE_BUILD,
+        ProcessType.XCODE_BUILD_SERVICE,
+        ProcessType.XCODE_COMPILER,
+        ProcessType.XCODE_TOOL,
+        -> false
+        else -> true
+    }
+
     private fun unprobedTypePhrase(type: ProcessType): String = when (type) {
         ProcessType.GRADLE_WRAPPER -> "wrappers"
         ProcessType.TEST_WORKER -> "Gradle test workers"
         ProcessType.GRADLE_WORKER -> "Gradle workers"
         ProcessType.UNKNOWN_GRADLE_WORKER -> "unknown Gradle workers"
+        ProcessType.XCODE_BUILD -> "native Xcode builds"
+        ProcessType.XCODE_BUILD_SERVICE -> "native Xcode build services"
+        ProcessType.XCODE_COMPILER -> "native Xcode compilers"
+        ProcessType.XCODE_TOOL -> "native Xcode tools"
         else -> "non-daemon JVMs"
     }
 }

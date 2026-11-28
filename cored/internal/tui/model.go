@@ -556,7 +556,16 @@ func cmpOptionalInt64(a, b *int64) int {
 }
 
 func (m *Model) cycleSortField() {
-	m.sortField = (m.sortField + 1) % 9
+	nativeOnly := len(m.processes) > 0 && !render.HasAnyJVMProcess(m.processes)
+	for range 9 {
+		m.sortField = (m.sortField + 1) % 9
+		if !nativeOnly {
+			return
+		}
+		if m.sortField != SortHeapUsed && m.sortField != SortHeapCommitted && m.sortField != SortHeapMax {
+			return
+		}
+	}
 }
 
 func (m *Model) selectedIndex() int {

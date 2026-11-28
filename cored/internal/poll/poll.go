@@ -260,6 +260,9 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 		if kind == "" && owner != 0 {
 			kind = PromoteBazelNativeTest(cmdline, bazelTestAncestor(pid, nodes))
 		}
+		if kind == "" && xcodeAnchorAncestor(pid, nodes) {
+			kind = ClassifyXcodeChild(cmdline)
+		}
 		if kind == "" {
 			if owner != 0 {
 				sample := c.sampleBazelDescendant(ctx, p, owner, startMs, nowTime, seen)
@@ -401,9 +404,14 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 		case kind == "KOTLIN_TOOLCHAIN" && cwd != nil:
 			// Toolchain CLI has no --workspace_directory=; cwd is the project root.
 			project = cwd
+		case kind == TypeXcodeBuild:
+			project = ExtractXcodeProjectPath(cmdline, cwd)
 		}
 
-		jvm := ParseJVMArgs(cmdline)
+		var jvm JVMArgs
+		if !IsXcodeType(kind) {
+			jvm = ParseJVMArgs(cmdline)
+		}
 		idx := len(out)
 		out = append(out, model.Process{
 			PID:              pid,
@@ -425,6 +433,7 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 			ProportionalBytes:     platformMem.proportionalBytes, ProportionalSampledAtMs: platformMem.proportionalSampledAt,
 			PhysicalFootprintBytes: platformMem.physicalFootprintBytes, PeakResidentBytes: platformMem.peakResidentBytes,
 			ThreadCount: osMetrics.threadCount, ReadBytes: osMetrics.readBytes, WriteBytes: osMetrics.writeBytes,
+			DiskReadBytes: osMetrics.diskReadBytes, DiskWriteBytes: osMetrics.diskWriteBytes,
 			ReadOperations: osMetrics.readOperations, WriteOperations: osMetrics.writeOperations,
 			MinorPageFaults: osMetrics.minorPageFaults, MajorPageFaults: osMetrics.majorPageFaults,
 			VoluntaryContextSwitches:   osMetrics.voluntaryContextSwitches,
@@ -621,7 +630,8 @@ func ShouldProbeLiveHeap(kind, executable string) bool {
 type osMetrics struct {
 	virtualMemoryMB, swapMemoryMB, threadCount             *int64
 	virtualBytes, swapBytes                                *int64
-	readBytes, writeBytes, readOperations, writeOperations *int64
+	readBytes, writeBytes, diskReadBytes, diskWriteBytes   *int64
+	readOperations, writeOperations                        *int64
 	minorPageFaults, majorPageFaults                       *int64
 	voluntaryContextSwitches, involuntaryContextSwitches   *int64
 	openFileDescriptors                                    *int64
@@ -640,6 +650,8 @@ func osMetricsFromPlatform(pm platform.ProcessPlatformMetrics) osMetrics {
 	m.threadCount = pm.ThreadCount.Value
 	m.readBytes = pm.LogicalReadBytesTotal.Value
 	m.writeBytes = pm.LogicalWriteBytesTotal.Value
+	m.diskReadBytes = pm.DiskReadBytesTotal.Value
+	m.diskWriteBytes = pm.DiskWriteBytesTotal.Value
 	m.readOperations = pm.ReadOperationsTotal.Value
 	m.writeOperations = pm.WriteOperationsTotal.Value
 	m.minorPageFaults = pm.MinorPageFaultsTotal.Value
@@ -722,7 +734,7 @@ func Classify(commandLine string) string {
 	case javaBin.MatchString(commandLine) && gradleRuntime.MatchString(commandLine):
 		return "JAVA_GRADLE_RELATED"
 	default:
-		return ""
+		return ClassifyXcode(commandLine)
 	}
 }
 

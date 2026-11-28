@@ -45,6 +45,14 @@ type RealMetric struct {
 	Source       string       `json:"source,omitempty"`
 }
 
+// StringMetric is an optional categorical measurement (e.g. macOS memory pressure or thermal state).
+type StringMetric struct {
+	Availability Availability `json:"availability"`
+	Value        *string      `json:"value"`
+	SampledAtMs  int64        `json:"sampled_at_ms,omitempty"`
+	Source       string       `json:"source,omitempty"`
+}
+
 // ProcessPlatformMetrics are OS-level measurements for one process incarnation.
 // Fields that a platform cannot supply must use Unsupported (or another non-available
 // state) with a null value — never a fabricated zero.
@@ -118,6 +126,10 @@ type HostMetrics struct {
 	MemoryTotalBytes     IntMetric       `json:"memory_total_bytes"`
 	MemoryAvailableBytes IntMetric       `json:"memory_available_bytes"`
 	MemoryUsedBytes      IntMetric       `json:"memory_used_bytes"`
+	SwapTotalBytes       IntMetric       `json:"swap_total_bytes"`
+	SwapUsedBytes        IntMetric       `json:"swap_used_bytes"`
+	MemoryPressureLevel  StringMetric    `json:"memory_pressure_level"`
+	ThermalState         StringMetric    `json:"thermal_state"`
 	CommitUsedBytes      IntMetric       `json:"commit_used_bytes"`
 	CommitLimitBytes     IntMetric       `json:"commit_limit_bytes"`
 	Load1                RealMetric      `json:"load1"`
@@ -170,6 +182,19 @@ func RealUnavailable(a Availability, source string) RealMetric {
 		a = NotCollected
 	}
 	return RealMetric{Availability: a, Source: source}
+}
+
+// StringAvailable builds an available categorical metric.
+func StringAvailable(v string, sampledAtMs int64, source string) StringMetric {
+	return StringMetric{Availability: Available, Value: &v, SampledAtMs: sampledAtMs, Source: source}
+}
+
+// StringUnavailable builds a null categorical metric with the given availability.
+func StringUnavailable(a Availability, source string) StringMetric {
+	if a == "" || a == Available {
+		a = NotCollected
+	}
+	return StringMetric{Availability: a, Source: source}
 }
 
 func unavailableResources(scope ResourceScope, a Availability, source string) ResourceMetrics {

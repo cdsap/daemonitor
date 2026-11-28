@@ -2,6 +2,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -225,6 +226,74 @@ func (c *Client) BuildsFiltered(ctx context.Context, query BuildQuery) (BuildsPa
 // BuildsForDaemon fetches recent builds from the selected daemon lifetime.
 func (c *Client) BuildsForDaemon(ctx context.Context, pid, startTimeMs int64, limit int) (BuildsPayload, error) {
 	return c.BuildsFiltered(ctx, BuildQuery{Limit: limit, StartTimeMs: startTimeMs, PID: pid})
+}
+
+// OpenSession opens a persisted build observation session on daemonitor-cored.
+func (c *Client) OpenSession(ctx context.Context, req sessions.BuildSessionOpenRequest) (sessions.BuildSession, error) {
+	var opened sessions.BuildSession
+	err := c.postJSON(ctx, "/v1/sessions", req, &opened)
+	return opened, err
+}
+
+// CloseSession closes an active build observation session and returns its summary.
+func (c *Client) CloseSession(ctx context.Context, sessionID string, req sessions.BuildSessionCloseRequest) (sessions.BuildSessionSummary, error) {
+	var summary sessions.BuildSessionSummary
+	err := c.postJSON(ctx, "/v1/sessions/"+url.PathEscape(sessionID)+"/close", req, &summary)
+	return summary, err
+}
+
+// ListSessions fetches persisted build observation sessions.
+func (c *Client) ListSessions(ctx context.Context, ecosystem string, limit int) ([]sessions.BuildSessionSummary, error) {
+	params := url.Values{}
+	if ecosystem != "" {
+		params.Set("ecosystem", ecosystem)
+	}
+	if limit > 0 {
+		params.Set("limit", strconv.Itoa(limit))
+	}
+	path := "/v1/sessions"
+	if encoded := params.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	var payload struct {
+		Sessions []sessions.BuildSessionSummary `json:"sessions"`
+	}
+	if err := c.getJSON(ctx, path, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Sessions, nil
+}
+
+// GetSession fetches a single persisted build observation session summary.
+func (c *Client) GetSession(ctx context.Context, sessionID string) (sessions.BuildSessionSummary, error) {
+	var summary sessions.BuildSessionSummary
+	err := c.getJSON(ctx, "/v1/sessions/"+url.PathEscape(sessionID), &summary)
+	return summary, err
+}
+
+func (c *Client) postJSON(ctx context.Context, path string, body any, dest any) error {
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://daemonitor"+path, bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, errBody)
+	}
+	if dest == nil {
+		return nil
+	}
+	return json.NewDecoder(resp.Body).Decode(dest)
 }
 
 func (c *Client) getJSON(ctx context.Context, path string, dest any) error {

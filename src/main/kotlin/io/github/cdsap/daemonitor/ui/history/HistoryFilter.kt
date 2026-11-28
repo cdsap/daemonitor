@@ -31,11 +31,12 @@ enum class TimeRange(val days: Long) {
     }
 }
 
-/** Tool chip for unified History (All / Gradle / Bazel). */
+/** Tool chip for unified History (All / Gradle / Bazel / Xcode). */
 enum class ToolFilter {
     ALL,
     GRADLE,
     BAZEL,
+    XCODE,
     ;
 
     val label: String
@@ -43,6 +44,7 @@ enum class ToolFilter {
             ALL -> "All"
             GRADLE -> "Gradle"
             BAZEL -> "Bazel"
+            XCODE -> "Xcode"
         }
 }
 
@@ -68,6 +70,7 @@ object HistoryFilters {
                     ToolFilter.ALL -> true
                     ToolFilter.GRADLE -> b.tool == BuildTool.GRADLE
                     ToolFilter.BAZEL -> b.tool == BuildTool.BAZEL
+                    ToolFilter.XCODE -> b.tool == BuildTool.XCODE
                 }
         }
 }
