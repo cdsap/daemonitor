@@ -1,13 +1,11 @@
 package io.github.cdsap.daemonitor.update
 
-import kotlinx.coroutines.test.runTest
-import org.junit.jupiter.api.condition.EnabledOnOs
-import org.junit.jupiter.api.condition.OS
-import org.junit.jupiter.api.io.TempDir
+import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
+import java.util.zip.GZIPOutputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlin.test.Test
@@ -16,6 +14,13 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry
+import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream
+import org.apache.commons.compress.archivers.tar.TarConstants
+import org.junit.jupiter.api.condition.EnabledOnOs
+import org.junit.jupiter.api.condition.OS
+import org.junit.jupiter.api.io.TempDir
 
 class DesktopUpdateInstallerTest {
 
@@ -280,8 +285,8 @@ class DesktopUpdateInstallerTest {
     }
 
     @Test
-    fun `windows apply helper removes backup before relaunch`(@TempDir tmp: Path) {
-        val app = tmp.resolve("Daemonitor.exe").also { Files.writeString(it, "previous") }
+    fun `windows helper uses literal paths and private backup before relaunch`(@TempDir tmp: Path) {
+        val app = tmp.resolve("Daemónitor & ^ %PATH% ! $ ' [app].exe").also { Files.writeString(it, "previous") }
         val staged = tmp.resolve("staged/Daemonitor.exe").also {
             Files.createDirectories(it.parent)
             Files.writeString(it, "updated")
@@ -292,7 +297,7 @@ class DesktopUpdateInstallerTest {
             app = app,
             staged = staged,
             artifact = artifact,
-            relaunchCommand = listOf("Daemonitor.exe"),
+            relaunchCommand = listOf(app.toString(), "arg & %PATH% ' $ | ^ !"),
         )
         val started = mutableListOf<List<String>>()
 
@@ -301,11 +306,163 @@ class DesktopUpdateInstallerTest {
             processStarter = { command, _ -> started += command },
         ).applyAfterExit(stagedUpdate)
 
-        val script = Files.readString(tmp.resolve("apply-update.cmd"))
-        assertTrue(script.contains("daemonitor-pre-update-%RANDOM%%RANDOM%"))
-        assertTrue(script.contains("if exist \"%APP_PATH%.pre-update\" rmdir /s /q \"%APP_PATH%.pre-update\""))
-        assertTrue(script.indexOf("rmdir /s /q \"%BACKUP%\"") < script.indexOf("start \"\""))
-        assertEquals(listOf(listOf("cmd.exe", "/c", tmp.resolve("apply-update.cmd").toString())), started)
+        val script = Files.readString(tmp.resolve("apply-update.ps1"), StandardCharsets.UTF_8)
+        assertTrue(script.startsWith("\uFEFF"), "Windows PowerShell needs a UTF-8 BOM for Unicode paths")
+        assertTrue(script.contains("${'$'}appPath = '" + app.toString().replace("'", "''") + "'"))
+        assertTrue(script.contains("'\"arg & %PATH% '' $ | ^ !\"'"))
+        assertTrue(script.contains("Move-Item -LiteralPath ${'$'}appPath"))
+        assertTrue(script.contains("Move-Item -LiteralPath ${'$'}backup -Destination ${'$'}appPath"))
+        assertTrue(!script.contains("TEMP"))
+        val backupRoot = Files.list(tmp).use { files -> files.filter { it.fileName.toString().startsWith("rollback-") }.findFirst().orElseThrow() }
+        assertTrue(script.contains(backupRoot.toString()))
+        assertTrue(script.indexOf("Remove-Item -LiteralPath ${'$'}backupRoot") < script.indexOf("Start-Process"))
+        assertEquals(
+            listOf(listOf("powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", tmp.resolve("apply-update.ps1").toString())),
+            started,
+        )
+    }
+
+    @Test
+    fun `rejects unsafe candidate paths before download`(@TempDir tmp: Path) = runTest {
+        val base = stagedUpdate(DesktopPlatform.MACOS, tmp, tmp, tmp.resolve("update.zip"), emptyList()).candidate
+        val installer = DesktopUpdateInstaller(
+            updateDirectory = tmp,
+            installation = macInstall(),
+            downloader = { _, _, _ -> error("must reject before download") },
+        )
+        for (version in listOf("../outside", "/tmp/outside", "1.2.3/../../outside", "1.2.3\\outside")) {
+            assertFailsWith<IllegalArgumentException> { installer.prepare(base.copy(version = version)) {} }
+            assertFailsWith<IllegalArgumentException> { extractUpdatePayload(base.copy(version = version), tmp, tmp) }
+        }
+        for (name in listOf("../outside.zip", "/outside.zip", "..", "a\\b.zip", "a&b.zip")) {
+            assertFailsWith<IllegalArgumentException> { installer.prepare(base.copy(assetName = name)) {} }
+        }
+    }
+
+    @Test
+    fun `rejects zip traversal and absolute paths`(@TempDir tmp: Path) {
+        for (name in listOf("../outside", "/outside", "C:/outside", "a/../outside", "a\\outside")) {
+            val archive = tmp.resolve("bad.zip")
+            ZipOutputStream(Files.newOutputStream(archive)).use { zip ->
+                zip.putNextEntry(ZipEntry(name))
+                zip.write("bad".toByteArray())
+                zip.closeEntry()
+            }
+            val candidate = stagedUpdate(DesktopPlatform.LINUX, tmp, tmp, archive, emptyList()).candidate
+            assertFailsWith<IllegalArgumentException>(name) { extractUpdatePayload(candidate, archive, tmp.resolve("updates")) }
+        }
+        assertTrue(!Files.exists(tmp.resolve("updates/staged/outside")))
+    }
+
+    @Test
+    fun `rejects tar traversal links and oversized entries`(@TempDir tmp: Path) {
+        val entries: List<Pair<TarArchiveEntry, String?>> = listOf(
+            TarArchiveEntry("../outside") to null,
+            TarArchiveEntry("/outside", true) to null,
+            TarArchiveEntry("C:/outside", true) to null,
+            TarArchiveEntry("a/../outside") to null,
+            // TarArchiveEntry(String) normalizes '\' to '/' on Windows, so patch raw header bytes.
+            TarArchiveEntry("a/outside") to "a\\outside",
+            TarArchiveEntry("link", TarConstants.LF_SYMLINK).apply { linkName = "../../outside" } to null,
+            TarArchiveEntry("link", TarConstants.LF_LINK).apply { linkName = "../../outside" } to null,
+            TarArchiveEntry("huge").apply { size = 2L * 1024 * 1024 * 1024 + 1 } to null,
+        )
+        for ((entry, rawName) in entries) {
+            val archive = tmp.resolve("bad.tar.gz")
+            // Write just the header: invalid entries must be rejected before their data is read.
+            GZIPOutputStream(Files.newOutputStream(archive)).use { gzip ->
+                val header = ByteArray(512)
+                entry.writeEntryHeader(header)
+                if (rawName != null) {
+                    val nameBytes = rawName.toByteArray(Charsets.US_ASCII)
+                    header.fill(0, 0, 100)
+                    nameBytes.copyInto(header, 0)
+                    // Recompute standard 8-byte tar header checksum at bytes 148..155.
+                    header.fill(' '.code.toByte(), 148, 156)
+                    val checksum = header.sumOf { it.toInt() and 0xFF }
+                    val octal = "%06o\u0000 ".format(java.util.Locale.ROOT, checksum).toByteArray(Charsets.US_ASCII)
+                    octal.copyInto(header, 148)
+                }
+                gzip.write(header)
+                gzip.write(ByteArray(1024))
+            }
+            val candidate = stagedUpdate(DesktopPlatform.LINUX, tmp, tmp, archive, emptyList()).candidate
+            assertFailsWith<IllegalArgumentException>(rawName ?: entry.name) { extractUpdatePayload(candidate, archive, tmp.resolve("updates")) }
+        }
+    }
+
+    @Test
+    @EnabledOnOs(OS.LINUX, OS.MAC)
+    fun `stages valid tar payload and preserves executables`(@TempDir tmp: Path) {
+        val archive = tmp.resolve("update.tar.gz")
+        TarArchiveOutputStream(GZIPOutputStream(Files.newOutputStream(archive))).use { tar ->
+            val data = "launcher".toByteArray()
+            tar.putArchiveEntry(TarArchiveEntry("Daemonitor/bin/Daemonitor").apply { size = data.size.toLong(); mode = 493 })
+            tar.write(data)
+            tar.closeArchiveEntry()
+        }
+        val candidate = stagedUpdate(DesktopPlatform.LINUX, tmp, tmp, archive, emptyList()).candidate
+        val payload = extractUpdatePayload(candidate, archive, tmp.resolve("updates"))
+        assertEquals("launcher", Files.readString(payload.resolve("bin/Daemonitor")))
+        assertTrue(Files.isExecutable(payload.resolve("bin/Daemonitor")))
+    }
+
+    @Test
+    @EnabledOnOs(OS.LINUX, OS.MAC)
+    fun `refuses staging symlinks without deleting outside data`(@TempDir tmp: Path) {
+        val outside = Files.createDirectories(tmp.resolve("outside"))
+        val sentinel = Files.writeString(outside.resolve("keep"), "keep")
+        val updates = Files.createDirectories(tmp.resolve("updates"))
+        Files.createSymbolicLink(updates.resolve("staged"), outside)
+        val archive = tmp.resolve("update.zip")
+        val candidate = stagedUpdate(DesktopPlatform.LINUX, tmp, tmp, archive, emptyList()).candidate
+        assertFailsWith<IllegalArgumentException> { extractUpdatePayload(candidate, archive, updates) }
+        assertEquals("keep", Files.readString(sentinel))
+    }
+
+    @Test
+    @EnabledOnOs(OS.LINUX, OS.MAC)
+    fun `cleans old staging without following nested symlinks`(@TempDir tmp: Path) {
+        val outside = Files.createDirectories(tmp.resolve("outside"))
+        val sentinel = Files.writeString(outside.resolve("keep"), "keep")
+        val oldStage = Files.createDirectories(tmp.resolve("updates/staged/1.0.8"))
+        Files.createSymbolicLink(oldStage.resolve("link"), outside)
+        val archive = tmp.resolve("update.zip").also { writeMacAppZip(it) }
+        val candidate = stagedUpdate(DesktopPlatform.MACOS, tmp, tmp, archive, emptyList()).candidate
+        extractUpdatePayload(candidate, archive, tmp.resolve("updates"))
+        assertEquals("keep", Files.readString(sentinel))
+        assertTrue(!Files.exists(oldStage.resolve("link")))
+    }
+
+    @Test
+    @EnabledOnOs(OS.WINDOWS)
+    fun `windows helper applies paths with metacharacters`(@TempDir tmp: Path) {
+        val app = tmp.resolve("app & %PATH% ^ ! ' [1]").also { Files.createDirectories(it) }
+        Files.writeString(app.resolve("version"), "previous")
+        val payload = tmp.resolve("staged/app & %PATH% ^ ! ' [1]").also { Files.createDirectories(it) }
+        Files.writeString(payload.resolve("version"), "updated")
+        val artifact = Files.writeString(tmp.resolve("update.zip"), "zip")
+        DesktopUpdateApplier(
+            processId = unusedProcessId(),
+            processStarter = { command, _ ->
+                val process = ProcessBuilder(command).redirectErrorStream(true).start()
+                assertTrue(process.waitFor(20, TimeUnit.SECONDS))
+                assertEquals(0, process.exitValue(), process.inputStream.bufferedReader().readText())
+            },
+        ).applyAfterExit(stagedUpdate(DesktopPlatform.WINDOWS, app, payload, artifact, listOf("cmd.exe", "/c", "exit 0")))
+        assertEquals("updated", Files.readString(app.resolve("version")))
+        assertTrue(!Files.exists(artifact))
+        assertTrue(!Files.exists(tmp.resolve("apply-update.ps1")))
+        assertTrue(Files.list(tmp).use { files -> files.noneMatch { it.fileName.toString().startsWith("rollback-") } })
+    }
+
+    @Test
+    fun `rejects oversized downloads before networking`(@TempDir tmp: Path) = runTest {
+        val candidate = stagedUpdate(DesktopPlatform.MACOS, tmp, tmp, tmp.resolve("update.zip"), emptyList()).candidate
+            .copy(sizeBytes = 1024L * 1024 * 1024 + 1, sha256 = "a".repeat(64))
+        assertFailsWith<IllegalArgumentException> {
+            DesktopUpdateInstaller(updateDirectory = tmp, installation = macInstall()).prepare(candidate) {}
+        }
     }
 
     private fun unusedProcessId(): Long =

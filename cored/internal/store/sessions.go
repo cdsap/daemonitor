@@ -79,13 +79,21 @@ func (s *Store) OpenObservationSession(req sessions.OpenRequest, openedAtMs int6
 	if err != sql.ErrNoRows {
 		return sessions.Response{}, false, err
 	}
-	if _, err := s.db.Exec(`INSERT INTO observation_sessions(name, host_id, association, opened_at_ms) VALUES (?, ?, ?, ?)`, req.Name, req.HostID, req.Association, openedAtMs); err != nil {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return sessions.Response{}, false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`INSERT INTO observation_sessions(name, host_id, association, opened_at_ms) VALUES (?, ?, ?, ?)`, req.Name, req.HostID, req.Association, openedAtMs); err != nil {
 		return sessions.Response{}, false, err
 	}
 	for _, ref := range req.Processes {
-		if _, err := s.db.Exec(`INSERT INTO observation_session_processes(session_name, host_id, pid, start_time_ms, process_type) VALUES (?, ?, ?, ?, ?)`, req.Name, ref.HostID, ref.PID, ref.StartTimeMs, ref.ProcessType); err != nil {
+		if _, err := tx.Exec(`INSERT INTO observation_session_processes(session_name, host_id, pid, start_time_ms, process_type) VALUES (?, ?, ?, ?, ?)`, req.Name, ref.HostID, ref.PID, ref.StartTimeMs, ref.ProcessType); err != nil {
 			return sessions.Response{}, false, err
 		}
+	}
+	if err := tx.Commit(); err != nil {
+		return sessions.Response{}, false, err
 	}
 	return sessions.Response{Name: req.Name, Association: req.Association, HostID: req.HostID, OpenedAtMs: openedAtMs, Processes: []sessions.RSSSummary{}, Builds: sessions.BuildTotals{}}, false, nil
 }
@@ -146,16 +154,24 @@ func (s *Store) CloseObservationSession(name string, closedAtMs int64) (sessions
 	}
 	response.Builds = sessions.BuildTotals{Count: total, SuccessCount: success, FailureCount: failure}
 	response.ClosedAtMs = &closedAtMs
-	for _, summary := range response.Processes {
-		if _, err := s.db.Exec(`INSERT INTO observation_session_process_summaries(session_name, host_id, pid, start_time_ms, process_type, sample_count, first_rss_mb, peak_rss_mb, last_rss_mb, delta_rss_mb, association) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, name, summary.HostID, summary.PID, summary.StartTimeMs, summary.ProcessType, summary.SampleCount, summary.FirstRSSMB, summary.PeakRSSMB, summary.LastRSSMB, summary.DeltaRSSMB, summary.Association); err != nil {
-			return sessions.Response{}, err
-		}
-	}
 	encoded, err := json.Marshal(response)
 	if err != nil {
 		return sessions.Response{}, err
 	}
-	if _, err := s.db.Exec(`UPDATE observation_sessions SET closed_at_ms=?, response_json=? WHERE name=? AND response_json IS NULL`, closedAtMs, string(encoded), name); err != nil {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return sessions.Response{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	for _, summary := range response.Processes {
+		if _, err := tx.Exec(`INSERT INTO observation_session_process_summaries(session_name, host_id, pid, start_time_ms, process_type, sample_count, first_rss_mb, peak_rss_mb, last_rss_mb, delta_rss_mb, association) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, name, summary.HostID, summary.PID, summary.StartTimeMs, summary.ProcessType, summary.SampleCount, summary.FirstRSSMB, summary.PeakRSSMB, summary.LastRSSMB, summary.DeltaRSSMB, summary.Association); err != nil {
+			return sessions.Response{}, err
+		}
+	}
+	if _, err := tx.Exec(`UPDATE observation_sessions SET closed_at_ms=?, response_json=? WHERE name=? AND response_json IS NULL`, closedAtMs, string(encoded), name); err != nil {
+		return sessions.Response{}, err
+	}
+	if err := tx.Commit(); err != nil {
 		return sessions.Response{}, err
 	}
 	return response, nil

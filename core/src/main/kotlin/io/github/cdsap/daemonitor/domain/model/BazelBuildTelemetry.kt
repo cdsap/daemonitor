@@ -1,6 +1,9 @@
 package io.github.cdsap.daemonitor.domain.model
 
-import java.util.concurrent.ConcurrentHashMap
+import io.github.cdsap.daemonitor.json.Json
+import io.github.cdsap.daemonitor.json.JsonArray
+import io.github.cdsap.daemonitor.json.JsonNumber
+import io.github.cdsap.daemonitor.json.JsonObject
 
 /** Parsed `builds.bazel_profile` JSON summary written by `cored`. */
 data class BazelProfileSummary(
@@ -73,13 +76,13 @@ data class BazelDetailsSummary(
  */
 object BazelBuildTelemetryParser {
     fun parseProfile(json: String?): BazelProfileSummary? {
-        val raw = json?.trim()?.takeIf { it.startsWith("{") && it.endsWith("}") } ?: return null
-        val version = stringField(raw, "bazel_version")?.takeIf { it.isNotBlank() }
-        val date = stringField(raw, "date")?.takeIf { it.isNotBlank() }
-        val phases = extractContainer(raw, "phase_seconds", '{', '}')?.let(::parseDoubleMap).orEmpty()
-        val criticalSec = numberField(raw, "critical_path_seconds")?.takeIf { it > 0.0 }
-        val criticalComp = longField(raw, "critical_path_components")?.toInt()?.takeIf { it > 0 }
-        val counters = extractContainer(raw, "peak_counters", '{', '}')?.let(::parseDoubleMap).orEmpty()
+        val raw = parseObject(json) ?: return null
+        val version = raw.string("bazel_version")?.takeIf { it.isNotBlank() }
+        val date = raw.string("date")?.takeIf { it.isNotBlank() }
+        val phases = raw.obj("phase_seconds")?.let(::parseDoubleMap).orEmpty()
+        val criticalSec = raw.number("critical_path_seconds")?.takeIf { it > 0.0 }
+        val criticalComp = raw.long("critical_path_components")?.toInt()?.takeIf { it > 0 }
+        val counters = raw.obj("peak_counters")?.let(::parseDoubleMap).orEmpty()
         if (version == null && date == null && phases.isEmpty() && criticalSec == null && counters.isEmpty()) {
             return null
         }
@@ -94,25 +97,24 @@ object BazelBuildTelemetryParser {
     }
 
     fun parseWindowSummaries(json: String?): List<BazelWindowSummary> {
-        val raw = json?.trim()?.takeIf { it.startsWith("[") && it.endsWith("]") } ?: return emptyList()
-        val inner = raw.substring(1, raw.length - 1)
-        return splitObjects(inner).mapNotNull { obj ->
-            val pid = longField(obj, "pid") ?: return@mapNotNull null
+        val raw = json?.let { runCatching { Json.parse(it) as? JsonArray }.getOrNull() } ?: return emptyList()
+        return raw.values.filterIsInstance<JsonObject>().mapNotNull { obj ->
+            val pid = obj.long("pid") ?: return@mapNotNull null
             BazelWindowSummary(
                 pid = pid,
-                processType = stringField(obj, "process_type")?.takeIf { it.isNotBlank() },
-                sampleCount = longField(obj, "sample_count")?.toInt() ?: 0,
-                firstRssMb = longField(obj, "first_rss_mb") ?: 0L,
-                peakRssMb = longField(obj, "peak_rss_mb") ?: 0L,
-                lastRssMb = longField(obj, "last_rss_mb") ?: 0L,
-                deltaRssMb = longField(obj, "delta_rss_mb") ?: 0L,
-                firstHeapUsedMb = longField(obj, "first_heap_used_mb"),
-                peakHeapUsedMb = longField(obj, "peak_heap_used_mb"),
-                lastHeapUsedMb = longField(obj, "last_heap_used_mb"),
-                deltaHeapUsedMb = longField(obj, "delta_heap_used_mb"),
-                deltaTotalGcCount = longField(obj, "delta_total_gc_count"),
-                deltaYoungGcTimeMs = longField(obj, "delta_young_gc_time_ms"),
-                deltaOldGcTimeMs = longField(obj, "delta_old_gc_time_ms"),
+                processType = obj.string("process_type")?.takeIf { it.isNotBlank() },
+                sampleCount = obj.long("sample_count")?.toInt() ?: 0,
+                firstRssMb = obj.long("first_rss_mb") ?: 0L,
+                peakRssMb = obj.long("peak_rss_mb") ?: 0L,
+                lastRssMb = obj.long("last_rss_mb") ?: 0L,
+                deltaRssMb = obj.long("delta_rss_mb") ?: 0L,
+                firstHeapUsedMb = obj.long("first_heap_used_mb"),
+                peakHeapUsedMb = obj.long("peak_heap_used_mb"),
+                lastHeapUsedMb = obj.long("last_heap_used_mb"),
+                deltaHeapUsedMb = obj.long("delta_heap_used_mb"),
+                deltaTotalGcCount = obj.long("delta_total_gc_count"),
+                deltaYoungGcTimeMs = obj.long("delta_young_gc_time_ms"),
+                deltaOldGcTimeMs = obj.long("delta_old_gc_time_ms"),
             )
         }
     }
@@ -123,37 +125,37 @@ object BazelBuildTelemetryParser {
         collectionState: String?,
         metricsJson: String?,
     ): BazelDetailsSummary? {
-        val raw = metricsJson?.trim()?.takeIf { it.startsWith("{") && it.endsWith("}") }
-        val timing = raw?.let { extractContainer(it, "timing", '{', '}') }
-        val actions = raw?.let { extractContainer(it, "actions", '{', '}') }
-        val memory = raw?.let { extractContainer(it, "memory", '{', '}') }
-        val testTotals = raw?.let { extractContainer(it, "test_totals", '{', '}') }
-        val diagnostics = raw?.let { extractContainer(it, "diagnostics", '{', '}') }
-        val workers = raw?.let { extractContainer(it, "workers", '[', ']') }?.let(::splitObjects)
+        val raw = parseObject(metricsJson)
+        val timing = raw?.obj("timing")
+        val actions = raw?.obj("actions")
+        val memory = raw?.obj("memory")
+        val testTotals = raw?.obj("test_totals")
+        val diagnostics = raw?.obj("diagnostics")
+        val workers = raw?.array("workers")?.values?.filterIsInstance<JsonObject>()
         val details = BazelDetailsSummary(
             bazelVersion = bazelVersion?.takeIf { it.isNotBlank() },
             sourceFormat = sourceFormat?.takeIf { it.isNotBlank() },
             collectionState = collectionState?.takeIf { it.isNotBlank() },
-            analysisPhaseMs = timing?.let { longField(it, "analysis_phase_ms") },
-            executionPhaseMs = timing?.let { longField(it, "execution_phase_ms") },
-            wallTimeMs = timing?.let { longField(it, "wall_ms") },
-            cpuTimeMs = timing?.let { longField(it, "cpu_ms") },
-            actionsCreated = actions?.let { longField(it, "created") },
-            actionsExecuted = actions?.let { longField(it, "executed") },
-            remoteCacheHits = actions?.let { longField(it, "remote_cache_hits") },
-            localCacheHits = actions?.let { longField(it, "local_cache_hits") },
-            localCacheMisses = actions?.let { longField(it, "local_cache_misses") },
-            usedHeapPostBuildBytes = memory?.let { longField(it, "used_heap_post_build_bytes") },
-            peakPostGcHeapBytes = memory?.let { longField(it, "peak_post_gc_heap_bytes") },
-            peakPostGcTenuredBytes = memory?.let { longField(it, "peak_post_gc_tenured_bytes") },
+            analysisPhaseMs = timing?.long("analysis_phase_ms"),
+            executionPhaseMs = timing?.long("execution_phase_ms"),
+            wallTimeMs = timing?.long("wall_ms"),
+            cpuTimeMs = timing?.long("cpu_ms"),
+            actionsCreated = actions?.long("created"),
+            actionsExecuted = actions?.long("executed"),
+            remoteCacheHits = actions?.long("remote_cache_hits"),
+            localCacheHits = actions?.long("local_cache_hits"),
+            localCacheMisses = actions?.long("local_cache_misses"),
+            usedHeapPostBuildBytes = memory?.long("used_heap_post_build_bytes"),
+            peakPostGcHeapBytes = memory?.long("peak_post_gc_heap_bytes"),
+            peakPostGcTenuredBytes = memory?.long("peak_post_gc_tenured_bytes"),
             workerCount = workers?.size?.takeIf { it > 0 },
-            testsTotal = testTotals?.let { longField(it, "total")?.toInt() }?.takeIf { it > 0 },
-            testsPassed = testTotals?.let { longField(it, "passed")?.toInt() },
-            testsFailed = testTotals?.let { longField(it, "failed")?.toInt() },
-            testsFlaky = testTotals?.let { longField(it, "flaky")?.toInt() },
-            testsCached = testTotals?.let { longField(it, "cached")?.toInt() },
-            abortReason = diagnostics?.let { stringField(it, "abort_reason") }?.takeIf { it.isNotBlank() },
-            summary = diagnostics?.let { stringField(it, "summary") }?.takeIf { it.isNotBlank() },
+            testsTotal = testTotals?.let { it.long("total")?.toInt() }?.takeIf { it > 0 },
+            testsPassed = testTotals?.let { it.long("passed")?.toInt() },
+            testsFailed = testTotals?.let { it.long("failed")?.toInt() },
+            testsFlaky = testTotals?.let { it.long("flaky")?.toInt() },
+            testsCached = testTotals?.let { it.long("cached")?.toInt() },
+            abortReason = diagnostics?.string("abort_reason")?.takeIf { it.isNotBlank() },
+            summary = diagnostics?.string("summary")?.takeIf { it.isNotBlank() },
         )
         return details.takeIf {
             it.bazelVersion != null || it.hasTiming || it.hasActions || it.hasMemory ||
@@ -161,137 +163,11 @@ object BazelBuildTelemetryParser {
         }
     }
 
-    private val containerKeyRegexes = ConcurrentHashMap<String, Regex>()
-    private val DOUBLE_MAP_PAIR = Regex("\"((?:\\\\.|[^\"\\\\])*)\"\\s*:\\s*(-?\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?)")
+    private fun parseObject(json: String?): JsonObject? =
+        json?.let { runCatching { Json.parse(it) as? JsonObject }.getOrNull() }
 
-    private fun extractContainer(json: String, name: String, open: Char, close: Char): String? {
-        val regex = containerKeyRegexes.computeIfAbsent(name) { Regex("\"${Regex.escape(it)}\"\\s*:\\s*") }
-        val match = regex.find(json) ?: return null
-        val start = match.range.last + 1
-        if (start >= json.length || json[start] != open) return null
-        var depth = 0
-        var inString = false
-        var escaped = false
-        for (i in start until json.length) {
-            val c = json[i]
-            if (inString) {
-                if (escaped) escaped = false else if (c == '\\') escaped = true else if (c == '"') inString = false
-            } else when (c) {
-                '"' -> inString = true
-                open -> depth++
-                close -> if (--depth == 0) return json.substring(start + 1, i)
-            }
-        }
-        return null
-    }
-
-    private fun splitObjects(arrayBody: String): List<String> {
-        val out = mutableListOf<String>()
-        var depth = 0
-        var start = -1
-        var inString = false
-        var escaped = false
-        for (i in arrayBody.indices) {
-            if (inString) {
-                if (escaped) escaped = false else if (arrayBody[i] == '\\') escaped = true else if (arrayBody[i] == '"') inString = false
-                continue
-            }
-            when (arrayBody[i]) {
-                '"' -> inString = true
-                '{' -> {
-                    if (depth == 0) start = i
-                    depth++
-                }
-                '}' -> {
-                    depth--
-                    if (depth == 0 && start >= 0) {
-                        out += arrayBody.substring(start, i + 1)
-                        start = -1
-                    }
-                }
-            }
-        }
-        return out
-    }
-
-    private fun parseDoubleMap(body: String): Map<String, Double> {
-        val out = linkedMapOf<String, Double>()
-        for (m in DOUBLE_MAP_PAIR.findAll(body)) {
-            val k = m.groupValues[1]
-            val v = m.groupValues[2].toDoubleOrNull() ?: continue
-            out[k] = v
-        }
-        return out
-    }
-
-    private fun stringField(obj: String, name: String): String? {
-        val key = "\"$name\""
-        var searchFrom = 0
-        while (true) {
-            val keyIndex = obj.indexOf(key, searchFrom)
-            if (keyIndex < 0) return null
-            var i = keyIndex + key.length
-            while (i < obj.length && obj[i].isWhitespace()) i++
-            if (i >= obj.length || obj[i] != ':') {
-                searchFrom = keyIndex + 1
-                continue
-            }
-            i++
-            while (i < obj.length && obj[i].isWhitespace()) i++
-            if (i >= obj.length) return null
-            if (obj.startsWith("null", i)) return null
-            if (obj[i] != '"') return null
-            return decodeJsonString(obj, i + 1)
-        }
-    }
-
-    private fun decodeJsonString(source: String, start: Int): String {
-        val out = StringBuilder()
-        var i = start
-        while (i < source.length) {
-            when (val c = source[i]) {
-                '"' -> return out.toString()
-                '\\' -> {
-                    i++
-                    if (i >= source.length) break
-                    when (val escaped = source[i]) {
-                        '"', '\\', '/' -> out.append(escaped)
-                        'n' -> out.append('\n')
-                        't' -> out.append('\t')
-                        'r' -> out.append('\r')
-                        else -> out.append(escaped)
-                    }
-                }
-                else -> out.append(c)
-            }
-            i++
-        }
-        return out.toString()
-    }
-
-    private fun numberField(obj: String, name: String): Double? {
-        val key = "\"$name\""
-        var searchFrom = 0
-        while (true) {
-            val keyIndex = obj.indexOf(key, searchFrom)
-            if (keyIndex < 0) return null
-            var i = keyIndex + key.length
-            while (i < obj.length && obj[i].isWhitespace()) i++
-            if (i >= obj.length || obj[i] != ':') {
-                searchFrom = keyIndex + 1
-                continue
-            }
-            i++
-            while (i < obj.length && obj[i].isWhitespace()) i++
-            if (i >= obj.length || obj.startsWith("null", i)) return null
-            val start = i
-            if (obj[i] == '-') i++
-            while (i < obj.length && (obj[i].isDigit() || obj[i] == '.' || obj[i] == 'e' || obj[i] == 'E' || (i > start && (obj[i] == '+' || obj[i] == '-')))) {
-                i++
-            }
-            return obj.substring(start, i).toDoubleOrNull()
-        }
-    }
-
-    private fun longField(obj: String, name: String): Long? = numberField(obj, name)?.toLong()
+    private fun parseDoubleMap(obj: JsonObject): Map<String, Double> =
+        obj.values.mapNotNull { (key, value) ->
+            (value as? JsonNumber)?.value?.toDouble()?.let { key to it }
+        }.toMap()
 }

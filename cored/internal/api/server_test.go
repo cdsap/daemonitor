@@ -15,12 +15,13 @@ import (
 	"github.com/cdsap/daemonitor/cored/internal/api"
 	"github.com/cdsap/daemonitor/cored/internal/builds"
 	"github.com/cdsap/daemonitor/cored/internal/ipc"
+	"github.com/cdsap/daemonitor/cored/internal/ipctest"
 	"github.com/cdsap/daemonitor/cored/internal/model"
 )
 
 func TestServerHealthAndProcessesOverUnixSocket(t *testing.T) {
 	// Keep the endpoint short: macOS sun_path is ~104 bytes; Windows uses a named pipe.
-	socket := ipc.TempEndpoint(t, "core")
+	socket := ipctest.TempEndpoint(t, "core")
 	db := filepath.Join(t.TempDir(), "core.sqlite")
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -116,7 +117,7 @@ func TestServerHealthAndProcessesOverUnixSocket(t *testing.T) {
 }
 
 func TestObservationSessionAPIRejectsMalformedAndUnknownRequests(t *testing.T) {
-	socket := ipc.TempEndpoint(t, "sessions-errors")
+	socket := ipctest.TempEndpoint(t, "sessions-errors")
 	srv, err := api.NewServer(socket, filepath.Join(t.TempDir(), "core.sqlite"), time.Hour, time.Hour, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -165,7 +166,7 @@ func TestObservationSessionAPIRejectsMalformedAndUnknownRequests(t *testing.T) {
 }
 
 func TestBuildsEndpointFiltersByDaemonAndRejectsInvalidIdentifiers(t *testing.T) {
-	socket := ipc.TempEndpoint(t, "builds")
+	socket := ipctest.TempEndpoint(t, "builds")
 	db := filepath.Join(t.TempDir(), "core.sqlite")
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -265,7 +266,7 @@ func TestBuildsPIDQueryUsesCoreResolvedDaemonIdentity(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(logDir, "daemon-42.out.log"), []byte("2026-06-24T14:42:12.402-0700 [INFO] [x] DefaultDaemonContext[uid=current-uid, daemonOpts=-Xmx1g]\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	socket := ipc.TempEndpoint(t, "pid-builds")
+	socket := ipctest.TempEndpoint(t, "pid-builds")
 	srv, err := api.NewServer(socket, filepath.Join(t.TempDir(), "core.sqlite"), time.Hour, time.Hour, gradleHome)
 	if err != nil {
 		t.Fatal(err)
@@ -317,7 +318,7 @@ func TestBuildsPIDQueryUsesCoreResolvedDaemonIdentity(t *testing.T) {
 }
 
 func TestEventsEndpointReturnsLifecycleJSON(t *testing.T) {
-	socket := ipc.TempEndpoint(t, "events")
+	socket := ipctest.TempEndpoint(t, "events")
 	db := filepath.Join(t.TempDir(), "core.sqlite")
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -423,7 +424,7 @@ func TestBEPWatchIngestsBazelBuildsAndFiltersByTool(t *testing.T) {
 	}
 	t.Setenv("DAEMONITOR_BEP_WATCH", bepPath)
 
-	socket := ipc.TempEndpoint(t, "bep")
+	socket := ipctest.TempEndpoint(t, "bep")
 	db := filepath.Join(t.TempDir(), "core.sqlite")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -495,7 +496,7 @@ func TestBEPWatchIngestsBazelBuildsAndFiltersByTool(t *testing.T) {
 }
 
 func TestHistoryEndpointSupportsPIDAndStartTimeFilters(t *testing.T) {
-	socket := ipc.TempEndpoint(t, "histfilter")
+	socket := ipctest.TempEndpoint(t, "histfilter")
 	db := filepath.Join(t.TempDir(), "core.sqlite")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

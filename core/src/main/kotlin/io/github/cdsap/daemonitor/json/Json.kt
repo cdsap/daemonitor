@@ -1,12 +1,13 @@
-package io.github.cdsap.daemonitor.mcp
+package io.github.cdsap.daemonitor.json
 
+import java.math.BigDecimal
 import java.util.Locale
 
-internal sealed interface JsonValue {
+sealed interface JsonValue {
     fun stringify(): String
 }
 
-internal data class JsonObject(val values: Map<String, JsonValue>) : JsonValue {
+data class JsonObject(val values: Map<String, JsonValue>) : JsonValue {
     override fun stringify(): String =
         values.entries.joinToString(prefix = "{", postfix = "}") { (key, value) ->
             "${JsonString(key).stringify()}:${value.stringify()}"
@@ -15,20 +16,22 @@ internal data class JsonObject(val values: Map<String, JsonValue>) : JsonValue {
     fun obj(name: String): JsonObject? = values[name] as? JsonObject
     fun array(name: String): JsonArray? = values[name] as? JsonArray
     fun string(name: String): String? = (values[name] as? JsonString)?.value
+    fun number(name: String): Double? = (values[name] as? JsonNumber)?.value?.toDouble()
     fun boolean(name: String): Boolean? = (values[name] as? JsonBoolean)?.value
+    /** Returns an exact Long, or null for fractions and values outside the Long range. */
     fun long(name: String): Long? = when (val value = values[name]) {
-        is JsonNumber -> value.value.toLong()
+        is JsonNumber -> value.longOrNull()
         is JsonString -> value.value.toLongOrNull()
         else -> null
     }
 }
 
-internal data class JsonArray(val values: List<JsonValue>) : JsonValue {
+data class JsonArray(val values: List<JsonValue>) : JsonValue {
     override fun stringify(): String =
         values.joinToString(prefix = "[", postfix = "]") { it.stringify() }
 }
 
-internal data class JsonString(val value: String) : JsonValue {
+data class JsonString(val value: String) : JsonValue {
     override fun stringify(): String = buildString {
         append('"')
         value.forEach { ch ->
@@ -41,7 +44,7 @@ internal data class JsonString(val value: String) : JsonValue {
                 '\r' -> append("\\r")
                 '\t' -> append("\\t")
                 else -> {
-                    if (ch.code < 0x20) append(String.format(Locale.ROOT, "\\u%04x", ch.code)) else append(ch)
+                    if (ch.code < 0x20) append("\\u%04x".format(Locale.ROOT, ch.code)) else append(ch)
                 }
             }
         }
@@ -49,28 +52,45 @@ internal data class JsonString(val value: String) : JsonValue {
     }
 }
 
-internal data class JsonNumber(val value: Number) : JsonValue {
+data class JsonNumber(val value: Number) : JsonValue {
+    override fun stringify(): String {
+        require(value !is Double || value.isFinite()) { "Non-finite JSON number" }
+        require(value !is Float || value.isFinite()) { "Non-finite JSON number" }
+        return value.toString()
+    }
+
+    fun longOrNull(): Long? = when (value) {
+        is Long -> value
+        is Int, is Short, is Byte -> value.toLong()
+        else -> try {
+            BigDecimal(value.toString()).longValueExact()
+        } catch (_: ArithmeticException) {
+            null
+        } catch (_: NumberFormatException) {
+            null
+        }
+    }
+}
+
+data class JsonBoolean(val value: Boolean) : JsonValue {
     override fun stringify(): String = value.toString()
 }
 
-internal data class JsonBoolean(val value: Boolean) : JsonValue {
-    override fun stringify(): String = value.toString()
-}
-
-internal data object JsonNull : JsonValue {
+data object JsonNull : JsonValue {
     override fun stringify(): String = "null"
 }
 
-internal fun jsonObject(vararg values: Pair<String, JsonValue?>): JsonObject =
+fun jsonObject(vararg values: Pair<String, JsonValue?>): JsonObject =
     JsonObject(values.mapNotNull { (key, value) -> value?.let { key to it } }.toMap())
 
-internal fun jsonArray(vararg values: JsonValue): JsonArray = JsonArray(values.toList())
+fun jsonArray(vararg values: JsonValue): JsonArray = JsonArray(values.toList())
 
-internal fun jsonStringOrNull(value: String?): JsonValue = value?.let(::JsonString) ?: JsonNull
+fun jsonStringOrNull(value: String?): JsonValue = value?.let(::JsonString) ?: JsonNull
 
-internal fun jsonNumberOrNull(value: Number?): JsonValue = value?.let(::JsonNumber) ?: JsonNull
+fun jsonNumberOrNull(value: Number?): JsonValue = value?.let(::JsonNumber) ?: JsonNull
 
-internal object Json {
+/** Dependency-free recursive-descent JSON parser shared by the application and integrations. */
+object Json {
     fun parse(input: String): JsonValue = Parser(input).parse()
 
     private class Parser(private val input: String) {
@@ -165,7 +185,11 @@ internal object Json {
                                 'r' -> '\r'
                                 't' -> '\t'
                                 'u' -> {
+                                    require(index + 4 <= input.length) { "Incomplete JSON unicode escape at $index" }
                                     val hex = input.substring(index, index + 4)
+                                    require(hex.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) {
+                                        "Invalid JSON unicode escape at $index"
+                                    }
                                     index += 4
                                     hex.toInt(16).toChar()
                                 }
@@ -173,7 +197,10 @@ internal object Json {
                             },
                         )
                     }
-                    else -> result.append(ch)
+                    else -> {
+                        require(ch.code >= 0x20) { "Unescaped JSON control character at ${index - 1}" }
+                        result.append(ch)
+                    }
                 }
             }
             error("Unterminated JSON string")
@@ -182,23 +209,34 @@ internal object Json {
         private fun parseNumber(): JsonNumber {
             val start = index
             if (peek('-')) index++
-            while (index < input.length && input[index].isDigit()) index++
+            if (peek('0')) {
+                index++
+            } else {
+                require(index < input.length && input[index] in '1'..'9') { "Expected JSON number at $index" }
+                readDigits()
+            }
             if (peek('.')) {
                 index++
-                while (index < input.length && input[index].isDigit()) index++
+                requireDigits()
             }
-            if (index < input.length && (input[index] == 'e' || input[index] == 'E')) {
+            if (peek('e') || peek('E')) {
                 index++
-                if (index < input.length && (input[index] == '+' || input[index] == '-')) index++
-                while (index < input.length && input[index].isDigit()) index++
+                if (peek('+') || peek('-')) index++
+                requireDigits()
             }
             val raw = input.substring(start, index)
-            require(raw.isNotEmpty() && raw != "-") { "Expected JSON number at $start" }
-            return if (raw.contains('.') || raw.contains('e', ignoreCase = true)) {
-                JsonNumber(raw.toDouble())
-            } else {
-                JsonNumber(raw.toLong())
-            }
+            // Keep integral tokens as Longs; decimals and larger integers retain their precision too.
+            return JsonNumber(raw.toLongOrNull() ?: BigDecimal(raw))
+        }
+
+        private fun readDigits() {
+            while (index < input.length && input[index] in '0'..'9') index++
+        }
+
+        private fun requireDigits() {
+            val start = index
+            readDigits()
+            require(index > start) { "Expected JSON digit at $index" }
         }
 
         private fun parseLiteral(literal: String, value: JsonValue): JsonValue {
@@ -208,7 +246,7 @@ internal object Json {
         }
 
         private fun skipWhitespace() {
-            while (index < input.length && input[index].isWhitespace()) index++
+            while (index < input.length && input[index] in " \t\r\n") index++
         }
 
         private fun expect(ch: Char) {

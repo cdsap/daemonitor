@@ -52,6 +52,7 @@ class CoreContainer(
     )
 
     override fun close() {
+        runCatching { (processSource as? AutoCloseable)?.close() }
         database.close()
     }
 }
