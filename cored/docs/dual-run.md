@@ -53,10 +53,10 @@ native path on every PR via the `dual-run-honesty` job:
 Optional Go-only cross-check (no CLI UI):
 
 ```bash
-./bin/daemonitor-corectl -socket "${TMPDIR:-/tmp}/daemonitor-core.sock" processes
-./bin/daemonitor-corectl -socket "${TMPDIR:-/tmp}/daemonitor-core.sock" logs
-./bin/daemonitor-corectl -socket "${TMPDIR:-/tmp}/daemonitor-core.sock" log-tail <pid>
-./bin/daemonitor-corectl -socket "${TMPDIR:-/tmp}/daemonitor-core.sock" builds
+./bin/daemonitor-cli -socket "${TMPDIR:-/tmp}/daemonitor-core.sock" ps --json
+./bin/daemonitor-cli -socket "${TMPDIR:-/tmp}/daemonitor-core.sock" logs --json
+./bin/daemonitor-cli -socket "${TMPDIR:-/tmp}/daemonitor-core.sock" logs <pid> --json
+./bin/daemonitor-cli -socket "${TMPDIR:-/tmp}/daemonitor-core.sock" builds --json
 ```
 
 See also `docs/parity.md` for field-level mapping.

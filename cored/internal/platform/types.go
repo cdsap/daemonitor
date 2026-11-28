@@ -27,7 +27,6 @@ const (
 	ScopeHost        ResourceScope = "host"
 	ScopeProcess     ResourceScope = "process"
 	ScopeLinuxCgroup ResourceScope = "linux_cgroup"
-	ScopeWindowsJob  ResourceScope = "windows_job"
 )
 
 // IntMetric is an optional integer measurement with availability and sample time.

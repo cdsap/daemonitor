@@ -77,8 +77,6 @@ type JITMetrics struct {
 type ClassMetrics struct {
 	LoadedClasses      *int64
 	UnloadedClasses    *int64
-	LoadedBytes        *RawValue
-	UnloadedBytes      *RawValue
 	ClassTimeSeconds   *float64
 	LoadedClassesTotal *int64 // Loaded + cumulative unloaded; nil when either source is absent.
 }

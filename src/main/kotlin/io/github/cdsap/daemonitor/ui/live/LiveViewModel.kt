@@ -79,10 +79,6 @@ class LiveViewModel(
                 DetailState.NoSelection -> null
             },
             recentBuilds = if (detail is DetailState.Ended && current.recentBuilds == RecentBuildsState.Loading) RecentBuildsState.Unavailable else current.recentBuilds,
-            tail = when (nextTailState) {
-                is LogTailState.Available -> nextTailState.lines
-                else -> emptyList()
-            },
             tailState = nextTailState,
             isLoading = false,
             isEmpty = processes.isEmpty(),
@@ -105,7 +101,6 @@ class LiveViewModel(
             capabilities = if (contextAvailable) ContextState.Loading else ContextState.Unavailable,
             daemonLog = logFor(process),
             recentBuilds = RecentBuildsState.Loading,
-            tail = emptyList(),
             tailState = LogTailState.Loading,
         )
         return selectionVersion
@@ -116,7 +111,6 @@ class LiveViewModel(
         if (detail !is DetailState.Selected || detail.process.pid != pid) return
         val tailState = result.toUiState()
         _state.value = _state.value.copy(
-            tail = (tailState as? LogTailState.Available)?.lines.orEmpty(),
             tailState = tailState,
         )
     }
@@ -153,7 +147,6 @@ class LiveViewModel(
             capabilities = ContextState.Unavailable,
             daemonLog = null,
             recentBuilds = RecentBuildsState.Unavailable,
-            tail = emptyList(),
             tailState = LogTailState.NoSelection,
         )
     }

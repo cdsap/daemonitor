@@ -139,7 +139,6 @@ private fun VisualDashboard(
     onSelectProcess: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val chartData = remember(state.processes) { VisualChartModel.fromProcesses(state.processes) }
     val sampledPids = remember(samples) { samples.flatMap { it.byPid.keys }.toSet() }
     val chartProcesses = remember(range, state.processes, sampledPids) {
         if (range == VisualTimeRange.LIVE) {
@@ -194,7 +193,9 @@ private fun VisualDashboard(
             selectedPid?.let { pid -> samples.lastNotNullOrNull { it.heapLimitByPid[pid] } }
         })?.let { "$it MB" } ?: LiveMetricLabels.HEAP_UNAVAILABLE_DETAIL
     }
-    val latestTotalRssMb = samples.lastOrNull()?.totalRssMb ?: chartData.totalRssMb
+    val latestTotalRssMb = remember(samples, state.processes) {
+        samples.lastOrNull()?.totalRssMb ?: state.processes.sumOf { it.rssMemoryMb }
+    }
     val modes = VisualMetricMode.entries
     val selectedRss = remember(selected, selectedPid, samples) {
         selected?.rssMemoryMb

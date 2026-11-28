@@ -13,7 +13,7 @@ rm -f "$SOCK" "$DB"
 
 mkdir -p bin
 go build -o bin/daemonitor-cored ./cmd/daemonitor-cored
-go build -o bin/daemonitor-corectl ./cmd/daemonitor-corectl
+go build -o bin/daemonitor-cli ./cmd/daemonitor-cli
 
 ./bin/daemonitor-cored -socket "$SOCK" -db "$DB" -interval 200ms -retention 1h &
 pid=$!
@@ -35,12 +35,12 @@ if [[ ! -e "$SOCK" ]]; then
   exit 1
 fi
 
-JSON=1 ./bin/daemonitor-corectl -socket "$SOCK" health | grep -q '"status": "ok"'
-./bin/daemonitor-corectl -socket "$SOCK" processes >/dev/null
+./bin/daemonitor-cli -socket "$SOCK" health --json --no-autostart | grep -q '"status": "ok"'
+./bin/daemonitor-cli -socket "$SOCK" ps --json --no-autostart >/dev/null
 sleep 0.5
-./bin/daemonitor-corectl -socket "$SOCK" history >/dev/null
-./bin/daemonitor-corectl -socket "$SOCK" logs >/dev/null
-./bin/daemonitor-corectl -socket "$SOCK" builds >/dev/null
+./bin/daemonitor-cli -socket "$SOCK" history --json --no-autostart >/dev/null
+./bin/daemonitor-cli -socket "$SOCK" logs --json --no-autostart >/dev/null
+./bin/daemonitor-cli -socket "$SOCK" builds --json --no-autostart >/dev/null
 
 # JVM Unix-socket client (proves IPC from the desktop/CLI language family)
 javac clients/jvm/UnixHttpClient.java

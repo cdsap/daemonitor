@@ -150,7 +150,6 @@ internal fun DaemonitorContent(
                     LiveMonitorScreen(
                         state = liveState,
                         onSelect = service::select,
-                        onClearSelection = service.liveViewModel::clearSelection,
                     )
                 },
                 visualContent = {

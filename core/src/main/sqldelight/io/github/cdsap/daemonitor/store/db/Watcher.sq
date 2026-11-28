@@ -270,12 +270,6 @@ WHERE lower(build_id) LIKE '%' || lower(?) || '%'
 ORDER BY start_time DESC
 LIMIT ?;
 
-buildsSince:
-SELECT *
-FROM builds
-WHERE start_time >= ?
-ORDER BY start_time DESC;
-
 distinctProjects:
 SELECT DISTINCT project_path
 FROM builds
@@ -350,17 +344,6 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 insertProcessEvent:
 INSERT INTO process_events(schema_version, event_type, timestamp_ms, process_instance_id, pid, process_type, source, metadata_json)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?);
-
-upsertResourceScope:
-INSERT INTO resource_scopes(scope_id, scope_type, identity, metadata_json, first_observed_at, last_observed_at)
-VALUES (?, ?, ?, ?, ?, ?)
-ON CONFLICT(scope_id) DO UPDATE SET
-    last_observed_at = excluded.last_observed_at,
-    metadata_json = COALESCE(excluded.metadata_json, resource_scopes.metadata_json);
-
-upsertCollectionCapability:
-INSERT OR REPLACE INTO collection_capabilities(capability_id, name, source, supported, available, details_json, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?);
 
 normalizedMetricSamples:
 SELECT timestamp, instance_id, scope_id, metric_id, int_value, real_value, source, sampled_at

@@ -36,10 +36,10 @@ class DualRunHonestyTest {
             heapProbe = JvmHeapProbe { _, sampledAtMs -> LiveJvmHeap.unavailable(sampledAtMs) },
         )
         // Warm delta-CPU on both sides (Go cored polls continuously; JVM needs a prior sample).
-        collector.poll()
+        collector.currentProcesses()
         Thread.sleep(2_100)
 
-        val jvm = collector.poll().associateBy { it.pid }
+        val jvm = collector.currentProcesses().associateBy { it.pid }
         val go = GoCoreProcessSource(GoCoreClient(socket)).currentProcesses().associateBy { it.pid }
 
         val jvmDaemons = jvm.values.filter { it.type == ProcessType.GRADLE_DAEMON }.map { it.pid }.toSet()

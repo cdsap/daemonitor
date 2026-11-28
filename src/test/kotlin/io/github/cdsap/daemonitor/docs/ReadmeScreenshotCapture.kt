@@ -105,7 +105,7 @@ class ReadmeScreenshotCapture {
             Surface(modifier = Modifier.fillMaxSize()) {
                 AppScaffold(
                     liveContent = {
-                        LiveMonitorScreen(liveState, onSelect = {}, onClearSelection = {})
+                        LiveMonitorScreen(liveState, onSelect = {})
                     },
                     visualContent = {
                         ProcessVisualScreen(liveState)
@@ -222,7 +222,6 @@ internal object SampleUi {
                     ),
                 ),
             ),
-            tail = tail,
             tailState = LogTailState.Available(tail),
             isLoading = false,
             isEmpty = false,

@@ -15,8 +15,11 @@ func TempEndpoint(t testing.TB, name string) string {
 	if runtime.GOOS == "windows" {
 		return fmt.Sprintf(`\\.\pipe\daemonitor-test-%s-%d`, name, os.Getpid())
 	}
-	path := filepath.Join(os.TempDir(), fmt.Sprintf("dmn-%s-%d.sock", name, os.Getpid()))
-	_ = os.Remove(path)
-	t.Cleanup(func() { _ = os.Remove(path) })
+	dir, err := os.MkdirTemp("", "dmn-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, name+".sock")
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	return path
 }

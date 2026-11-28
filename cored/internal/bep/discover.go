@@ -33,9 +33,6 @@ var (
 // LooksLikeBazelClient reports whether cmdline is a bazel/bazelisk client
 // invocation (not A-server.jar). Used to bound argv scraping.
 func LooksLikeBazelClient(cmdline string) bool {
-	if cmdline == "" {
-		return false
-	}
 	lower := strings.ToLower(cmdline)
 	if strings.Contains(lower, "a-server.jar") {
 		return false

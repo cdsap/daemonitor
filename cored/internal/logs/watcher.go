@@ -234,21 +234,6 @@ func (w *Watcher) DaemonIdentity(pid int64) string {
 	return ""
 }
 
-// AllTails returns tails for every known log.
-func (w *Watcher) AllTails() []Tail {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	out := make([]Tail, 0, len(w.meta))
-	for path, log := range w.meta {
-		lines := []string{}
-		if r := w.tails[path]; r != nil {
-			lines = r.slice()
-		}
-		out = append(out, makeTail(log, lines))
-	}
-	return out
-}
-
 func makeTail(log DaemonLog, lines []string) Tail {
 	return Tail{
 		PID:           log.PID,

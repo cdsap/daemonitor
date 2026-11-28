@@ -72,4 +72,19 @@ class LiveMetricLabelsTest {
             LiveMetricLabels.liveHeapUsedDetail(LiveJvmHeap.unavailable(1L), ProcessType.BAZEL_TEST),
         )
     }
+
+    @Test
+    fun `unavailable heap labels preserve all process families`() {
+        val unprobed = mapOf(
+            ProcessType.GRADLE_WRAPPER to "wrappers",
+            ProcessType.TEST_WORKER to "Gradle test workers",
+            ProcessType.GRADLE_WORKER to "Gradle workers",
+            ProcessType.UNKNOWN_GRADLE_WORKER to "unknown Gradle workers",
+            ProcessType.JAVA_GRADLE_RELATED to "non-daemon JVMs",
+        )
+        ProcessType.entries.forEach { type ->
+            val expected = unprobed[type]?.let { "unavailable (not probed for $it)" } ?: "unavailable"
+            assertEquals(expected, LiveMetricLabels.liveHeapUsedDetail(null, type), type.name)
+        }
+    }
 }
