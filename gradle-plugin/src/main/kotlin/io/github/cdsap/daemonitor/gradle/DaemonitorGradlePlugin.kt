@@ -1,5 +1,10 @@
 package io.github.cdsap.daemonitor.gradle
 
+import io.github.cdsap.daemonitor.json.JsonBoolean
+import io.github.cdsap.daemonitor.json.JsonNull
+import io.github.cdsap.daemonitor.json.JsonNumber
+import io.github.cdsap.daemonitor.json.JsonObject
+import io.github.cdsap.daemonitor.json.JsonString
 import java.net.InetAddress
 import java.nio.file.Path
 import java.util.UUID
@@ -112,28 +117,14 @@ abstract class DaemonitorObservationBuildService :
 
     companion object {
         internal fun jsonObject(vararg fields: Pair<String, Any?>): String =
-            fields.joinToString(",", "{", "}") { (key, value) ->
-                "\"${escape(key)}\":" +
-                    when (value) {
-                        null -> "null"
-                        is Number, is Boolean -> value.toString()
-                        else -> "\"${escape(value.toString())}\""
-                    }
-            }
-
-        private fun escape(value: String) =
-            buildString {
-                value.forEach {
-                    when (it) {
-                        '\\' -> append("\\\\")
-                        '"' -> append("\\\"")
-                        '\n' -> append("\\n")
-                        '\r' -> append("\\r")
-                        '\t' -> append("\\t")
-                        else -> append(it)
-                    }
+            JsonObject(fields.associate { (key, value) ->
+                key to when (value) {
+                    null -> JsonNull
+                    is Number -> JsonNumber(value)
+                    is Boolean -> JsonBoolean(value)
+                    else -> JsonString(value.toString())
                 }
-            }
+            }).stringify()
     }
 }
 

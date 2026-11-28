@@ -2,34 +2,60 @@ package bep
 
 import (
 	"bytes"
+	"cmp"
 	"context"
+	"errors"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cdsap/daemonitor/cored/internal/builds"
 	"github.com/shirou/gopsutil/v4/process"
 )
 
+const (
+	maxFileBytes = 32 * 1024 * 1024
+	// Poll budgets include prefix checks; larger streams resume next poll.
+	maxFilePollBytes    = 256 * 1024
+	maxPollBytes        = 1024 * 1024
+	maxTrackedFiles     = 256
+	maxSeenRank         = 2048
+	staleTrackedFileTTL = 5 * time.Minute
+)
+
+type seenEntry struct {
+	rank int
+	seq  uint64
+}
+
 // Watcher discovers opportunistic BEP sinks and closes builds from JSON or binary files.
 type Watcher struct {
+	pollMu          sync.Mutex
 	mu              sync.Mutex
 	files           map[string]*trackedFile
-	seenRank        map[string]int
+	seenRank        map[string]seenEntry
+	seenSeq         uint64
 	ambientEnvNames map[string]struct{}
+	now             func() time.Time
+	// SkipProcessScan disables DiscoverFromProcesses in Poll when the caller
+	// already feeds live Bazel clients via ObserveProcess during Pass 0.
+	SkipProcessScan bool
 	// Optional extra absolute paths / globs resolved by the caller each poll.
 	ExtraPaths func() []Sink
 }
 
 type trackedFile struct {
-	sink     Sink
-	offset   int64
-	pending  []byte
-	state    partial
-	identity os.FileInfo
-	prefix   []byte
-	client   clientObservation
+	sink       Sink
+	offset     int64
+	pending    []byte
+	state      partial
+	identity   os.FileInfo
+	prefix     []byte
+	client     clientObservation
+	lastActive time.Time
 }
 
 // clientObservation retains fixed attribution only, never ancestry argv or env values.
@@ -49,19 +75,27 @@ func NewWatcher() *Watcher {
 	}
 	return &Watcher{
 		files:           make(map[string]*trackedFile),
-		seenRank:        make(map[string]int),
+		seenRank:        make(map[string]seenEntry),
 		ambientEnvNames: ambient,
 	}
+}
+
+func (w *Watcher) currentTime() time.Time {
+	if w.now != nil {
+		return w.now()
+	}
+	return time.Now()
 }
 
 // observeClient is called during process Pass 0, before slower JVM probes and
 // before short-lived clients disappear. Evidence survives until BEP is read.
 func (w *Watcher) observeClient(client clientObservation) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
 	if client.Sink.Path == "" {
 		return
 	}
+	now := w.currentTime()
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	tf := w.files[client.Sink.Path]
 	if tf == nil {
 		tf = &trackedFile{sink: client.Sink}
@@ -71,53 +105,142 @@ func (w *Watcher) observeClient(client clientObservation) {
 		client.Agent = tf.client.Agent
 	}
 	tf.client = client
+	tf.lastActive = now
+	if len(w.files) > maxTrackedFiles {
+		w.evictFilesLocked()
+	}
 }
 
-// Poll discovers sinks from live processes and reads newly appended bytes.
+// Poll discovers sinks from live processes (unless SkipProcessScan is set) and reads newly appended bytes.
 func (w *Watcher) Poll(ctx context.Context) ([]builds.Build, error) {
-	sinks, err := DiscoverFromProcesses(ctx)
-	if err != nil {
-		return nil, err
+	w.pollMu.Lock()
+	defer w.pollMu.Unlock()
+
+	var sinks []Sink
+	if !w.SkipProcessScan {
+		discovered, err := DiscoverFromProcesses(ctx)
+		if err != nil {
+			return nil, err
+		}
+		sinks = discovered
 	}
 	if w.ExtraPaths != nil {
 		sinks = append(sinks, w.ExtraPaths()...)
 	}
 
+	now := w.currentTime()
 	w.mu.Lock()
-	defer w.mu.Unlock()
-
+	activePaths := make(map[string]struct{}, len(sinks))
 	for _, sink := range sinks {
 		if sink.Path == "" {
 			continue
 		}
-		if _, ok := w.files[sink.Path]; !ok {
-			w.files[sink.Path] = &trackedFile{sink: sink}
+		activePaths[sink.Path] = struct{}{}
+		if tf, ok := w.files[sink.Path]; !ok {
+			w.files[sink.Path] = &trackedFile{sink: sink, lastActive: now}
 		} else {
-			w.files[sink.Path].sink = sink
+			tf.sink = sink
+			tf.lastActive = now
 		}
 	}
-
-	var closed []builds.Build
+	if len(w.files) > maxTrackedFiles {
+		w.evictFilesLocked()
+	}
+	targets := make([]*trackedFile, 0, len(w.files))
 	for _, tf := range w.files {
+		if tf.lastActive.IsZero() {
+			tf.lastActive = now
+		}
 		if tf.sink.Format != FormatJSON && tf.sink.Format != FormatBinary {
 			continue
 		}
+		targets = append(targets, tf)
+	}
+	w.mu.Unlock()
+
+	var rawClosed []builds.Build
+	var missing []*trackedFile
+	budget := int64(maxPollBytes)
+	for _, tf := range targets {
+		if budget < 64 || ctx.Err() != nil {
+			break
+		}
 		// A malformed event must not discard builds already decoded in this
 		// poll. File/read errors are opportunistic and retried next tick.
-		buildsClosed, _ := w.readFile(tf)
-		for _, b := range buildsClosed {
-			if b.BuildID == "" {
-				continue
-			}
-			rank := buildDetailRank(b)
-			if prev, seen := w.seenRank[b.BuildID]; seen && rank <= prev {
-				continue
-			}
-			w.seenRank[b.BuildID] = rank
-			closed = coalesceBuilds(closed, b)
+		buildsClosed, readErr := w.readFile(tf, &budget)
+		if errors.Is(readErr, os.ErrNotExist) {
+			missing = append(missing, tf)
+		}
+		rawClosed = append(rawClosed, buildsClosed...)
+	}
+
+	var closed []builds.Build
+	w.mu.Lock()
+	for _, b := range rawClosed {
+		if b.BuildID == "" {
+			continue
+		}
+		rank := buildDetailRank(b)
+		if prev, seen := w.seenRank[b.BuildID]; seen && rank <= prev.rank {
+			continue
+		}
+		w.seenSeq++
+		w.seenRank[b.BuildID] = seenEntry{rank: rank, seq: w.seenSeq}
+		closed = coalesceBuilds(closed, b)
+	}
+	if len(w.seenRank) > maxSeenRank {
+		w.evictSeenRankLocked()
+	}
+	for _, tf := range missing {
+		path := tf.sink.Path
+		if _, active := activePaths[path]; active {
+			continue
+		}
+		if cur, ok := w.files[path]; ok && cur == tf && now.Sub(tf.lastActive) > staleTrackedFileTTL {
+			delete(w.files, path)
 		}
 	}
+	w.mu.Unlock()
 	return closed, nil
+}
+
+func (w *Watcher) evictFilesLocked() {
+	type fileAge struct {
+		path       string
+		lastActive time.Time
+	}
+	ages := make([]fileAge, 0, len(w.files))
+	for path, tf := range w.files {
+		ages = append(ages, fileAge{path: path, lastActive: tf.lastActive})
+	}
+	slices.SortFunc(ages, func(a, b fileAge) int {
+		if c := a.lastActive.Compare(b.lastActive); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.path, b.path)
+	})
+	excess := len(w.files) - maxTrackedFiles
+	for i := 0; i < excess && i < len(ages); i++ {
+		delete(w.files, ages[i].path)
+	}
+}
+
+func (w *Watcher) evictSeenRankLocked() {
+	seqs := make([]uint64, 0, len(w.seenRank))
+	for _, entry := range w.seenRank {
+		seqs = append(seqs, entry.seq)
+	}
+	slices.Sort(seqs)
+	keep := maxSeenRank / 2
+	if keep >= len(seqs) {
+		return
+	}
+	cutoff := seqs[len(seqs)-keep]
+	for id, entry := range w.seenRank {
+		if entry.seq < cutoff {
+			delete(w.seenRank, id)
+		}
+	}
 }
 
 func buildDetailRank(b builds.Build) int {
@@ -134,20 +257,71 @@ func buildDetailRank(b builds.Build) int {
 	return 2
 }
 
-func (w *Watcher) readFile(tf *trackedFile) ([]builds.Build, error) {
-	f, err := os.Open(tf.sink.Path)
+// openSink validates both the path and the opened descriptor. The identity
+// check rejects replacements between Lstat and open, before any bytes are read.
+func openSink(path string) (*os.File, os.FileInfo, error) {
+	before, err := os.Lstat(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	valid := func(info os.FileInfo) bool {
+		return info.Mode().IsRegular() && info.Size() >= 0 && info.Size() <= maxFileBytes && ownedFile(info)
+	}
+	if !valid(before) {
+		return nil, nil, errors.New("BEP sink is not a user-owned bounded regular file")
+	}
+	f, err := openSinkFile(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	info, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return nil, nil, err
+	}
+	if !valid(info) || !os.SameFile(before, info) {
+		f.Close()
+		return nil, nil, errors.New("BEP sink changed or is unsafe")
+	}
+	return f, info, nil
+}
+
+func (w *Watcher) sinkFor(tf *trackedFile) Sink {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return tf.sink
+}
+
+func (w *Watcher) clientFor(tf *trackedFile) clientObservation {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return tf.client
+}
+
+func (w *Watcher) touchTracked(tf *trackedFile) {
+	now := w.currentTime()
+	w.mu.Lock()
+	tf.lastActive = now
+	w.mu.Unlock()
+}
+
+func (w *Watcher) readFile(tf *trackedFile, budget *int64) ([]builds.Build, error) {
+	if *budget < 64 {
+		return nil, nil
+	}
+	sink := w.sinkFor(tf)
+	f, info, err := openSink(sink.Path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-
-	info, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
+	w.touchTracked(tf)
+	remaining := min(*budget, int64(maxFilePollBytes))
 	size := info.Size()
 	prefix := make([]byte, min(size, 64))
-	if _, err := f.ReadAt(prefix, 0); err != nil && err != io.EOF {
+	*budget -= int64(len(prefix))
+	remaining -= int64(len(prefix))
+	if _, err := f.ReadAt(prefix, 0); err != nil && !errors.Is(err, io.EOF) {
 		return nil, err
 	}
 	replaced := tf.identity != nil && !os.SameFile(tf.identity, info)
@@ -161,42 +335,48 @@ func (w *Watcher) readFile(tf *trackedFile) ([]builds.Build, error) {
 	}
 	tf.identity = info
 	tf.prefix = prefix
-	if _, err := f.Seek(tf.offset, 0); err != nil {
+	if _, err := f.Seek(tf.offset, io.SeekStart); err != nil {
 		return nil, err
 	}
 	tf.state.ambientEnvNames = w.ambientEnvNames
 	var closed []builds.Build
 	var parseErr error
-	for tf.offset < size {
-		chunk := make([]byte, min(size-tf.offset, 64*1024))
-		n, err := f.Read(chunk)
+	var buf []byte
+	if tf.offset < size && remaining > 0 {
+		buf = make([]byte, min(size-tf.offset, 64*1024, remaining))
+	}
+	for tf.offset < size && remaining > 0 {
+		toRead := min(size-tf.offset, int64(len(buf)), remaining)
+		n, err := f.Read(buf[:toRead])
+		*budget -= int64(n)
+		remaining -= int64(n)
 		if n == 0 {
 			if err == nil {
 				err = io.ErrNoProgress
 			}
-			applyClientAttribution(closed, tf.client)
+			applyClientAttribution(closed, w.clientFor(tf))
 			return closed, err
 		}
 		tf.offset += int64(n)
 		var rows []builds.Build
 		var leftover []byte
-		if tf.sink.Format == FormatBinary {
-			rows, leftover, parseErr = ConsumeBinaryBytes(&tf.state, tf.pending, chunk[:n])
+		if sink.Format == FormatBinary {
+			rows, leftover, parseErr = ConsumeBinaryBytes(&tf.state, tf.pending, buf[:n])
 		} else {
-			rows, leftover, parseErr = ConsumeJSONBytes(&tf.state, tf.pending, chunk[:n])
+			rows, leftover, parseErr = ConsumeJSONBytes(&tf.state, tf.pending, buf[:n])
 		}
 		tf.pending = leftover
 		closed = append(closed, rows...)
 		if parseErr != nil {
-			applyClientAttribution(closed, tf.client)
+			applyClientAttribution(closed, w.clientFor(tf))
 			return closed, parseErr
 		}
 		if err != nil {
-			applyClientAttribution(closed, tf.client)
+			applyClientAttribution(closed, w.clientFor(tf))
 			return closed, err
 		}
 	}
-	applyClientAttribution(closed, tf.client)
+	applyClientAttribution(closed, w.clientFor(tf))
 	return closed, nil
 }
 
@@ -214,7 +394,8 @@ func applyClientAttribution(closed []builds.Build, c clientObservation) {
 	}
 }
 
-// DiscoverFromProcesses scrapes live process argv for BEP file flags.
+// DiscoverFromProcesses scrapes Bazel client argv for BEP file flags.
+// On Unix, ownership must be established before reading argv or cwd.
 func DiscoverFromProcesses(ctx context.Context) ([]Sink, error) {
 	pids, err := process.PidsWithContext(ctx)
 	if err != nil {
@@ -229,14 +410,14 @@ func DiscoverFromProcesses(ctx context.Context) ([]Sink, error) {
 		default:
 		}
 		p, err := process.NewProcessWithContext(ctx, pid)
-		if err != nil {
+		if err != nil || !ownedProcess(ctx, p) {
 			continue
 		}
 		cmdline, err := p.CmdlineWithContext(ctx)
 		if err != nil || cmdline == "" {
 			continue
 		}
-		if !LooksLikeBazelClient(cmdline) && !hasBEPFlag(cmdline) {
+		if !LooksLikeBazelClient(cmdline) {
 			continue
 		}
 		cwd, _ := p.CwdWithContext(ctx)

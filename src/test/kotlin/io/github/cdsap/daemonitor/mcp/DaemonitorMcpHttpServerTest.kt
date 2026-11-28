@@ -2,8 +2,9 @@ package io.github.cdsap.daemonitor.mcp
 
 import io.github.cdsap.daemonitor.application.DefaultDaemonitorQueryService
 import io.github.cdsap.daemonitor.application.ProcessSource
+import io.github.cdsap.daemonitor.json.Json
+import io.github.cdsap.daemonitor.json.JsonObject
 import io.github.cdsap.daemonitor.store.WatcherDatabase
-import org.junit.jupiter.api.io.TempDir
 import java.net.Socket
 import java.net.URI
 import java.net.http.HttpClient
@@ -14,6 +15,7 @@ import java.time.Duration
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import org.junit.jupiter.api.io.TempDir
 
 class DaemonitorMcpHttpServerTest {
 
@@ -47,9 +49,17 @@ class DaemonitorMcpHttpServerTest {
                     listOf("example.com"), listOf("localhost.example.com"), listOf("127.0.0.2"),
                     listOf("example.com@localhost"), listOf("localhost/path"), listOf("localhost#fragment"),
                     listOf("localhost?query"), listOf("localhost:invalid"), listOf("localhost:65536"), listOf("localhost:"),
-                    listOf("localhost", "example.com"), listOf("localhost", "localhost"),
                 )) {
                     assertEquals(403, rawStatus(port, hosts), hosts.toString())
+                }
+                // Newer JDK HttpServer rejects duplicate Host headers with 400 at transport level;
+                // otherwise hostIsAllowed() rejects them with 403.
+                for (hosts in listOf(
+                    listOf("localhost", "example.com"),
+                    listOf("localhost", "localhost"),
+                )) {
+                    val status = rawStatus(port, hosts)
+                    kotlin.test.assertTrue(status in setOf(400, 403), "$hosts expected 400 or 403, got $status")
                 }
                 // HTTP/1.0 permits a missing Host header at the transport level.
                 assertEquals(403, rawStatus(port, emptyList()))
@@ -90,11 +100,12 @@ class DaemonitorMcpHttpServerTest {
             val response = post(
                 endpoint = server.endpoint,
                 token = TOKEN,
-                body = """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2026-07-28"}}""",
+                body = """{"jsonrpc":"2.0","id":9007199254740993,"method":"initialize","params":{"protocolVersion":"2026-07-28"}}""",
             )
 
             assertEquals(200, response.statusCode())
             val json = Json.parse(response.body()) as JsonObject
+            assertEquals(9007199254740993L, json.long("id"))
             assertEquals("daemonitor", json.obj("result")!!.obj("serverInfo")!!.string("name"))
         } finally {
             server.close()

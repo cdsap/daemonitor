@@ -43,7 +43,7 @@ func bazelClientAgent(ctx context.Context, pid int32, read func(context.Context,
 
 // ObserveProcess handles Pass 0 observations without reading process environments.
 func (w *Watcher) ObserveProcess(ctx context.Context, p *process.Process, cmdline string, observedMs int64) {
-	if !LooksLikeBazelClient(cmdline) {
+	if !LooksLikeBazelClient(cmdline) || !ownedProcess(ctx, p) {
 		return
 	}
 	cwd, _ := p.CwdWithContext(ctx)
