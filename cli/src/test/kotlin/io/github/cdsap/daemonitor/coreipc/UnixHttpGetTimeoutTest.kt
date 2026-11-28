@@ -22,12 +22,14 @@ class UnixHttpGetTimeoutTest {
 
         val socket = Files.createTempDirectory("daemonitor-http-timeout-").resolve("cored.sock")
         Files.deleteIfExists(socket)
+        val bound = CountDownLatch(1)
         val accepted = CountDownLatch(1)
         val serverError = AtomicReference<Throwable>()
         val server = Thread({
             try {
                 ServerSocketChannel.open(StandardProtocolFamily.UNIX).use { serverChannel ->
                     serverChannel.bind(UnixDomainSocketAddress.of(socket))
+                    bound.countDown()
                     // Accept once and hold the connection open without writing a response.
                     serverChannel.accept().use {
                         accepted.countDown()
@@ -36,6 +38,7 @@ class UnixHttpGetTimeoutTest {
                 }
             } catch (t: Throwable) {
                 serverError.set(t)
+                bound.countDown()
                 accepted.countDown()
             }
         }, "daemonitor-unix-http-hang-server").apply {
@@ -44,11 +47,7 @@ class UnixHttpGetTimeoutTest {
         }
 
         try {
-            // Wait briefly for the listener; the client connect races the bind otherwise.
-            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
-            while (System.nanoTime() < deadline && !Files.exists(socket)) {
-                Thread.sleep(20L)
-            }
+            assertTrue(bound.await(2, TimeUnit.SECONDS), "hang server did not bind socket")
             assumeTrue(Files.exists(socket), "hang server did not create socket")
 
             val started = System.nanoTime()
@@ -86,23 +85,28 @@ class UnixHttpGetTimeoutTest {
         val prefixLen = (64 * 1024) - header.length - 1
         val body = "a".repeat(prefixLen) + "€" + "tail"
         val fullResponse = (header + body).toByteArray(StandardCharsets.UTF_8)
+        val bound = CountDownLatch(1)
         val serverError = AtomicReference<Throwable>()
         val server = Thread({
             try {
                 ServerSocketChannel.open(StandardProtocolFamily.UNIX).use { serverChannel ->
                     serverChannel.bind(UnixDomainSocketAddress.of(socket))
+                    bound.countDown()
                     serverChannel.accept().use { client ->
                         // Drain request bytes briefly, then write response split mid-UTF-8 character.
                         val reqBuf = ByteBuffer.allocate(1024)
                         client.read(reqBuf)
                         val splitAt = 64 * 1024
-                        client.write(ByteBuffer.wrap(fullResponse, 0, splitAt))
+                        val firstChunk = ByteBuffer.wrap(fullResponse, 0, splitAt)
+                        while (firstChunk.hasRemaining()) client.write(firstChunk)
                         Thread.sleep(20L)
-                        client.write(ByteBuffer.wrap(fullResponse, splitAt, fullResponse.size - splitAt))
+                        val secondChunk = ByteBuffer.wrap(fullResponse, splitAt, fullResponse.size - splitAt)
+                        while (secondChunk.hasRemaining()) client.write(secondChunk)
                     }
                 }
             } catch (t: Throwable) {
                 serverError.set(t)
+                bound.countDown()
             }
         }, "daemonitor-unix-http-utf8-server").apply {
             isDaemon = true
@@ -110,10 +114,7 @@ class UnixHttpGetTimeoutTest {
         }
 
         try {
-            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
-            while (System.nanoTime() < deadline && !Files.exists(socket)) {
-                Thread.sleep(20L)
-            }
+            assertTrue(bound.await(2, TimeUnit.SECONDS), "utf8 server did not bind socket")
             assumeTrue(Files.exists(socket), "utf8 server did not create socket")
 
             val actual = unixHttpGet(socket, "/v1/processes", timeoutMs = 2_000)
