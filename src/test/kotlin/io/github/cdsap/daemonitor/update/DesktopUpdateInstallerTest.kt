@@ -356,27 +356,38 @@ class DesktopUpdateInstallerTest {
 
     @Test
     fun `rejects tar traversal links and oversized entries`(@TempDir tmp: Path) {
-        val entries = listOf(
-            TarArchiveEntry("../outside"),
-            TarArchiveEntry("/outside", true),
-            TarArchiveEntry("C:/outside", true),
-            TarArchiveEntry("a/../outside"),
-            TarArchiveEntry("a\\outside"),
-            TarArchiveEntry("link", TarConstants.LF_SYMLINK).apply { linkName = "../../outside" },
-            TarArchiveEntry("link", TarConstants.LF_LINK).apply { linkName = "../../outside" },
-            TarArchiveEntry("huge").apply { size = 2L * 1024 * 1024 * 1024 + 1 },
+        val entries: List<Pair<TarArchiveEntry, String?>> = listOf(
+            TarArchiveEntry("../outside") to null,
+            TarArchiveEntry("/outside", true) to null,
+            TarArchiveEntry("C:/outside", true) to null,
+            TarArchiveEntry("a/../outside") to null,
+            // TarArchiveEntry(String) normalizes '\' to '/' on Windows, so patch raw header bytes.
+            TarArchiveEntry("a/outside") to "a\\outside",
+            TarArchiveEntry("link", TarConstants.LF_SYMLINK).apply { linkName = "../../outside" } to null,
+            TarArchiveEntry("link", TarConstants.LF_LINK).apply { linkName = "../../outside" } to null,
+            TarArchiveEntry("huge").apply { size = 2L * 1024 * 1024 * 1024 + 1 } to null,
         )
-        for (entry in entries) {
+        for ((entry, rawName) in entries) {
             val archive = tmp.resolve("bad.tar.gz")
             // Write just the header: invalid entries must be rejected before their data is read.
             GZIPOutputStream(Files.newOutputStream(archive)).use { gzip ->
                 val header = ByteArray(512)
                 entry.writeEntryHeader(header)
+                if (rawName != null) {
+                    val nameBytes = rawName.toByteArray(Charsets.US_ASCII)
+                    header.fill(0, 0, 100)
+                    nameBytes.copyInto(header, 0)
+                    // Recompute standard 8-byte tar header checksum at bytes 148..155.
+                    header.fill(' '.code.toByte(), 148, 156)
+                    val checksum = header.sumOf { it.toInt() and 0xFF }
+                    val octal = "%06o\u0000 ".format(java.util.Locale.ROOT, checksum).toByteArray(Charsets.US_ASCII)
+                    octal.copyInto(header, 148)
+                }
                 gzip.write(header)
                 gzip.write(ByteArray(1024))
             }
             val candidate = stagedUpdate(DesktopPlatform.LINUX, tmp, tmp, archive, emptyList()).candidate
-            assertFailsWith<IllegalArgumentException>(entry.name) { extractUpdatePayload(candidate, archive, tmp.resolve("updates")) }
+            assertFailsWith<IllegalArgumentException>(rawName ?: entry.name) { extractUpdatePayload(candidate, archive, tmp.resolve("updates")) }
         }
     }
 

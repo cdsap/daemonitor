@@ -1,5 +1,8 @@
 package io.github.cdsap.daemonitor.gradle
 
+import io.github.cdsap.daemonitor.json.Json
+import io.github.cdsap.daemonitor.json.JsonObject
+
 data class ObservationSummary(
     val name: String,
     val association: String,
@@ -47,18 +50,11 @@ data class ProcessRssSummary(
 
 internal object ObservationSummaryParser {
     fun parse(json: String): ObservationSummary {
-        fun string(name: String, source: String = json): String =
-            Regex("\\\"$name\\\"\\s*:\\s*\\\"((?:\\\\.|[^\\\"])*)\\\"")
-                .find(source)?.groupValues?.get(1)?.replace("\\\\\\\"", "\\\"")
-                ?: ""
-        fun number(name: String, source: String = json): Long =
-            Regex("\\\"$name\\\"\\s*:\\s*(-?\\d+)").find(source)?.groupValues?.get(1)?.toLongOrNull() ?: 0
-        fun optionalNumber(name: String, source: String): Long? =
-            Regex("\\\"$name\\\"\\s*:\\s*(-?\\d+)").find(source)?.groupValues?.get(1)?.toLongOrNull()
-        val processBody = Regex("\\\"processes\\\"\\s*:\\s*\\[(.*)]\\s*,\\s*\\\"builds\\\"", RegexOption.DOT_MATCHES_ALL)
-            .find(json)?.groupValues?.get(1).orEmpty()
-        val processes = Regex("\\{(.*?)\\}", RegexOption.DOT_MATCHES_ALL).findAll(processBody).map { match ->
-            val body = match.value
+        val root = Json.parse(json) as? JsonObject ?: error("Expected observation summary object")
+        fun string(name: String, source: JsonObject = root): String = source.string(name).orEmpty()
+        fun number(name: String, source: JsonObject = root): Long = source.long(name) ?: 0
+        fun optionalNumber(name: String, source: JsonObject): Long? = source.long(name)
+        val processes = root.array("processes")?.values.orEmpty().filterIsInstance<JsonObject>().map { body ->
             ProcessRssSummary(
                 hostId = string("host_id", body), pid = number("pid", body), startTimeMs = number("start_time_ms", body),
                 sampleCount = number("sample_count", body).toInt(), firstRssMb = number("first_rss_mb", body),
@@ -88,8 +84,8 @@ internal object ObservationSummaryParser {
                 lastOldGcTimeMs = optionalNumber("last_old_gc_time_ms", body),
                 deltaOldGcTimeMs = optionalNumber("delta_old_gc_time_ms", body),
             )
-        }.toList()
-        val builds = Regex("\\\"builds\\\"\\s*:\\s*\\{(.*?)\\}", RegexOption.DOT_MATCHES_ALL).find(json)?.value.orEmpty()
+        }
+        val builds = root.obj("builds") ?: JsonObject(emptyMap())
         return ObservationSummary(
             name = string("name"), association = string("association"), hostId = string("host_id"), processes = processes,
             buildsCount = number("count", builds).toInt(), buildsSuccessCount = number("success_count", builds).toInt(),

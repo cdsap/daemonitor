@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -90,19 +91,22 @@ func (s *Store) ObserveProcesses(hostID string, sampledAtMs int64, processes []m
 	defer func() { _ = tx.Rollback() }()
 
 	aliveRows, err := tx.Query(`
-SELECT id, process_type, command_line
+SELECT id, pid, process_type, command_line
 FROM process_instances
 WHERE disappeared_at_ms IS NULL`)
 	if err != nil {
 		return err
 	}
 	type aliveRow struct {
-		id, processType, commandLine string
+		id          string
+		pid         int32
+		processType string
+		commandLine string
 	}
 	alive := make(map[string]aliveRow)
 	for aliveRows.Next() {
 		var row aliveRow
-		if err := aliveRows.Scan(&row.id, &row.processType, &row.commandLine); err != nil {
+		if err := aliveRows.Scan(&row.id, &row.pid, &row.processType, &row.commandLine); err != nil {
 			aliveRows.Close()
 			return err
 		}
@@ -146,7 +150,7 @@ WHERE id=?`, p.Type, nullStr(p.Name), p.CommandLine, sampledAtMs, id); err != ni
 		var disappearedAt sql.NullInt64
 		err := tx.QueryRow(`SELECT disappeared_at_ms FROM process_instances WHERE id=?`, id).Scan(&disappearedAt)
 		switch {
-		case err == sql.ErrNoRows:
+		case errors.Is(err, sql.ErrNoRows):
 			if _, err := tx.Exec(`
 INSERT INTO process_instances(
   id, host_id, pid, create_time_ms, process_type, name, command_line,
@@ -183,14 +187,9 @@ WHERE id=?`, p.Type, nullStr(p.Name), p.CommandLine, sampledAtMs, id); err != ni
 		}
 	}
 
-	for id := range alive {
+	for id, row := range alive {
 		if _, ok := seen[id]; ok {
 			continue
-		}
-		var pid int32
-		var processType string
-		if err := tx.QueryRow(`SELECT pid, process_type FROM process_instances WHERE id=?`, id).Scan(&pid, &processType); err != nil {
-			return err
 		}
 		if _, err := tx.Exec(`
 UPDATE process_instances
@@ -198,7 +197,7 @@ SET disappeared_at_ms=?
 WHERE id=? AND disappeared_at_ms IS NULL`, sampledAtMs, id); err != nil {
 			return err
 		}
-		if err := insertProcessEvent(tx, EventDisappearanceDetected, sampledAtMs, id, pid, processType); err != nil {
+		if err := insertProcessEvent(tx, EventDisappearanceDetected, sampledAtMs, id, row.pid, row.processType); err != nil {
 			return err
 		}
 	}
@@ -274,7 +273,7 @@ func (s *Store) CountEvents() (int64, error) {
 func (s *Store) JVMFlags(hostID string, pid int32, start int64) (*model.JVMFlagsMetadata, error) {
 	var data sql.NullString
 	err := s.db.QueryRow(`SELECT jvm_flags_json FROM process_instances WHERE id=?`, ProcessInstanceID(hostID, pid, start)).Scan(&data)
-	if err == sql.ErrNoRows || (err == nil && !data.Valid) {
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && !data.Valid) {
 		return nil, nil
 	}
 	if err != nil {

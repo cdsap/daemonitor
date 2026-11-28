@@ -49,7 +49,7 @@ fun interface JvmHeapProbe {
 
 class AttachJvmHeapProbe(
     private val timeoutMs: Long = PROBE_TIMEOUT_MS,
-) : JvmHeapProbe {
+) : JvmHeapProbe, AutoCloseable {
     private val connectorAddresses = ConcurrentHashMap<ProcessIdentity, String>()
     private val executor = Executors.newCachedThreadPool { runnable ->
         Thread(runnable, "daemonitor-jvm-heap-probe").apply { isDaemon = true }
@@ -94,6 +94,11 @@ class AttachJvmHeapProbe(
             connectorAddresses.remove(key)
         }.getOrNull()
 
+    override fun close() {
+        executor.shutdownNow()
+        connectorAddresses.clear()
+    }
+
     private fun <T> runTimed(block: Callable<T>): Result<T> {
         val future = executor.submit(block)
         return try {
@@ -101,6 +106,10 @@ class AttachJvmHeapProbe(
         } catch (_: TimeoutException) {
             future.cancel(true)
             Result.failure(TimeoutException("jvm heap probe timed out after ${timeoutMs}ms"))
+        } catch (e: InterruptedException) {
+            future.cancel(true)
+            Thread.currentThread().interrupt()
+            Result.failure(e)
         } catch (e: Exception) {
             future.cancel(true)
             Result.failure(e.cause ?: e)

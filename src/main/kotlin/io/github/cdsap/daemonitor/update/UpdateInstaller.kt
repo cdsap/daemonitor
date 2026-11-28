@@ -236,29 +236,30 @@ private suspend fun downloadAndVerify(
     Files.createDirectories(updateDirectory)
     val tempPath = safeChild(updateDirectory, "${candidate.assetName}.download")
     val finalPath = safeChild(updateDirectory, candidate.assetName)
-    val client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build()
-    val response = fetchGitHubAsset(client, candidate.downloadUrl, "application/octet-stream")
     val digest = MessageDigest.getInstance("SHA-256")
     var downloadedBytes = 0L
     try {
-        response.body().use { input ->
-            val expectedBytes = candidate.sizeBytes
-                ?: response.headers().firstValueAsLong("Content-Length").orElse(-1).takeIf { it > 0 }
-            require(expectedBytes == null || expectedBytes in 1..MAX_DOWNLOAD_BYTES) { "Update download exceeds size limit" }
-            Files.newOutputStream(tempPath, CREATE_NEW).use { output ->
-                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                while (true) {
-                    val read = input.read(buffer)
-                    if (read < 0) break
-                    require(downloadedBytes <= MAX_DOWNLOAD_BYTES - read) { "Update download exceeds size limit" }
-                    output.write(buffer, 0, read)
-                    digest.update(buffer, 0, read)
-                    downloadedBytes += read
-                    onProgress(expectedBytes?.let { downloadedBytes.toDouble() / it.toDouble() })
+        HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build().use { client ->
+            val response = fetchGitHubAsset(client, candidate.downloadUrl, "application/octet-stream")
+            response.body().use { input ->
+                val expectedBytes = candidate.sizeBytes
+                    ?: response.headers().firstValueAsLong("Content-Length").orElse(-1).takeIf { it > 0 }
+                require(expectedBytes == null || expectedBytes in 1..MAX_DOWNLOAD_BYTES) { "Update download exceeds size limit" }
+                Files.newOutputStream(tempPath, CREATE_NEW).use { output ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        require(downloadedBytes <= MAX_DOWNLOAD_BYTES - read) { "Update download exceeds size limit" }
+                        output.write(buffer, 0, read)
+                        digest.update(buffer, 0, read)
+                        downloadedBytes += read
+                        onProgress(expectedBytes?.let { downloadedBytes.toDouble() / it.toDouble() })
+                    }
                 }
-            }
-            if (expectedBytes != null && downloadedBytes != expectedBytes) {
-                error("Downloaded ${downloadedBytes} bytes; expected ${expectedBytes}")
+                if (expectedBytes != null && downloadedBytes != expectedBytes) {
+                    error("Downloaded ${downloadedBytes} bytes; expected ${expectedBytes}")
+                }
             }
         }
         if (!UpdateDownloadVerifier.matches(digest.digest(), expectedSha256)) {

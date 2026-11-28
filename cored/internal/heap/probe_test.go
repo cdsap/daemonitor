@@ -354,7 +354,7 @@ func TestProberTargetJDKPrecedesAmbientTools(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			p := heap.NewProber()
 			p.JDKDir = tc.configured
-			p.TargetJDKDir = func(pid int32) string {
+			p.TargetJDKDir = func(_ context.Context, pid int32) string {
 				if pid != 42 {
 					t.Fatalf("target pid=%d", pid)
 				}
@@ -378,7 +378,7 @@ func TestProberEmbeddedRuntimeWithoutTools(t *testing.T) {
 	t.Setenv("PATH", "")
 	p := heap.NewProber()
 	embedded := t.TempDir()
-	p.TargetJDKDir = func(int32) string { return embedded }
+	p.TargetJDKDir = func(context.Context, int32) string { return embedded }
 	p.Runner = func(context.Context, string, ...string) (string, error) {
 		t.Fatal("missing tools must not start an attach command")
 		return "", nil

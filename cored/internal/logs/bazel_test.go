@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/cdsap/daemonitor/cored/internal/model"
@@ -150,4 +151,42 @@ func TestBazelTailBoundsAndLongLines(t *testing.T) {
 	if !reflect.DeepEqual(tail.Lines, []string{"next"}) {
 		t.Fatalf("long line suffix leaked: %v", tail.Lines)
 	}
+}
+
+func TestBazelWatcherConcurrentPollAndReads(t *testing.T) {
+	base := t.TempDir()
+	path := filepath.Join(base, "command.log")
+	if err := os.WriteFile(path, []byte("init\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	procs := []model.Process{{PID: 99, Type: "BAZEL_SERVER", BazelOutputBase: base, StartTimeMs: 1}}
+	w := NewBazelWatcher()
+	w.Poll(procs)
+	if !w.HasPID(99) || w.HasPID(100) {
+		t.Fatalf("HasPID mismatch: 99=%v 100=%v", w.HasPID(99), w.HasPID(100))
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 40; i++ {
+			w.Poll(procs)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 40; i++ {
+			_ = w.List()
+			_ = w.HasPID(99)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 40; i++ {
+			_, _ = w.TailFor(99, "")
+			_, _ = w.TailFor(99, "command.log")
+		}
+	}()
+	wg.Wait()
 }

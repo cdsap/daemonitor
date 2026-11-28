@@ -1,7 +1,9 @@
 package tui
 
 import (
-	"sort"
+	"cmp"
+	"context"
+	"slices"
 	"strings"
 	"time"
 
@@ -491,32 +493,31 @@ func (m *Model) refreshDisplayRows() {
 func (m *Model) sortProcesses() {
 	field := m.sortField
 	asc := m.sortOrder == SortAsc
-	sort.SliceStable(m.processes, func(i, j int) bool {
-		a, b := m.processes[i], m.processes[j]
-		cmp := compareProcesses(a, b, field)
-		if cmp == 0 {
-			return a.PID < b.PID
+	slices.SortStableFunc(m.processes, func(a, b model.Process) int {
+		order := compareProcesses(a, b, field)
+		if order == 0 {
+			return cmp.Compare(a.PID, b.PID)
 		}
 		if asc {
-			return cmp < 0
+			return order
 		}
-		return cmp > 0
+		return -order
 	})
 }
 
 func compareProcesses(a, b model.Process, field SortField) int {
 	switch field {
 	case SortRSS:
-		return cmpInt64(a.RSSMemoryMB, b.RSSMemoryMB)
+		return cmp.Compare(a.RSSMemoryMB, b.RSSMemoryMB)
 	case SortCPU:
 		return cmpFloatPtr(a.CPUPercent, b.CPUPercent)
 	case SortPID:
-		return cmpInt32(a.PID, b.PID)
+		return cmp.Compare(a.PID, b.PID)
 	case SortType:
 		return strings.Compare(a.Type, b.Type)
 	case SortUptime:
 		// Ascending uptime ≡ descending start time (newer processes first when asc).
-		return cmpInt64(b.StartTimeMs, a.StartTimeMs)
+		return cmp.Compare(b.StartTimeMs, a.StartTimeMs)
 	case SortProject:
 		return strings.Compare(render.ProjectName(a), render.ProjectName(b))
 	case SortHeapUsed:
@@ -530,28 +531,6 @@ func compareProcesses(a, b model.Process, field SortField) int {
 	}
 }
 
-func cmpInt64(a, b int64) int {
-	switch {
-	case a < b:
-		return -1
-	case a > b:
-		return 1
-	default:
-		return 0
-	}
-}
-
-func cmpInt32(a, b int32) int {
-	switch {
-	case a < b:
-		return -1
-	case a > b:
-		return 1
-	default:
-		return 0
-	}
-}
-
 func cmpFloatPtr(a, b *float64) int {
 	av, bv := -1.0, -1.0
 	if a != nil {
@@ -560,14 +539,7 @@ func cmpFloatPtr(a, b *float64) int {
 	if b != nil {
 		bv = *b
 	}
-	switch {
-	case av < bv:
-		return -1
-	case av > bv:
-		return 1
-	default:
-		return 0
-	}
+	return cmp.Compare(av, bv)
 }
 
 func cmpOptionalInt64(a, b *int64) int {
@@ -580,7 +552,7 @@ func cmpOptionalInt64(a, b *int64) int {
 	if b == nil {
 		return 1
 	}
-	return cmpInt64(*a, *b)
+	return cmp.Compare(*a, *b)
 }
 
 func (m *Model) cycleSortField() {
@@ -691,9 +663,9 @@ func (m *Model) ensureSelectionVisible() {
 }
 
 // Run starts the Bubble Tea program.
-func Run(cfg Config) error {
+func Run(ctx context.Context, cfg Config) error {
 	m := NewModel(cfg)
-	p := tea.NewProgram(m)
+	p := tea.NewProgram(m, tea.WithContext(ctx))
 	_, err := p.Run()
 	return err
 }

@@ -1,126 +1,121 @@
 package io.github.cdsap.daemonitor.coreipc
 
+import io.github.cdsap.daemonitor.application.DaemonLog
 import io.github.cdsap.daemonitor.application.HostContext
 import io.github.cdsap.daemonitor.application.MetricCapability
-import io.github.cdsap.daemonitor.application.DaemonLog
-import io.github.cdsap.daemonitor.coreipc.GoCoreJson.booleanField
-import io.github.cdsap.daemonitor.coreipc.GoCoreJson.extractArray
-import io.github.cdsap.daemonitor.coreipc.GoCoreJson.extractContainer
-import io.github.cdsap.daemonitor.coreipc.GoCoreJson.extractStringArray
-import io.github.cdsap.daemonitor.coreipc.GoCoreJson.longField
-import io.github.cdsap.daemonitor.coreipc.GoCoreJson.numberField
-import io.github.cdsap.daemonitor.coreipc.GoCoreJson.splitObjects
-import io.github.cdsap.daemonitor.coreipc.GoCoreJson.stringField
 import io.github.cdsap.daemonitor.domain.model.BazelBuildTelemetryParser
 import io.github.cdsap.daemonitor.domain.model.Build
 import io.github.cdsap.daemonitor.domain.model.BuildTool
 import io.github.cdsap.daemonitor.domain.model.FinalStatus
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
-import io.github.cdsap.daemonitor.domain.model.LiveJvmHeap
 import io.github.cdsap.daemonitor.domain.model.JvmClassMetrics
 import io.github.cdsap.daemonitor.domain.model.JvmJitMetrics
 import io.github.cdsap.daemonitor.domain.model.JvmMemoryPool
 import io.github.cdsap.daemonitor.domain.model.JvmRawValue
+import io.github.cdsap.daemonitor.domain.model.LiveJvmHeap
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.domain.model.Source
+import io.github.cdsap.daemonitor.json.Json
+import io.github.cdsap.daemonitor.json.JsonObject
+import io.github.cdsap.daemonitor.json.JsonString
 import java.nio.file.Path
 
 internal object GoCoreSnapshotParser {
     fun parseHost(json: String): HostContext {
-        require(json.trim().startsWith("{") && json.trim().endsWith("}"))
-        fun metric(name: String): Double? {
-            val obj = Regex("\"$name\"\\s*:\\s*(\\{[^{}]*})").find(json)?.groupValues?.get(1) ?: return null
-            return if (stringField(obj, "availability") == "available") numberField(obj, "value") else null
-        }
+        val root = Json.parse(json) as JsonObject
+        fun metric(name: String): JsonObject? =
+            root.obj(name)?.takeIf { it.string("availability") == "available" }
         return HostContext(
-            numberField(json, "sampled_at_ms")?.toLong()?.takeIf { it > 0 },
-            metric("logical_processors")?.toLong(), metric("cpu_usage_percent"),
-            metric("memory_used_bytes")?.toLong(), metric("memory_total_bytes")?.toLong(),
+            root.long("sampled_at_ms")?.takeIf { it > 0 },
+            metric("logical_processors")?.long("value"), metric("cpu_usage_percent")?.number("value"),
+            metric("memory_used_bytes")?.long("value"), metric("memory_total_bytes")?.long("value"),
         )
     }
 
     fun parseCapabilities(json: String): List<MetricCapability> {
-        val array = extractArray(json, "metrics") ?: error("Missing capabilities metrics")
-        return splitObjects(array).map { obj ->
+        val array = (Json.parse(json) as? JsonObject)?.array("metrics") ?: error("Missing capabilities metrics")
+        return array.values.filterIsInstance<JsonObject>().map { obj ->
             MetricCapability(
-                stringField(obj, "metric_name") ?: error("Missing metric name"),
-                stringField(obj, "availability") ?: error("Missing metric availability"),
+                obj.string("metric_name") ?: error("Missing metric name"),
+                obj.string("availability") ?: error("Missing metric availability"),
             )
         }
     }
 
     fun parseProcesses(json: String): List<GradleProcess> {
-        val arrayBody = extractArray(json, "processes") ?: return emptyList()
-        return splitObjects(arrayBody).mapNotNull { parseProcess(it) }
+        val array = (Json.parse(json) as? JsonObject)?.array("processes") ?: return emptyList()
+        return array.values.filterIsInstance<JsonObject>().mapNotNull { parseProcess(it) }
     }
 
     fun parseDaemonLogs(json: String): List<DaemonLog> {
-        val arrayBody = extractArray(json, "logs") ?: return emptyList()
-        return splitObjects(arrayBody).mapNotNull { parseDaemonLog(it) }
+        val array = (Json.parse(json) as? JsonObject)?.array("logs") ?: return emptyList()
+        return array.values.filterIsInstance<JsonObject>().mapNotNull { parseDaemonLog(it) }
     }
 
     fun parseDaemonLogTail(json: String): List<String> =
-        extractStringArray(json, "lines").orEmpty()
+        (Json.parse(json) as? JsonObject)?.array("lines")?.values.orEmpty()
+            .filterIsInstance<JsonString>().map { it.value }
 
     fun parseBuilds(json: String): List<Build> {
-        val arrayBody = extractArray(json, "builds") ?: return emptyList()
-        return splitObjects(arrayBody).mapNotNull { parseBuild(it) }
+        val array = (Json.parse(json) as? JsonObject)?.array("builds") ?: return emptyList()
+        return array.values.filterIsInstance<JsonObject>().mapNotNull { parseBuild(it) }
     }
 
-    fun parseHealth(json: String): GoCoreHealthSnapshot =
-        GoCoreHealthSnapshot(
-            databasePath = stringField(json, "db_path")?.takeIf { it.isNotBlank() },
-            retentionMs = numberField(json, "retention_ms")?.toLong(),
-            pid = numberField(json, "pid")?.toLong(),
+    fun parseHealth(json: String): GoCoreHealthSnapshot {
+        val root = Json.parse(json) as JsonObject
+        return GoCoreHealthSnapshot(
+            databasePath = root.string("db_path")?.takeIf { it.isNotBlank() },
+            retentionMs = root.long("retention_ms"),
+            pid = root.long("pid"),
         )
+    }
 
-    private fun parseBuild(obj: String): Build? {
-        val buildId = stringField(obj, "build_id") ?: return null
-        val daemonPid = numberField(obj, "daemon_pid")?.toLong() ?: return null
-        val startTimeMs = numberField(obj, "start_time_ms")?.toLong() ?: return null
-        val inferredSource = stringField(obj, "inferred_source")
+    private fun parseBuild(obj: JsonObject): Build? {
+        val buildId = obj.string("build_id") ?: return null
+        val daemonPid = obj.long("daemon_pid") ?: return null
+        val startTimeMs = obj.long("start_time_ms") ?: return null
+        val inferredSource = obj.string("inferred_source")
             ?.let { runCatching { Source.valueOf(it) }.getOrNull() }
             ?: Source.UNKNOWN
-        val finalStatus = stringField(obj, "final_status")
+        val finalStatus = obj.string("final_status")
             ?.let { runCatching { FinalStatus.valueOf(it) }.getOrNull() }
             ?: return null
-        val tool = stringField(obj, "tool")
+        val tool = obj.string("tool")
             ?.takeIf { it.isNotBlank() }
             ?.let { runCatching { BuildTool.valueOf(it.uppercase()) }.getOrNull() }
             ?: BuildTool.GRADLE
-        val bazelProfile = extractContainer(obj, "bazel_profile", '{', '}')
-            ?.let { BazelBuildTelemetryParser.parseProfile("{$it}") }
-        val bazelDetails = extractContainer(obj, "bazel_details", '{', '}')?.let { detailsObj ->
-            val wrapped = "{$detailsObj}"
-            val metrics = extractContainer(wrapped, "metrics", '{', '}')?.let { "{$it}" }
+        val bazelProfile = obj.obj("bazel_profile")
+            ?.let { BazelBuildTelemetryParser.parseProfile(it.stringify()) }
+        val bazelDetails = obj.obj("bazel_details")?.let { detailsObj ->
+            val metrics = detailsObj.obj("metrics")?.stringify()
             BazelBuildTelemetryParser.parseDetails(
-                bazelVersion = stringField(wrapped, "bazel_version"),
-                sourceFormat = stringField(wrapped, "source_format"),
-                collectionState = stringField(wrapped, "collection_state"),
+                bazelVersion = detailsObj.string("bazel_version"),
+                sourceFormat = detailsObj.string("source_format"),
+                collectionState = detailsObj.string("collection_state"),
                 metricsJson = metrics,
             )
         }
-        val windowSummaries = extractContainer(obj, "window_summaries", '[', ']')
-            ?.let { BazelBuildTelemetryParser.parseWindowSummaries("[$it]") }
+        val windowSummaries = obj.array("window_summaries")
+            ?.let { BazelBuildTelemetryParser.parseWindowSummaries(it.stringify()) }
             .orEmpty()
         return Build(
             buildId = buildId,
             daemonPid = daemonPid,
-            daemonIdentity = stringField(obj, "daemon_identity").nullIfEmpty(),
-            commandLine = stringField(obj, "command_line"),
-            workingDirectory = stringField(obj, "working_directory").nullIfEmpty(),
-            projectPath = stringField(obj, "project_path").nullIfEmpty(),
+            daemonIdentity = obj.string("daemon_identity").nullIfEmpty(),
+            commandLine = obj.string("command_line"),
+            workingDirectory = obj.string("working_directory").nullIfEmpty(),
+            projectPath = obj.string("project_path").nullIfEmpty(),
             startTimeMs = startTimeMs,
-            endTimeMs = numberField(obj, "end_time_ms")?.toLong(),
-            durationSeconds = numberField(obj, "duration_seconds"),
-            peakMemoryMb = numberField(obj, "peak_memory_mb")?.toLong(),
-            avgMemoryMb = numberField(obj, "avg_memory_mb")?.toLong(),
-            peakCpuPercent = numberField(obj, "peak_cpu_percent"),
+            endTimeMs = obj.long("end_time_ms"),
+            durationSeconds = obj.number("duration_seconds"),
+            peakMemoryMb = obj.long("peak_memory_mb"),
+            avgMemoryMb = obj.long("avg_memory_mb"),
+            peakCpuPercent = obj.number("peak_cpu_percent"),
             inferredSource = inferredSource,
             finalStatus = finalStatus,
-            logSnippet = stringField(obj, "log_snippet").nullIfEmpty(),
-            agent = stringField(obj, "agent").nullIfEmpty(),
-            agentProvider = stringField(obj, "agent_provider").nullIfEmpty(),
+            logSnippet = obj.string("log_snippet").nullIfEmpty(),
+            agent = obj.string("agent").nullIfEmpty(),
+            agentProvider = obj.string("agent_provider").nullIfEmpty(),
             tool = tool,
             bazelProfile = bazelProfile,
             bazelDetails = bazelDetails,
@@ -130,12 +125,12 @@ internal object GoCoreSnapshotParser {
 
     private fun String?.nullIfEmpty(): String? = this?.takeIf { it.isNotEmpty() }
 
-    private fun parseDaemonLog(obj: String): DaemonLog? {
-        val pid = numberField(obj, "pid")?.toLong() ?: return null
-        val path = stringField(obj, "path") ?: return null
-        val gradleVersion = stringField(obj, "gradle_version").orEmpty()
-        val tool = stringField(obj, "tool")?.takeIf { it.isNotBlank() }
-        val source = stringField(obj, "source")?.takeIf { it.isNotBlank() }
+    private fun parseDaemonLog(obj: JsonObject): DaemonLog? {
+        val pid = obj.long("pid") ?: return null
+        val path = obj.string("path") ?: return null
+        val gradleVersion = obj.string("gradle_version").orEmpty()
+        val tool = obj.string("tool")?.takeIf { it.isNotBlank() }
+        val source = obj.string("source")?.takeIf { it.isNotBlank() }
         return DaemonLog(
             pid = pid,
             gradleVersion = gradleVersion,
@@ -145,44 +140,44 @@ internal object GoCoreSnapshotParser {
         )
     }
 
-    private fun parseProcess(obj: String): GradleProcess? {
-        val pid = numberField(obj, "pid")?.toLong() ?: return null
-        val typeName = stringField(obj, "type") ?: return null
+    private fun parseProcess(obj: JsonObject): GradleProcess? {
+        val pid = obj.long("pid") ?: return null
+        val typeName = obj.string("type") ?: return null
         val type = runCatching { ProcessType.valueOf(typeName) }.getOrNull() ?: return null
-        val commandLine = stringField(obj, "command_line").orEmpty()
-        val rss = numberField(obj, "rss_memory_mb")?.toLong() ?: 0L
-        val cpu = numberField(obj, "cpu_percent")
-        val parentPid = numberField(obj, "parent_pid")?.toLong() ?: 0L
-        val maxHeap = numberField(obj, "max_heap_mb")?.toLong()
-        val minHeap = numberField(obj, "min_heap_mb")?.toLong()
-        val gc = stringField(obj, "gc")
-        val startTimeMs = numberField(obj, "start_time_ms")?.toLong() ?: 0L
-        val status = stringField(obj, "status") ?: "RUNNING"
-        val automated = booleanField(obj, "automated") ?: false
-        val workingDirectory = stringField(obj, "working_directory")
-        val projectPath = stringField(obj, "project_path")
+        val commandLine = obj.string("command_line").orEmpty()
+        val rss = obj.long("rss_memory_mb") ?: 0L
+        val cpu = obj.number("cpu_percent")
+        val parentPid = obj.long("parent_pid") ?: 0L
+        val maxHeap = obj.long("max_heap_mb")
+        val minHeap = obj.long("min_heap_mb")
+        val gc = obj.string("gc")
+        val startTimeMs = obj.long("start_time_ms") ?: 0L
+        val status = obj.string("status") ?: "RUNNING"
+        val automated = obj.boolean("automated") ?: false
+        val workingDirectory = obj.string("working_directory")
+        val projectPath = obj.string("project_path")
         return GradleProcess(
             pid = pid,
             parentPid = parentPid,
-            ownerPid = longField(obj, "owner_pid"),
-            ownerStartTimeMs = longField(obj, "owner_start_time_ms"),
-            subtreeRssMemoryMb = longField(obj, "subtree_rss_memory_mb"),
-            subtreeCpuPercent = numberField(obj, "subtree_cpu_percent"),
-            activeWorkerCount = longField(obj, "active_worker_count"),
-            activeSandboxedActionCount = longField(obj, "active_sandboxed_action_count"),
-            bazelOutputBase = stringField(obj, "bazel_output_base")?.takeIf { it.isNotBlank() },
-            bazelInstallBase = stringField(obj, "bazel_install_base")?.takeIf { it.isNotBlank() },
+            ownerPid = obj.long("owner_pid"),
+            ownerStartTimeMs = obj.long("owner_start_time_ms"),
+            subtreeRssMemoryMb = obj.long("subtree_rss_memory_mb"),
+            subtreeCpuPercent = obj.number("subtree_cpu_percent"),
+            activeWorkerCount = obj.long("active_worker_count"),
+            activeSandboxedActionCount = obj.long("active_sandboxed_action_count"),
+            bazelOutputBase = obj.string("bazel_output_base")?.takeIf { it.isNotBlank() },
+            bazelInstallBase = obj.string("bazel_install_base")?.takeIf { it.isNotBlank() },
             type = type,
             commandLine = commandLine,
             workingDirectory = workingDirectory,
             projectPath = projectPath,
             cpuPercent = cpu,
-            cpuUserSecondsTotal = numberField(obj, "cpu_user_seconds_total"),
-            cpuSystemSecondsTotal = numberField(obj, "cpu_system_seconds_total"),
-            cpuTotalSecondsTotal = numberField(obj, "cpu_total_seconds_total"),
-            cpuCoresUsed = numberField(obj, "cpu_cores_used"),
-            logicalProcessorCount = longField(obj, "logical_processor_count"),
-            resourceScope = stringField(obj, "resource_scope")?.takeIf { it.isNotBlank() },
+            cpuUserSecondsTotal = obj.number("cpu_user_seconds_total"),
+            cpuSystemSecondsTotal = obj.number("cpu_system_seconds_total"),
+            cpuTotalSecondsTotal = obj.number("cpu_total_seconds_total"),
+            cpuCoresUsed = obj.number("cpu_cores_used"),
+            logicalProcessorCount = obj.long("logical_processor_count"),
+            resourceScope = obj.string("resource_scope")?.takeIf { it.isNotBlank() },
             rssMemoryMb = rss,
             maxHeapMb = maxHeap,
             minHeapMb = minHeap,
@@ -191,63 +186,63 @@ internal object GoCoreSnapshotParser {
             status = status,
             automated = automated,
             liveHeap = parseLiveHeap(obj),
-            virtualMemoryMb = longField(obj, "virtual_memory_mb"),
-            swapMemoryMb = longField(obj, "swap_memory_mb"),
-            proportionalBytes = longField(obj, "proportional_bytes"),
-            privateCommittedBytes = longField(obj, "private_committed_bytes"),
-            physicalFootprintBytes = longField(obj, "physical_footprint_bytes"),
-            peakResidentBytes = longField(obj, "peak_resident_bytes"),
-            threadCount = longField(obj, "thread_count"),
-            readBytes = longField(obj, "read_bytes"),
-            writeBytes = longField(obj, "write_bytes"),
-            readOperations = longField(obj, "read_operations"),
-            writeOperations = longField(obj, "write_operations"),
-            minorPageFaults = longField(obj, "minor_page_faults"),
-            majorPageFaults = longField(obj, "major_page_faults"),
-            voluntaryContextSwitches = longField(obj, "voluntary_context_switches"),
-            involuntaryContextSwitches = longField(obj, "involuntary_context_switches"),
-            openFileDescriptors = longField(obj, "open_file_descriptors"),
-            metaspaceUsedMb = longField(obj, "metaspace_used_mb"),
-            metaspaceCommittedMb = longField(obj, "metaspace_committed_mb"),
-            youngGcCount = longField(obj, "young_gc_count"),
-            youngGcTimeMs = longField(obj, "young_gc_time_ms"),
-            youngGcTimeSeconds = numberField(obj, "young_gc_time_seconds"),
-            fullGcTimeSeconds = numberField(obj, "full_gc_time_seconds"),
-            concurrentGcTimeSeconds = numberField(obj, "concurrent_gc_time_seconds"),
-            totalGcTimeSeconds = numberField(obj, "total_gc_time_seconds"),
-            oldGcCount = longField(obj, "old_gc_count"),
-            oldGcTimeMs = longField(obj, "old_gc_time_ms"),
-            javaVersion = stringField(obj, "java_version"),
-            javaRuntimeVersion = stringField(obj, "java_runtime_version"),
-            javaVendor = stringField(obj, "java_vendor"),
-            javaVmName = stringField(obj, "java_vm_name"),
-            javaVmVersion = stringField(obj, "java_vm_version"),
-            osName = stringField(obj, "os_name"),
-            osArch = stringField(obj, "os_arch"),
-            activeProcessorCount = longField(obj, "active_processor_count"),
+            virtualMemoryMb = obj.long("virtual_memory_mb"),
+            swapMemoryMb = obj.long("swap_memory_mb"),
+            proportionalBytes = obj.long("proportional_bytes"),
+            privateCommittedBytes = obj.long("private_committed_bytes"),
+            physicalFootprintBytes = obj.long("physical_footprint_bytes"),
+            peakResidentBytes = obj.long("peak_resident_bytes"),
+            threadCount = obj.long("thread_count"),
+            readBytes = obj.long("read_bytes"),
+            writeBytes = obj.long("write_bytes"),
+            readOperations = obj.long("read_operations"),
+            writeOperations = obj.long("write_operations"),
+            minorPageFaults = obj.long("minor_page_faults"),
+            majorPageFaults = obj.long("major_page_faults"),
+            voluntaryContextSwitches = obj.long("voluntary_context_switches"),
+            involuntaryContextSwitches = obj.long("involuntary_context_switches"),
+            openFileDescriptors = obj.long("open_file_descriptors"),
+            metaspaceUsedMb = obj.long("metaspace_used_mb"),
+            metaspaceCommittedMb = obj.long("metaspace_committed_mb"),
+            youngGcCount = obj.long("young_gc_count"),
+            youngGcTimeMs = obj.long("young_gc_time_ms"),
+            youngGcTimeSeconds = obj.number("young_gc_time_seconds"),
+            fullGcTimeSeconds = obj.number("full_gc_time_seconds"),
+            concurrentGcTimeSeconds = obj.number("concurrent_gc_time_seconds"),
+            totalGcTimeSeconds = obj.number("total_gc_time_seconds"),
+            oldGcCount = obj.long("old_gc_count"),
+            oldGcTimeMs = obj.long("old_gc_time_ms"),
+            javaVersion = obj.string("java_version"),
+            javaRuntimeVersion = obj.string("java_runtime_version"),
+            javaVendor = obj.string("java_vendor"),
+            javaVmName = obj.string("java_vm_name"),
+            javaVmVersion = obj.string("java_vm_version"),
+            osName = obj.string("os_name"),
+            osArch = obj.string("os_arch"),
+            activeProcessorCount = obj.long("active_processor_count"),
             memoryPools = parsePools(obj, "memory_pools"),
             codeCache = parsePools(obj, "code_cache"),
-            classes = extractContainer(obj, "classes", '{', '}')?.let {
+            classes = obj.obj("classes")?.let {
                 JvmClassMetrics(
-                    longField(it, "loaded"), longField(it, "unloaded_total"),
-                    longField(it, "loaded_total"), numberField(it, "time_seconds"),
+                    it.long("loaded"), it.long("unloaded_total"),
+                    it.long("loaded_total"), it.number("time_seconds"),
                 )
             },
-            jit = extractContainer(obj, "jit", '{', '}')?.let {
-                JvmJitMetrics(longField(it, "compiled_count"), longField(it, "failed_count"),
-                    longField(it, "invalid_count"), numberField(it, "compilation_time_seconds"))
+            jit = obj.obj("jit")?.let {
+                JvmJitMetrics(it.long("compiled_count"), it.long("failed_count"),
+                    it.long("invalid_count"), it.number("compilation_time_seconds"))
             },
         )
     }
 
-    private fun parsePools(obj: String, field: String): List<JvmMemoryPool> =
-        extractContainer(obj, field, '[', ']')?.let(::splitObjects).orEmpty().map { pool ->
-            fun value(name: String): JvmRawValue? = extractContainer(pool, name, '{', '}')?.let {
-                val number = numberField(it, "value") ?: return@let null
-                val unit = stringField(it, "unit") ?: return@let null
+    private fun parsePools(obj: JsonObject, field: String): List<JvmMemoryPool> =
+        obj.array(field)?.values.orEmpty().filterIsInstance<JsonObject>().map { pool ->
+            fun value(name: String): JvmRawValue? = pool.obj(name)?.let {
+                val number = it.number("value") ?: return@let null
+                val unit = it.string("unit") ?: return@let null
                 JvmRawValue(number, unit)
             }
-            JvmMemoryPool(stringField(pool, "name").orEmpty(), stringField(pool, "source"),
+            JvmMemoryPool(pool.string("name").orEmpty(), pool.string("source"),
                 value("used"), value("committed"), value("max"), value("peak"))
         }
 
@@ -255,12 +250,12 @@ internal object GoCoreSnapshotParser {
      * Maps Go `/v1/processes` heap_* fields onto [LiveJvmHeap].
      * Missing fields (older cored) → null; `heap_available: false` → unavailable (not zero).
      */
-    internal fun parseLiveHeap(obj: String): LiveJvmHeap? {
-        val available = booleanField(obj, "heap_available")
-        val sampledAt = numberField(obj, "heap_sampled_at_ms")?.toLong()
-        val used = numberField(obj, "heap_used_mb")?.toLong()
-        val committed = numberField(obj, "heap_committed_mb")?.toLong()
-        val max = numberField(obj, "heap_max_mb")?.toLong()
+    private fun parseLiveHeap(obj: JsonObject): LiveJvmHeap? {
+        val available = obj.boolean("heap_available")
+        val sampledAt = obj.long("heap_sampled_at_ms")
+        val used = obj.long("heap_used_mb")
+        val committed = obj.long("heap_committed_mb")
+        val max = obj.long("heap_max_mb")
         if (available == null && used == null && committed == null && sampledAt == null) {
             return null
         }
