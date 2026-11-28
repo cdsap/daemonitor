@@ -10,6 +10,20 @@ import kotlin.test.assertTrue
 
 class DaemonitorGradlePluginTest {
     @Test
+    fun `Windows socket uses application data directory`() {
+        assertEquals(
+            Path.of("D:/LocalAppData", "Daemonitor", "daemonitor-core.sock").toString(),
+            defaultSocketPath("C:/Users/ada", "Windows 11") { "D:/LocalAppData" },
+        )
+        for (localAppData in listOf(null, "", " ")) {
+            assertEquals(
+                Path.of("C:/Users/ada", "AppData", "Local", "Daemonitor", "daemonitor-core.sock").toString(),
+                defaultSocketPath("C:/Users/ada", "Windows 11") { localAppData },
+            )
+        }
+    }
+
+    @Test
     fun `payload includes escaped host and Gradle JVM fields`() {
         val payload = DaemonitorObservationBuildService.jsonObject(
             "host_id" to "host\\name\"quoted",

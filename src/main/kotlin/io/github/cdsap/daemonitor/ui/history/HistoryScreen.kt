@@ -71,9 +71,13 @@ import io.github.cdsap.daemonitor.ui.common.SourcePill
 import io.github.cdsap.daemonitor.ui.common.StatusPill
 import io.github.cdsap.daemonitor.ui.common.TableHeader
 import io.github.cdsap.daemonitor.ui.common.cycleIndex
+import io.github.cdsap.daemonitor.ui.common.DetailRow as SharedDetailRow
+import io.github.cdsap.daemonitor.ui.common.DetailSection
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import io.github.cdsap.daemonitor.domain.formatBytes
+import io.github.cdsap.daemonitor.domain.projectBasename
 
 private val COLS = listOf(
     Col("Started", 1.55f),
@@ -229,9 +233,7 @@ private fun ProjectDropdown(projects: List<String>, selected: String?, onProject
         onClick = { expanded = true },
         label = {
             Text(
-                selected
-                    ?.substringAfterLast('/')
-                    ?.substringAfterLast('\\')
+                projectBasename(selected)
                     ?.let { "Project: $it" }
                     ?: "All projects",
             )
@@ -278,7 +280,7 @@ private fun BuildRow(b: Build, selected: Boolean, onSelect: () -> Unit) {
             }
         }
         Cell(
-            b.projectPath?.substringAfterLast('/')?.substringAfterLast('\\') ?: "—",
+            projectBasename(b.projectPath) ?: "—",
             COLS[1],
             muted = b.projectPath == null,
         )
@@ -369,7 +371,7 @@ private fun HistoryDetail(build: Build?) {
                     DetailRow("Bazel version", bazelVersion)
                 }
                 if (details?.hasTiming == true || profile?.phaseSeconds?.isNotEmpty() == true || profile?.criticalPathSeconds != null) {
-                    HistorySection("Phase timings")
+                    DetailSection("Phase timings")
                     details?.analysisPhaseMs?.let { DetailRow("Analysis", formatMillis(it)) }
                     details?.executionPhaseMs?.let { DetailRow("Execution", formatMillis(it)) }
                     details?.wallTimeMs?.let { DetailRow("Wall time", formatMillis(it)) }
@@ -385,7 +387,7 @@ private fun HistoryDetail(build: Build?) {
                     }
                 }
                 if (details?.hasActions == true) {
-                    HistorySection("Action cache")
+                    DetailSection("Action cache")
                     details.actionsExecuted?.let { DetailRow("Actions executed", it.toString()) }
                     details.actionsCreated?.let { DetailRow("Actions created", it.toString()) }
                     details.remoteCacheHits?.let { DetailRow("Remote cache hits", it.toString()) }
@@ -394,7 +396,7 @@ private fun HistoryDetail(build: Build?) {
                 }
                 val serverWindow = selectBazelServerWindow(build.windowSummaries)
                 if (serverWindow != null || details?.hasMemory == true) {
-                    HistorySection("Memory & GC deltas")
+                    DetailSection("Memory & GC deltas")
                     serverWindow?.let { w ->
                         DetailRow("Server RSS", "${w.firstRssMb} → ${w.lastRssMb} MB (${formatSignedMb(w.deltaRssMb)}, peak ${w.peakRssMb} MB)")
                         val firstHeap = w.firstHeapUsedMb
@@ -416,7 +418,7 @@ private fun HistoryDetail(build: Build?) {
                     details?.peakPostGcHeapBytes?.let { DetailRow("Peak post-GC heap", formatBytes(it)) }
                 }
                 if (details?.workerCount != null || details?.testsTotal != null) {
-                    HistorySection("Workers & tests")
+                    DetailSection("Workers & tests")
                     details.workerCount?.let { DetailRow("Workers reported", it.toString()) }
                     details.testsTotal?.let { total ->
                         val passed = details.testsPassed ?: 0
@@ -466,25 +468,6 @@ private fun HistoryDetail(build: Build?) {
     }
 }
 
-@Composable
-private fun HistorySection(label: String) {
-    Text(
-        label,
-        modifier = Modifier.padding(top = Space.sm, bottom = Space.xs),
-        style = MaterialTheme.typography.labelMedium,
-        fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.primary,
-    )
-}
-
-@Composable
-private fun DetailRow(label: String, value: String) {
-    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-        Text(label, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-        Text(value, modifier = Modifier.weight(2f), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
-}
-
 private fun selectBazelServerWindow(summaries: List<BazelWindowSummary>): BazelWindowSummary? =
     summaries.firstOrNull { it.processType.equals("BAZEL_SERVER", ignoreCase = true) } ?: summaries.firstOrNull()
 
@@ -499,13 +482,6 @@ private fun formatSignedMb(delta: Long): String = when {
 
 private fun formatSignedCount(delta: Long): String = if (delta > 0) "+$delta" else delta.toString()
 
-private fun formatBytes(bytes: Long): String = when {
-    bytes >= 1024L * 1024L * 1024L -> String.format(Locale.ROOT, "%.1f GB", bytes / (1024.0 * 1024.0 * 1024.0))
-    bytes >= 1024L * 1024L -> String.format(Locale.ROOT, "%.1f MB", bytes / (1024.0 * 1024.0))
-    bytes >= 1024L -> String.format(Locale.ROOT, "%.1f KB", bytes / 1024.0)
-    else -> "$bytes B"
-}
-
 private val TIME_FMT = DateTimeFormatter.ofPattern("MMM d HH:mm").withZone(ZoneId.systemDefault())
 private fun Build.displayAgent(): String? = agent.takeUnless { inferredSource == Source.IDE }
 private fun formatTime(ms: Long): String = TIME_FMT.format(Instant.ofEpochMilli(ms))
@@ -513,3 +489,6 @@ private fun formatDuration(seconds: Double?): String =
     seconds?.let {
         if (it < 1) String.format(Locale.ROOT, "%.0f ms", it * 1000) else String.format(Locale.ROOT, "%.1f s", it)
     } ?: "—"
+
+@Composable
+private fun DetailRow(label: String, value: String) = SharedDetailRow(label, value, maxLines = 1)

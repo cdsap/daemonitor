@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cdsap/daemonitor/cored/internal/builds"
+	"github.com/cdsap/daemonitor/cored/internal/ptr"
 )
 
 // partial holds fields accumulated across one BEP invocation (before and after finished).
@@ -438,9 +439,9 @@ func applyJSONBuildMetrics(state *partial, data json.RawMessage) bool {
 				if kb < 0 {
 					continue
 				}
-				entry.LastMemoryKB = ptrI64(kb)
+				entry.LastMemoryKB = ptr.Int64(kb)
 				if entry.PeakMemoryKB == nil || kb > *entry.PeakMemoryKB {
-					entry.PeakMemoryKB = ptrI64(kb)
+					entry.PeakMemoryKB = ptr.Int64(kb)
 				}
 			}
 			workers = append(workers, entry)

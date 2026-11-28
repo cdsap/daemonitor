@@ -64,6 +64,10 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import java.util.Locale
 import io.github.cdsap.daemonitor.domain.LiveMetricLabels
+import io.github.cdsap.daemonitor.domain.displayLabel
+import io.github.cdsap.daemonitor.domain.displayProjectLabel
+import io.github.cdsap.daemonitor.domain.formatBytes
+import io.github.cdsap.daemonitor.domain.formatUptime
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.JvmMemoryPool
 import io.github.cdsap.daemonitor.domain.model.JvmRawValue
@@ -93,6 +97,8 @@ import io.github.cdsap.daemonitor.ui.common.Space
 import io.github.cdsap.daemonitor.ui.common.StatTile
 import io.github.cdsap.daemonitor.ui.common.TableHeader
 import io.github.cdsap.daemonitor.ui.common.cycleIndex
+import io.github.cdsap.daemonitor.ui.common.DetailRow
+import io.github.cdsap.daemonitor.ui.common.DetailSection
 
 private val WIDE_TABLE_MIN_WIDTH = 920.dp
 private val VIEW_MODE_OPTIONS = listOf("Flat" to false, "Grouped" to true)
@@ -722,17 +728,6 @@ private fun ChildProcessRow(child: GradleProcess) {
     }
 }
 
-@Composable
-private fun DetailSection(label: String) {
-    Text(
-        label,
-        modifier = Modifier.padding(top = Space.sm, bottom = Space.xs),
-        style = MaterialTheme.typography.labelMedium,
-        fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.primary,
-    )
-}
-
 private fun Long?.metric(unit: String = ""): String = this?.let { if (unit.isBlank()) it.toString() else "$it $unit" } ?: "unavailable"
 
 private fun Double?.activityMetric(unit: String = ""): String =
@@ -750,13 +745,7 @@ private fun poolDetail(pool: JvmMemoryPool): String {
 
 private fun Double?.gcTimeCompact(): String = this?.let { String.format(Locale.ROOT, "%.3f", it) } ?: "—"
 
-private fun Long?.metricBytes(): String = this?.let {
-    when {
-        it >= 1024L * 1024L -> String.format(Locale.ROOT, "%.1f MB", it / (1024.0 * 1024.0))
-        it >= 1024L -> String.format(Locale.ROOT, "%.1f KB", it / 1024.0)
-        else -> "$it B"
-    }
-} ?: "unavailable"
+private fun Long?.metricBytes(): String = this?.let(::formatBytes) ?: "unavailable"
 
 @Composable
 private fun LogCard(tailState: LogTailState, daemonLog: DaemonLog?, modifier: Modifier = Modifier) {
@@ -823,25 +812,6 @@ private fun BazelLogCard(tailState: LogTailState, daemonLog: DaemonLog?, modifie
         }
     }
 }
-
-@Composable
-private fun DetailRow(label: String, value: String) {
-    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-        Text(label, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-        Text(value, modifier = Modifier.weight(2f), style = MaterialTheme.typography.bodySmall)
-    }
-}
-
-/** Project column label matching Go CLI/TUI `render.ProjectName`: projectPath basename, else workingDirectory basename. */
-internal fun displayProjectLabel(process: GradleProcess): String? {
-    val raw = process.projectPath?.trim()?.takeIf { it.isNotEmpty() }
-        ?: process.workingDirectory?.trim()?.takeIf { it.isNotEmpty() }
-        ?: return null
-    val trimmed = raw.trimEnd('/', '\\')
-    if (trimmed.isEmpty()) return raw
-    return trimmed.substringAfterLast('/').substringAfterLast('\\').ifEmpty { trimmed }
-}
-
 /**
  * Leaf composable that owns its own 1-second wall-clock tick so uptime advances smoothly between
  * polls without triggering recomposition of the surrounding table or detail inspector.
@@ -875,19 +845,4 @@ private fun UptimeText(
         maxLines = maxLines,
         overflow = overflow,
     )
-}
-
-/** Compact, human-readable process uptime: "45s", "12m 03s", "3h 07m", "2d 4h". */
-private fun formatUptime(startMs: Long, nowMs: Long): String {
-    val total = ((nowMs - startMs) / 1000).coerceAtLeast(0)
-    val days = total / 86_400
-    val hours = (total % 86_400) / 3_600
-    val minutes = (total % 3_600) / 60
-    val seconds = total % 60
-    return when {
-        days > 0 -> "${days}d ${hours}h"
-        hours > 0 -> String.format(Locale.ROOT, "%dh %02dm", hours, minutes)
-        minutes > 0 -> String.format(Locale.ROOT, "%dm %02ds", minutes, seconds)
-        else -> "${seconds}s"
-    }
 }

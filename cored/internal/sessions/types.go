@@ -1,6 +1,10 @@
 package sessions
 
-import "sort"
+import (
+	"sort"
+
+	"github.com/cdsap/daemonitor/cored/internal/ptr"
+)
 
 const (
 	AssociationConfirmed = "confirmed"
@@ -88,14 +92,14 @@ type Response struct {
 }
 
 type Sample struct {
-	AtMs             int64
-	RSS              int64
-	HeapUsedMB       *int64
-	MetaspaceUsedMB  *int64
-	YoungGCCount     *int64
-	TotalGCCount     *int64
-	YoungGCTimeMs    *int64
-	OldGCTimeMs      *int64
+	AtMs            int64
+	RSS             int64
+	HeapUsedMB      *int64
+	MetaspaceUsedMB *int64
+	YoungGCCount    *int64
+	TotalGCCount    *int64
+	YoungGCTimeMs   *int64
+	OldGCTimeMs     *int64
 }
 
 func SummarizeRSS(ref ProcessRef, association string, samples []Sample) (RSSSummary, bool) {
@@ -153,7 +157,5 @@ func windowGauge(samples []Sample, get func(Sample) *int64) (first, peak, last, 
 		return nil, nil, nil, nil
 	}
 	d := lastV - firstV
-	return int64Ptr(firstV), int64Ptr(peakV), int64Ptr(lastV), int64Ptr(d)
+	return ptr.Int64(firstV), ptr.Int64(peakV), ptr.Int64(lastV), ptr.Int64(d)
 }
-
-func int64Ptr(v int64) *int64 { return &v }

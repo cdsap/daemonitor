@@ -902,7 +902,7 @@ func TestRSSTrendIsCompactAndTracksRange(t *testing.T) {
 		{PID: 9, RSSMemoryMB: 150},
 		{PID: 10, RSSMemoryMB: 999},
 	}, 9)
-	if !strings.Contains(trend, "100 MB–200 MB") {
+	if trend != "▁█▄  100 MB–200 MB" {
 		t.Fatalf("trend=%q", trend)
 	}
 	if strings.Contains(trend, "999 MB") {
@@ -1076,4 +1076,38 @@ func (e errString) Error() string { return string(e) }
 
 func displayLen(s string) int {
 	return displaywidth.String(s)
+}
+
+func TestEscapeResetsAllDetailScrollState(t *testing.T) {
+	m := NewModel(Config{Now: fixedNow, Client: client.New("/tmp/missing-daemonitor.sock")})
+	m.applySnapshot(model.Snapshot{SampledAtMs: 1, Processes: []model.Process{{PID: 42, Type: "GRADLE_DAEMON"}}})
+	m.detailsOpen = true
+	m.detailPane = detailPaneLog
+	m.detailScroll = 7
+	m.detailPaneScroll[detailPaneLog] = 7
+	m.detailPaneScrolled[detailPaneLog] = true
+	m.detailPaneHorizontalScroll[detailPaneLog] = 16
+	next, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyEscape})
+	got := next.(Model)
+	if got.detailsOpen || got.detailPane != detailPaneAttributes || got.detailScroll != 0 || got.detailPaneScroll != [4]int{} || got.detailPaneScrolled != [4]bool{} || got.detailPaneHorizontalScroll != [4]int{} {
+		t.Fatalf("detail scroll state survived escape: %+v", got.detailPaneHorizontalScroll)
+	}
+	next, cmd := got.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+	reopened := next.(Model)
+	if !reopened.detailsOpen || !reopened.detailLoading || reopened.detailProcess == nil || reopened.detailProcess.PID != 42 || cmd == nil {
+		t.Fatal("reopening detail did not start a fresh load")
+	}
+}
+
+func TestMemorySparklineKeepsWidthAndFlatSeriesBehavior(t *testing.T) {
+	if got := memorySparkline(nil, 80); got != "n/a" {
+		t.Fatal(got)
+	}
+	if got := memorySparkline([]int64{5, 5, 5}, 80); got != "▁▁▁" {
+		t.Fatal(got)
+	}
+	values := []int64{0, 0, 1, 2, 3, 4, 5, 6, 7, 8}
+	if got := memorySparkline(values, 40); got != "▁▂▃▄▅▆▇█" {
+		t.Fatal(got)
+	}
 }

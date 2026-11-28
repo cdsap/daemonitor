@@ -1,6 +1,7 @@
 package logs
 
 import (
+	"crypto/sha256"
 	"errors"
 	"io"
 	"os"
@@ -51,11 +52,12 @@ type Watcher struct {
 	initialBytes   int
 	chunkBytes     int
 
-	mu        sync.Mutex
-	offsets   map[string]int64
-	leftovers map[string][]byte
-	tails     map[string]*ring
-	meta      map[string]DaemonLog
+	mu          sync.Mutex
+	offsets     map[string]int64
+	leftovers   map[string][]byte
+	tails       map[string]*ring
+	meta        map[string]DaemonLog
+	checkpoints map[string]logCheckpoint
 }
 
 func NewWatcher(gradleUserHome string) *Watcher {
@@ -72,6 +74,7 @@ func NewWatcher(gradleUserHome string) *Watcher {
 		leftovers:      make(map[string][]byte),
 		tails:          make(map[string]*ring),
 		meta:           make(map[string]DaemonLog),
+		checkpoints:    make(map[string]logCheckpoint),
 	}
 }
 
@@ -165,6 +168,7 @@ func (w *Watcher) Poll(activePIDs map[int64]struct{}) (map[int64][]string, error
 			delete(w.offsets, path)
 			delete(w.leftovers, path)
 			delete(w.tails, path)
+			delete(w.checkpoints, path)
 		}
 	}
 	w.mu.Unlock()
@@ -245,45 +249,43 @@ func makeTail(log DaemonLog, lines []string) Tail {
 }
 
 func (w *Watcher) readNewLines(path string) ([]string, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return nil, err
-	}
-	size := info.Size()
-
 	w.mu.Lock()
-	from, initialized := w.offsets[path]
-	if !initialized {
-		from = size - int64(w.initialBytes)
-		if from < 0 {
-			from = 0
-		}
-	}
-	leftover := w.leftovers[path]
-	delete(w.leftovers, path)
-	w.mu.Unlock()
-
-	if size < from {
-		w.mu.Lock()
-		w.offsets[path] = 0
-		delete(w.leftovers, path)
-		w.mu.Unlock()
-		return nil, nil
-	}
-	if size == from {
-		w.mu.Lock()
-		w.offsets[path] = from
-		w.mu.Unlock()
-		return nil, nil
-	}
-
+	defer w.mu.Unlock()
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-
-	discardInitial := !initialized && from > 0 && !startsAtLineBoundary(f, from)
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, nil
+	}
+	size := info.Size()
+	from, initialized := w.offsets[path]
+	checkpoint := w.checkpoints[path]
+	reset := initialized && (checkpoint.info == nil || !os.SameFile(checkpoint.info, info) || size < from)
+	if initialized && !reset && from > 0 {
+		previous := make([]byte, from-checkpoint.anchorStart)
+		if _, err := f.ReadAt(previous, checkpoint.anchorStart); err != nil {
+			return nil, err
+		}
+		reset = sha256.Sum256(previous) != checkpoint.anchor
+	}
+	leftover := w.leftovers[path]
+	if reset {
+		from = 0
+		leftover = nil
+	}
+	if !initialized || reset {
+		from = max(int64(0), size-int64(w.initialBytes))
+	}
+	if initialized && !reset && size == from {
+		return nil, nil
+	}
+	discardInitial := (!initialized || reset) && from > 0 && !startsAtLineBoundary(f, from)
 	if _, err := f.Seek(from, io.SeekStart); err != nil {
 		return nil, err
 	}
@@ -333,25 +335,37 @@ func (w *Watcher) readNewLines(path string) ([]string, error) {
 		}
 	}
 
+	anchorStart := max(int64(0), pos-int64(w.initialBytes))
+	anchor := make([]byte, pos-anchorStart)
+	if _, err := f.ReadAt(anchor, anchorStart); err != nil {
+		return nil, err
+	}
+	after, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if after.Size() != info.Size() || !after.ModTime().Equal(info.ModTime()) {
+		return nil, io.ErrUnexpectedEOF
+	}
 	redacted := make([]string, 0, len(lines))
 	for _, line := range lines {
 		redacted = append(redacted, poll.RedactLogLine(line))
 	}
-
-	w.mu.Lock()
+	// Publish only after the read and its anchor belong to a stable file.
+	w.checkpoints[path] = logCheckpoint{info: info, anchorStart: anchorStart, anchor: sha256.Sum256(anchor)}
 	w.offsets[path] = pos
+	delete(w.leftovers, path)
 	if len(partial) > 0 {
 		w.leftovers[path] = append([]byte{}, partial...)
 	}
 	r := w.tails[path]
-	if r == nil {
+	if r == nil || reset {
 		r = newRing(w.tailLines)
 		w.tails[path] = r
 	}
 	for _, line := range redacted {
 		r.push(line)
 	}
-	w.mu.Unlock()
 	return redacted, nil
 }
 
@@ -404,4 +418,10 @@ func (r *ring) slice() []string {
 		copy(out[first:], r.data[:r.count-first])
 	}
 	return out
+}
+
+type logCheckpoint struct {
+	info        os.FileInfo
+	anchorStart int64
+	anchor      [sha256.Size]byte
 }

@@ -4,13 +4,15 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/cdsap/daemonitor/cored/internal/ptr"
 )
 
 var (
-	xmx        = regexp.MustCompile(`-Xmx(\d+)([kKmMgGtT]?)`)
-	xms        = regexp.MustCompile(`-Xms(\d+)([kKmMgGtT]?)`)
-	gcFlag     = regexp.MustCompile(`-XX:\+Use(\w+?)GC`)
-	nonInteract = regexp.MustCompile(`(^|\s)--non-interactive(\s|$)`)
+	xmx          = regexp.MustCompile(`-Xmx(\d+)([kKmMgGtT]?)`)
+	xms          = regexp.MustCompile(`-Xms(\d+)([kKmMgGtT]?)`)
+	gcFlag       = regexp.MustCompile(`-XX:\+Use(\w+?)GC`)
+	nonInteract  = regexp.MustCompile(`(^|\s)--non-interactive(\s|$)`)
 	consolePlain = regexp.MustCompile(`(^|\s)--console[=\s]plain(\s|$)`)
 )
 
@@ -24,13 +26,13 @@ type JVMArgs struct {
 func ParseJVMArgs(commandLine string) JVMArgs {
 	var out JVMArgs
 	if m := xmx.FindStringSubmatch(commandLine); m != nil {
-		out.MaxHeapMB = ptrInt64(toMB(m[1], m[2]))
+		out.MaxHeapMB = ptr.Int64(toMB(m[1], m[2]))
 	}
 	if m := xms.FindStringSubmatch(commandLine); m != nil {
-		out.MinHeapMB = ptrInt64(toMB(m[1], m[2]))
+		out.MinHeapMB = ptr.Int64(toMB(m[1], m[2]))
 	}
 	if m := gcFlag.FindStringSubmatch(commandLine); m != nil {
-		out.GC = ptrString(m[1])
+		out.GC = ptr.String(m[1])
 	}
 	return out
 }
@@ -56,10 +58,4 @@ func toMB(number, unit string) int64 {
 	default:
 		return n
 	}
-}
-
-func ptrInt64(v int64) *int64    { return &v }
-func ptrString(v string) *string { return &v }
-func ptrFloat64(v float64) *float64 {
-	return &v
 }

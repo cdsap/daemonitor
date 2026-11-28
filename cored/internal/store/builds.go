@@ -136,37 +136,9 @@ SELECT build_id, daemon_pid, daemon_identity, command_line, working_directory, p
        start_time, end_time, duration_seconds, peak_memory_mb, avg_memory_mb,
        peak_cpu_percent, inferred_source, final_status, log_snippet, agent, agent_provider,
        COALESCE(tool, 'GRADLE'), bazel_profile, window_summaries
-FROM builds
-	WHERE 1 = 1`
-	args := make([]any, 0, 5)
-	if filters.PID > 0 {
-		query += " AND daemon_pid = ?"
-		args = append(args, filters.PID)
-	}
-	if filters.DaemonIdentity != "" {
-		query += " AND daemon_identity = ?"
-		args = append(args, filters.DaemonIdentity)
-	}
-	if filters.DaemonStartTimeMs > 0 {
-		query += " AND (start_time >= ? OR (tool = 'BAZEL' AND end_time >= ?))"
-		args = append(args, filters.DaemonStartTimeMs, filters.DaemonStartTimeMs)
-	}
-	if filters.StartTimeMs > 0 {
-		query += " AND start_time >= ?"
-		args = append(args, filters.StartTimeMs)
-	}
-	if filters.Project != "" {
-		query += " AND LOWER(COALESCE(project_path, '')) LIKE ? ESCAPE '\\'"
-		args = append(args, "%"+escapeLike(strings.ToLower(filters.Project))+"%")
-	}
-	if filters.Status != "" {
-		query += " AND LOWER(final_status) = ?"
-		args = append(args, strings.ToLower(filters.Status))
-	}
-	if filters.Tool != "" {
-		query += " AND UPPER(COALESCE(tool, 'GRADLE')) = ?"
-		args = append(args, strings.ToUpper(filters.Tool))
-	}
+FROM builds`
+	where, args := buildFiltersWhere(filters)
+	query += where
 	query += " ORDER BY start_time DESC LIMIT ?"
 	args = append(args, limit)
 	rows, err := s.db.Query(query, args...)
@@ -214,22 +186,13 @@ FROM builds
 			v := cmd.String
 			b.CommandLine = &v
 		}
-		if endMs.Valid {
-			v := endMs.Int64
-			b.EndTimeMs = &v
-		}
+		b.EndTimeMs = nullInt64Ptr(endMs)
 		if dur.Valid {
 			v := dur.Float64
 			b.DurationSeconds = &v
 		}
-		if peakMem.Valid {
-			v := peakMem.Int64
-			b.PeakMemoryMB = &v
-		}
-		if avgMem.Valid {
-			v := avgMem.Int64
-			b.AvgMemoryMB = &v
-		}
+		b.PeakMemoryMB = nullInt64Ptr(peakMem)
+		b.AvgMemoryMB = nullInt64Ptr(avgMem)
 		if peakCPU.Valid {
 			v := peakCPU.Float64
 			b.PeakCPUPercent = &v

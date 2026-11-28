@@ -3,17 +3,18 @@ package poll
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/cdsap/daemonitor/cored/internal/commandline"
 	"github.com/cdsap/daemonitor/cored/internal/heap"
 	"github.com/cdsap/daemonitor/cored/internal/model"
 	"github.com/cdsap/daemonitor/cored/internal/observe"
 	"github.com/cdsap/daemonitor/cored/internal/platform"
+	"github.com/cdsap/daemonitor/cored/internal/ptr"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/process"
 )
@@ -40,7 +41,7 @@ var (
 	bazelServerJar = regexp.MustCompile(`(^|[\s/\\])A-server\.jar["']?(?:\s|$)`)
 	// Require end-of-token after Bazel so --product_name=Bazelisk does not match.
 	bazelServerMarker = regexp.MustCompile(`--product_name=Bazel(?:\s|$)|--output_base=`)
-	bazelWorkspaceDir = regexp.MustCompile(`--workspace_directory=(?:"([^"]+)"|'([^']+)'|([^\s]+))`)
+	bazelWorkspaceDir = commandline.QuotedFlag("--workspace_directory")
 	// Test-action markers (Java/Kotlin/Go/iOS probes): BazelTestRunner / -Dbazel.test_suite= ;
 	// tools/test/test-setup.sh (also on process-wrapper argv). Native/iOS runfiles leaves use
 	// sandbox+.runfiles only when the parent is already BAZEL_TEST (see PromoteBazelNativeTest).
@@ -77,9 +78,9 @@ func cpuUsage(now time.Time, cpus int, current priorCPU, prior priorCPU, ok bool
 		return nil, nil
 	}
 	used := cpuDelta / wallSeconds
-	cores = ptrFloat64(used)
+	cores = ptr.Float64(used)
 	if cpus > 0 {
-		percent = ptrFloat64(used / float64(cpus) * 100.0)
+		percent = ptr.Float64(used / float64(cpus) * 100.0)
 	}
 	return percent, cores
 }
@@ -353,9 +354,9 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 				c.mu.Unlock()
 				monotonic := !ok || (userSeconds >= prior.userSeconds && systemSeconds >= prior.systemSeconds && totalSeconds >= prior.totalSeconds)
 				if monotonic {
-					cpuUserSeconds = ptrFloat64(userSeconds)
-					cpuSystemSeconds = ptrFloat64(systemSeconds)
-					cpuTotalSeconds = ptrFloat64(totalSeconds)
+					cpuUserSeconds = ptr.Float64(userSeconds)
+					cpuSystemSeconds = ptr.Float64(systemSeconds)
+					cpuTotalSeconds = ptr.Float64(totalSeconds)
 					cpuPct, cpuCoresUsed = cpuUsage(nowTime, c.cpus, priorCPU{
 						userSeconds: userSeconds, systemSeconds: systemSeconds, totalSeconds: totalSeconds,
 						wallClock: nowTime,
@@ -368,9 +369,9 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 					c.mu.Unlock()
 				}
 			} else {
-				cpuUserSeconds = ptrFloat64(userSeconds)
-				cpuSystemSeconds = ptrFloat64(systemSeconds)
-				cpuTotalSeconds = ptrFloat64(totalSeconds)
+				cpuUserSeconds = ptr.Float64(userSeconds)
+				cpuSystemSeconds = ptr.Float64(systemSeconds)
+				cpuTotalSeconds = ptr.Float64(totalSeconds)
 			}
 		}
 
@@ -435,7 +436,7 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 			CPUSystemSecondsTotal:      cpuSystemSeconds,
 			CPUTotalSecondsTotal:       cpuTotalSeconds,
 			CPUCoresUsed:               cpuCoresUsed,
-			LogicalProcessorCount:      ptrInt64(int64(c.cpus)),
+			LogicalProcessorCount:      ptr.Int64(int64(c.cpus)),
 			MaxHeapMB:                  jvm.MaxHeapMB,
 			MinHeapMB:                  jvm.MinHeapMB,
 			GC:                         jvm.GC,
@@ -591,7 +592,7 @@ func (c *Collector) applyJVMProbes(ctx context.Context, now int64, out []model.P
 		}
 		if result.advanced.at != 0 {
 			sample := result.advanced.sample
-			proc.JVMAdvancedSampledAtMs = ptrInt64(result.advanced.at)
+			proc.JVMAdvancedSampledAtMs = ptr.Int64(result.advanced.at)
 			proc.CodeCache = memoryPools(sample.CodeCache)
 			proc.JIT = jitMetrics(sample.JIT)
 			proc.Classes = classMetrics(sample.Classes)
@@ -609,8 +610,7 @@ func (c *Collector) applyJVMProbes(ctx context.Context, now int64, out []model.P
 func ShouldProbeLiveHeap(kind, executable string) bool {
 	switch kind {
 	case "BAZEL_TEST", "BAZEL_WORKER":
-		name := filepath.Base(strings.ReplaceAll(executable, `\`, "/"))
-		return name == "java" || strings.EqualFold(name, "java.exe")
+		return commandline.ExecutableBase(executable) == "java"
 	case "GRADLE_DAEMON", "KOTLIN_DAEMON", "KOTLIN_TOOLCHAIN", "TEST_WORKER", "GRADLE_WORKER", "UNKNOWN_GRADLE_WORKER", "JAVA_GRADLE_RELATED", "BAZEL_SERVER":
 		return true
 	default:
@@ -630,11 +630,11 @@ type osMetrics struct {
 func osMetricsFromPlatform(pm platform.ProcessPlatformMetrics) osMetrics {
 	m := osMetrics{}
 	if pm.VirtualBytes.Value != nil {
-		m.virtualMemoryMB = ptrInt64(*pm.VirtualBytes.Value / (1024 * 1024))
+		m.virtualMemoryMB = ptr.Int64(*pm.VirtualBytes.Value / (1024 * 1024))
 		m.virtualBytes = pm.VirtualBytes.Value
 	}
 	if pm.SwapBytes.Value != nil {
-		m.swapMemoryMB = ptrInt64(*pm.SwapBytes.Value / (1024 * 1024))
+		m.swapMemoryMB = ptr.Int64(*pm.SwapBytes.Value / (1024 * 1024))
 		m.swapBytes = pm.SwapBytes.Value
 	}
 	m.threadCount = pm.ThreadCount.Value
@@ -754,16 +754,7 @@ func isBazelWorker(commandLine string) bool {
 
 // BazelWorkspaceDirectory returns --workspace_directory= from a Bazel server argv.
 func BazelWorkspaceDirectory(commandLine string) string {
-	m := bazelWorkspaceDir.FindStringSubmatch(commandLine)
-	if len(m) < 2 {
-		return ""
-	}
-	for _, g := range m[1:] {
-		if g != "" {
-			return g
-		}
-	}
-	return ""
+	return commandline.FlagValue(bazelWorkspaceDir.FindStringSubmatch(commandLine))
 }
 
 // BazelDirectories extracts server directory flags from argv without splitting

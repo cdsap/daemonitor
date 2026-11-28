@@ -18,14 +18,6 @@ const (
 	colorMagenta = "13"
 )
 
-func titleStyle(noColor bool) lipgloss.Style {
-	s := lipgloss.NewStyle().Bold(true)
-	if noColor {
-		return s
-	}
-	return s.Foreground(lipgloss.Color("14"))
-}
-
 func errorStyle(noColor bool) lipgloss.Style {
 	s := lipgloss.NewStyle()
 	if noColor {
@@ -43,14 +35,6 @@ func selectedStyle(noColor bool) lipgloss.Style {
 }
 
 func headerStyle(noColor bool) lipgloss.Style {
-	s := lipgloss.NewStyle().Bold(true)
-	if noColor {
-		return s
-	}
-	return s.Foreground(lipgloss.Color(colorCyan))
-}
-
-func detailHeadingStyle(noColor bool) lipgloss.Style {
 	s := lipgloss.NewStyle().Bold(true)
 	if noColor {
 		return s

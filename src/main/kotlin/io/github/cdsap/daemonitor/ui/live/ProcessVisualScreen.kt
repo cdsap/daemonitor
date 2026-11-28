@@ -3,7 +3,6 @@ package io.github.cdsap.daemonitor.ui.live
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.LocalScrollbarStyle
 import androidx.compose.foundation.HorizontalScrollbar
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.horizontalScroll
@@ -36,11 +35,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.cdsap.daemonitor.domain.LiveMetricLabels
+import io.github.cdsap.daemonitor.domain.displayLabel
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.ui.common.EmptyState
 import io.github.cdsap.daemonitor.ui.common.Radius
 import io.github.cdsap.daemonitor.ui.common.ScreenHeader
 import io.github.cdsap.daemonitor.ui.common.Space
+import io.github.cdsap.daemonitor.ui.common.horizontalScrollbarStyle
 import io.github.cdsap.daemonitor.ui.live.charts.OverallRssTimelineChart
 import kotlinx.coroutines.delay
 
@@ -322,10 +323,7 @@ private fun ProcessSelectionStrip(
         if (scrollState.maxValue > 0) {
             HorizontalScrollbar(
                 adapter = rememberScrollbarAdapter(scrollState),
-                style = LocalScrollbarStyle.current.copy(
-                    unhoverColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    hoverColor = MaterialTheme.colorScheme.onSurface,
-                ),
+                style = horizontalScrollbarStyle(),
                 modifier = Modifier.fillMaxWidth().padding(top = Space.xs).testTag("visual-process-scrollbar"),
             )
         }

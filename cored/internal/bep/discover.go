@@ -3,8 +3,9 @@ package bep
 import (
 	posixpath "path"
 	"path/filepath"
-	"regexp"
 	"strings"
+
+	"github.com/cdsap/daemonitor/cored/internal/commandline"
 )
 
 // Format is the on-disk BEP encoding.
@@ -26,8 +27,8 @@ type Sink struct {
 }
 
 var (
-	jsonFlag   = regexp.MustCompile(`--build_event_json_file=(?:"([^"]+)"|'([^']+)'|([^\s]+))`)
-	binaryFlag = regexp.MustCompile(`--build_event_binary_file=(?:"([^"]+)"|'([^']+)'|([^\s]+))`)
+	jsonFlag   = commandline.QuotedFlag("--build_event_json_file")
+	binaryFlag = commandline.QuotedFlag("--build_event_binary_file")
 )
 
 // LooksLikeBazelClient reports whether cmdline is a bazel/bazelisk client
@@ -41,18 +42,15 @@ func LooksLikeBazelClient(cmdline string) bool {
 	if len(fields) == 0 {
 		return false
 	}
-	base := func(s string) string {
-		return strings.TrimSuffix(strings.ToLower(filepath.Base(s)), ".exe")
-	}
 	// Only env assignments may precede the client executable. A Bazel token
 	// in another program's arguments is not evidence of a Bazel client.
-	if base(fields[0]) == "env" {
+	if commandline.ExecutableBase(fields[0]) == "env" {
 		fields = fields[1:]
 		for len(fields) > 0 && strings.Contains(fields[0], "=") && !strings.HasPrefix(fields[0], "-") {
 			fields = fields[1:]
 		}
 	}
-	return len(fields) > 0 && (base(fields[0]) == "bazel" || base(fields[0]) == "bazelisk")
+	return len(fields) > 0 && (commandline.ExecutableBase(fields[0]) == "bazel" || commandline.ExecutableBase(fields[0]) == "bazelisk")
 }
 
 // ParseSinksFromArgv extracts BEP file sinks from a client command line.
@@ -63,29 +61,20 @@ func ParseSinksFromArgv(cmdline, cwd string, clientPID int32) []Sink {
 	}
 	out := make([]Sink, 0, 2)
 	for _, m := range jsonFlag.FindAllStringSubmatch(cmdline, -1) {
-		if path := firstGroup(m); path != "" {
+		if path := commandline.FlagValue(m); path != "" {
 			if resolved, ok := resolvePath(path, cwd); ok {
 				out = append(out, Sink{Path: resolved, Format: FormatJSON, ClientPID: clientPID, Cwd: cwd})
 			}
 		}
 	}
 	for _, m := range binaryFlag.FindAllStringSubmatch(cmdline, -1) {
-		if path := firstGroup(m); path != "" {
+		if path := commandline.FlagValue(m); path != "" {
 			if resolved, ok := resolvePath(path, cwd); ok {
 				out = append(out, Sink{Path: resolved, Format: FormatBinary, ClientPID: clientPID, Cwd: cwd})
 			}
 		}
 	}
 	return out
-}
-
-func firstGroup(m []string) string {
-	for _, g := range m[1:] {
-		if g != "" {
-			return g
-		}
-	}
-	return ""
 }
 
 func resolvePath(path, cwd string) (string, bool) {

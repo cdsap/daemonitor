@@ -4,8 +4,10 @@ package poll
 
 import (
 	"fmt"
-	"golang.org/x/sys/windows"
 	"unsafe"
+
+	"github.com/cdsap/daemonitor/cored/internal/ptr"
+	"golang.org/x/sys/windows"
 )
 
 var getProcessMemoryInfo = windows.NewLazySystemDLL("psapi.dll").NewProc("GetProcessMemoryInfo")
@@ -24,8 +26,6 @@ type processMemoryCountersEx struct {
 	PrivateUsage               uintptr
 }
 
-func int64Ptr(v int64) *int64 { return &v }
-
 func collectPlatformMemory(pid int32, sampleProportional bool, sampledAt int64) (platformMemory, error) {
 	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
 	if err != nil {
@@ -38,7 +38,7 @@ func collectPlatformMemory(pid int32, sampleProportional bool, sampledAt int64) 
 		return platformMemory{}, fmt.Errorf("GetProcessMemoryInfo: %w", callErr)
 	}
 	return platformMemory{
-		privateCommittedBytes: int64Ptr(int64(counters.PrivateUsage)),
-		peakResidentBytes:     int64Ptr(int64(counters.PeakWorkingSetSize)),
+		privateCommittedBytes: ptr.Int64(int64(counters.PrivateUsage)),
+		peakResidentBytes:     ptr.Int64(int64(counters.PeakWorkingSetSize)),
 	}, nil
 }

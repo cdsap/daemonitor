@@ -171,16 +171,16 @@ func detailTelemetry(m Model, p model.Process, width int) []string {
 		}
 		lines = append(lines,
 			"GRADLE DAEMON LOG",
-			detailField("Gradle version", na(version)),
-			detailField("Log path", na(path)),
+			detailField("Gradle version", render.TextOrNA(version)),
+			detailField("Log path", render.TextOrNA(path)),
 			"",
 		)
 	}
 	lines = append(lines,
 		"OS ACTIVITY",
 		detailField("Resource scope", resourceScopeText(p)),
-		detailField("Page faults", "minor "+optionalInt64Text(p.MinorPageFaults, "")+" / major "+optionalInt64Text(p.MajorPageFaults, "")),
-		detailField("Context switch", "voluntary "+optionalInt64Text(p.VoluntaryContextSwitches, "")+" / involuntary "+optionalInt64Text(p.InvoluntaryContextSwitches, "")),
+		detailField("Page faults", "minor "+render.OptionalInt64Text(p.MinorPageFaults, "")+" / major "+render.OptionalInt64Text(p.MajorPageFaults, "")),
+		detailField("Context switch", "voluntary "+render.OptionalInt64Text(p.VoluntaryContextSwitches, "")+" / involuntary "+render.OptionalInt64Text(p.InvoluntaryContextSwitches, "")),
 		detailField("CPU seconds", "user "+optionalFloat64Text(p.CPUUserSecondsTotal, "s")+" / system "+optionalFloat64Text(p.CPUSystemSecondsTotal, "s")+" / total "+optionalFloat64Text(p.CPUTotalSecondsTotal, "s")),
 		detailField("CPU cores", optionalFloat64Text(p.CPUCoresUsed, "")),
 		"",
@@ -188,8 +188,8 @@ func detailTelemetry(m Model, p model.Process, width int) []string {
 		detailField("Heap used", render.HeapText(p.HeapUsedMB)),
 		detailField("Heap committed", render.HeapText(p.HeapCommittedMB)),
 		detailField("Heap max", render.HeapText(p.HeapMaxMB)),
-		detailField("Metaspace used", optionalInt64Text(p.MetaspaceUsedMB, "MB")),
-		detailField("Metaspace cmt", optionalInt64Text(p.MetaspaceCommittedMB, "MB")),
+		detailField("Metaspace used", render.OptionalInt64Text(p.MetaspaceUsedMB, "MB")),
+		detailField("Metaspace cmt", render.OptionalInt64Text(p.MetaspaceCommittedMB, "MB")),
 		detailField("Other pools", memoryPoolsText(p.MemoryPools)),
 		"",
 		"NATIVE MEMORY",
@@ -202,8 +202,8 @@ func detailTelemetry(m Model, p model.Process, width int) []string {
 		detailField("Peak resident", optionalBytesText(p.PeakResidentBytes)),
 		"",
 		"GC COUNTERS / RATES",
-		detailField("Young count", optionalInt64Text(p.YoungGCCount, "")),
-		detailField("Old count", optionalInt64Text(p.OldGCCount, "")),
+		detailField("Young count", render.OptionalInt64Text(p.YoungGCCount, "")),
+		detailField("Old count", render.OptionalInt64Text(p.OldGCCount, "")),
 		detailField("Total time", render.GCTimeText(p.TotalGCTimeSeconds)),
 		detailField("Rate (recent)", gcRateText(m.detailHistory, p)),
 		detailField("Full/conc time", render.GCTimeText(p.FullGCTimeSeconds)+" / "+render.GCTimeText(p.ConcurrentGCTimeSeconds)),
@@ -213,7 +213,7 @@ func detailTelemetry(m Model, p model.Process, width int) []string {
 		detailField("Code cache", memoryPoolsText(p.CodeCache)),
 		"",
 		"PROCESS LIFECYCLE",
-		detailField("Status", na(p.Status)),
+		detailField("Status", render.TextOrNA(p.Status)),
 		detailField("Start", formatStart(p.StartTimeMs)),
 		detailField("Sampled", formatStart(p.SampledAtMs)),
 		detailField("End", "n/a (active or unavailable)"),
@@ -306,7 +306,7 @@ func resourceScopeText(p model.Process) string {
 	if p.ResourceScope != "" {
 		return string(p.ResourceScope)
 	}
-	return na(string(p.Resource.Scope))
+	return render.TextOrNA(string(p.Resource.Scope))
 }
 
 func optionalMetricInt(metric model.IntMetric, unit string) string {
@@ -399,7 +399,7 @@ func (m Model) detailIsStale() bool {
 }
 
 func detailHeader(p model.Process, now int64, ended, stale bool, width int, noColor bool) string {
-	state := na(p.Status)
+	state := render.TextOrNA(p.Status)
 	if ended {
 		state = "ENDED"
 	}
@@ -416,7 +416,7 @@ func detailHeader(p model.Process, now int64, ended, stale bool, width int, noCo
 	if project := render.ProjectName(p); project != "—" {
 		segments = append(segments, project)
 	}
-	segments = append(segments, "GC "+render.GCText(p.GC), "uptime "+render.Uptime(p.StartTimeMs, now), na(p.Name))
+	segments = append(segments, "GC "+render.GCText(p.GC), "uptime "+render.Uptime(p.StartTimeMs, now), render.TextOrNA(p.Name))
 	title := detailTitle(p.Type)
 	line := fitSegments(append([]string{title}, segments...), "  ·  ", max(1, width))
 	if !strings.Contains(line, "pid ") {
@@ -425,7 +425,7 @@ func detailHeader(p model.Process, now int64, ended, stale bool, width int, noCo
 	if noColor {
 		return line
 	}
-	return detailHeadingStyle(noColor).Render(line)
+	return headerStyle(noColor).Render(line)
 }
 
 func detailTitle(kind string) string {
@@ -444,10 +444,10 @@ func detailAttributes(m Model, p model.Process, width int, now int64) []string {
 		"Identity",
 		detailField("Type", render.TypeDisplay(p.Type)),
 		detailField("PID", fmt.Sprintf("%d", p.PID)),
-		detailField("Name", na(p.Name)),
+		detailField("Name", render.TextOrNA(p.Name)),
 		detailField("Project", render.ProjectName(p)),
-		detailField("Work dir", optionalStringText(p.WorkingDirectory)),
-		detailField("Status", na(p.Status)),
+		detailField("Work dir", render.OptionalStringText(p.WorkingDirectory)),
+		detailField("Status", render.TextOrNA(p.Status)),
 		detailField("Start", formatStart(p.StartTimeMs)),
 		detailField("Uptime", render.Uptime(p.StartTimeMs, now)),
 	}
@@ -456,16 +456,16 @@ func detailAttributes(m Model, p model.Process, width int, now int64) []string {
 		lines = append(lines,
 			"",
 			"BAZEL SERVER",
-			detailField("Bazel version", na(bazelVersionFromBuilds(m.detailBuilds.Builds))),
+			detailField("Bazel version", render.TextOrNA(bazelVersionFromBuilds(m.detailBuilds.Builds))),
 			detailField("Workspace", render.ProjectName(p)),
-			detailField("Output base", na(p.BazelOutputBase)),
-			detailField("Install base", na(p.BazelInstallBase)),
+			detailField("Output base", render.TextOrNA(p.BazelOutputBase)),
+			detailField("Install base", render.TextOrNA(p.BazelInstallBase)),
 			detailField("Workers", fmt.Sprintf("%d", p.ActiveWorkerCount)),
 			detailField("Sandboxed", fmt.Sprintf("%d", p.ActiveSandboxedActionCount)),
 			detailField("Subtree RSS", optionalRSSText(p.SubtreeRSSMemoryMB)),
 			detailField("Subtree CPU", render.CPUText(p.SubtreeCPUPercent)),
-			detailField("Log source", na(source)),
-			detailField("Log path", na(path)),
+			detailField("Log source", render.TextOrNA(source)),
+			detailField("Log path", render.TextOrNA(path)),
 		)
 	}
 	lines = append(lines,
@@ -474,31 +474,31 @@ func detailAttributes(m Model, p model.Process, width int, now int64) []string {
 		detailField("RSS", render.RSSText(p.RSSMemoryMB)),
 		detailField("CPU", render.CPUText(p.CPUPercent)),
 		detailField("GC", render.GCText(p.GC)),
-		detailField("Xmx", render.HeapLimitText(p.MaxHeapMB)),
-		detailField("Xms", optionalInt64Text(p.MinHeapMB, "MB")),
+		detailField("Xmx", render.HeapText(p.MaxHeapMB)),
+		detailField("Xms", render.OptionalInt64Text(p.MinHeapMB, "MB")),
 		detailField("Heap used", render.HeapText(p.HeapUsedMB)),
 		detailField("Heap cmt", render.HeapText(p.HeapCommittedMB)),
 		detailField("Heap max", render.HeapText(p.HeapMaxMB)),
 		detailField("Heap %", render.HeapPercentText(p.HeapUsedMB, p.HeapMaxMB)),
-		detailField("Metaspace used", optionalInt64Text(p.MetaspaceUsedMB, "MB")),
+		detailField("Metaspace used", render.OptionalInt64Text(p.MetaspaceUsedMB, "MB")),
 		"",
 		"Diagnostics",
-		detailField("Threads", optionalInt64Text(p.ThreadCount, "")),
-		detailField("VM", optionalStringText(p.JavaVMName)),
-		detailField("Java version", optionalStringText(p.JavaVersion)),
-		detailField("OS", optionalStringText(p.OSName)+" / "+optionalStringText(p.OSArch)),
-		detailField("Processors", optionalInt64Text(p.ActiveProcessorCount, "")),
-		detailField("GC young", optionalInt64Text(p.YoungGCCount, "")+" / "+optionalInt64Text(p.YoungGCTimeMs, "ms")),
-		detailField("GC old", optionalInt64Text(p.OldGCCount, "")+" / "+optionalInt64Text(p.OldGCTimeMs, "ms")),
-		detailField("VM version", optionalStringText(p.JavaVMVersion)),
-		detailField("Runtime", optionalStringText(p.JavaRuntimeVersion)),
-		detailField("Vendor", optionalStringText(p.JavaVendor)),
-		detailField("Open files", optionalInt64Text(p.OpenFileDescriptors, "")),
-		detailField("Virtual memory", optionalInt64Text(p.VirtualMemoryMB, "MB")),
-		detailField("Swap memory", optionalInt64Text(p.SwapMemoryMB, "MB")),
-		detailField("Disk read", optionalInt64Text(p.ReadBytes, "bytes")),
-		detailField("Disk write", optionalInt64Text(p.WriteBytes, "bytes")),
-		detailField("Young GC time", optionalInt64Text(p.YoungGCTimeMs, "ms")),
+		detailField("Threads", render.OptionalInt64Text(p.ThreadCount, "")),
+		detailField("VM", render.OptionalStringText(p.JavaVMName)),
+		detailField("Java version", render.OptionalStringText(p.JavaVersion)),
+		detailField("OS", render.OptionalStringText(p.OSName)+" / "+render.OptionalStringText(p.OSArch)),
+		detailField("Processors", render.OptionalInt64Text(p.ActiveProcessorCount, "")),
+		detailField("GC young", render.OptionalInt64Text(p.YoungGCCount, "")+" / "+render.OptionalInt64Text(p.YoungGCTimeMs, "ms")),
+		detailField("GC old", render.OptionalInt64Text(p.OldGCCount, "")+" / "+render.OptionalInt64Text(p.OldGCTimeMs, "ms")),
+		detailField("VM version", render.OptionalStringText(p.JavaVMVersion)),
+		detailField("Runtime", render.OptionalStringText(p.JavaRuntimeVersion)),
+		detailField("Vendor", render.OptionalStringText(p.JavaVendor)),
+		detailField("Open files", render.OptionalInt64Text(p.OpenFileDescriptors, "")),
+		detailField("Virtual memory", render.OptionalInt64Text(p.VirtualMemoryMB, "MB")),
+		detailField("Swap memory", render.OptionalInt64Text(p.SwapMemoryMB, "MB")),
+		detailField("Disk read", render.OptionalInt64Text(p.ReadBytes, "bytes")),
+		detailField("Disk write", render.OptionalInt64Text(p.WriteBytes, "bytes")),
+		detailField("Young GC time", render.OptionalInt64Text(p.YoungGCTimeMs, "ms")),
 		detailField("GC time (s)", "young "+render.GCTimeText(p.YoungGCTimeSeconds)+
 			" · full "+render.GCTimeText(p.FullGCTimeSeconds)+
 			" · conc "+render.GCTimeText(p.ConcurrentGCTimeSeconds)+
@@ -570,11 +570,11 @@ func buildSummaryLines(build client.BuildRecord) []string {
 	if build.DurationSeconds != nil {
 		duration = fmt.Sprintf("%.1fs", math.Round(*build.DurationSeconds*10)/10)
 	}
-	source := na(build.InferredSource)
+	source := render.TextOrNA(build.InferredSource)
 	if build.Tool != "" && !strings.EqualFold(build.Tool, "GRADLE") {
 		source = strings.ToLower(build.Tool) + "/" + source
 	}
-	lines := []string{na(build.FinalStatus), "project=" + na(build.ProjectPath), "duration=" + duration, "start=" + formatStart(build.StartTimeMs), "source=" + source, "agent=" + na(build.Agent)}
+	lines := []string{render.TextOrNA(build.FinalStatus), "project=" + render.TextOrNA(build.ProjectPath), "duration=" + duration, "start=" + formatStart(build.StartTimeMs), "source=" + source, "agent=" + render.TextOrNA(build.Agent)}
 	if strings.EqualFold(build.Tool, "BAZEL") {
 		lines = append(lines, bazelBuildMetricLines(build)...)
 	}
@@ -900,25 +900,8 @@ func memorySparkline(values []int64, width int) string {
 	if len(values) > maxValues {
 		values = values[len(values)-maxValues:]
 	}
-	minValue, maxValue := values[0], values[0]
-	for _, value := range values[1:] {
-		if value < minValue {
-			minValue = value
-		}
-		if value > maxValue {
-			maxValue = value
-		}
-	}
-	levels := []rune("▁▂▃▄▅▆▇█")
-	var b strings.Builder
-	for _, value := range values {
-		index := 0
-		if maxValue > minValue {
-			index = int((value - minValue) * int64(len(levels)-1) / (maxValue - minValue))
-		}
-		b.WriteRune(levels[index])
-	}
-	return b.String()
+	trend, _, _ := sparkline(values)
+	return trend
 }
 
 func signedMemory(value int64) string {
@@ -955,6 +938,26 @@ func rssTrend(samples []model.Process, pid int32) string {
 	if len(values) > 24 {
 		values = values[len(values)-24:]
 	}
+	trend, minValue, maxValue := sparkline(values)
+	return trend + fmt.Sprintf("  %s–%s", render.RSSText(minValue), render.RSSText(maxValue))
+}
+
+func writeField(b *strings.Builder, label, value string) {
+	fmt.Fprintf(b, "  %-14s %s\n", label+":", value)
+}
+
+func writeDetailField(b *strings.Builder, width int, label, value string) {
+	writeField(b, label, truncateWidth(value, max(1, width-18)))
+}
+
+func formatStart(ms int64) string {
+	if ms <= 0 {
+		return "n/a"
+	}
+	return time.UnixMilli(ms).Format(time.RFC3339)
+}
+
+func sparkline(values []int64) (string, int64, int64) {
 	minValue, maxValue := values[0], values[0]
 	for _, value := range values[1:] {
 		if value < minValue {
@@ -973,36 +976,5 @@ func rssTrend(samples []model.Process, pid int32) string {
 		}
 		b.WriteRune(levels[index])
 	}
-	return b.String() + fmt.Sprintf("  %s–%s", render.RSSText(minValue), render.RSSText(maxValue))
-}
-
-func na(s string) string {
-	if strings.TrimSpace(s) == "" {
-		return "n/a"
-	}
-	return s
-}
-
-func optionalInt64Text(v *int64, unit string) string {
-	if v == nil {
-		return "n/a"
-	}
-	if unit == "" {
-		return fmt.Sprint(*v)
-	}
-	return fmt.Sprintf("%d %s", *v, unit)
-}
-
-func optionalStringText(v *string) string {
-	if v == nil || strings.TrimSpace(*v) == "" {
-		return "n/a"
-	}
-	return *v
-}
-
-func formatStart(ms int64) string {
-	if ms <= 0 {
-		return "n/a"
-	}
-	return time.UnixMilli(ms).Format(time.RFC3339)
+	return b.String(), minValue, maxValue
 }

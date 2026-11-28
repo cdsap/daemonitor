@@ -6,6 +6,7 @@ import io.github.cdsap.daemonitor.domain.model.ProcessType
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import io.github.cdsap.daemonitor.domain.displayLabel
 
 class VisualChartModelTest {
 

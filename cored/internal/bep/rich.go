@@ -11,10 +11,10 @@ import (
 )
 
 const (
-	maxBEPListEntries   = 256
-	maxBEPFieldBytes    = 512
-	maxBEPSnippetBytes  = 4096
-	maxBEPTargetTokens  = 16
+	maxBEPListEntries  = 256
+	maxBEPFieldBytes   = 512
+	maxBEPSnippetBytes = 4096
+	maxBEPTargetTokens = 16
 )
 
 func sanitizeBEPString(s string, limit int) string {
@@ -314,5 +314,3 @@ func testStatusName(code uint64) string {
 		return "UNKNOWN"
 	}
 }
-
-func ptrI64(v int64) *int64 { return &v }

@@ -56,21 +56,6 @@ class DaemonitorGradlePlugin : Plugin<Settings> {
         }
     }
 
-    private fun defaultSocketPath(): String {
-        val home = System.getProperty("user.home") ?: System.getProperty("java.io.tmpdir")
-        return when {
-            System.getProperty("os.name").contains("mac", true) ->
-                Path.of(home, "Library", "Application Support", "Daemonitor", "daemonitor-core.sock").toString()
-            System.getProperty("os.name").contains("win", true) -> "\\\\.\\pipe\\daemonitor-core"
-            else ->
-                Path.of(
-                    System.getenv("XDG_DATA_HOME") ?: Path.of(home, ".local", "share").toString(),
-                    "Daemonitor",
-                    "daemonitor-core.sock",
-                ).toString()
-        }
-    }
-
     private companion object {
         const val SERVICE_NAME = "daemonitorObservation"
     }
@@ -175,5 +160,29 @@ internal class ObservationSessionLifecycle(
             onSummary(closeSnapshot!!)
         }.onFailure { warn("observation close failed; build result was not changed", it) }
         return closeSnapshot
+    }
+}
+
+internal fun defaultSocketPath(
+    home: String = System.getProperty("user.home") ?: System.getProperty("java.io.tmpdir"),
+    osName: String = System.getProperty("os.name"),
+    getenv: (String) -> String? = System::getenv,
+): String {
+    return when {
+        osName.contains("mac", true) ->
+            Path.of(home, "Library", "Application Support", "Daemonitor", "daemonitor-core.sock").toString()
+        osName.contains("win", true) ->
+            Path.of(
+                getenv("LOCALAPPDATA")?.takeIf { it.isNotBlank() }
+                    ?: Path.of(home, "AppData", "Local").toString(),
+                "Daemonitor",
+                "daemonitor-core.sock",
+            ).toString()
+        else ->
+            Path.of(
+                getenv("XDG_DATA_HOME") ?: Path.of(home, ".local", "share").toString(),
+                "Daemonitor",
+                "daemonitor-core.sock",
+            ).toString()
     }
 }
