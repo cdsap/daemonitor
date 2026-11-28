@@ -89,7 +89,7 @@ type Prober struct {
 	JDKDir string
 	// TargetJDKDir optionally resolves the target JVM's toolchain directory.
 	// It is consulted after JDKDir and before JAVA_HOME/PATH.
-	TargetJDKDir func(pid int32) string
+	TargetJDKDir func(ctx context.Context, pid int32) string
 	// LookPath finds an executable (defaults to exec.LookPath).
 	LookPath func(string) (string, error)
 	// Runner runs a command; defaults to exec.CommandContext.
@@ -146,7 +146,7 @@ func LookPathWithJDKDir(jdkDir, name string) (string, error) {
 	return LookPathWithJavaHome(name)
 }
 
-func (p *Prober) lookPath(pid int32, name string) (string, error) {
+func (p *Prober) lookPath(ctx context.Context, pid int32, name string) (string, error) {
 	if p != nil && p.LookPath != nil {
 		return p.LookPath(name)
 	}
@@ -155,7 +155,7 @@ func (p *Prober) lookPath(pid int32, name string) (string, error) {
 			return path, nil
 		}
 		if p.TargetJDKDir != nil {
-			if path := findJDKTool(p.TargetJDKDir(pid), name); path != "" {
+			if path := findJDKTool(p.TargetJDKDir(ctx, pid), name); path != "" {
 				return path, nil
 			}
 		}
@@ -299,7 +299,7 @@ func (p *Prober) probeGC(ctx context.Context, pid int32) (*string, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	look := func(name string) (string, error) { return p.lookPath(pid, name) }
+	look := func(name string) (string, error) { return p.lookPath(ctx, pid, name) }
 	run := p.Runner
 	if run == nil {
 		run = defaultRunner
@@ -327,7 +327,7 @@ func (p *Prober) probe(ctx context.Context, pid int32, advanced bool) (Sample, e
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	look := func(name string) (string, error) { return p.lookPath(pid, name) }
+	look := func(name string) (string, error) { return p.lookPath(ctx, pid, name) }
 	run := p.Runner
 	if run == nil {
 		run = defaultRunner
@@ -593,17 +593,13 @@ func defaultRunner(ctx context.Context, name string, args ...string) (string, er
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
-		msg := stringsTrim(stderr.String())
+		msg := strings.TrimSpace(stderr.String())
 		if msg == "" {
-			msg = err.Error()
+			return "", err
 		}
-		return "", errors.New(msg)
+		return "", fmt.Errorf("%s: %w", msg, err)
 	}
 	return stdout.String(), nil
-}
-
-func stringsTrim(s string) string {
-	return string(bytes.TrimSpace([]byte(s)))
 }
 
 // FindJavaHomeTools returns jcmd/jstat under JAVA_HOME/bin when set.
@@ -648,6 +644,6 @@ func (p *Prober) ProbeFamily(ctx context.Context, pid int32, startTimeMs int64, 
 		return family.probe(ctx, pid, false)
 	}
 	sample := Sample{}
-	family.supplementAdvanced(ctx, func(name string) (string, error) { return family.lookPath(pid, name) }, family.Runner, pid, &sample)
+	family.supplementAdvanced(ctx, func(name string) (string, error) { return family.lookPath(ctx, pid, name) }, family.Runner, pid, &sample)
 	return sample, nil
 }

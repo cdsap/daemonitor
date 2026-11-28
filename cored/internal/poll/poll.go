@@ -455,11 +455,7 @@ func (c *Collector) Snapshot(ctx context.Context) (model.Snapshot, error) {
 		c.Heap.EvictMissing(seenPIDs)
 	}
 
-	host := platform.HostMetrics{}
-	if c.Platform != nil {
-		host = c.Platform.CollectHost(ctx)
-	}
-	return model.Snapshot{SampledAtMs: now, Host: host, Processes: out}, nil
+	return model.Snapshot{SampledAtMs: now, Processes: out}, nil
 }
 
 func rawValue(v heap.RawValue) model.JVMRawValue {

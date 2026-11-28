@@ -8,13 +8,16 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cdsap/daemonitor/cored/internal/builds"
 	"github.com/shirou/gopsutil/v4/process"
 )
 
 const (
-	maxFileBytes = 32 * 1024 * 1024
+	maxTrackedFiles = 256
+	maxSeenBuilds   = 4096
+	maxFileBytes    = 32 * 1024 * 1024
 	// Poll budgets include prefix checks; larger streams resume next poll.
 	maxFilePollBytes = 256 * 1024
 	maxPollBytes     = 1024 * 1024
@@ -22,22 +25,28 @@ const (
 
 // Watcher discovers opportunistic BEP sinks and closes builds from JSON or binary files.
 type Watcher struct {
-	mu              sync.Mutex
-	files           map[string]*trackedFile
-	seenRank        map[string]int
+	pollMu    sync.Mutex // owns parser state and the reusable read buffer
+	mu        sync.Mutex
+	files     map[string]*trackedFile
+	seenRank  map[string]int
+	seenOrder []string
+	seenNext  int
+	readBuf   [64 * 1024]byte
+
 	ambientEnvNames map[string]struct{}
 	// Optional extra absolute paths / globs resolved by the caller each poll.
 	ExtraPaths func() []Sink
 }
 
 type trackedFile struct {
-	sink     Sink
-	offset   int64
-	pending  []byte
-	state    partial
-	identity os.FileInfo
-	prefix   []byte
-	client   clientObservation
+	lastObserved time.Time
+	sink         Sink
+	offset       int64
+	pending      []byte
+	state        partial
+	identity     os.FileInfo
+	prefix       []byte
+	client       clientObservation
 }
 
 // clientObservation retains fixed attribution only, never ancestry argv or env values.
@@ -70,60 +79,102 @@ func (w *Watcher) observeClient(client clientObservation) {
 	if client.Sink.Path == "" {
 		return
 	}
-	tf := w.files[client.Sink.Path]
-	if tf == nil {
-		tf = &trackedFile{sink: client.Sink}
-		w.files[client.Sink.Path] = tf
-	}
+	tf := w.trackSink(client.Sink, time.Now())
 	if tf.client.Sink.ClientPID == client.Sink.ClientPID && tf.client.StartTimeMs == client.StartTimeMs && client.Agent == nil {
 		client.Agent = tf.client.Agent
 	}
 	tf.client = client
 }
 
-// Poll discovers sinks from live processes and reads newly appended bytes.
-func (w *Watcher) Poll(ctx context.Context) ([]builds.Build, error) {
-	sinks, err := DiscoverFromProcesses(ctx)
-	if err != nil {
-		return nil, err
+// trackSink requires mu. Evict the least recently observed sink at capacity.
+func (w *Watcher) trackSink(sink Sink, now time.Time) *trackedFile {
+	tf := w.files[sink.Path]
+	if tf == nil {
+		if len(w.files) >= maxTrackedFiles {
+			var oldest string
+			var at time.Time
+			for path, f := range w.files {
+				if oldest == "" || f.lastObserved.Before(at) {
+					oldest, at = path, f.lastObserved
+				}
+			}
+			delete(w.files, oldest)
+		}
+		tf = &trackedFile{}
+		w.files[sink.Path] = tf
 	}
+	tf.sink = sink
+	tf.lastObserved = now
+	return tf
+}
+
+// Poll reads sinks supplied by ObserveProcess and ExtraPaths.
+func (w *Watcher) Poll(ctx context.Context) ([]builds.Build, error) {
+	w.pollMu.Lock()
+	defer w.pollMu.Unlock()
+	var sinks []Sink
 	if w.ExtraPaths != nil {
 		sinks = append(sinks, w.ExtraPaths()...)
 	}
 
+	now := time.Now()
 	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	for _, sink := range sinks {
-		if sink.Path == "" {
-			continue
-		}
-		if _, ok := w.files[sink.Path]; !ok {
-			w.files[sink.Path] = &trackedFile{sink: sink}
-		} else {
-			w.files[sink.Path].sink = sink
+	for path, tf := range w.files {
+		if !tf.lastObserved.IsZero() && now.Sub(tf.lastObserved) > 24*time.Hour {
+			delete(w.files, path)
 		}
 	}
+	for _, sink := range sinks {
+		if sink.Path != "" {
+			w.trackSink(sink, now)
+		}
+	}
+	// Each copy owns parser state for this poll; observations may still update
+	// client attribution while disk I/O is in progress.
+	files := make(map[*trackedFile]trackedFile, len(w.files))
+	for _, tf := range w.files {
+		files[tf] = *tf
+	}
+	w.mu.Unlock()
 
 	var closed []builds.Build
 	budget := int64(maxPollBytes)
-	for _, tf := range w.files {
+	for original, state := range files {
 		if budget < 64 || ctx.Err() != nil {
 			break
 		}
-		if tf.sink.Format != FormatJSON && tf.sink.Format != FormatBinary {
+		if state.sink.Format != FormatJSON && state.sink.Format != FormatBinary {
 			continue
 		}
-		// A malformed event must not discard builds already decoded in this
-		// poll. File/read errors are opportunistic and retried next tick.
-		buildsClosed, _ := w.readFile(tf, &budget)
-		for _, b := range buildsClosed {
+		rows, err := w.readFile(&state, &budget)
+		w.mu.Lock()
+		if w.files[state.sink.Path] == original {
+			if errors.Is(err, os.ErrNotExist) {
+				delete(w.files, state.sink.Path)
+			} else {
+				state.client = original.client
+				state.sink = original.sink
+				state.lastObserved = original.lastObserved
+				*original = state
+			}
+		}
+		w.mu.Unlock()
+		for _, b := range rows {
 			if b.BuildID == "" {
 				continue
 			}
 			rank := buildDetailRank(b)
 			if prev, seen := w.seenRank[b.BuildID]; seen && rank <= prev {
 				continue
+			}
+			if _, seen := w.seenRank[b.BuildID]; !seen {
+				if len(w.seenOrder) < maxSeenBuilds {
+					w.seenOrder = append(w.seenOrder, b.BuildID)
+				} else {
+					delete(w.seenRank, w.seenOrder[w.seenNext])
+					w.seenOrder[w.seenNext] = b.BuildID
+					w.seenNext = (w.seenNext + 1) % maxSeenBuilds
+				}
 			}
 			w.seenRank[b.BuildID] = rank
 			closed = coalesceBuilds(closed, b)
@@ -189,7 +240,7 @@ func (w *Watcher) readFile(tf *trackedFile, budget *int64) ([]builds.Build, erro
 	prefix := make([]byte, min(size, 64))
 	*budget -= int64(len(prefix))
 	remaining -= int64(len(prefix))
-	if _, err := f.ReadAt(prefix, 0); err != nil && err != io.EOF {
+	if _, err := f.ReadAt(prefix, 0); err != nil && !errors.Is(err, io.EOF) {
 		return nil, err
 	}
 	replaced := tf.identity != nil && !os.SameFile(tf.identity, info)
@@ -203,14 +254,14 @@ func (w *Watcher) readFile(tf *trackedFile, budget *int64) ([]builds.Build, erro
 	}
 	tf.identity = info
 	tf.prefix = prefix
-	if _, err := f.Seek(tf.offset, 0); err != nil {
+	if _, err := f.Seek(tf.offset, io.SeekStart); err != nil {
 		return nil, err
 	}
 	tf.state.ambientEnvNames = w.ambientEnvNames
 	var closed []builds.Build
 	var parseErr error
 	for tf.offset < size && remaining > 0 {
-		chunk := make([]byte, min(size-tf.offset, 64*1024, remaining))
+		chunk := w.readBuf[:min(size-tf.offset, int64(len(w.readBuf)), remaining)]
 		n, err := f.Read(chunk)
 		*budget -= int64(n)
 		remaining -= int64(n)

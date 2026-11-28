@@ -2,8 +2,9 @@ package tui
 
 import (
 	"fmt"
+	"maps"
 	"math"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -658,11 +659,7 @@ func bazelPhaseSummary(build client.BuildRecord) string {
 		}
 	}
 	if len(parts) == 0 && build.BazelProfile != nil && len(build.BazelProfile.PhaseSeconds) > 0 {
-		keys := make([]string, 0, len(build.BazelProfile.PhaseSeconds))
-		for k := range build.BazelProfile.PhaseSeconds {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
+		keys := slices.Sorted(maps.Keys(build.BazelProfile.PhaseSeconds))
 		for _, k := range keys {
 			if len(parts) == 3 {
 				break
@@ -909,15 +906,7 @@ func memorySparkline(values []int64, width int) string {
 	if len(values) > maxValues {
 		values = values[len(values)-maxValues:]
 	}
-	minValue, maxValue := values[0], values[0]
-	for _, value := range values[1:] {
-		if value < minValue {
-			minValue = value
-		}
-		if value > maxValue {
-			maxValue = value
-		}
-	}
+	minValue, maxValue := slices.Min(values), slices.Max(values)
 	levels := []rune("▁▂▃▄▅▆▇█")
 	var b strings.Builder
 	for _, value := range values {
@@ -974,15 +963,7 @@ func rssTrend(samples []model.Process, pid int32) string {
 	if len(values) > 24 {
 		values = values[len(values)-24:]
 	}
-	minValue, maxValue := values[0], values[0]
-	for _, value := range values[1:] {
-		if value < minValue {
-			minValue = value
-		}
-		if value > maxValue {
-			maxValue = value
-		}
-	}
+	minValue, maxValue := slices.Min(values), slices.Max(values)
 	levels := []rune("▁▂▃▄▅▆▇█")
 	var b strings.Builder
 	for _, value := range values {

@@ -11,8 +11,8 @@ import (
 
 // Bazel rewrites the server's argv[0], so resolve its embedded runtime from
 // --install_base rather than interpreting the displayed executable as a path.
-func bazelTargetJDKDir(pid int32) string {
-	ctx, cancel := context.WithTimeout(context.Background(), heap.DefaultTimeout)
+func bazelTargetJDKDir(ctx context.Context, pid int32) string {
+	ctx, cancel := context.WithTimeout(ctx, heap.DefaultTimeout)
 	defer cancel()
 	p, err := process.NewProcessWithContext(ctx, pid)
 	if err != nil {

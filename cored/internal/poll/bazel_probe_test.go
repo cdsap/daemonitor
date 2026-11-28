@@ -118,10 +118,10 @@ func TestSnapshotMixedBazelJVMAndNativeProcesses(t *testing.T) {
 	if c.Heap.TargetJDKDir == nil {
 		t.Fatal("collector must wire target JDK resolution")
 	}
-	if got, want := c.Heap.TargetJDKDir(serverPID), filepath.Join(install, "embedded_tools", "jdk"); got != want {
+	if got, want := c.Heap.TargetJDKDir(t.Context(), serverPID), filepath.Join(install, "embedded_tools", "jdk"); got != want {
 		t.Fatalf("server jdk=%q want %q", got, want)
 	}
-	if got := c.Heap.TargetJDKDir(pid); got != "" {
+	if got := c.Heap.TargetJDKDir(t.Context(), pid); got != "" {
 		t.Fatalf("native test jdk=%q", got)
 	}
 	var mu sync.Mutex

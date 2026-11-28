@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -98,4 +99,20 @@ func TestConnectToRunningServer(t *testing.T) {
 		}
 	}
 	t.Fatal("server never became healthy")
+}
+
+func TestConnectWritesDiagnosticsAndPreservesStartError(t *testing.T) {
+	var stderr strings.Builder
+	cause := errors.New("start failed")
+	_, err := Connect(t.Context(), Options{
+		Socket: ipc.TempEndpoint(t, "writer"), Autostart: true, Stderr: &stderr,
+		FindBinary: func() (string, error) { return "test-cored", nil },
+		StartCore:  func(string, string, string) error { return cause },
+	})
+	if !strings.Contains(stderr.String(), "Starting daemonitor-cored (test-cored)") {
+		t.Fatalf("stderr=%q", stderr.String())
+	}
+	if !errors.Is(err, cause) {
+		t.Fatalf("start error lost cause: %v", err)
+	}
 }

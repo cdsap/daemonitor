@@ -2,11 +2,12 @@ package bootstrap
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"time"
 
 	"github.com/cdsap/daemonitor/cored/internal/client"
@@ -24,7 +25,7 @@ type Options struct {
 	Wait       time.Duration
 	FindBinary func() (string, error)
 	StartCore  func(binary, socket, db string) error
-	Stderr     *os.File
+	Stderr     io.Writer
 }
 
 // Result is a connected client plus whether this process started the core.
@@ -67,23 +68,26 @@ func Connect(ctx context.Context, opts Options) (Result, error) {
 	}
 
 	if !opts.Autostart {
-		return Result{}, connectionError(socket, "core is not running (autostart disabled)")
+		return Result{}, connectionError(socket, errors.New("core is not running (autostart disabled)"))
 	}
 
 	binary, err := find()
-	if err != nil || binary == "" {
-		return Result{}, connectionError(socket, "daemonitor-cored binary not found beside CLI or on PATH")
+	if err != nil {
+		return Result{}, connectionError(socket, fmt.Errorf("daemonitor-cored binary not found beside CLI or on PATH: %w", err))
+	}
+	if binary == "" {
+		return Result{}, connectionError(socket, errors.New("daemonitor-cored binary not found beside CLI or on PATH"))
 	}
 
 	if ipc.NeedsEndpointDir(socket) {
 		if err := os.MkdirAll(filepath.Dir(socket), 0o755); err != nil {
-			return Result{}, connectionError(socket, fmt.Sprintf("cannot create socket directory: %v", err))
+			return Result{}, connectionError(socket, fmt.Errorf("cannot create socket directory: %w", err))
 		}
 	}
 
 	fmt.Fprintf(stderr, "Starting daemonitor-cored (%s)…\n", binary)
 	if err := start(binary, socket, dbPath); err != nil {
-		return Result{}, connectionError(socket, fmt.Sprintf("failed to start daemonitor-cored: %v", err))
+		return Result{}, connectionError(socket, fmt.Errorf("failed to start daemonitor-cored: %w", err))
 	}
 
 	deadline := time.Now().Add(wait)
@@ -93,16 +97,16 @@ func Connect(ctx context.Context, opts Options) (Result, error) {
 		}
 		select {
 		case <-ctx.Done():
-			return Result{}, connectionError(socket, ctx.Err().Error())
+			return Result{}, connectionError(socket, ctx.Err())
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
-	return Result{}, connectionError(socket, "started daemonitor-cored but health check timed out")
+	return Result{}, connectionError(socket, errors.New("started daemonitor-cored but health check timed out"))
 }
 
-func connectionError(socket, detail string) error {
+func connectionError(socket string, detail error) error {
 	return fmt.Errorf(
-		"cannot connect to daemonitor-cored at %s: %s\n"+
+		"cannot connect to daemonitor-cored at %s: %w\n"+
 			"Recovery: start daemonitor-cored manually, or reinstall so daemonitor-cored sits next to daemonitor-cli",
 		socket, detail,
 	)
@@ -124,8 +128,7 @@ func FindCoredBinary() (string, error) {
 	}
 
 	if pathEnv := os.Getenv("PATH"); pathEnv != "" {
-		sep := string(os.PathListSeparator)
-		for _, dir := range strings.Split(pathEnv, sep) {
+		for _, dir := range filepath.SplitList(pathEnv) {
 			if dir == "" {
 				continue
 			}

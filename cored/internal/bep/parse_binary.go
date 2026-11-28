@@ -23,7 +23,7 @@ func ParseBinaryStream(r io.Reader) ([]builds.Build, error) {
 	var closed []builds.Build
 	for {
 		size, err := binary.ReadUvarint(reader)
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return closed, nil
 		}
 		if err != nil {
@@ -94,8 +94,9 @@ func ConsumeBinaryBytes(state *partial, pending, chunk []byte) (closed []builds.
 
 // The field numbers below are pinned to Bazel 8.4.2 build_event_stream.proto
 // (verified in docs/plans/2026-11-24-bazel-rich-bep-spike.md):
-//   id(1), progress(3), aborted(4), started(5), test_summary(9), finished(14),
-//   last_message(20), structured_command_line(22), build_metrics(24).
+//
+//	id(1), progress(3), aborted(4), started(5), test_summary(9), finished(14),
+//	last_message(20), structured_command_line(22), build_metrics(24).
 func applyBinaryEvent(state *partial, event []byte) (builds.Build, bool, error) {
 	fields, err := decodeWire(event)
 	if err != nil {

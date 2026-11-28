@@ -3,7 +3,9 @@ package store
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/cdsap/daemonitor/cored/internal/sessions"
 )
@@ -51,7 +53,7 @@ CREATE TABLE IF NOT EXISTS observation_session_process_summaries (
 		if err != nil {
 			return err
 		}
-		if contains(cols, "process_type") {
+		if slices.Contains(cols, "process_type") {
 			continue
 		}
 		if _, err := s.db.Exec(`ALTER TABLE ` + table + ` ADD COLUMN process_type TEXT NOT NULL DEFAULT ''`); err != nil {
@@ -76,7 +78,7 @@ func (s *Store) OpenObservationSession(req sessions.OpenRequest, openedAtMs int6
 		}
 		return sessions.Response{Name: req.Name, HostID: existingHost, Association: existingAssociation, OpenedAtMs: existingOpenedAt, Processes: []sessions.RSSSummary{}, Builds: sessions.BuildTotals{}}, true, nil
 	}
-	if err != sql.ErrNoRows {
+	if !errors.Is(err, sql.ErrNoRows) {
 		return sessions.Response{}, false, err
 	}
 	if _, err := s.db.Exec(`INSERT INTO observation_sessions(name, host_id, association, opened_at_ms) VALUES (?, ?, ?, ?)`, req.Name, req.HostID, req.Association, openedAtMs); err != nil {
@@ -211,7 +213,7 @@ func (s *Store) sessionProcessType(ref sessions.ProcessRef) (string, error) {
 		`SELECT process_type FROM process_samples WHERE host_id=? AND pid=? AND start_time_ms=? AND process_type != '' ORDER BY timestamp DESC LIMIT 1`,
 		ref.HostID, ref.PID, ref.StartTimeMs,
 	).Scan(&processType)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
 	if err != nil {

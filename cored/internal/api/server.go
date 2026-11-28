@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -165,12 +166,13 @@ func (s *Server) Run(ctx context.Context) error {
 	// Serve immediately so health stays responsive while the first poll/log scan runs.
 	go func() {
 		defer close(scanDone)
+		s.refreshHost(ctx)
 		s.refresh(ctx)
 		s.loop(ctx)
 	}()
 
 	err = srv.Serve(ln)
-	if err == http.ErrServerClosed {
+	if errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}
 	return err
@@ -206,6 +208,9 @@ func (s *Server) refresh(ctx context.Context) {
 	if err != nil {
 		return
 	}
+	s.mu.RLock()
+	snap.Host = s.lastHost
+	s.mu.RUnlock()
 	writeStart := time.Now()
 	hostID := ""
 	if s.Collector != nil {
@@ -260,16 +265,17 @@ func (s *Server) refresh(ctx context.Context) {
 	}
 
 	s.mu.Lock()
-	for pid := range s.prevActive {
+	previous := s.prevActive
+	s.prevActive = active
+	s.last = snap
+	s.mu.Unlock()
+	for pid := range previous {
 		if _, ok := active[pid]; !ok {
 			if b := s.Agg.OnDaemonGone(pid); b != nil {
 				_ = s.Store.InsertBuild(*b)
 			}
 		}
 	}
-	s.prevActive = active
-	s.last = snap
-	s.mu.Unlock()
 }
 
 func (s *Server) persistBazelBuild(b builds.Build) {
@@ -401,7 +407,7 @@ func (s *Server) handleObservationSessionClose(w http.ResponseWriter, r *http.Re
 		return
 	}
 	response, err := s.Store.CloseObservationSession(req.Name, time.Now().UnixMilli())
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		http.Error(w, "observation session not found", http.StatusNotFound)
 		return
 	}
@@ -419,7 +425,7 @@ func decodeJSONBody(r *http.Request, target any) error {
 		return err
 	}
 	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		return fmt.Errorf("request must contain one JSON object")
 	}
 	return nil
@@ -507,13 +513,13 @@ func (s *Server) handleSelf(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-func (s *Server) handleHost(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	host := s.lastHost
 	at := s.lastHostAt
 	s.mu.RUnlock()
 	if at.IsZero() {
-		host = s.Collector.HostMetrics(context.Background())
+		host = s.Collector.HostMetrics(r.Context())
 	}
 	writeJSON(w, host)
 }
@@ -631,7 +637,7 @@ func (s *Server) handleDaemonLogTail(w http.ResponseWriter, r *http.Request) {
 	var ok bool
 	knownBazel := false
 	if s.BazelLogs != nil {
-		_, knownBazel = s.BazelLogs.TailFor(pid, "")
+		knownBazel = s.BazelLogs.HasPID(pid)
 		if knownBazel {
 			tail, ok = s.BazelLogs.TailFor(pid, r.URL.Query().Get("source"))
 		}

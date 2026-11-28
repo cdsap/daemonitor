@@ -147,9 +147,10 @@ func TestDisappearanceDetectedWithoutExitFabrication(t *testing.T) {
 	defer s.Close()
 
 	host := "host"
-	alive := []model.Process{{
-		PID: 7, Type: "KOTLIN_DAEMON", CommandLine: "Kotlin", StartTimeMs: 10,
-	}}
+	alive := []model.Process{
+		{PID: 7, Type: "KOTLIN_DAEMON", CommandLine: "Kotlin", StartTimeMs: 10},
+		{PID: 8, Type: "GRADLE_DAEMON", CommandLine: "Gradle", StartTimeMs: 20},
+	}
 	if err := s.ObserveProcesses(host, 100, alive); err != nil {
 		t.Fatal(err)
 	}
@@ -166,16 +167,20 @@ func TestDisappearanceDetectedWithoutExitFabrication(t *testing.T) {
 		t.Fatal(err)
 	}
 	var disappear int
+	expected := map[int32]string{7: "KOTLIN_DAEMON", 8: "GRADLE_DAEMON"}
 	for _, ev := range events {
 		if ev.EventType == store.EventDisappearanceDetected {
 			disappear++
+			if ev.ProcessType != expected[ev.PID] || ev.ProcessInstanceID != store.ProcessInstanceID(host, ev.PID, map[int32]int64{7: 10, 8: 20}[ev.PID]) {
+				t.Fatalf("wrong disappearance metadata: %+v", ev)
+			}
 			if ev.Source != store.EventSourceProcessPoll {
 				t.Fatalf("source=%q", ev.Source)
 			}
 		}
 	}
-	if disappear != 1 {
-		t.Fatalf("disappearance=%d want 1; events=%+v", disappear, events)
+	if disappear != 2 {
+		t.Fatalf("disappearance=%d want 2; events=%+v", disappear, events)
 	}
 }
 

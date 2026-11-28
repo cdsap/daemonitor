@@ -354,7 +354,7 @@ func TestProberTargetJDKPrecedesAmbientTools(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			p := heap.NewProber()
 			p.JDKDir = tc.configured
-			p.TargetJDKDir = func(pid int32) string {
+			p.TargetJDKDir = func(_ context.Context, pid int32) string {
 				if pid != 42 {
 					t.Fatalf("target pid=%d", pid)
 				}
@@ -378,7 +378,7 @@ func TestProberEmbeddedRuntimeWithoutTools(t *testing.T) {
 	t.Setenv("PATH", "")
 	p := heap.NewProber()
 	embedded := t.TempDir()
-	p.TargetJDKDir = func(int32) string { return embedded }
+	p.TargetJDKDir = func(context.Context, int32) string { return embedded }
 	p.Runner = func(context.Context, string, ...string) (string, error) {
 		t.Fatal("missing tools must not start an attach command")
 		return "", nil
@@ -653,5 +653,23 @@ func TestProbeFamilyRejectsWrongIncarnationBeforeTools(t *testing.T) {
 	}
 	if calls != 0 {
 		t.Fatalf("ran %d commands against wrong incarnation", calls)
+	}
+}
+
+func TestTargetJDKLookupReceivesProbeContext(t *testing.T) {
+	p := heap.NewProber()
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	called := false
+	p.TargetJDKDir = func(got context.Context, _ int32) string {
+		called = true
+		if got.Err() != context.Canceled {
+			t.Error("target JDK lookup lost cancellation")
+		}
+		return ""
+	}
+	_, _ = p.GCFor(ctx, 42, 100)
+	if !called {
+		t.Fatal("target JDK lookup was not called")
 	}
 }

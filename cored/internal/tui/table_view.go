@@ -602,17 +602,3 @@ func padLeft(s string, width int) string {
 	}
 	return strings.Repeat(" ", width-w) + s
 }
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}

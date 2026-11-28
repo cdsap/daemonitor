@@ -1,6 +1,7 @@
 package logs
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -50,6 +51,8 @@ type Watcher struct {
 	initialBytes   int
 	chunkBytes     int
 
+	readMu    sync.Mutex // serializes read/offset transactions
+	pollMu    sync.Mutex
 	mu        sync.Mutex
 	offsets   map[string]int64
 	leftovers map[string][]byte
@@ -79,7 +82,7 @@ func (w *Watcher) Discover() ([]DaemonLog, error) {
 	root := filepath.Join(w.gradleUserHome, "daemon")
 	entries, err := os.ReadDir(root)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, err
@@ -132,6 +135,8 @@ func ParseLogPath(path string) (DaemonLog, bool) {
 // Pass nil to read every discovered log (tests / full replay).
 // The returned map contains newly read redacted lines keyed by daemon PID.
 func (w *Watcher) Poll(activePIDs map[int64]struct{}) (map[int64][]string, error) {
+	w.pollMu.Lock()
+	defer w.pollMu.Unlock()
 	logs, err := w.Discover()
 	if err != nil {
 		return nil, err
@@ -157,6 +162,7 @@ func (w *Watcher) Poll(activePIDs map[int64]struct{}) (map[int64][]string, error
 			newByPID[log.PID] = append(newByPID[log.PID], lines...)
 		}
 	}
+	w.readMu.Lock()
 	w.mu.Lock()
 	for path := range w.meta {
 		if _, ok := seen[path]; !ok {
@@ -167,6 +173,7 @@ func (w *Watcher) Poll(activePIDs map[int64]struct{}) (map[int64][]string, error
 		}
 	}
 	w.mu.Unlock()
+	w.readMu.Unlock()
 	return newByPID, nil
 }
 
@@ -210,11 +217,11 @@ func (w *Watcher) TailFor(pid int64) (Tail, bool) {
 		_, _ = w.readNewLines(path)
 	}
 	w.mu.Lock()
-	defer w.mu.Unlock()
 	lines := []string{}
 	if r := w.tails[path]; r != nil {
 		lines = r.slice()
 	}
+	w.mu.Unlock()
 	return makeTail(log, lines), true
 }
 
@@ -236,14 +243,17 @@ func (w *Watcher) DaemonIdentity(pid int64) string {
 // AllTails returns tails for every known log.
 func (w *Watcher) AllTails() []Tail {
 	w.mu.Lock()
-	defer w.mu.Unlock()
 	out := make([]Tail, 0, len(w.meta))
 	for path, log := range w.meta {
 		lines := []string{}
 		if r := w.tails[path]; r != nil {
 			lines = r.slice()
 		}
-		out = append(out, makeTail(log, lines))
+		out = append(out, Tail{PID: log.PID, GradleVersion: log.GradleVersion, Path: log.Path, Lines: lines})
+	}
+	w.mu.Unlock()
+	for i := range out {
+		out[i].Events = ParseLines(out[i].Lines)
 	}
 	return out
 }
@@ -259,6 +269,8 @@ func makeTail(log DaemonLog, lines []string) Tail {
 }
 
 func (w *Watcher) readNewLines(path string) ([]string, error) {
+	w.readMu.Lock()
+	defer w.readMu.Unlock()
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, err
@@ -336,7 +348,7 @@ func (w *Watcher) readNewLines(path string) ([]string, error) {
 				}
 			}
 		}
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -347,14 +359,14 @@ func (w *Watcher) readNewLines(path string) ([]string, error) {
 		}
 	}
 
+	redacted := make([]string, 0, len(lines))
+	for _, line := range lines {
+		redacted = append(redacted, poll.RedactLogLine(line))
+	}
 	w.mu.Lock()
 	w.offsets[path] = pos
 	if len(partial) > 0 {
 		w.leftovers[path] = append([]byte{}, partial...)
-	}
-	redacted := make([]string, 0, len(lines))
-	for _, line := range lines {
-		redacted = append(redacted, poll.RedactLogLine(line))
 	}
 	r := w.tails[path]
 	if r == nil {
@@ -382,19 +394,25 @@ func startsAtLineBoundary(f *os.File, from int64) bool {
 type ring struct {
 	max  int
 	data []string
+	next int
 }
 
 func newRing(max int) *ring { return &ring{max: max, data: make([]string, 0, max)} }
 
 func (r *ring) push(line string) {
-	if len(r.data) >= r.max {
-		r.data = r.data[1:]
+	if r.max <= 0 {
+		return
 	}
-	r.data = append(r.data, line)
+	if len(r.data) < r.max {
+		r.data = append(r.data, line)
+		return
+	}
+	r.data[r.next] = line
+	r.next = (r.next + 1) % r.max
 }
 
 func (r *ring) slice() []string {
-	out := make([]string, len(r.data))
-	copy(out, r.data)
-	return out
+	out := make([]string, 0, len(r.data))
+	out = append(out, r.data[r.next:]...)
+	return append(out, r.data[:r.next]...)
 }
