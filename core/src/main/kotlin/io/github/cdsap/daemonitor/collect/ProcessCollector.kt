@@ -24,11 +24,11 @@ import oshi.software.os.OSProcess
  */
 class ProcessCollector internal constructor(
     private val clock: () -> Long,
-    heapProbe: JvmHeapProbe,
+    private val heapProbe: JvmHeapProbe,
     private val logicalProcessors: Int,
     private val enumerateProcesses: () -> List<ProcessInfo>,
     heapRefreshIntervalMs: Long = JvmHeapUsageCollector.DEFAULT_REFRESH_INTERVAL_MS,
-) : ProcessSource {
+) : ProcessSource, AutoCloseable {
     constructor(
         systemInfo: SystemInfo = SystemInfo(),
         clock: () -> Long = System::currentTimeMillis,
@@ -47,6 +47,10 @@ class ProcessCollector internal constructor(
         clock = clock,
         refreshIntervalMs = heapRefreshIntervalMs,
     )
+
+    override fun close() {
+        (heapProbe as? AutoCloseable)?.close()
+    }
 
     /** Prior CPU sample per process, keyed by (pid, startTime) to survive PID reuse (KTD-4). */
     private val priorSamples = mutableMapOf<ProcessIdentity, PriorSample>()

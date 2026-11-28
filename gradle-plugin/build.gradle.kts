@@ -47,7 +47,13 @@ dependencies {
     testImplementation("com.gradle:develocity-gradle-plugin:4.6.1")
 }
 
-kotlin { jvmToolchain(21) }
+kotlin {
+    jvmToolchain(21)
+    // Keep the independently published plugin free of core's runtime dependencies.
+    sourceSets.main {
+        kotlin.srcDir(project(":core").file("src/main/kotlin/io/github/cdsap/daemonitor/json"))
+    }
+}
 tasks.test {
     useJUnitPlatform()
     // Optional E2E: ./gradlew :gradle-plugin:test -Pdaemonitor.cored.binary=$PWD/build/cored/daemonitor-cored

@@ -2,7 +2,8 @@
 package analysis
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 
 	"github.com/cdsap/daemonitor/cored/internal/model"
 )
@@ -94,7 +95,7 @@ func Analyze(samples []model.Process, pid int32, startTimeMs int64) Result {
 		}
 		filtered = append(filtered, sample)
 	}
-	sort.SliceStable(filtered, func(i, j int) bool { return filtered[i].SampledAtMs < filtered[j].SampledAtMs })
+	slices.SortStableFunc(filtered, func(a, b model.Process) int { return cmp.Compare(a.SampledAtMs, b.SampledAtMs) })
 	if len(filtered) > 0 {
 		end := filtered[len(filtered)-1].SampledAtMs
 		first := 0
@@ -135,7 +136,7 @@ func AnalyzeBuildRetention(samples []model.Process, builds []Build, pid int32, s
 			valid = append(valid, sample)
 		}
 	}
-	sort.Slice(valid, func(i, j int) bool { return valid[i].SampledAtMs < valid[j].SampledAtMs })
+	slices.SortFunc(valid, func(a, b model.Process) int { return cmp.Compare(a.SampledAtMs, b.SampledAtMs) })
 	var result []Retention
 	for _, build := range builds {
 		if build.PID != pid || build.StartTimeMs <= 0 || build.EndTimeMs == nil || *build.EndTimeMs <= build.StartTimeMs {
@@ -220,12 +221,7 @@ func metric(values []int64, elapsedMs int64) Metric {
 	}
 	baseline := median(bucket)
 	current := values[len(values)-1]
-	peak := values[0]
-	for _, value := range values[1:] {
-		if value > peak {
-			peak = value
-		}
-	}
+	peak := slices.Max(values)
 	growth := current - baseline
 	percent := 0.0
 	if baseline > 0 {
@@ -235,7 +231,7 @@ func metric(values []int64, elapsedMs int64) Metric {
 	if elapsedMs > 0 {
 		rate = float64(growth) / (float64(elapsedMs) / (60 * 60 * 1000))
 	}
-	return Metric{Available: len(values) >= minimumHeapSamples, SampleCount: len(values), BaselineMB: baseline, CurrentMB: current, PeakMB: peak, AbsoluteGrowthMB: growth, GrowthPercent: percent, GrowthRateMBPerHour: rate, Values: append([]int64(nil), values...)}
+	return Metric{Available: len(values) >= minimumHeapSamples, SampleCount: len(values), BaselineMB: baseline, CurrentMB: current, PeakMB: peak, AbsoluteGrowthMB: growth, GrowthPercent: percent, GrowthRateMBPerHour: rate, Values: slices.Clone(values)}
 }
 
 func assess(metric Metric) Assessment {
@@ -265,7 +261,7 @@ func increasingRatio(values []int64) float64 {
 }
 
 func median(values []int64) int64 {
-	ordered := append([]int64(nil), values...)
-	sort.Slice(ordered, func(i, j int) bool { return ordered[i] < ordered[j] })
+	ordered := slices.Clone(values)
+	slices.Sort(ordered)
 	return ordered[len(ordered)/2]
 }

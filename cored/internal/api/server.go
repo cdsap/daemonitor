@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -57,6 +58,8 @@ const (
 	defaultQueryLimit      = 100
 	maxQueryLimit          = 500
 	maxIncludeMetricsLimit = 20
+	maxSessionNameBytes    = 256
+	maxSessionProcesses    = 256
 )
 
 func NewServer(socketPath, dbPath string, interval, retention time.Duration, gradleUserHome string) (*Server, error) {
@@ -73,6 +76,7 @@ func NewServer(socketPath, dbPath string, interval, retention time.Duration, gra
 		collector.Cadences.ProcessOS = interval
 	}
 	bepWatcher := bep.NewWatcher()
+	bepWatcher.SkipProcessScan = true
 	collector.BazelClientObserved = bepWatcher.ObserveProcess
 	// Local/dev assist: absolute JSON BEP paths already emitted by the user,
 	// separated by the OS path-list separator (":" on Unix, ";" on Windows).
@@ -143,7 +147,13 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/v1/observation-sessions/open", s.handleObservationSessionOpen)
 	mux.HandleFunc("/v1/observation-sessions/close", s.handleObservationSessionClose)
 
-	srv := &http.Server{Handler: mux}
+	srv := &http.Server{
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -162,7 +172,7 @@ func (s *Server) Run(ctx context.Context) error {
 	}()
 
 	err = srv.Serve(ln)
-	if err == http.ErrServerClosed {
+	if errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}
 	return err
@@ -251,14 +261,21 @@ func (s *Server) refresh(ctx context.Context) {
 		}
 	}
 
-	s.mu.Lock()
+	var gonePIDs []int64
+	s.mu.RLock()
 	for pid := range s.prevActive {
 		if _, ok := active[pid]; !ok {
-			if b := s.Agg.OnDaemonGone(pid); b != nil {
-				_ = s.Store.InsertBuild(*b)
-			}
+			gonePIDs = append(gonePIDs, pid)
 		}
 	}
+	s.mu.RUnlock()
+	for _, pid := range gonePIDs {
+		if b := s.Agg.OnDaemonGone(pid); b != nil {
+			_ = s.Store.InsertBuild(*b)
+		}
+	}
+
+	s.mu.Lock()
 	s.prevActive = active
 	s.last = snap
 	s.mu.Unlock()
@@ -324,6 +341,10 @@ func (s *Server) handleObservationSessionOpen(w http.ResponseWriter, r *http.Req
 		http.Error(w, "name is required", http.StatusBadRequest)
 		return
 	}
+	if len(req.Name) > maxSessionNameBytes {
+		http.Error(w, "name must not exceed 256 bytes", http.StatusBadRequest)
+		return
+	}
 	if req.Association != sessions.AssociationConfirmed && req.Association != sessions.AssociationInferred {
 		http.Error(w, "association must be confirmed or inferred", http.StatusBadRequest)
 		return
@@ -338,9 +359,16 @@ func (s *Server) handleObservationSessionOpen(w http.ResponseWriter, r *http.Req
 				req.Processes = append(req.Processes, sessions.ProcessRef{
 					HostID: req.HostID, PID: int64(process.PID), StartTimeMs: process.StartTimeMs, ProcessType: process.Type,
 				})
+				if len(req.Processes) > maxSessionProcesses {
+					break
+				}
 			}
 		}
 		s.mu.RUnlock()
+	}
+	if len(req.Processes) > maxSessionProcesses {
+		http.Error(w, "processes must not exceed 256 entries", http.StatusBadRequest)
+		return
 	}
 	for i := range req.Processes {
 		if req.Processes[i].HostID == "" {
@@ -382,7 +410,7 @@ func (s *Server) handleObservationSessionClose(w http.ResponseWriter, r *http.Re
 		return
 	}
 	response, err := s.Store.CloseObservationSession(req.Name, time.Now().UnixMilli())
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		http.Error(w, "observation session not found", http.StatusNotFound)
 		return
 	}
@@ -400,7 +428,7 @@ func decodeJSONBody(r *http.Request, target any) error {
 		return err
 	}
 	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		return fmt.Errorf("request must contain one JSON object")
 	}
 	return nil
@@ -488,13 +516,13 @@ func (s *Server) handleSelf(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-func (s *Server) handleHost(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	host := s.lastHost
 	at := s.lastHostAt
 	s.mu.RUnlock()
 	if at.IsZero() {
-		host = s.Collector.HostMetrics(context.Background())
+		host = s.Collector.HostMetrics(r.Context())
 	}
 	writeJSON(w, host)
 }
@@ -610,11 +638,15 @@ func (s *Server) handleDaemonLogTail(w http.ResponseWriter, r *http.Request) {
 	}
 	var tail logs.Tail
 	var ok bool
+	source := r.URL.Query().Get("source")
 	knownBazel := false
 	if s.BazelLogs != nil {
-		_, knownBazel = s.BazelLogs.TailFor(pid, "")
-		if knownBazel {
-			tail, ok = s.BazelLogs.TailFor(pid, r.URL.Query().Get("source"))
+		if source == "" {
+			tail, ok = s.BazelLogs.TailFor(pid, "")
+			knownBazel = ok
+		} else if s.BazelLogs.HasPID(pid) {
+			knownBazel = true
+			tail, ok = s.BazelLogs.TailFor(pid, source)
 		}
 	}
 	if !knownBazel {

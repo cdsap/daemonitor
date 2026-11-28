@@ -5,6 +5,22 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 class GitHubReleaseJsonParserTest {
+    @Test
+    fun `uses direct release and asset fields regardless of ordering`() {
+        val release = requireNotNull(GitHubReleaseJsonParser.parse("""{
+            "author":{"html_url":"wrong","tag_name":"wrong"},
+            "tag_name":"v\u0031.0","html_url":"https:\/\/example.com\/release",
+            "assets":[
+                {"browser_download_url":"https://example.com/a","name":"a\"}\\\n\u263a"},
+                {"name":"incomplete"},
+                {"browser_download_url":"wrong","nested":{"name":"nested"}}
+            ],"unrelated":{"name":"outside","browser_download_url":"wrong"}
+        }"""))
+        assertEquals("v1.0", release.version)
+        assertEquals("https://example.com/release", release.releaseUrl)
+        assertEquals(listOf(GitHubReleaseAsset("a\"}\\\n☺", "https://example.com/a")), release.assets)
+        assertNull(GitHubReleaseJsonParser.parse("""{"tag_name":"v1","html_url":"url",}"""))
+    }
 
     @Test
     fun `parses release tag url and assets`() {
