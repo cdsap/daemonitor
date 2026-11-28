@@ -140,12 +140,15 @@ class UnixObservationSessionClient(
         val text = raw.toString(StandardCharsets.ISO_8859_1)
         val headerEnd = text.indexOf("\r\n\r\n")
         if (headerEnd < 0) return false
-        val contentLength = Regex("(?im)^Content-Length:\\s*(\\d+)\\s*$")
+        val contentLength = CONTENT_LENGTH_REGEX
             .find(text.substring(0, headerEnd))
             ?.groupValues
             ?.get(1)
             ?.toIntOrNull()
         return contentLength != null && raw.size - (headerEnd + 4) >= contentLength
+    }
+    private companion object {
+        val CONTENT_LENGTH_REGEX = Regex("(?im)^Content-Length:\\s*(\\d+)\\s*$")
     }
 }
 

@@ -5,6 +5,10 @@ import io.github.cdsap.daemonitor.application.DaemonLogLine
 internal class GoCoreLogTailTracker {
     private val lastTails = mutableMapOf<Long, List<String>>()
 
+    fun retainPids(activePids: Set<Long>) {
+        lastTails.keys.retainAll(activePids)
+    }
+
     fun newLinesSince(pid: Long, current: List<String>): List<DaemonLogLine> {
         val previous = lastTails[pid].orEmpty()
         lastTails[pid] = current

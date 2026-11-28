@@ -1,6 +1,5 @@
 package io.github.cdsap.daemonitor.ui.live.charts
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.LocalScrollbarStyle
@@ -12,6 +11,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -33,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -59,16 +60,29 @@ import io.github.cdsap.daemonitor.ui.live.RssTimelineChartData
 import io.github.cdsap.daemonitor.ui.live.RssTimelinePoint
 import io.github.cdsap.daemonitor.ui.live.TimelineMetric
 import io.github.cdsap.daemonitor.ui.live.TimelineSeries
-import java.text.SimpleDateFormat
-import java.util.Date
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.max
 import kotlin.math.roundToInt
+
+private val SERIES_DASH_EFFECT = PathEffect.dashPathEffect(floatArrayOf(10f, 8f))
+private val LEGEND_DASH_EFFECT = PathEffect.dashPathEffect(floatArrayOf(6f, 5f))
+private val CLOCK_FMT = DateTimeFormatter.ofPattern("h:mm:ss a", Locale.US)
+    .withZone(ZoneId.systemDefault())
 
 private data class HoverLegend(
     val point: RssTimelinePoint,
     val xPx: Float,
     val markerYs: List<Pair<Color, Float>>,
+)
+
+private data class CachedSeriesDraw(
+    val path: Path,
+    val fillPath: Path?,
+    val color: Color,
+    val stroke: Stroke,
 )
 
 @Composable
@@ -132,14 +146,15 @@ fun OverallRssTimelineChart(
     val gridColor = MaterialTheme.colorScheme.outlineVariant
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
     val crosshairColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
-    var visibleIds by remember(series.map { it.id to it.defaultVisible }) {
+    val seriesDefaultKey = remember(series) { series.map { it.id to it.defaultVisible } }
+    var visibleIds by remember(seriesDefaultKey) {
         mutableStateOf(series.filter { it.defaultVisible }.map { it.id }.toSet())
     }
     var hover by remember(points, visibleIds, selectedPid) { mutableStateOf<HoverLegend?>(null) }
     var plotSize by remember { mutableStateOf(IntSize.Zero) }
     val density = LocalDensity.current
-    val visibleSeries = series.filter { it.id in visibleIds }
-    val processCount = series.mapNotNull { it.pid }.distinct().size
+    val visibleSeries = remember(series, visibleIds) { series.filter { it.id in visibleIds } }
+    val processCount = remember(series) { series.mapNotNull { it.pid }.distinct().size }
     val resolvedHeadline = headline
         ?: "Total $currentTotalRssMb MB RSS · $processCount processes"
 
@@ -209,18 +224,22 @@ fun OverallRssTimelineChart(
                     Text("Collecting samples...", color = labelColor, style = MaterialTheme.typography.bodySmall)
                 }
             } else {
-                val maxMb = max(
-                    1L,
-                    points.flatMap { point ->
-                        visibleSeries.mapNotNull { item -> point.valuesBySeriesId[item.id] }
-                    }.maxOrNull() ?: 1L,
-                )
-                val yTicks = listOf(0L, maxMb / 2, maxMb)
-                val xLabels = listOf(
-                    formatClock(points.first().atMs),
-                    formatClock(points[points.size / 2].atMs),
-                    formatClock(points.last().atMs),
-                )
+                val maxMb = remember(points, visibleSeries) {
+                    max(
+                        1L,
+                        points.flatMap { point ->
+                            visibleSeries.mapNotNull { item -> point.valuesBySeriesId[item.id] }
+                        }.maxOrNull() ?: 1L,
+                    )
+                }
+                val yTicks = remember(maxMb) { listOf(0L, maxMb / 2, maxMb) }
+                val xLabels = remember(points) {
+                    listOf(
+                        formatClock(points.first().atMs),
+                        formatClock(points[points.size / 2].atMs),
+                        formatClock(points.last().atMs),
+                    )
+                }
 
                 Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
                     Column(
@@ -237,7 +256,18 @@ fun OverallRssTimelineChart(
                     }
                     Column(modifier = Modifier.weight(1f).fillMaxSize()) {
                         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                            Canvas(
+                            TimelinePlotLines(
+                                points = points,
+                                visibleSeries = visibleSeries,
+                                yTicks = yTicks,
+                                maxMb = maxMb,
+                                selectedPid = selectedPid,
+                                emphasizedSeriesColors = emphasizedSeriesColors,
+                                totalFill = totalFill,
+                                gridColor = gridColor,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                            Spacer(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .onSizeChanged { plotSize = it }
@@ -268,62 +298,22 @@ fun OverallRssTimelineChart(
                                                 hover = HoverLegend(point, xPx, markerYs)
                                             }
                                         }
-                                    },
-                            ) {
-                                val width = size.width
-                                val height = size.height
-                                yTicks.forEach { tick ->
-                                    val y = height - (tick.toFloat() / maxMb.toFloat()) * height
-                                    drawLine(
-                                        color = gridColor,
-                                        start = Offset(0f, y),
-                                        end = Offset(width, y),
-                                        strokeWidth = 1f,
-                                    )
-                                }
-
-                                visibleSeries.forEach { item ->
-                                    val color = emphasizedSeriesColors.getValue(item.id)
-                                    val path = pathFor(points, width, height, maxMb) { point ->
-                                        point.valuesBySeriesId[item.id]
                                     }
-                                    if (item.isTotal && item.metric == TimelineMetric.RSS) {
-                                        val fillPath = Path().apply {
-                                            addPath(path)
-                                            lineTo(width, height)
-                                            lineTo(0f, height)
-                                            close()
+                                    .drawBehind {
+                                        val marker = hover ?: return@drawBehind
+                                        val height = size.height
+                                        drawLine(
+                                            color = crosshairColor,
+                                            start = Offset(marker.xPx, 0f),
+                                            end = Offset(marker.xPx, height),
+                                            strokeWidth = 1.dp.toPx(),
+                                        )
+                                        val radius = 3.5.dp.toPx()
+                                        marker.markerYs.forEach { (color, y) ->
+                                            drawCircle(color = color, radius = radius, center = Offset(marker.xPx, y))
                                         }
-                                        drawPath(fillPath, color = totalFill)
-                                    }
-                                    drawPath(
-                                        path,
-                                        color = color,
-                                        style = Stroke(
-                                            width = item.emphasis(selectedPid).strokeWidth.dp.toPx(),
-                                            cap = StrokeCap.Round,
-                                            join = StrokeJoin.Round,
-                                            pathEffect = if (item.dashed) {
-                                                PathEffect.dashPathEffect(floatArrayOf(10f, 8f))
-                                            } else {
-                                                null
-                                            },
-                                        ),
-                                    )
-                                }
-
-                                hover?.let { marker ->
-                                    drawLine(
-                                        color = crosshairColor,
-                                        start = Offset(marker.xPx, 0f),
-                                        end = Offset(marker.xPx, height),
-                                        strokeWidth = 1.dp.toPx(),
-                                    )
-                                    marker.markerYs.forEach { (color, y) ->
-                                        drawCircle(color = color, radius = 3.5.dp.toPx(), center = Offset(marker.xPx, y))
-                                    }
-                                }
-                            }
+                                    },
+                            )
 
                             hover?.let { marker ->
                                 val tooltipX = with(density) {
@@ -359,6 +349,70 @@ fun OverallRssTimelineChart(
             }
         }
     }
+}
+
+@Composable
+private fun TimelinePlotLines(
+    points: List<RssTimelinePoint>,
+    visibleSeries: List<TimelineSeries>,
+    yTicks: List<Long>,
+    maxMb: Long,
+    selectedPid: Long?,
+    emphasizedSeriesColors: Map<String, Color>,
+    totalFill: Color,
+    gridColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    Spacer(
+        modifier = modifier.drawWithCache {
+            val width = size.width
+            val height = size.height
+            val gridYs = yTicks.map { tick ->
+                height - (tick.toFloat() / maxMb.toFloat()) * height
+            }
+            val cachedSeries = visibleSeries.map { item ->
+                val path = pathFor(points, width, height, maxMb) { point ->
+                    point.valuesBySeriesId[item.id]
+                }
+                val fillPath = if (item.isTotal && item.metric == TimelineMetric.RSS) {
+                    Path().apply {
+                        addPath(path)
+                        lineTo(width, height)
+                        lineTo(0f, height)
+                        close()
+                    }
+                } else {
+                    null
+                }
+                val stroke = Stroke(
+                    width = item.emphasis(selectedPid).strokeWidth.dp.toPx(),
+                    cap = StrokeCap.Round,
+                    join = StrokeJoin.Round,
+                    pathEffect = if (item.dashed) SERIES_DASH_EFFECT else null,
+                )
+                CachedSeriesDraw(
+                    path = path,
+                    fillPath = fillPath,
+                    color = emphasizedSeriesColors.getValue(item.id),
+                    stroke = stroke,
+                )
+            }
+            onDrawBehind {
+                gridYs.forEach { y ->
+                    drawLine(
+                        color = gridColor,
+                        start = Offset(0f, y),
+                        end = Offset(width, y),
+                        strokeWidth = 1f,
+                    )
+                }
+                cachedSeries.forEach { entry ->
+                    entry.fillPath?.let { drawPath(it, color = totalFill) }
+                    drawPath(entry.path, color = entry.color, style = entry.stroke)
+                }
+            }
+        },
+    )
 }
 
 @Composable
@@ -404,11 +458,7 @@ private fun LegendChip(
                         end = Offset(size.width, y),
                         strokeWidth = 3.dp.toPx(),
                         cap = StrokeCap.Round,
-                        pathEffect = if (dashed) {
-                            PathEffect.dashPathEffect(floatArrayOf(6f, 5f))
-                        } else {
-                            null
-                        },
+                        pathEffect = if (dashed) LEGEND_DASH_EFFECT else null,
                     )
                 },
         )
@@ -481,11 +531,7 @@ private fun HoverLegendCard(
                                     end = Offset(size.width, y),
                                     strokeWidth = 3.dp.toPx(),
                                     cap = StrokeCap.Round,
-                                    pathEffect = if (item.dashed) {
-                                        PathEffect.dashPathEffect(floatArrayOf(6f, 5f))
-                                    } else {
-                                        null
-                                    },
+                                    pathEffect = if (item.dashed) LEGEND_DASH_EFFECT else null,
                                 )
                             },
                     )
@@ -546,4 +592,4 @@ internal fun pathFor(
 }
 
 private fun formatClock(atMs: Long): String =
-    SimpleDateFormat("h:mm:ss a", Locale.US).format(Date(atMs))
+    CLOCK_FMT.format(Instant.ofEpochMilli(atMs))

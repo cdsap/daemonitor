@@ -5,17 +5,18 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.rememberUpdatedState
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,10 +34,11 @@ import androidx.compose.ui.unit.sp
 fun LogView(lines: List<String>, modifier: Modifier = Modifier, autoScroll: Boolean = true) {
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    val atBottom by remember(lines) {
+    val currentLines by rememberUpdatedState(lines)
+    val atBottom by remember {
         derivedStateOf {
             val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()
-            last == null || last.index >= lines.lastIndex
+            last == null || last.index >= currentLines.lastIndex
         }
     }
 
@@ -50,7 +52,7 @@ fun LogView(lines: List<String>, modifier: Modifier = Modifier, autoScroll: Bool
 
     Box(modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant)) {
         LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(8.dp)) {
-            items(lines) { line ->
+            itemsIndexed(lines, key = { index, _ -> index }) { _, line ->
                 Text(
                     line,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

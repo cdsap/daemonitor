@@ -21,7 +21,9 @@ class GoCoreDaemonLogSource internal constructor(
 
     override fun discover(): List<DaemonLog> {
         val body = client.get("/v1/daemon-logs")
-        return GoCoreSnapshotParser.parseDaemonLogs(body)
+        val logs = GoCoreSnapshotParser.parseDaemonLogs(body)
+        tailTracker.retainPids(logs.mapTo(mutableSetOf()) { it.pid })
+        return logs
     }
 
     override fun readNewLines(log: DaemonLog): List<DaemonLogLine> {

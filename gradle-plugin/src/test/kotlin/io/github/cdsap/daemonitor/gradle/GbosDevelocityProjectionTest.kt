@@ -21,7 +21,7 @@ class GbosDevelocityProjectionTest {
             val gbosRows = GbosDevelocityProjection.observations(reportSummary).map { observation ->
                 val pid = (observation.attributes["process.pid"] as io.github.cdsap.gbos.core.GbosAttributeValue.Integer).value
                 val rss = observation.measurements.first { it.name == "jvm.process.memory.rss" }.value / (1024.0 * 1024.0)
-                pid.toLong() to rss.toLong()
+                pid to rss.toLong()
             }
 
             assertEquals(listOf(42L to 30L, 43L to 12L), reportRows)

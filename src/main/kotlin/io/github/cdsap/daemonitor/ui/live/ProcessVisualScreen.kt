@@ -55,7 +55,7 @@ fun ProcessVisualScreen(
     val latestState by rememberUpdatedState(state)
     // While this tab is composed (active), keep a 30s-refreshed snapshot for the chart panels.
     var panelState by remember { mutableStateOf(state) }
-    val defaultPid = state.processes.maxByOrNull { it.rssMemoryMb }?.pid
+    val defaultPid = remember(state.processes) { state.processes.maxByOrNull { it.rssMemoryMb }?.pid }
     val liveSelectedPid = (state.detail as? DetailState.Selected)?.process?.pid
         ?.takeIf { pid -> state.processes.any { it.pid == pid } }
     var selectedPid by remember { mutableStateOf(liveSelectedPid ?: defaultPid) }
@@ -140,10 +140,15 @@ private fun VisualDashboard(
     modifier: Modifier = Modifier,
 ) {
     val sampledPids = remember(samples) { samples.flatMap { it.byPid.keys }.toSet() }
-    val chartProcesses = if (range == VisualTimeRange.LIVE) {
-        state.processes
-    } else {
-        state.processes.filter { it.pid in sampledPids }
+    val chartProcesses = remember(range, state.processes, sampledPids) {
+        if (range == VisualTimeRange.LIVE) {
+            state.processes
+        } else {
+            state.processes.filter { it.pid in sampledPids }
+        }
+    }
+    val sortedChartProcesses = remember(chartProcesses) {
+        chartProcesses.sortedByDescending { it.rssMemoryMb }
     }
     val availablePids = remember(sampledPids, chartProcesses) {
         sampledPids + chartProcesses.map { it.pid }
@@ -156,7 +161,9 @@ private fun VisualDashboard(
         if (selectedPid !in availablePids) defaultPid?.let(onSelectProcess)
     }
     var metricMode by remember { mutableStateOf(VisualMetricMode.MEMORY) }
-    val selected = state.processes.firstOrNull { it.pid == selectedPid }
+    val selected = remember(state.processes, selectedPid) {
+        state.processes.firstOrNull { it.pid == selectedPid }
+    }
     val resolvedPid = selected?.pid ?: selectedPid ?: defaultPid
     val windowEndMs = samples.lastOrNull()?.atMs
     val windowDurationMs = range.durationMs ?: VisualChartModel.DEFAULT_TIMELINE_WINDOW_MS
@@ -172,20 +179,28 @@ private fun VisualDashboard(
     val timelineChart = remember(fullChart, metricMode) {
         VisualChartModel.forMode(fullChart, metricMode)
     }
-    val selectedHeapUsed = if (range == VisualTimeRange.LIVE) {
-        selected?.let { LiveMetricLabels.liveHeapUsedDetail(it.liveHeap, it.type) }
-    } else {
-        selectedPid?.let { pid -> samples.mapNotNull { it.heapUsedByPid[pid] }.lastOrNull() }?.let { "$it MB" }
-    } ?: LiveMetricLabels.HEAP_UNAVAILABLE_DETAIL
-    val selectedHeapLimit = if (range == VisualTimeRange.LIVE) {
-        selected?.maxHeapMb
-    } else {
-        selectedPid?.let { pid -> samples.mapNotNull { it.heapLimitByPid[pid] }.lastOrNull() }
-    }?.let { "$it MB" } ?: LiveMetricLabels.HEAP_UNAVAILABLE_DETAIL
-    val latestTotalRssMb = samples.lastOrNull()?.totalRssMb ?: state.processes.sumOf { it.rssMemoryMb }
+    val selectedHeapUsed = remember(range, selected, selectedPid, samples) {
+        if (range == VisualTimeRange.LIVE) {
+            selected?.let { LiveMetricLabels.liveHeapUsedDetail(it.liveHeap, it.type) }
+        } else {
+            selectedPid?.let { pid -> samples.lastNotNullOrNull { it.heapUsedByPid[pid] } }?.let { "$it MB" }
+        } ?: LiveMetricLabels.HEAP_UNAVAILABLE_DETAIL
+    }
+    val selectedHeapLimit = remember(range, selected, selectedPid, samples) {
+        (if (range == VisualTimeRange.LIVE) {
+            selected?.maxHeapMb
+        } else {
+            selectedPid?.let { pid -> samples.lastNotNullOrNull { it.heapLimitByPid[pid] } }
+        })?.let { "$it MB" } ?: LiveMetricLabels.HEAP_UNAVAILABLE_DETAIL
+    }
+    val latestTotalRssMb = remember(samples, state.processes) {
+        samples.lastOrNull()?.totalRssMb ?: state.processes.sumOf { it.rssMemoryMb }
+    }
     val modes = VisualMetricMode.entries
-    val selectedRss = selected?.rssMemoryMb
-        ?: selectedPid?.let { pid -> samples.mapNotNull { it.byPid[pid] }.lastOrNull() }
+    val selectedRss = remember(selected, selectedPid, samples) {
+        selected?.rssMemoryMb
+            ?: selectedPid?.let { pid -> samples.lastNotNullOrNull { it.byPid[pid] } }
+    }
     val headline = when (metricMode) {
         VisualMetricMode.MEMORY ->
             "Total $latestTotalRssMb MB RSS · ${availablePids.size} processes"
@@ -236,9 +251,9 @@ private fun VisualDashboard(
             )
         }
 
-        if (chartProcesses.isNotEmpty()) {
+        if (sortedChartProcesses.isNotEmpty()) {
             ProcessSelectionStrip(
-                processes = chartProcesses.sortedByDescending { it.rssMemoryMb },
+                processes = sortedChartProcesses,
                 selectedPid = resolvedPid,
                 onSelect = onSelectProcess,
                 modifier = Modifier.fillMaxWidth(),
@@ -315,4 +330,12 @@ private fun ProcessSelectionStrip(
             )
         }
     }
+}
+
+private inline fun <T, R : Any> List<T>.lastNotNullOrNull(selector: (T) -> R?): R? {
+    for (index in lastIndex downTo 0) {
+        val value = selector(this[index])
+        if (value != null) return value
+    }
+    return null
 }
