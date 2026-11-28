@@ -11,7 +11,9 @@ var (
 	denyMulti = []string{"password", "secret", "token", "credential", "apikey"}
 	keyWord   = regexp.MustCompile(`(^|[^a-z])key([^a-z]|$)`)
 	// -Pkey=value | -Dkey=value | --key=value
-	propFlag = regexp.MustCompile(`^(--|-[PD])([^=\s]+)=(.*)$`)
+	propFlag        = regexp.MustCompile(`^(--|-[PD])([^=\s]+)=(.*)$`)
+	envAssignment   = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)=(.*)$`)
+	authCredentials = regexp.MustCompile(`(?i)\b(Bearer|Basic)([\t ]+)\S+`)
 	// scheme://user:pass@host
 	urlCreds      = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9+.\-]*://)([^/@\s:]+):([^/@\s]+)@`)
 	wsSplit       = regexp.MustCompile(`\s+`)
@@ -55,30 +57,47 @@ func isSensitiveOption(token string) bool {
 
 // RedactToken mirrors Kotlin Redactor.redactToken.
 func RedactToken(token string) string {
-	if m := propFlag.FindStringSubmatch(token); m != nil {
-		prefix, key := m[1], m[2]
-		if isSensitiveKey(key) {
-			return prefix + key + "=" + redactMask
+	// Peel wrapper flags iteratively so arbitrarily nested flags do not grow the stack.
+	var wrappers strings.Builder
+	for {
+		m := propFlag.FindStringSubmatch(token)
+		prefix, key, value := "", "", ""
+		if m != nil {
+			prefix, key, value = m[1], m[2], m[3]
+		} else if env := envAssignment.FindStringSubmatch(token); env != nil {
+			key, value = env[1], env[2]
+		} else {
+			return wrappers.String() + maskURLCredentials(token)
 		}
+		if isSensitiveKey(key) {
+			return wrappers.String() + prefix + key + "=" + redactMask
+		}
+		if prefix != "--" || !isWrapperKey(key) {
+			return wrappers.String() + maskURLCredentials(token)
+		}
+		wrappers.WriteString(prefix + key + "=")
+		token = value
 	}
-	return maskURLCredentials(token)
+}
+
+func isWrapperKey(key string) bool {
+	switch key {
+	case "action_env", "repo_env", "test_env", "client_env", "jvmopt", "host_jvmopt":
+		return true
+	}
+	return false
 }
 
 // RedactLogLine mirrors Kotlin Redactor.redactLogLine.
 func RedactLogLine(line string) string {
-	urlMasked := maskURLCredentials(line)
+	masked := authCredentials.ReplaceAllString(maskURLCredentials(line), "${1}${2}"+redactMask)
 	// Split keeping whitespace separators, like Kotlin's (?<=\s)|(?=\s).
-	pieces := logLinePieces.FindAllString(urlMasked, -1)
+	pieces := logLinePieces.FindAllString(masked, -1)
 	for i, piece := range pieces {
 		if strings.TrimSpace(piece) == "" {
 			continue
 		}
-		if m := propFlag.FindStringSubmatch(piece); m != nil {
-			prefix, key := m[1], m[2]
-			if isSensitiveKey(key) {
-				pieces[i] = prefix + key + "=" + redactMask
-			}
-		}
+		pieces[i] = RedactToken(piece)
 	}
 	return strings.Join(pieces, "")
 }

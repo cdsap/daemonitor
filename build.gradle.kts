@@ -36,6 +36,8 @@ dependencies {
     implementation(compose.material3)
     implementation(compose.materialIconsExtended)
 
+    implementation("org.apache.commons:commons-compress:1.28.0")
+
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.9.0")
