@@ -78,7 +78,8 @@ func TestWatcherClientAttributionSurvivesExitAndDoesNotLeak(t *testing.T) {
 	if err := os.WriteFile(path, []byte(body), 0600); err != nil {
 		t.Fatal(err)
 	}
-	closed, err := w.readFile(tf)
+	budget := int64(maxPollBytes)
+	closed, err := w.readFile(tf, &budget)
 	if err != nil || len(closed) != 0 {
 		t.Fatalf("closed=%v err=%v", closed, err)
 	}
@@ -95,7 +96,7 @@ func TestWatcherClientAttributionSurvivesExitAndDoesNotLeak(t *testing.T) {
 	if err = f.Close(); err != nil {
 		t.Fatal(err)
 	}
-	closed, err = w.readFile(tf)
+	closed, err = w.readFile(tf, &budget)
 	if err != nil || len(closed) != 2 || closed[0].Agent != "Claude Code" || closed[0].AgentProvider != "Anthropic" || closed[1].Agent != "" {
 		t.Fatalf("closed=%+v err=%v", closed, err)
 	}
@@ -117,7 +118,8 @@ func TestWatcherAmbientNames(t *testing.T) {
 	if err := os.WriteFile(path, []byte(body), 0600); err != nil {
 		t.Fatal(err)
 	}
-	closed, err := w.readFile(&trackedFile{sink: Sink{Path: path, Format: FormatJSON}})
+	budget := int64(maxPollBytes)
+	closed, err := w.readFile(&trackedFile{sink: Sink{Path: path, Format: FormatJSON}}, &budget)
 	if err != nil || len(closed) != 1 || closed[0].Agent != "" {
 		t.Fatalf("closed=%+v err=%v", closed, err)
 	}

@@ -40,31 +40,28 @@ func LooksLikeBazelClient(cmdline string) bool {
 	if strings.Contains(lower, "a-server.jar") {
 		return false
 	}
-	// Match path endings or bare tokens: /bazel, bazelisk, "bazel ", etc.
 	fields := strings.Fields(cmdline)
 	if len(fields) == 0 {
 		return false
 	}
-	base := strings.ToLower(filepath.Base(fields[0]))
-	base = strings.TrimSuffix(base, ".exe")
-	if base == "bazel" || base == "bazelisk" {
-		return true
+	base := func(s string) string {
+		return strings.TrimSuffix(strings.ToLower(filepath.Base(s)), ".exe")
 	}
-	// Some launches put the binary later (env wrappers).
-	for _, f := range fields {
-		b := strings.ToLower(filepath.Base(f))
-		b = strings.TrimSuffix(b, ".exe")
-		if b == "bazel" || b == "bazelisk" {
-			return true
+	// Only env assignments may precede the client executable. A Bazel token
+	// in another program's arguments is not evidence of a Bazel client.
+	if base(fields[0]) == "env" {
+		fields = fields[1:]
+		for len(fields) > 0 && strings.Contains(fields[0], "=") && !strings.HasPrefix(fields[0], "-") {
+			fields = fields[1:]
 		}
 	}
-	return false
+	return len(fields) > 0 && (base(fields[0]) == "bazel" || base(fields[0]) == "bazelisk")
 }
 
 // ParseSinksFromArgv extracts BEP file sinks from a client command line.
 // Relative paths are resolved against cwd when provided; unresolved relatives are skipped.
 func ParseSinksFromArgv(cmdline, cwd string, clientPID int32) []Sink {
-	if !LooksLikeBazelClient(cmdline) && !hasBEPFlag(cmdline) {
+	if !LooksLikeBazelClient(cmdline) {
 		return nil
 	}
 	out := make([]Sink, 0, 2)
@@ -83,11 +80,6 @@ func ParseSinksFromArgv(cmdline, cwd string, clientPID int32) []Sink {
 		}
 	}
 	return out
-}
-
-func hasBEPFlag(cmdline string) bool {
-	return strings.Contains(cmdline, "--build_event_json_file=") ||
-		strings.Contains(cmdline, "--build_event_binary_file=")
 }
 
 func firstGroup(m []string) string {

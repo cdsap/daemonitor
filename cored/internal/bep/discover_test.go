@@ -17,11 +17,26 @@ func TestLooksLikeBazelClient(t *testing.T) {
 		{"env FOO=1 /usr/bin/bazelisk build //:x", true},
 		{"java -jar /x/A-server.jar --product_name=Bazel --workspace_directory=/ws", false},
 		{"gradle build", false},
+		{"python script.py --build_event_json_file=/tmp/events", false},
+		{"echo bazel --build_event_json_file=/tmp/events", false},
+		{"sh -c bazel build --build_event_json_file=/tmp/events", false},
 		{"", false},
 	}
 	for _, tc := range cases {
 		if got := bep.LooksLikeBazelClient(tc.in); got != tc.want {
 			t.Fatalf("LooksLikeBazelClient(%q)=%v want %v", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestParseSinksRejectsNonClients(t *testing.T) {
+	for _, cmd := range []string{
+		"python script.py --build_event_json_file=/tmp/events",
+		"echo bazel --build_event_binary_file=/tmp/events",
+		"java -jar A-server.jar --build_event_json_file=/tmp/events",
+	} {
+		if got := bep.ParseSinksFromArgv(cmd, "/tmp", 1); len(got) != 0 {
+			t.Errorf("ParseSinksFromArgv(%q) = %v", cmd, got)
 		}
 	}
 }
