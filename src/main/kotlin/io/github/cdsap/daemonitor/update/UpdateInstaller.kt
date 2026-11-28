@@ -12,6 +12,7 @@ import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption.CREATE_NEW
 import java.nio.file.attribute.BasicFileAttributes
 import java.security.MessageDigest
+import java.util.Locale
 import java.util.zip.GZIPInputStream
 import java.util.zip.ZipInputStream
 import kotlinx.coroutines.Dispatchers
@@ -215,6 +216,8 @@ private fun openWithDesktop(path: Path) {
     desktop.open(path.toFile())
 }
 
+private val SHA256_HEX_REGEX = Regex("[a-fA-F0-9]{64}")
+
 private suspend fun downloadAndVerify(
     candidate: UpdateCandidate,
     updateDirectory: Path,
@@ -223,7 +226,7 @@ private suspend fun downloadAndVerify(
     validateUpdatePaths(candidate)
     val expectedSha256 = candidate.sha256
         ?: error("Release checksum is unavailable; refusing to install ${candidate.assetName}")
-    require(expectedSha256.matches(Regex("[a-fA-F0-9]{64}"))) {
+    require(expectedSha256.matches(SHA256_HEX_REGEX)) {
         "Release checksum is invalid for ${candidate.assetName}"
     }
     require(candidate.sizeBytes == null || candidate.sizeBytes in 1..MAX_DOWNLOAD_BYTES) {
@@ -507,4 +510,5 @@ internal object UpdateDownloadVerifier {
         actualDigest.toHex().equals(expectedSha256, ignoreCase = true)
 }
 
-private fun ByteArray.toHex(): String = joinToString(separator = "") { byte -> "%02x".format(byte) }
+private fun ByteArray.toHex(): String =
+    joinToString(separator = "") { byte -> String.format(Locale.ROOT, "%02x", byte) }

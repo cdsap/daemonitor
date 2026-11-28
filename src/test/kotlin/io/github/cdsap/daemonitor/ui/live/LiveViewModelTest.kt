@@ -164,7 +164,7 @@ class LiveViewModelTest {
         vm.onPoll(listOf(proc(2))) // pid 1 gone
         val detail = vm.state.value.detail
         assertTrue(detail is DetailState.Ended)
-        assertEquals(1L, (detail as DetailState.Ended).lastKnown.pid)
+        assertEquals(1L, detail.lastKnown.pid)
     }
 
     @Test

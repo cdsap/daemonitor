@@ -25,10 +25,10 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -54,8 +54,12 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import java.util.Locale
@@ -97,6 +101,8 @@ import io.github.cdsap.daemonitor.ui.common.DetailRow
 import io.github.cdsap.daemonitor.ui.common.DetailSection
 
 private val WIDE_TABLE_MIN_WIDTH = 920.dp
+private val VIEW_MODE_OPTIONS = listOf("Flat" to false, "Grouped" to true)
+private val RECENT_BUILD_TIME_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault())
 
 private val COMPACT_COLS = listOf(
     Col("Type", 2.25f),
@@ -135,16 +141,6 @@ fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit) {
         else -> null
     }
 
-    // A 1-second wall-clock tick so uptime advances smoothly between polls, not only when a
-    // sampled value happens to change (an idle daemon's snapshot can be identical across polls).
-    var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            nowMs = System.currentTimeMillis()
-            delay(1_000)
-        }
-    }
-
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         SummaryHeader(
             state,
@@ -157,11 +153,13 @@ fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit) {
         } else if (state.isEmpty) {
             EmptyState("No Gradle processes are running right now.", modifier = Modifier.weight(1f))
         } else {
-            val concurrent = Badges.concurrentSameProjectPids(state.processes)
-            val displayRows = if (groupedView) {
-                groupedLiveProcessRows(state.processes)
-            } else {
-                state.processes.map { LiveProcessRow(it) }
+            val concurrent = remember(state.processes) { Badges.concurrentSameProjectPids(state.processes) }
+            val displayRows = remember(state.processes, groupedView) {
+                if (groupedView) {
+                    groupedLiveProcessRows(state.processes)
+                } else {
+                    state.processes.map { LiveProcessRow(it) }
+                }
             }
             val listFocus = remember { FocusRequester() }
             // Request once when the table appears — not on every poll, which would steal focus.
@@ -206,7 +204,6 @@ fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit) {
                                         showGcBreakdown,
                                         row.targetPid == selectedPid,
                                         row.process.pid in concurrent,
-                                        nowMs,
                                         state::isPermissionDegraded,
                                     ) { pid ->
                                         onSelect(pid)
@@ -220,7 +217,7 @@ fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit) {
                 }
                 Spacer(Modifier.width(Space.lg))
                 Column(modifier = Modifier.weight(1f).fillMaxSize()) {
-                    DetailCard(state.detail, state.processes, state.host, state.capabilities, state.recentBuilds, state.daemonLog, nowMs, modifier = Modifier.weight(2f).fillMaxWidth())
+                    DetailCard(state.detail, state.processes, state.host, state.capabilities, state.recentBuilds, state.daemonLog, modifier = Modifier.weight(2f).fillMaxWidth())
                     when {
                         showsDaemonLogCard(state.detail) -> {
                             Spacer(Modifier.padding(Space.xs))
@@ -260,11 +257,11 @@ private fun SummaryHeader(
                     color = statusColor,
                 )
                 SingleChoiceSegmentedButtonRow {
-                    listOf("Flat" to false, "Grouped" to true).forEachIndexed { index, (label, grouped) ->
+                    VIEW_MODE_OPTIONS.forEachIndexed { index, (label, grouped) ->
                         SegmentedButton(
                             selected = groupedView == grouped,
                             onClick = { onGroupedViewChange(grouped) },
-                            shape = SegmentedButtonDefaults.itemShape(index, 2),
+                            shape = SegmentedButtonDefaults.itemShape(index, VIEW_MODE_OPTIONS.size),
                             icon = {},
                             label = { Text(label) },
                         )
@@ -283,7 +280,7 @@ private fun SummaryHeader(
                 label = "Peak memory PID",
                 value = peakPid?.toString() ?: "—",
                 modifier = Modifier.weight(1f).testTag("peak-memory-pid-tile"),
-                icon = Icons.Filled.TrendingUp,
+                icon = Icons.AutoMirrored.Filled.TrendingUp,
                 accent = LocalAccentColors.current.warn,
                 onClick = peakPid?.let { pid -> { onSelectPeakMemoryPid(pid) } },
             )
@@ -299,7 +296,6 @@ private fun ProcessRow(
     showGcBreakdown: Boolean,
     selected: Boolean,
     concurrent: Boolean,
-    nowMs: Long,
     isDegraded: (GradleProcess) -> Boolean,
     onSelect: (Long) -> Unit,
 ) {
@@ -322,7 +318,7 @@ private fun ProcessRow(
                 }
                 if (row.depth > 0) Spacer(Modifier.width((row.depth * 4).dp))
                 ProcessTypeIcon(p.type, size = 16.dp)
-                Text(p.type.displayLabel(), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                Text(p.type.displayLabel(), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         val projectLabel = displayProjectLabel(p)
@@ -337,7 +333,16 @@ private fun ProcessRow(
         }
         Cell(p.totalGcTimeSeconds.gcTimeCompact(), cols[colIndex++], muted = p.totalGcTimeSeconds == null)
         Cell(LiveMetricLabels.cpuCompact(p.cpuPercent), cols[colIndex++], muted = p.cpuPercent == null)
-        Cell(formatUptime(p.startTimeMs, nowMs), cols[colIndex++])
+        val uptimeCol = cols[colIndex++]
+        CellSlot(uptimeCol) {
+            UptimeText(
+                startTimeMs = p.startTimeMs,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = if (uptimeCol.end) TextAlign.End else TextAlign.Start,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
         Row(modifier = Modifier.weight(cols[colIndex].weight), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
             Badges.memoryBadge(p.rssMemoryMb)?.let { MemoryBadge(it) }
             if (concurrent) ConcurrentBadge()
@@ -373,31 +378,33 @@ private fun DetailCard(
     capabilities: ContextState<List<MetricCapability>>,
     recentBuilds: RecentBuildsState,
     daemonLog: DaemonLog?,
-    nowMs: Long,
     modifier: Modifier = Modifier,
 ) {
     SectionCard(detailCardTitle(detail), modifier) {
         when (detail) {
             is DetailState.NoSelection ->
                 Text("Select a process to see details.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
-            is DetailState.Selected -> ProcessDetailInspector(
-                detail.process,
-                children = processes.filter {
-                    it.pid != detail.process.pid &&
-                        (it.parentPid == detail.process.pid || it.ownerPid == detail.process.pid)
-                },
-                ended = false,
-                nowMs = nowMs,
-                host = host,
-                capabilities = capabilities,
-                recentBuilds = recentBuilds,
-                daemonLog = daemonLog,
-            )
+            is DetailState.Selected -> {
+                val children = remember(processes, detail.process.pid) {
+                    processes.filter {
+                        it.pid != detail.process.pid &&
+                            (it.parentPid == detail.process.pid || it.ownerPid == detail.process.pid)
+                    }
+                }
+                ProcessDetailInspector(
+                    detail.process,
+                    children = children,
+                    ended = false,
+                    host = host,
+                    capabilities = capabilities,
+                    recentBuilds = recentBuilds,
+                    daemonLog = daemonLog,
+                )
+            }
             is DetailState.Ended -> ProcessDetailInspector(
                 detail.lastKnown,
                 children = emptyList(),
                 ended = true,
-                nowMs = nowMs,
                 host = host,
                 capabilities = capabilities,
                 recentBuilds = recentBuilds,
@@ -417,24 +424,35 @@ private fun ProcessDetailInspector(
     p: GradleProcess,
     children: List<GradleProcess>,
     ended: Boolean,
-    nowMs: Long,
     host: ContextState<HostContext>,
     capabilities: ContextState<List<MetricCapability>>,
     recentBuilds: RecentBuildsState,
     daemonLog: DaemonLog?,
 ) {
     var selectedTab by remember(p.pid) { mutableStateOf(InspectorTab.OVERVIEW) }
-    val tabs = InspectorTab.entries.filter {
-        (it != InspectorTab.GRADLE || p.type == ProcessType.GRADLE_DAEMON) &&
-            (it != InspectorTab.BAZEL || p.type == ProcessType.BAZEL_SERVER)
+    val tabs = remember(p.type) {
+        InspectorTab.entries.filter {
+            (it != InspectorTab.GRADLE || p.type == ProcessType.GRADLE_DAEMON) &&
+                (it != InspectorTab.BAZEL || p.type == ProcessType.BAZEL_SERVER)
+        }
     }
     val activeTab = selectedTab.takeIf { it in tabs } ?: InspectorTab.OVERVIEW
     LaunchedEffect(activeTab) { selectedTab = activeTab }
     Column(Modifier.fillMaxSize().testTag("process-detail-inspector")) {
         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
             ProcessTypeIcon(p.type, size = 18.dp)
-            Text("PID ${p.pid} · ${p.type.displayLabel()} · ${if (ended) "—" else formatUptime(p.startTimeMs, nowMs)}", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
-            if (ended) Text("● Process ended", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+            val titlePrefix = "PID ${p.pid} · ${p.type.displayLabel()} · "
+            if (ended) {
+                Text("$titlePrefix—", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
+                Text("● Process ended", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+            } else {
+                UptimeText(
+                    startTimeMs = p.startTimeMs,
+                    prefix = titlePrefix,
+                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
         }
         Text("RSS ${p.rssMemoryMb} MB · CPU ${LiveMetricLabels.cpuCompact(p.cpuPercent)} · Heap ${LiveMetricLabels.liveHeapUsedCompact(p.liveHeap)}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("process-detail-vitals"))
         if (children.isNotEmpty()) {
@@ -525,8 +543,12 @@ private fun ProcessDetailInspector(
                     DetailRow("Metaspace used", p.metaspaceUsedMb.metric("MB"))
                     DetailRow("Metaspace committed", p.metaspaceCommittedMb.metric("MB"))
 
-                    val pools = p.memoryPools.filter { it.used != null || it.committed != null || it.max != null }
-                    val codeCache = p.codeCache.filter { it.used != null || it.committed != null || it.max != null }
+                    val pools = remember(p.memoryPools) {
+                        p.memoryPools.filter { it.used != null || it.committed != null || it.max != null }
+                    }
+                    val codeCache = remember(p.codeCache) {
+                        p.codeCache.filter { it.used != null || it.committed != null || it.max != null }
+                    }
                     val jit = p.jit
                     val jitParts = listOfNotNull(
                         jit?.compiledCount?.let { "$it compiled" },
@@ -581,7 +603,7 @@ private fun ProcessDetailInspector(
                                 Text("No host measurements available")
                             } else {
                                 DetailRow("Logical processors", h.logicalProcessors?.toString() ?: "unavailable")
-                                DetailRow("Host CPU", h.cpuPercent?.let { String.format(Locale.US, "%.1f%%", it) } ?: "unavailable")
+                                DetailRow("Host CPU", h.cpuPercent?.let { String.format(Locale.ROOT, "%.1f%%", it) } ?: "unavailable")
                                 DetailRow("Host memory", if (used != null && total != null) "${used / 1048576} / ${total / 1048576} MB" else "unavailable")
                             }
                             DetailRow("Sampled", h.sampledAtMs?.let { java.time.Instant.ofEpochMilli(it).toString() } ?: "unavailable")
@@ -595,7 +617,10 @@ private fun ProcessDetailInspector(
                         ContextState.Error -> Text("Could not load capabilities")
                         is ContextState.Loaded -> {
                             if (capabilities.value.isEmpty()) Text("No capabilities reported")
-                            capabilities.value.groupBy { it.name.split('.').take(2).joinToString(".") }.forEach { (family, metrics) ->
+                            val groupedCapabilities = remember(capabilities.value) {
+                                capabilities.value.groupBy { it.name.split('.').take(2).joinToString(".") }
+                            }
+                            groupedCapabilities.forEach { (family, metrics) ->
                                 val available = metrics.count { it.availability == "available" }
                                 DetailRow(family, "$available / ${metrics.size} available")
                                 if (expanded) metrics.forEach { DetailRow(it.name, it.availability) }
@@ -620,7 +645,7 @@ private fun ProcessDetailInspector(
                             Text("No recent builds for this daemon.")
                         } else {
                             recentBuilds.builds.forEach { build ->
-                                val started = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(build.startTimeMs))
+                                val started = RECENT_BUILD_TIME_FMT.format(Instant.ofEpochMilli(build.startTimeMs))
                                 val duration = build.durationSeconds?.let { String.format(Locale.ROOT, "%.1f s", it) } ?: "—"
                                 DetailRow(build.finalStatus.name.replace('_', ' '), "${build.projectPath ?: build.workingDirectory ?: "Unknown project"} · $duration · $started · ${build.inferredSource}${build.agent?.let { " / $it" } ?: ""}")
                             }
@@ -649,7 +674,7 @@ private fun ProcessDetailInspector(
                             Text("No Bazel builds captured yet (neither command.profile.gz nor BEP in reach).")
                         } else {
                             recentBuilds.builds.forEach { build ->
-                                val started = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(build.startTimeMs))
+                                val started = RECENT_BUILD_TIME_FMT.format(Instant.ofEpochMilli(build.startTimeMs))
                                 val duration = build.durationSeconds?.let { String.format(Locale.ROOT, "%.1f s", it) } ?: "—"
                                 val peak = build.peakMemoryMb?.let { " · peak $it MB" } ?: ""
                                 DetailRow(
@@ -786,4 +811,38 @@ private fun BazelLogCard(tailState: LogTailState, daemonLog: DaemonLog?, modifie
             }
         }
     }
+}
+/**
+ * Leaf composable that owns its own 1-second wall-clock tick so uptime advances smoothly between
+ * polls without triggering recomposition of the surrounding table or detail inspector.
+ */
+@Composable
+private fun UptimeText(
+    startTimeMs: Long,
+    modifier: Modifier = Modifier,
+    prefix: String = "",
+    style: TextStyle = MaterialTheme.typography.bodySmall,
+    fontWeight: FontWeight? = null,
+    color: Color = Color.Unspecified,
+    textAlign: TextAlign? = null,
+    maxLines: Int = Int.MAX_VALUE,
+    overflow: TextOverflow = TextOverflow.Clip,
+) {
+    var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1_000)
+            nowMs = System.currentTimeMillis()
+        }
+    }
+    Text(
+        text = if (prefix.isEmpty()) formatUptime(startTimeMs, nowMs) else "$prefix${formatUptime(startTimeMs, nowMs)}",
+        modifier = modifier,
+        style = style,
+        fontWeight = fontWeight,
+        color = color,
+        textAlign = textAlign,
+        maxLines = maxLines,
+        overflow = overflow,
+    )
 }

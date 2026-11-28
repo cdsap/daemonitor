@@ -26,6 +26,8 @@ object Redactor {
 
     // scheme://user:pass@host  (credentials before the @)
     private val URL_CREDS = Regex("""([a-zA-Z][a-zA-Z0-9+.\-]*://)([^/@\s:]+):([^/@\s]+)@""")
+    private val WHITESPACE = Regex("""\s+""")
+    private val WHITESPACE_BOUNDARY = Regex("""(?<=\s)|(?=\s)""")
 
     /** Redact a single argument/token. */
     fun redactToken(token: String): String {
@@ -52,7 +54,7 @@ object Redactor {
         val trimmed = commandLine.trim()
         if (trimmed.isEmpty()) return commandLine
         var maskNext = false
-        return trimmed.split(Regex("""\s+""")).joinToString(" ") { token ->
+        return trimmed.split(WHITESPACE).joinToString(" ") { token ->
             if (maskNext) {
                 maskNext = false
                 MASK
@@ -68,7 +70,7 @@ object Redactor {
         val masked = AUTH_CREDENTIALS.replace(maskUrlCredentials(line)) { m ->
             "${m.groupValues[1]}${m.groupValues[2]}$MASK"
         }
-        return masked.split(Regex("""(?<=\s)|(?=\s)""")).joinToString("") { word ->
+        return masked.split(WHITESPACE_BOUNDARY).joinToString("") { word ->
             redactToken(word)
         }
     }

@@ -46,13 +46,13 @@ object GradleProcessClassifier {
     }
 
     private fun containsGradlewInvocation(cl: String): Boolean =
-        Regex("""(^|[\s/])gradlew(\s|$)""").containsMatchIn(cl)
+        GRADLEW_INVOCATION.containsMatchIn(cl)
 
     /** Bazel 9.x server: `-jar …/A-server.jar` plus `--product_name=Bazel` or `--output_base=`. */
     private fun isBazelServer(cl: String): Boolean =
-        Regex("""(^|[\s/\\])A-server\.jar["']?(\s|$)""").containsMatchIn(cl) &&
+        BAZEL_SERVER_JAR.containsMatchIn(cl) &&
             (
-                Regex("""--product_name=Bazel(\s|$)""").containsMatchIn(cl) ||
+                BAZEL_PRODUCT_NAME.containsMatchIn(cl) ||
                     cl.contains("--output_base=")
                 )
 
@@ -65,18 +65,16 @@ object GradleProcessClassifier {
     private fun isBazelTest(cl: String): Boolean =
         cl.contains("com.google.testing.junit.runner.BazelTestRunner") ||
             cl.contains("-Dbazel.test_suite=") ||
-            Regex("""(^|[\s/\\])tools/test/test-setup\.sh(\s|$)""").containsMatchIn(cl)
+            BAZEL_TEST_SETUP.containsMatchIn(cl)
 
     /**
      * Argv half of a native Bazel test leaf (sandbox + `.runfiles`, not a persistent
      * worker). Pair with a [ProcessType.BAZEL_TEST] parent via [promoteBazelNativeTest].
      */
     fun isBazelNativeTestCandidate(commandLine: String): Boolean {
-        if (Regex("""--persistent_worker(\s|$)""").containsMatchIn(commandLine)) return false
-        val sandboxed = Regex(
-            """(^|[\s/\\])(?:darwin|linux|processwrapper)-sandbox(/|\\)|(^|[\s/\\])sandbox(/|\\)""",
-        ).containsMatchIn(commandLine)
-        val runfiles = Regex("""\.runfiles(/|\\)""").containsMatchIn(commandLine)
+        if (BAZEL_PERSISTENT_WORKER.containsMatchIn(commandLine)) return false
+        val sandboxed = BAZEL_SANDBOX_PATH.containsMatchIn(commandLine)
+        val runfiles = BAZEL_RUNFILES_PATH.containsMatchIn(commandLine)
         return sandboxed && runfiles
     }
 
@@ -90,7 +88,7 @@ object GradleProcessClassifier {
 
     /** Bazel persistent workers (JavaBuilder / Kotlin / Swift), distinct from [BAZEL_TEST]. */
     private fun isBazelWorker(cl: String): Boolean =
-        Regex("""--persistent_worker(\s|$)""").containsMatchIn(cl) &&
+        BAZEL_PERSISTENT_WORKER.containsMatchIn(cl) &&
             (
                 cl.contains("JavaBuilder_deploy.jar") ||
                     cl.contains("io.bazel.") ||
@@ -101,7 +99,7 @@ object GradleProcessClassifier {
                 )
 
     fun bazelWorkspaceDirectory(commandLine: String): String? {
-        val match = Regex("""--workspace_directory=(?:"([^"]+)"|'([^']+)'|([^\s]+))""")
+        val match = BAZEL_WORKSPACE_DIR
             .find(commandLine)
             ?: return null
         return match.groupValues.drop(1).firstOrNull { it.isNotEmpty() }
@@ -118,7 +116,19 @@ object GradleProcessClassifier {
     }
 
     private fun isJava(cl: String): Boolean =
-        Regex("""(^|[\s/])java(\s|$)""").containsMatchIn(cl)
+        JAVA_EXECUTABLE.containsMatchIn(cl)
+
+    private val GRADLEW_INVOCATION = Regex("""(^|[\s/])gradlew(\s|$)""")
+    private val BAZEL_SERVER_JAR = Regex("""(^|[\s/\\])A-server\.jar["']?(\s|$)""")
+    private val BAZEL_PRODUCT_NAME = Regex("""--product_name=Bazel(\s|$)""")
+    private val BAZEL_TEST_SETUP = Regex("""(^|[\s/\\])tools/test/test-setup\.sh(\s|$)""")
+    private val BAZEL_PERSISTENT_WORKER = Regex("""--persistent_worker(\s|$)""")
+    private val BAZEL_SANDBOX_PATH = Regex(
+        """(^|[\s/\\])(?:darwin|linux|processwrapper)-sandbox(/|\\)|(^|[\s/\\])sandbox(/|\\)""",
+    )
+    private val BAZEL_RUNFILES_PATH = Regex("""\.runfiles(/|\\)""")
+    private val BAZEL_WORKSPACE_DIR = Regex("""--workspace_directory=(?:"([^"]+)"|'([^']+)'|([^\s]+))""")
+    private val JAVA_EXECUTABLE = Regex("""(^|[\s/])java(\s|$)""")
 
     // A genuine Gradle *runtime* signal — a Gradle system property, a Gradle launcher/worker/tooling
     // class, or the worker main. Deliberately does NOT match a bare "~/.gradle/caches/…" classpath

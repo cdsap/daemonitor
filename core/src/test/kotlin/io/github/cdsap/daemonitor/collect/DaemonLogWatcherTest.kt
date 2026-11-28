@@ -125,6 +125,37 @@ class DaemonLogWatcherTest {
 
         assertTrue(watcher.readNewLines(log).any { DaemonLogParser.parseLine(it.text) != null })
     }
+
+    @Test
+    fun `discover and readNewLines evict state for disappeared log files`(@TempDirArg tmp: Path) {
+        val versionDir = tmp.resolve("daemon/8.14.3").also { it.createDirectories() }
+        val logA = versionDir.resolve("daemon-101.out.log")
+        val logB = versionDir.resolve("daemon-202.out.log")
+        logA.writeText("first line A\npartial A")
+        logB.writeText("first line B\n")
+        val watcher = DaemonLogWatcher(gradleUserHome = tmp)
+
+        assertEquals(2, watcher.discover().size)
+        watcher.readNewLines(logA)
+        watcher.readNewLines(logB)
+        assertEquals(listOf("first line A"), watcher.tailFor(logA))
+        assertEquals(listOf("first line B"), watcher.tailFor(logB))
+
+        // Delete logA and re-discover -> logA's cached tail, offset, and partial leftover are evicted.
+        Files.delete(logA)
+        assertEquals(listOf(202L), watcher.discover().map { it.pid })
+        assertEquals(emptyList(), watcher.tailFor(logA))
+        assertEquals(listOf("first line B"), watcher.tailFor(logB))
+
+        // Re-creating logA starts fresh without stale leftover bytes from before deletion.
+        logA.writeText("fresh line\n")
+        assertEquals(listOf("fresh line"), watcher.readNewLines(logA).map { it.text })
+
+        // Deleting logB and calling readNewLines directly also evicts its cached state.
+        Files.delete(logB)
+        assertTrue(watcher.readNewLines(logB).isEmpty())
+        assertEquals(emptyList(), watcher.tailFor(logB))
+    }
 }
 
 // JUnit5 @TempDir shim usable from kotlin.test style without importing the annotation everywhere.

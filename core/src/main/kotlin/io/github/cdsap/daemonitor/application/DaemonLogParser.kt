@@ -27,6 +27,9 @@ object DaemonLogParser {
     private val ENV_LIST = Regex("""Configuring env variables: \[([^\]]*)\]""")
     private val CONTEXT_UID = Regex("""uid=([^,]+)""")
     private val CONTEXT_OPTS = Regex("""daemonOpts=([^\]]*)""")
+    private val DURATION_MS = Regex("""^(\d+)ms$""")
+    private val DURATION_MIN = Regex("""(\d+)m(?![s])""")
+    private val DURATION_SEC = Regex("""(\d+(?:\.\d+)?)s""")
 
     // Tolerate 0..9 fractional-second digits (Gradle uses 3, but be defensive) and a numeric offset.
     private val TS_FORMAT = DateTimeFormatterBuilder()
@@ -83,11 +86,11 @@ object DaemonLogParser {
     /** Parse Gradle duration shapes: `38s`, `280ms`, `1m 2s`, `2m`. Returns seconds. */
     fun parseDuration(text: String): Double {
         val t = text.trim()
-        Regex("""^(\d+)ms$""").matchEntire(t)?.let { return it.groupValues[1].toLong() / 1000.0 }
+        DURATION_MS.matchEntire(t)?.let { return it.groupValues[1].toLong() / 1000.0 }
 
         var seconds = 0.0
-        Regex("""(\d+)m(?![s])""").find(t)?.let { seconds += it.groupValues[1].toLong() * 60 }
-        Regex("""(\d+(?:\.\d+)?)s""").find(t)?.let { seconds += it.groupValues[1].toDouble() }
+        DURATION_MIN.find(t)?.let { seconds += it.groupValues[1].toLong() * 60 }
+        DURATION_SEC.find(t)?.let { seconds += it.groupValues[1].toDouble() }
         return seconds
     }
 
