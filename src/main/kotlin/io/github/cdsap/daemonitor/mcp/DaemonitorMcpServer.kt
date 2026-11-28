@@ -1,6 +1,5 @@
 package io.github.cdsap.daemonitor.mcp
 
-import io.github.cdsap.daemonitor.AppContainer
 import io.github.cdsap.daemonitor.BuildInfo
 import io.github.cdsap.daemonitor.application.BazelBuildDetailsRecord
 import io.github.cdsap.daemonitor.application.BuildHistoryEntry
@@ -398,18 +397,6 @@ class DaemonitorMcpServer(
         private const val DEFAULT_LIMIT = 50L
         private const val MAX_LIMIT = 200L
         private const val MAX_INCLUDE_METRICS_LIMIT = 20L
-    }
-}
-
-object DaemonitorMcpStdio {
-    fun run(
-        container: AppContainer = AppContainer(),
-        input: InputStream = System.`in`,
-        output: OutputStream = System.out,
-    ) {
-        container.use {
-            McpMessageStream(input, output).serve(it.createMcpServer())
-        }
     }
 }
 

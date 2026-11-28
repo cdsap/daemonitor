@@ -176,7 +176,6 @@ class LiveViewModelTest {
 
         vm.select(2)
 
-        assertEquals(emptyList(), vm.state.value.tail)
         assertEquals(LogTailState.Loading, vm.state.value.tailState)
     }
 
@@ -192,7 +191,6 @@ class LiveViewModelTest {
         vm.onTail(1, DaemonLogTailResult.Lines(listOf("stale")))
 
         assertEquals(LogTailState.Loading, vm.state.value.tailState)
-        assertEquals(emptyList(), vm.state.value.tail)
     }
 
     @Test
@@ -206,7 +204,6 @@ class LiveViewModelTest {
 
         assertEquals(DetailState.NoSelection, vm.state.value.detail)
         assertEquals(LogTailState.NoSelection, vm.state.value.tailState)
-        assertEquals(emptyList(), vm.state.value.tail)
     }
 
     @Test
@@ -223,7 +220,6 @@ class LiveViewModelTest {
         vm.onTail(1, DaemonLogTailResult.Lines(emptyList()))
         assertEquals(log, vm.state.value.daemonLog)
         assertEquals(LogTailState.Available(emptyList()), vm.state.value.tailState)
-        assertEquals(emptyList(), vm.state.value.tail)
         vm.onPoll(listOf(proc(1)), DaemonLogTailResult.Lines(emptyList()), listOf(log))
         assertEquals(LogTailState.Available(emptyList()), vm.state.value.tailState)
     }

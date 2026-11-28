@@ -606,13 +606,6 @@ func defaultRunner(ctx context.Context, name string, args ...string) (string, er
 	return stdout.String(), nil
 }
 
-// FindJavaHomeTools returns jcmd/jstat under JAVA_HOME/bin when set.
-func FindJavaHomeTools() (jcmd, jstat string) {
-	jcmd = findJavaHomeTool("jcmd")
-	jstat = findJavaHomeTool("jstat")
-	return jcmd, jstat
-}
-
 // ProbeFamily performs one uncached, bounded family measurement. The collector
 // owns cadence and deduplication. Revalidate before every command so a sequence
 // cannot attach to a reused PID after its first command completes.

@@ -99,9 +99,6 @@ class ProcessCollector internal constructor(
         return result
     }
 
-    /** Compatibility alias for [currentProcesses]. */
-    fun poll(): List<GradleProcess> = currentProcesses()
-
     private companion object {
         private fun oshiEnumerate(systemInfo: SystemInfo): () -> List<ProcessInfo> {
             val os = systemInfo.operatingSystem

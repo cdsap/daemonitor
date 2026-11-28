@@ -296,7 +296,7 @@ Refresh README / site screenshots after UI changes (synthetic samples only):
 ```bash
 ./gradlew captureReadmeScreenshots test
 # CLI process table (Gradle + Bazel fixture) → docs/images/cli-monitor.png
-cd cored && go run ./cmd/docscreenshot | python3 ../scripts/ansi_to_png.py ../docs/images/cli-monitor.png
+cd cored && go run -tags docscreenshot ./cmd/docscreenshot | python3 ../scripts/ansi_to_png.py ../docs/images/cli-monitor.png
 cp docs/images/*.png site/assets/
 ```
 

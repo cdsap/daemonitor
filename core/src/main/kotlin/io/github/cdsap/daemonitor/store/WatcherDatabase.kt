@@ -32,13 +32,11 @@ import io.github.cdsap.daemonitor.persistence.ProcessSampleRepository
 import io.github.cdsap.daemonitor.persistence.RetainedProcessSampleRepository
 import io.github.cdsap.daemonitor.persistence.RetentionRepository
 import io.github.cdsap.daemonitor.persistence.HistoryRepository
-import io.github.cdsap.daemonitor.persistence.CollectionCapability
 import io.github.cdsap.daemonitor.persistence.MetricDefinition
 import io.github.cdsap.daemonitor.persistence.MetricSample
 import io.github.cdsap.daemonitor.persistence.NormalizedMetricSample
 import io.github.cdsap.daemonitor.persistence.ProcessEvent
 import io.github.cdsap.daemonitor.persistence.ProcessInstance
-import io.github.cdsap.daemonitor.persistence.ResourceScope
 import io.github.cdsap.daemonitor.platform.AppDirectories
 import io.github.cdsap.daemonitor.store.db.Process_samples
 import io.github.cdsap.daemonitor.store.db.WatcherDb
@@ -236,21 +234,6 @@ class WatcherDatabase private constructor(
             process_type = event.processType,
             source = event.source,
             metadata_json = event.metadataJson,
-        )
-    }
-
-    fun upsertResourceScope(scope: ResourceScope) {
-        db.watcherQueries.upsertResourceScope(
-            scope.scopeId, scope.scopeType, scope.identity, scope.metadataJson,
-            scope.firstObservedAtMs, scope.lastObservedAtMs,
-        )
-    }
-
-    fun upsertCollectionCapability(capability: CollectionCapability) {
-        db.watcherQueries.upsertCollectionCapability(
-            capability.capabilityId, capability.name, capability.source,
-            if (capability.supported) 1L else 0L, if (capability.available) 1L else 0L,
-            capability.detailsJson, capability.updatedAtMs,
         )
     }
 
@@ -485,19 +468,11 @@ class WatcherDatabase private constructor(
             hydrateBuilds(rows)
         }
 
-    fun buildsSinceFlow(startMs: Long): Flow<List<Build>> =
-        db.watcherQueries.buildsSince(startMs).asFlow().mapToList(ioDispatcher).map { rows ->
-            hydrateBuilds(rows)
-        }
-
     private fun hydrateBuilds(rows: List<io.github.cdsap.daemonitor.store.db.Builds>): List<Build> {
         val bazelIds = rows.filter { it.tool.equals(BuildTool.BAZEL.name, ignoreCase = true) }.map { it.build_id }
         val detailsById = if (bazelIds.isEmpty()) emptyMap() else bazelBuildDetailsByIds(bazelIds)
         return rows.map { it.toDomain(detailsById[it.build_id]) }
     }
-
-    fun distinctProjectsFlow(): Flow<List<String>> =
-        db.watcherQueries.distinctProjects().asFlow().mapToList(ioDispatcher)
 
     override fun bazelBuildDetailsByIds(buildIds: List<String>): Map<String, BazelBuildDetailsRecord> {
         val ids = buildIds.filter { it.isNotBlank() }.distinct()

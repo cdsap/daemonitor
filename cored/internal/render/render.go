@@ -435,7 +435,7 @@ func WriteHostPlain(w io.Writer, host platform.HostMetrics) {
 		scope = "n/a"
 	}
 	fmt.Fprintf(w, "sampled_at_ms=%d scope=%s\n", host.SampledAtMs, scope)
-	fmt.Fprintf(w, "logical_processors=%s\n", plainIntMetric(host.LogicalProcessors, ""))
+	fmt.Fprintf(w, "logical_processors=%s\n", plainIntMetric(host.LogicalProcessors))
 	fmt.Fprintf(w, "cpu_usage_percent=%s\n", plainRealMetric(host.CPUUsagePercent, "%"))
 	fmt.Fprintf(w, "memory_used=%s\n", plainBytesMetric(host.MemoryUsedBytes))
 	fmt.Fprintf(w, "memory_available=%s\n", plainBytesMetric(host.MemoryAvailableBytes))
@@ -449,17 +449,11 @@ func WriteHostPlain(w io.Writer, host platform.HostMetrics) {
 	)
 }
 
-func plainIntMetric(m platform.IntMetric, unit string) string {
+func plainIntMetric(m platform.IntMetric) string {
 	if m.Value == nil || m.Availability != platform.Available {
-		if m.Availability != "" && m.Availability != platform.Available {
-			return "n/a"
-		}
 		return "n/a"
 	}
-	if unit == "" {
-		return fmt.Sprintf("%d", *m.Value)
-	}
-	return fmt.Sprintf("%d%s", *m.Value, unit)
+	return fmt.Sprintf("%d", *m.Value)
 }
 
 func plainRealMetric(m platform.RealMetric, unit string) string {

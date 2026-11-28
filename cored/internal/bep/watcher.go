@@ -431,10 +431,3 @@ func DiscoverFromProcesses(ctx context.Context) ([]Sink, error) {
 	}
 	return out, nil
 }
-
-// WatchedCount returns how many sink paths are currently tracked (tests/metrics).
-func (w *Watcher) WatchedCount() int {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return len(w.files)
-}

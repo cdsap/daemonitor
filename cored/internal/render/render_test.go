@@ -423,3 +423,19 @@ func TestWriteLogsPlainAndTailDistinguishesGradleAndBazel(t *testing.T) {
 		t.Fatalf("unexpected Bazel tail header: %q", tailOut)
 	}
 }
+
+func TestWriteHostPlainUnavailableLogicalProcessors(t *testing.T) {
+	cpus := int64(8)
+	for _, metric := range []platform.IntMetric{
+		{},
+		{Availability: platform.Available},
+		{Value: &cpus},
+		{Availability: platform.Unsupported, Value: &cpus},
+	} {
+		var buf strings.Builder
+		WriteHostPlain(&buf, platform.HostMetrics{LogicalProcessors: metric})
+		if !strings.Contains(buf.String(), "logical_processors=n/a\n") {
+			t.Fatalf("metric %+v rendered as available: %s", metric, buf.String())
+		}
+	}
+}

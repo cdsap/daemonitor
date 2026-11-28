@@ -9,6 +9,8 @@ import io.github.cdsap.daemonitor.collect.DaemonLogWatcher
 import io.github.cdsap.daemonitor.collect.ProcessCollector
 import io.github.cdsap.daemonitor.distribution.DistributionChannel
 import io.github.cdsap.daemonitor.domain.BuildAggregator
+import io.github.cdsap.daemonitor.json.Json
+import io.github.cdsap.daemonitor.json.JsonObject
 import io.github.cdsap.daemonitor.mcp.DaemonitorMcpServer
 import io.github.cdsap.daemonitor.persistence.RetentionRepository
 import io.github.cdsap.daemonitor.persistence.Settings
@@ -94,15 +96,19 @@ class AppContainerTest {
     }
 
     @Test
-    fun `mcp stdio bootstrapper accepts a composition root`(@TempDir tmp: Path) {
-        // DaemonitorMcpStdio.run takes ownership and closes the container.
-        io.github.cdsap.daemonitor.mcp.DaemonitorMcpStdio.run(
-            container = AppContainer(
-                databasePath = tmp.resolve("watcher.db"),
-                settingsPath = tmp.resolve("settings.properties"),
+    fun `mcp stdio bootstrapper serves initialize from the shared database`(@TempDir tmp: Path) {
+        val output = java.io.ByteArrayOutputStream()
+        DaemonitorMcpStdio.run(
+            database = WatcherDatabase.open(tmp.resolve("watcher.db")),
+            processSource = ProcessSource { emptyList() },
+            input = java.io.ByteArrayInputStream(
+                """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+                """.trimIndent().toByteArray(),
             ),
-            input = java.io.ByteArrayInputStream(ByteArray(0)),
-            output = java.io.ByteArrayOutputStream(),
+            output = output,
         )
+        val response = Json.parse(output.toString().substringAfter("\r\n\r\n")) as JsonObject
+        assertEquals(1L, response.long("id"))
+        assertIs<JsonObject>(response.obj("result"))
     }
 }

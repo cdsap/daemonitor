@@ -1,3 +1,5 @@
+//go:build docscreenshot
+
 package tui
 
 import (
