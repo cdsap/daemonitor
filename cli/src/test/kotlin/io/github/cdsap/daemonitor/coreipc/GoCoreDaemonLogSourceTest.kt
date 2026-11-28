@@ -14,6 +14,23 @@ class GoCoreDaemonLogSourceTest {
     lateinit var tempDir: Path
 
     @Test
+    fun `discovery evicts tails of logs that disappear`() {
+        var discovery = """{"logs":[{"pid":9,"gradle_version":"8.10","path":"/tmp/daemon-9.out.log"}]}"""
+        val source = GoCoreDaemonLogSource(
+            GoCoreClient(Files.createFile(tempDir.resolve("cored.sock"))) { _, path ->
+                if (path == "/v1/daemon-logs") discovery else """{"lines":["one"]}"""
+            },
+        )
+        val log = source.discover().single()
+        assertEquals(listOf("one"), source.readNewLines(log).map { it.text })
+        assertTrue(source.readNewLines(log).isEmpty())
+        discovery = """{"logs":[]}"""
+        assertTrue(source.discover().isEmpty())
+        discovery = """{"logs":[{"pid":9,"gradle_version":"8.10","path":"/tmp/daemon-9.out.log"}]}"""
+        assertEquals(listOf("one"), source.readNewLines(source.discover().single()).map { it.text })
+    }
+
+    @Test
     fun `parses daemon log discovery from go core json`() {
         val json = """
             {

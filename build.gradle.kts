@@ -34,6 +34,7 @@ dependencies {
     implementation(project(":cli"))
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
+    implementation(compose.components.resources)
     implementation(compose.materialIconsExtended)
 
     // Coroutines
@@ -45,6 +46,11 @@ dependencies {
     // Compose UI-layer tests (mount screens, query/click nodes) — runs on the CI OS matrix.
     @OptIn(org.jetbrains.compose.ExperimentalComposeLibrary::class)
     testImplementation(compose.uiTest)
+}
+
+// AWT tray and dock icons still load the classpath location.
+tasks.processResources {
+    from("src/main/composeResources/drawable/daemonitor.png") { into("icon") }
 }
 
 kotlin {

@@ -1,6 +1,5 @@
 package io.github.cdsap.daemonitor.ui.common
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
@@ -15,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -122,7 +122,7 @@ private fun ToolBadge(size: Dp, modifier: Modifier = Modifier) {
  */
 @Composable
 fun KotlinLogo(modifier: Modifier = Modifier) {
-    Canvas(modifier = modifier) {
+    Box(modifier = modifier.drawWithCache {
         val w = size.width
         val h = size.height
         val path = Path().apply {
@@ -133,15 +133,13 @@ fun KotlinLogo(modifier: Modifier = Modifier) {
             lineTo(w / 2f, h / 2f) // center notch
             close()
         }
-        drawPath(
-            path = path,
-            brush = Brush.linearGradient(
-                colors = listOf(Color(0xFFE44857), Color(0xFFC711E1), Color(0xFF7F52FF)),
-                start = Offset(w, 0f), // top-right
-                end = Offset(0f, h),   // bottom-left
-            ),
+        val brush = Brush.linearGradient(
+            colors = listOf(Color(0xFFE44857), Color(0xFFC711E1), Color(0xFF7F52FF)),
+            start = Offset(w, 0f),
+            end = Offset(0f, h),
         )
-    }
+        onDrawBehind { drawPath(path = path, brush = brush) }
+    })
 }
 
 /** Shared emoji metrics: center the glyph in a line box matching the icon square. */

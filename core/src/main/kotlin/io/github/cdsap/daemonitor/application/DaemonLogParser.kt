@@ -18,6 +18,9 @@ import java.time.temporal.ChronoField
  *  - bare:     `BUILD SUCCESSFUL|FAILED in <dur>`  (no timestamp/level/logger prefix)
  */
 object DaemonLogParser {
+    private val MILLISECONDS = Regex("""^(\d+)ms$""")
+    private val MINUTES = Regex("""(\d+)m(?![s])""")
+    private val SECONDS = Regex("""(\d+(?:\.\d+)?)s""")
 
     // e.g. 2026-06-24T14:42:12.402-0700 [INFO] [org.gradle...DaemonRegistryUpdater] message
     private val PREFIXED = Regex("""^(\S+) \[(\w+)\] \[([^\]]+)\] (.*)$""")
@@ -83,11 +86,11 @@ object DaemonLogParser {
     /** Parse Gradle duration shapes: `38s`, `280ms`, `1m 2s`, `2m`. Returns seconds. */
     fun parseDuration(text: String): Double {
         val t = text.trim()
-        Regex("""^(\d+)ms$""").matchEntire(t)?.let { return it.groupValues[1].toLong() / 1000.0 }
+        MILLISECONDS.matchEntire(t)?.let { return it.groupValues[1].toLong() / 1000.0 }
 
         var seconds = 0.0
-        Regex("""(\d+)m(?![s])""").find(t)?.let { seconds += it.groupValues[1].toLong() * 60 }
-        Regex("""(\d+(?:\.\d+)?)s""").find(t)?.let { seconds += it.groupValues[1].toDouble() }
+        MINUTES.find(t)?.let { seconds += it.groupValues[1].toLong() * 60 }
+        SECONDS.find(t)?.let { seconds += it.groupValues[1].toDouble() }
         return seconds
     }
 

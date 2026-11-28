@@ -1,5 +1,6 @@
 package io.github.cdsap.daemonitor
 
+import java.util.Locale
 import io.github.cdsap.daemonitor.domain.LiveMetricLabels
 import io.github.cdsap.daemonitor.config.MonitoringConfig
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
@@ -115,8 +116,8 @@ object HeadlessTerminalRenderer {
         val seconds = total % 60
         return when {
             days > 0 -> "${days}d ${hours}h"
-            hours > 0 -> "${hours}h %02dm".format(minutes)
-            minutes > 0 -> "${minutes}m %02ds".format(seconds)
+            hours > 0 -> "${hours}h %02dm".format(Locale.ROOT, minutes)
+            minutes > 0 -> "${minutes}m %02ds".format(Locale.ROOT, seconds)
             else -> "${seconds}s"
         }
     }

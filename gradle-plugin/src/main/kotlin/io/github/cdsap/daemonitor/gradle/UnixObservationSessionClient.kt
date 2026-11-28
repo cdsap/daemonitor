@@ -137,7 +137,7 @@ class UnixObservationSessionClient(
         val text = raw.toString(StandardCharsets.ISO_8859_1)
         val headerEnd = text.indexOf("\r\n\r\n")
         if (headerEnd < 0) return false
-        val contentLength = Regex("(?im)^Content-Length:\\s*(\\d+)\\s*$")
+        val contentLength = CONTENT_LENGTH
             .find(text.substring(0, headerEnd))
             ?.groupValues
             ?.get(1)
@@ -165,3 +165,5 @@ data class HttpResult(val status: Int, val body: String) {
 }
 
 class ObservationClientException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
+
+private val CONTENT_LENGTH = Regex("(?im)^Content-Length:\\s*(\\d+)\\s*$")

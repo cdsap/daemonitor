@@ -13,7 +13,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.painterResource
+import org.jetbrains.compose.resources.painterResource
+import io.github.cdsap.daemonitor.daemonitor.generated.resources.Res
+import io.github.cdsap.daemonitor.daemonitor.generated.resources.daemonitor
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
@@ -70,7 +72,7 @@ private fun launchDesktop(
         onCloseRequest = ::exitApplication,
         state = windowState,
         title = "Daemonitor",
-        icon = painterResource("icon/daemonitor.png"),
+        icon = painterResource(Res.drawable.daemonitor),
     ) {
         LaunchedEffect(Unit) {
             service = withContext(Dispatchers.IO) {

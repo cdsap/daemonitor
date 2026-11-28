@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Code
-import androidx.compose.material.icons.filled.HelpOutline
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -104,7 +104,7 @@ fun SourcePill(source: Source, modifier: Modifier = Modifier) {
         Source.IDE -> SourceStyle(LocalAccentColors.current.brand, LocalAccentColors.current.brandBg, "IDE", Icons.Filled.Code)
         Source.BEP -> SourceStyle(LocalAccentColors.current.info, LocalAccentColors.current.infoBg, "BEP", Icons.Filled.Code)
         Source.PROFILE -> SourceStyle(LocalAccentColors.current.info, LocalAccentColors.current.infoBg, "profile", Icons.Filled.Code)
-        Source.UNKNOWN -> SourceStyle(LocalAccentColors.current.neutral, LocalAccentColors.current.neutralBg, "unknown", Icons.Filled.HelpOutline)
+        Source.UNKNOWN -> SourceStyle(LocalAccentColors.current.neutral, LocalAccentColors.current.neutralBg, "unknown", Icons.AutoMirrored.Filled.HelpOutline)
     }
     Pill(style.label, style.fg, style.bg, modifier, icon = style.icon)
 }

@@ -9,6 +9,9 @@ package io.github.cdsap.daemonitor.domain
  * caught — documented in the plan's Risks section.
  */
 object Redactor {
+    private val WHITESPACE = Regex("""\s+""")
+    private val WHITESPACE_BOUNDARY = Regex("""(?<=\s)|(?=\s)""")
+
     const val MASK = "***"
 
     // Multi-letter tokens match anywhere in a key; bare "key" must be a whole word so it does not
@@ -36,13 +39,13 @@ object Redactor {
     fun redactCommandLine(commandLine: String): String {
         val trimmed = commandLine.trim()
         if (trimmed.isEmpty()) return commandLine
-        return trimmed.split(Regex("""\s+""")).joinToString(" ") { redactToken(it) }
+        return trimmed.split(WHITESPACE).joinToString(" ") { redactToken(it) }
     }
 
     /** Redact a daemon-log line: mask any credentialed URL and any inline `key=value` secret. */
     fun redactLogLine(line: String): String {
         val urlMasked = maskUrlCredentials(line)
-        return urlMasked.split(Regex("""(?<=\s)|(?=\s)""")).joinToString("") { word ->
+        return urlMasked.split(WHITESPACE_BOUNDARY).joinToString("") { word ->
             val prop = PROP_FLAG.matchEntire(word)
             if (prop != null) {
                 val (prefix, key, _) = prop.destructured

@@ -6,6 +6,19 @@ import kotlin.test.assertEquals
 
 class GoCoreLogTailTrackerTest {
     @Test
+    fun `disappeared pid is fresh when it reappears while retained pids keep their offsets`() {
+        val tracker = GoCoreLogTailTracker()
+        tracker.newLinesSince(42, listOf("a"))
+        tracker.newLinesSince(43, listOf("a"))
+        tracker.retainPids(setOf(43))
+
+        assertEquals(listOf(DaemonLogLine("a")), tracker.newLinesSince(42, listOf("a")))
+        assertEquals(emptyList(), tracker.newLinesSince(43, listOf("a")))
+        tracker.retainPids(emptySet())
+        assertEquals(listOf(DaemonLogLine("a")), tracker.newLinesSince(43, listOf("a")))
+    }
+
+    @Test
     fun `returns all lines when there is no previous tail`() {
         val tracker = GoCoreLogTailTracker()
 

@@ -5,7 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -33,10 +33,19 @@ import androidx.compose.ui.unit.sp
 fun LogView(lines: List<String>, modifier: Modifier = Modifier, autoScroll: Boolean = true) {
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    val atBottom by remember(lines) {
+    val lastIndex = lines.lastIndex
+    val lineKeys = remember(lines) {
+        val occurrences = mutableMapOf<String, Int>()
+        lines.map { line ->
+            val occurrence = occurrences.getOrDefault(line, 0)
+            occurrences[line] = occurrence + 1
+            "$occurrence:$line"
+        }
+    }
+    val atBottom by remember(listState, lastIndex) {
         derivedStateOf {
             val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()
-            last == null || last.index >= lines.lastIndex
+            last == null || last.index >= lastIndex
         }
     }
 
@@ -50,7 +59,7 @@ fun LogView(lines: List<String>, modifier: Modifier = Modifier, autoScroll: Bool
 
     Box(modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant)) {
         LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(8.dp)) {
-            items(lines) { line ->
+            itemsIndexed(lines, key = { index, _ -> lineKeys[index] }) { _, line ->
                 Text(
                     line,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

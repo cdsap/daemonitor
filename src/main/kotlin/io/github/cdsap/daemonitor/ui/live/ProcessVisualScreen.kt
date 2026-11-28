@@ -141,11 +141,11 @@ private fun VisualDashboard(
 ) {
     val chartData = remember(state.processes) { VisualChartModel.fromProcesses(state.processes) }
     val sampledPids = remember(samples) { samples.flatMap { it.byPid.keys }.toSet() }
-    val chartProcesses = if (range == VisualTimeRange.LIVE) {
-        state.processes
-    } else {
-        state.processes.filter { it.pid in sampledPids }
+    val chartProcesses = remember(state.processes, sampledPids, range) {
+        if (range == VisualTimeRange.LIVE) state.processes
+        else state.processes.filter { it.pid in sampledPids }
     }
+    val sortedChartProcesses = remember(chartProcesses) { chartProcesses.sortedByDescending { it.rssMemoryMb } }
     val availablePids = remember(sampledPids, chartProcesses) {
         sampledPids + chartProcesses.map { it.pid }
     }
@@ -239,7 +239,7 @@ private fun VisualDashboard(
 
         if (chartProcesses.isNotEmpty()) {
             ProcessSelectionStrip(
-                processes = chartProcesses.sortedByDescending { it.rssMemoryMb },
+                processes = sortedChartProcesses,
                 selectedPid = resolvedPid,
                 onSelect = onSelectProcess,
                 modifier = Modifier.fillMaxWidth(),

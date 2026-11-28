@@ -48,16 +48,16 @@ data class ProcessRssSummary(
 internal object ObservationSummaryParser {
     fun parse(json: String): ObservationSummary {
         fun string(name: String, source: String = json): String =
-            Regex("\\\"$name\\\"\\s*:\\s*\\\"((?:\\\\.|[^\\\"])*)\\\"")
+            STRING_FIELDS.getValue(name)
                 .find(source)?.groupValues?.get(1)?.replace("\\\\\\\"", "\\\"")
                 ?: ""
         fun number(name: String, source: String = json): Long =
-            Regex("\\\"$name\\\"\\s*:\\s*(-?\\d+)").find(source)?.groupValues?.get(1)?.toLongOrNull() ?: 0
+            NUMBER_FIELDS.getValue(name).find(source)?.groupValues?.get(1)?.toLongOrNull() ?: 0
         fun optionalNumber(name: String, source: String): Long? =
-            Regex("\\\"$name\\\"\\s*:\\s*(-?\\d+)").find(source)?.groupValues?.get(1)?.toLongOrNull()
-        val processBody = Regex("\\\"processes\\\"\\s*:\\s*\\[(.*)]\\s*,\\s*\\\"builds\\\"", RegexOption.DOT_MATCHES_ALL)
+            NUMBER_FIELDS.getValue(name).find(source)?.groupValues?.get(1)?.toLongOrNull()
+        val processBody = PROCESS_BODY
             .find(json)?.groupValues?.get(1).orEmpty()
-        val processes = Regex("\\{(.*?)\\}", RegexOption.DOT_MATCHES_ALL).findAll(processBody).map { match ->
+        val processes = PROCESS_OBJECT.findAll(processBody).map { match ->
             val body = match.value
             ProcessRssSummary(
                 hostId = string("host_id", body), pid = number("pid", body), startTimeMs = number("start_time_ms", body),
@@ -89,11 +89,63 @@ internal object ObservationSummaryParser {
                 deltaOldGcTimeMs = optionalNumber("delta_old_gc_time_ms", body),
             )
         }.toList()
-        val builds = Regex("\\\"builds\\\"\\s*:\\s*\\{(.*?)\\}", RegexOption.DOT_MATCHES_ALL).find(json)?.value.orEmpty()
+        val builds = BUILDS_BODY.find(json)?.value.orEmpty()
         return ObservationSummary(
             name = string("name"), association = string("association"), hostId = string("host_id"), processes = processes,
             buildsCount = number("count", builds).toInt(), buildsSuccessCount = number("success_count", builds).toInt(),
             buildsFailureCount = number("failure_count", builds).toInt(),
         )
     }
+}
+
+private val PROCESS_BODY = Regex("\\\"processes\\\"\\s*:\\s*\\[(.*)]\\s*,\\s*\\\"builds\\\"", RegexOption.DOT_MATCHES_ALL)
+
+private val PROCESS_OBJECT = Regex("\\{(.*?)\\}", RegexOption.DOT_MATCHES_ALL)
+
+private val BUILDS_BODY = Regex("\\\"builds\\\"\\s*:\\s*\\{(.*?)\\}", RegexOption.DOT_MATCHES_ALL)
+
+private val STRING_FIELDS = listOf(
+    "association",
+    "host_id",
+    "name",
+    "process_type",
+).associateWith { name ->
+    Regex("\\\"$name\\\"\\s*:\\s*\\\"((?:\\\\.|[^\\\"])*)\\\"")
+}
+
+private val NUMBER_FIELDS = listOf(
+    "count",
+    "delta_heap_used_mb",
+    "delta_metaspace_used_mb",
+    "delta_old_gc_time_ms",
+    "delta_rss_mb",
+    "delta_total_gc_count",
+    "delta_young_gc_count",
+    "delta_young_gc_time_ms",
+    "failure_count",
+    "first_heap_used_mb",
+    "first_metaspace_used_mb",
+    "first_old_gc_time_ms",
+    "first_rss_mb",
+    "first_sample_at_ms",
+    "first_total_gc_count",
+    "first_young_gc_count",
+    "first_young_gc_time_ms",
+    "last_heap_used_mb",
+    "last_metaspace_used_mb",
+    "last_old_gc_time_ms",
+    "last_rss_mb",
+    "last_sample_at_ms",
+    "last_total_gc_count",
+    "last_young_gc_count",
+    "last_young_gc_time_ms",
+    "peak_heap_used_mb",
+    "peak_metaspace_used_mb",
+    "peak_rss_mb",
+    "pid",
+    "sample_count",
+    "start_time_ms",
+    "success_count",
+).associateWith { name ->
+    Regex("\\\"$name\\\"\\s*:\\s*(-?\\d+)")
 }

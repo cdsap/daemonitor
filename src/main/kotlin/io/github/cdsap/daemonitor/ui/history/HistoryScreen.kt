@@ -336,7 +336,7 @@ private fun HistoryDetail(build: Build?) {
         DetailRow("Duration", formatDuration(build.durationSeconds))
         DetailRow("Peak memory", build.peakMemoryMb?.let { "$it MB" } ?: "not sampled (<2s)")
         DetailRow("Avg memory", build.avgMemoryMb?.let { "$it MB" } ?: "not sampled (<2s)")
-        DetailRow("Peak CPU", build.peakCpuPercent?.let { "%.0f%%".format(it) } ?: "not sampled (<2s)")
+        DetailRow("Peak CPU", build.peakCpuPercent?.let { "%.0f%%".format(Locale.ROOT, it) } ?: "not sampled (<2s)")
         DetailRow("Source", build.inferredSource.name.lowercase())
         DetailRow("Tool", build.tool.name.lowercase())
         if (!bazel) {
@@ -440,7 +440,7 @@ private fun HistoryDetail(build: Build?) {
                         style = MaterialTheme.typography.bodySmall,
                     )
                 } else {
-                    LogView(snippet.lines(), modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 260.dp), autoScroll = false)
+                    LogView(remember(snippet) { snippet.lines() }, modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 260.dp), autoScroll = false)
                 }
             }
         } else {
@@ -458,7 +458,7 @@ private fun HistoryDetail(build: Build?) {
                     style = MaterialTheme.typography.bodySmall,
                 )
             } else {
-                LogView(snippet.lines(), modifier = Modifier.weight(1f).fillMaxWidth(), autoScroll = false)
+                LogView(remember(snippet) { snippet.lines() }, modifier = Modifier.weight(1f).fillMaxWidth(), autoScroll = false)
             }
         }
     }
@@ -508,4 +508,4 @@ private val TIME_FMT = DateTimeFormatter.ofPattern("MMM d HH:mm").withZone(ZoneI
 private fun Build.displayAgent(): String? = agent.takeUnless { inferredSource == Source.IDE }
 private fun formatTime(ms: Long): String = TIME_FMT.format(Instant.ofEpochMilli(ms))
 private fun formatDuration(seconds: Double?): String =
-    seconds?.let { if (it < 1) "%.0f ms".format(it * 1000) else "%.1f s".format(it) } ?: "—"
+    seconds?.let { if (it < 1) "%.0f ms".format(Locale.ROOT, it * 1000) else "%.1f s".format(Locale.ROOT, it) } ?: "—"

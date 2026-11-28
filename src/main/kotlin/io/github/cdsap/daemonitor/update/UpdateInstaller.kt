@@ -1,5 +1,6 @@
 package io.github.cdsap.daemonitor.update
 
+import java.util.Locale
 import io.github.cdsap.daemonitor.platform.AppDirectories
 import java.awt.Desktop
 import java.net.URI
@@ -378,4 +379,4 @@ internal object UpdateDownloadVerifier {
         actualDigest.toHex().equals(expectedSha256, ignoreCase = true)
 }
 
-private fun ByteArray.toHex(): String = joinToString(separator = "") { byte -> "%02x".format(byte) }
+private fun ByteArray.toHex(): String = joinToString(separator = "") { byte -> "%02x".format(Locale.ROOT, byte) }

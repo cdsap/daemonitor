@@ -13,6 +13,38 @@ import kotlin.test.assertTrue
 class DaemonLogWatcherTest {
 
     @Test
+    fun `discovery evicts disappeared paths including offsets and partial lines`(@TempDirArg tmp: Path) {
+        val versionDir = tmp.resolve("daemon/8.14.3").also { it.createDirectories() }
+        val path = versionDir.resolve("daemon-555.out.log")
+        val watcher = DaemonLogWatcher(gradleUserHome = tmp)
+        path.writeText("old line\npartial")
+        watcher.discover()
+        watcher.readNewLines(path)
+        Files.delete(path)
+
+        assertTrue(watcher.discover().isEmpty())
+        assertTrue(watcher.tailFor(path).isEmpty())
+        path.writeText("new line\n")
+        watcher.discover()
+        assertEquals(listOf("new line"), watcher.readNewLines(path).map { it.text })
+    }
+
+    @Test
+    fun `discovery clears retained tails when daemon root disappears`(@TempDirArg tmp: Path) {
+        val versionDir = tmp.resolve("daemon/8.14.3").also { it.createDirectories() }
+        val path = versionDir.resolve("daemon-555.out.log")
+        path.writeText("old line\n")
+        val watcher = DaemonLogWatcher(gradleUserHome = tmp)
+        watcher.readNewLines(path)
+        Files.delete(path)
+        Files.delete(versionDir)
+        Files.delete(tmp.resolve("daemon"))
+
+        assertTrue(watcher.discover().isEmpty())
+        assertTrue(watcher.tailFor(path).isEmpty())
+    }
+
+    @Test
     fun `parses pid and version from log path`() {
         val p = Path.of("/Users/dev/.gradle/daemon/8.9/daemon-12914.out.log")
         val log = DaemonLogWatcher.parseLogPath(p)!!

@@ -13,6 +13,25 @@ import kotlin.time.Duration.Companion.seconds
 
 class HeadlessTerminalUiTest {
     @Test
+    fun `uptime uses ascii digits regardless of default locale`() {
+        val original = java.util.Locale.getDefault()
+        try {
+            java.util.Locale.setDefault(java.util.Locale.forLanguageTag("ar-EG"))
+            val output = HeadlessTerminalRenderer.render(
+                result = WatcherRuntime.PollResult(
+                    processes = listOf(process(pid = 10, rssMb = 256, heapLimitMb = 512, project = "app", startTimeMs = 0L)),
+                    daemonLogs = emptyList(),
+                    buildsChanged = false,
+                ),
+                updatedAtMs = 65_000L,
+            )
+            assertTrue(output.contains("1m 05s"))
+        } finally {
+            java.util.Locale.setDefault(original)
+        }
+    }
+
+    @Test
     fun `renderer shows summary and processes sorted by memory`() {
         val output = HeadlessTerminalRenderer.render(
             result = WatcherRuntime.PollResult(

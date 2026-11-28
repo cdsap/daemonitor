@@ -47,13 +47,17 @@ class DaemonLogWatcher(
     /** Scan `<gradleUserHome>/daemon/<version>/daemon-<pid>.out.log` for current daemon logs. */
     override fun discover(): List<DaemonLog> {
         val daemonRoot = gradleUserHome.resolve("daemon")
-        if (!daemonRoot.exists() || !daemonRoot.isDirectory()) return emptyList()
-        return daemonRoot.listDirectoryEntries()
+        val logs = if (!daemonRoot.exists() || !daemonRoot.isDirectory()) emptyList() else daemonRoot.listDirectoryEntries()
             .filter { it.isDirectory() }
             .flatMap { versionDir ->
                 versionDir.listDirectoryEntries("daemon-*.out.log")
                     .mapNotNull { parseLogPath(it) }
             }
+        val paths = logs.mapTo(mutableSetOf()) { it.path }
+        offsets.keys.retainAll(paths)
+        tails.keys.retainAll(paths)
+        leftovers.keys.retainAll(paths)
+        return logs
     }
 
     /**
@@ -69,7 +73,12 @@ class DaemonLogWatcher(
      * boundaries for application-level parsing and correlation.
      */
     fun readNewLines(path: Path): List<DaemonLogLine> {
-        if (!path.exists()) return emptyList()
+        if (!path.exists()) {
+            offsets.remove(path)
+            tails.remove(path)
+            leftovers.remove(path)
+            return emptyList()
+        }
         val size = Files.size(path)
         val initialized = offsets.containsKey(path)
         val from = offsets[path] ?: (size - initialReadBytes.toLong()).coerceAtLeast(0L)

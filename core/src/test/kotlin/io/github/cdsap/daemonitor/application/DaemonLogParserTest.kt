@@ -36,7 +36,6 @@ class DaemonLogParserTest {
     fun `bare outcome line parses without prefix`() {
         val ev = DaemonLogParser.parseLine("BUILD FAILED in 1m 2s")
         assertTrue(ev is Outcome)
-        ev as Outcome
         assertTrue(!ev.success)
         assertEquals(62.0, ev.durationSeconds, 0.001)
     }
