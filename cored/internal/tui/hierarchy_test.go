@@ -146,3 +146,20 @@ func TestBazelOwnerBridgeAndSubtreeTotals(t *testing.T) {
 		t.Fatalf("hidden-only row=%+v", rows[0])
 	}
 }
+
+func TestHierarchyTreatsXcodeBuildServiceAsGroupRoot(t *testing.T) {
+	fpRoot, fpChild := int64(100*1024*1024), int64(250*1024*1024)
+	root := model.Process{PID: 400, StartTimeMs: 10, Type: "XCODE_BUILD_SERVICE", RSSMemoryMB: 120, PhysicalFootprintBytes: &fpRoot, CPUPercent: floatPtr(5)}
+	child := model.Process{PID: 401, ParentPID: 400, StartTimeMs: 11, Type: "XCODE_COMPILER", RSSMemoryMB: 280, PhysicalFootprintBytes: &fpChild, CPUPercent: floatPtr(95)}
+	h := newProcessHierarchy()
+	rows := h.rows([]model.Process{root, child}, true)
+	if len(rows) != 2 || !rows[0].groupRoot || rows[0].children != 1 {
+		t.Fatalf("xcode root rows=%+v", rows)
+	}
+	if rows[0].process.RSSMemoryMB != 400 {
+		t.Fatalf("aggregate RSS=%d want 400", rows[0].process.RSSMemoryMB)
+	}
+	if rows[0].process.PhysicalFootprintBytes == nil || *rows[0].process.PhysicalFootprintBytes != fpRoot+fpChild {
+		t.Fatalf("aggregate footprint=%v want %d", rows[0].process.PhysicalFootprintBytes, fpRoot+fpChild)
+	}
+}

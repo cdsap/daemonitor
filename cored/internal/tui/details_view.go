@@ -176,6 +176,7 @@ func detailTelemetry(m Model, p model.Process, width int) []string {
 			"",
 		)
 	}
+	isJVM := render.IsJVMProcessType(p.Type)
 	lines = append(lines,
 		"OS ACTIVITY",
 		detailField("Resource scope", resourceScopeText(p)),
@@ -183,14 +184,21 @@ func detailTelemetry(m Model, p model.Process, width int) []string {
 		detailField("Context switch", "voluntary "+optionalInt64Text(p.VoluntaryContextSwitches, "")+" / involuntary "+optionalInt64Text(p.InvoluntaryContextSwitches, "")),
 		detailField("CPU seconds", "user "+optionalFloat64Text(p.CPUUserSecondsTotal, "s")+" / system "+optionalFloat64Text(p.CPUSystemSecondsTotal, "s")+" / total "+optionalFloat64Text(p.CPUTotalSecondsTotal, "s")),
 		detailField("CPU cores", optionalFloat64Text(p.CPUCoresUsed, "")),
-		"",
-		"JVM MEMORY POOLS",
-		detailField("Heap used", render.HeapText(p.HeapUsedMB)),
-		detailField("Heap committed", render.HeapText(p.HeapCommittedMB)),
-		detailField("Heap max", render.HeapText(p.HeapMaxMB)),
-		detailField("Metaspace used", optionalInt64Text(p.MetaspaceUsedMB, "MB")),
-		detailField("Metaspace cmt", optionalInt64Text(p.MetaspaceCommittedMB, "MB")),
-		detailField("Other pools", memoryPoolsText(p.MemoryPools)),
+		detailField("Disk I/O", "read "+optionalBytesText(p.DiskReadBytes)+" / write "+optionalBytesText(p.DiskWriteBytes)),
+	)
+	if isJVM {
+		lines = append(lines,
+			"",
+			"JVM MEMORY POOLS",
+			detailField("Heap used", render.HeapText(p.HeapUsedMB)),
+			detailField("Heap committed", render.HeapText(p.HeapCommittedMB)),
+			detailField("Heap max", render.HeapText(p.HeapMaxMB)),
+			detailField("Metaspace used", optionalInt64Text(p.MetaspaceUsedMB, "MB")),
+			detailField("Metaspace cmt", optionalInt64Text(p.MetaspaceCommittedMB, "MB")),
+			detailField("Other pools", memoryPoolsText(p.MemoryPools)),
+		)
+	}
+	lines = append(lines,
 		"",
 		"NATIVE MEMORY",
 		detailField("Resident", optionalBytesText(p.ResidentBytes)),
@@ -200,17 +208,23 @@ func detailTelemetry(m Model, p model.Process, width int) []string {
 		detailField("Physical footprint", optionalBytesText(p.PhysicalFootprintBytes)),
 		detailField("Swap", optionalBytesText(p.SwapBytes)),
 		detailField("Peak resident", optionalBytesText(p.PeakResidentBytes)),
-		"",
-		"GC COUNTERS / RATES",
-		detailField("Young count", optionalInt64Text(p.YoungGCCount, "")),
-		detailField("Old count", optionalInt64Text(p.OldGCCount, "")),
-		detailField("Total time", render.GCTimeText(p.TotalGCTimeSeconds)),
-		detailField("Rate (recent)", gcRateText(m.detailHistory, p)),
-		detailField("Full/conc time", render.GCTimeText(p.FullGCTimeSeconds)+" / "+render.GCTimeText(p.ConcurrentGCTimeSeconds)),
-		"",
-		"JIT / CODE CACHE",
-		detailField("Compilation", jitText(p.JIT)),
-		detailField("Code cache", memoryPoolsText(p.CodeCache)),
+	)
+	if isJVM {
+		lines = append(lines,
+			"",
+			"GC COUNTERS / RATES",
+			detailField("Young count", optionalInt64Text(p.YoungGCCount, "")),
+			detailField("Old count", optionalInt64Text(p.OldGCCount, "")),
+			detailField("Total time", render.GCTimeText(p.TotalGCTimeSeconds)),
+			detailField("Rate (recent)", gcRateText(m.detailHistory, p)),
+			detailField("Full/conc time", render.GCTimeText(p.FullGCTimeSeconds)+" / "+render.GCTimeText(p.ConcurrentGCTimeSeconds)),
+			"",
+			"JIT / CODE CACHE",
+			detailField("Compilation", jitText(p.JIT)),
+			detailField("Code cache", memoryPoolsText(p.CodeCache)),
+		)
+	}
+	lines = append(lines,
 		"",
 		"PROCESS LIFECYCLE",
 		detailField("Status", na(p.Status)),
@@ -416,7 +430,12 @@ func detailHeader(p model.Process, now int64, ended, stale bool, width int, noCo
 	if project := render.ProjectName(p); project != "—" {
 		segments = append(segments, project)
 	}
-	segments = append(segments, "GC "+render.GCText(p.GC), "uptime "+render.Uptime(p.StartTimeMs, now), na(p.Name))
+	if render.IsJVMProcessType(p.Type) {
+		segments = append(segments, "GC "+render.GCText(p.GC))
+	} else if p.PhysicalFootprintBytes != nil {
+		segments = append(segments, "Footprint "+render.BytesCompactText(p.PhysicalFootprintBytes))
+	}
+	segments = append(segments, "uptime "+render.Uptime(p.StartTimeMs, now), na(p.Name))
 	title := detailTitle(p.Type)
 	line := fitSegments(append([]string{title}, segments...), "  ·  ", max(1, width))
 	if !strings.Contains(line, "pid ") {
@@ -434,6 +453,10 @@ func detailTitle(kind string) string {
 		return "GRADLE DAEMON / PROCESS DETAILS"
 	case "BAZEL_SERVER":
 		return "BAZEL SERVER / PROCESS DETAILS"
+	case "XCODE_BUILD_SERVICE":
+		return "XCODE BUILD SERVICE / PROCESS DETAILS"
+	case "XCODE_BUILD":
+		return "XCODE BUILD / PROCESS DETAILS"
 	default:
 		return "PROCESS DETAILS"
 	}
@@ -468,42 +491,59 @@ func detailAttributes(m Model, p model.Process, width int, now int64) []string {
 			detailField("Log path", na(path)),
 		)
 	}
-	lines = append(lines,
-		"",
-		"JVM / memory",
-		detailField("RSS", render.RSSText(p.RSSMemoryMB)),
-		detailField("CPU", render.CPUText(p.CPUPercent)),
-		detailField("GC", render.GCText(p.GC)),
-		detailField("Xmx", render.HeapLimitText(p.MaxHeapMB)),
-		detailField("Xms", optionalInt64Text(p.MinHeapMB, "MB")),
-		detailField("Heap used", render.HeapText(p.HeapUsedMB)),
-		detailField("Heap cmt", render.HeapText(p.HeapCommittedMB)),
-		detailField("Heap max", render.HeapText(p.HeapMaxMB)),
-		detailField("Heap %", render.HeapPercentText(p.HeapUsedMB, p.HeapMaxMB)),
-		detailField("Metaspace used", optionalInt64Text(p.MetaspaceUsedMB, "MB")),
-		"",
-		"Diagnostics",
-		detailField("Threads", optionalInt64Text(p.ThreadCount, "")),
-		detailField("VM", optionalStringText(p.JavaVMName)),
-		detailField("Java version", optionalStringText(p.JavaVersion)),
-		detailField("OS", optionalStringText(p.OSName)+" / "+optionalStringText(p.OSArch)),
-		detailField("Processors", optionalInt64Text(p.ActiveProcessorCount, "")),
-		detailField("GC young", optionalInt64Text(p.YoungGCCount, "")+" / "+optionalInt64Text(p.YoungGCTimeMs, "ms")),
-		detailField("GC old", optionalInt64Text(p.OldGCCount, "")+" / "+optionalInt64Text(p.OldGCTimeMs, "ms")),
-		detailField("VM version", optionalStringText(p.JavaVMVersion)),
-		detailField("Runtime", optionalStringText(p.JavaRuntimeVersion)),
-		detailField("Vendor", optionalStringText(p.JavaVendor)),
-		detailField("Open files", optionalInt64Text(p.OpenFileDescriptors, "")),
-		detailField("Virtual memory", optionalInt64Text(p.VirtualMemoryMB, "MB")),
-		detailField("Swap memory", optionalInt64Text(p.SwapMemoryMB, "MB")),
-		detailField("Disk read", optionalInt64Text(p.ReadBytes, "bytes")),
-		detailField("Disk write", optionalInt64Text(p.WriteBytes, "bytes")),
-		detailField("Young GC time", optionalInt64Text(p.YoungGCTimeMs, "ms")),
-		detailField("GC time (s)", "young "+render.GCTimeText(p.YoungGCTimeSeconds)+
-			" · full "+render.GCTimeText(p.FullGCTimeSeconds)+
-			" · conc "+render.GCTimeText(p.ConcurrentGCTimeSeconds)+
-			" · total "+render.GCTimeText(p.TotalGCTimeSeconds)),
-	)
+	if render.IsJVMProcessType(p.Type) {
+		lines = append(lines,
+			"",
+			"JVM / memory",
+			detailField("RSS", render.RSSText(p.RSSMemoryMB)),
+			detailField("CPU", render.CPUText(p.CPUPercent)),
+			detailField("GC", render.GCText(p.GC)),
+			detailField("Xmx", render.HeapLimitText(p.MaxHeapMB)),
+			detailField("Xms", optionalInt64Text(p.MinHeapMB, "MB")),
+			detailField("Heap used", render.HeapText(p.HeapUsedMB)),
+			detailField("Heap cmt", render.HeapText(p.HeapCommittedMB)),
+			detailField("Heap max", render.HeapText(p.HeapMaxMB)),
+			detailField("Heap %", render.HeapPercentText(p.HeapUsedMB, p.HeapMaxMB)),
+			detailField("Metaspace used", optionalInt64Text(p.MetaspaceUsedMB, "MB")),
+			"",
+			"Diagnostics",
+			detailField("Threads", optionalInt64Text(p.ThreadCount, "")),
+			detailField("VM", optionalStringText(p.JavaVMName)),
+			detailField("Java version", optionalStringText(p.JavaVersion)),
+			detailField("OS", optionalStringText(p.OSName)+" / "+optionalStringText(p.OSArch)),
+			detailField("Processors", optionalInt64Text(p.ActiveProcessorCount, "")),
+			detailField("GC young", optionalInt64Text(p.YoungGCCount, "")+" / "+optionalInt64Text(p.YoungGCTimeMs, "ms")),
+			detailField("GC old", optionalInt64Text(p.OldGCCount, "")+" / "+optionalInt64Text(p.OldGCTimeMs, "ms")),
+			detailField("VM version", optionalStringText(p.JavaVMVersion)),
+			detailField("Runtime", optionalStringText(p.JavaRuntimeVersion)),
+			detailField("Vendor", optionalStringText(p.JavaVendor)),
+			detailField("Open files", optionalInt64Text(p.OpenFileDescriptors, "")),
+			detailField("Virtual memory", optionalInt64Text(p.VirtualMemoryMB, "MB")),
+			detailField("Swap memory", optionalInt64Text(p.SwapMemoryMB, "MB")),
+			detailField("Disk read", optionalInt64Text(p.ReadBytes, "bytes")),
+			detailField("Disk write", optionalInt64Text(p.WriteBytes, "bytes")),
+			detailField("Young GC time", optionalInt64Text(p.YoungGCTimeMs, "ms")),
+			detailField("GC time (s)", "young "+render.GCTimeText(p.YoungGCTimeSeconds)+
+				" · full "+render.GCTimeText(p.FullGCTimeSeconds)+
+				" · conc "+render.GCTimeText(p.ConcurrentGCTimeSeconds)+
+				" · total "+render.GCTimeText(p.TotalGCTimeSeconds)),
+		)
+	} else {
+		lines = append(lines,
+			"",
+			"Memory & I/O",
+			detailField("RSS", render.RSSText(p.RSSMemoryMB)),
+			detailField("Footprint", optionalBytesText(p.PhysicalFootprintBytes)),
+			detailField("Peak resident", optionalBytesText(p.PeakResidentBytes)),
+			detailField("CPU", render.CPUText(p.CPUPercent)),
+			detailField("Threads", optionalInt64Text(p.ThreadCount, "")),
+			detailField("Open files", optionalInt64Text(p.OpenFileDescriptors, "")),
+			detailField("Virtual memory", optionalInt64Text(p.VirtualMemoryMB, "MB")),
+			detailField("Swap memory", optionalInt64Text(p.SwapMemoryMB, "MB")),
+			detailField("Disk read", optionalBytesText(p.DiskReadBytes)),
+			detailField("Disk write", optionalBytesText(p.DiskWriteBytes)),
+		)
+	}
 	for i := range lines {
 		lines[i] = truncateWidth(lines[i], max(1, width-2))
 	}
@@ -512,11 +552,17 @@ func detailAttributes(m Model, p model.Process, width int, now int64) []string {
 
 func detailResources(m Model, p model.Process, width int) []string {
 	memory := analysis.Analyze(m.detailHistory, p.PID, p.StartTimeMs)
-	lines := []string{"MEMORY TREND / RSS / heap history", memoryTrendLine("RSS", memory.RSS, width)}
-	if memory.Heap.Available {
-		lines = append(lines, memoryTrendLine("Heap", memory.Heap, width))
-	} else {
-		lines = append(lines, "  Heap  n/a (insufficient valid heap samples)")
+	heading := "MEMORY TREND / RSS / heap history"
+	if !render.IsJVMProcessType(p.Type) {
+		heading = "MEMORY TREND / RSS history"
+	}
+	lines := []string{heading, memoryTrendLine("RSS", memory.RSS, width)}
+	if render.IsJVMProcessType(p.Type) {
+		if memory.Heap.Available {
+			lines = append(lines, memoryTrendLine("Heap", memory.Heap, width))
+		} else {
+			lines = append(lines, "  Heap  n/a (insufficient valid heap samples)")
+		}
 	}
 	lines = append(lines, "  Assessment: "+memoryAssessmentText(memory.Assessment))
 	retentions := analysis.AnalyzeBuildRetention(m.detailHistory, analysisBuilds(m.detailBuilds.Builds), p.PID, p.StartTimeMs)

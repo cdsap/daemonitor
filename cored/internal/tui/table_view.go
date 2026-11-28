@@ -105,7 +105,7 @@ func (m Model) renderTable() string {
 		if m.groupedView {
 			gutter += treeMarkerWidth
 		}
-		cols := columnsFor(m.width, gutter)
+		cols := columnsForProcesses(m.width, gutter, m.processes)
 		header := truncateWidth(strings.Repeat(" ", gutter)+headerLine(cols, m.sortField, m.sortOrder), m.width)
 		if !m.noColor {
 			header = headerStyle(m.noColor).Render(header)
@@ -232,6 +232,9 @@ const (
 	colGC
 	colPID
 	colRSS
+	colFootprint
+	colDiskRead
+	colDiskWrite
 	colThreads
 	colHeapPercent
 	colMetaspace
@@ -253,11 +256,27 @@ const (
 )
 
 // columnLayouts are tried widest-first; the first whose fixed columns plus a
-// minimal PROJECT column fit the terminal is used.
+// minimal PROJECT column fit the terminal is used for pure-JVM snapshots.
 var columnLayouts = [][]columnID{
 	{colType, colGC, colPID, colRSS, colThreads, colHeapPercent, colMetaspace, colHeapUsed, colHeapCmt, colXmx, colYoungGCTime, colFullGCTime, colConcurrentGCTime, colTotalGCTime, colCPU, colUptime, colProject},
 	{colType, colGC, colPID, colRSS, colXmx, colYoungGCTime, colFullGCTime, colConcurrentGCTime, colTotalGCTime, colCPU, colUptime, colProject},
 	{colType, colGC, colPID, colRSS, colXmx, colCPU, colUptime, colProject},
+	{colType, colGC, colPID, colRSS, colCPU, colProject},
+}
+
+// nativeColumnLayouts omit JVM/GC/heap columns when only native (Xcode) processes are present.
+var nativeColumnLayouts = [][]columnID{
+	{colType, colPID, colRSS, colFootprint, colThreads, colDiskRead, colDiskWrite, colCPU, colUptime, colProject},
+	{colType, colPID, colRSS, colFootprint, colCPU, colUptime, colProject},
+	{colType, colPID, colRSS, colCPU, colProject},
+}
+
+// mixedColumnLayouts include macOS physical footprint alongside JVM columns when both
+// JVM (Gradle/Kotlin/Bazel) and native (Xcode) processes are active together.
+var mixedColumnLayouts = [][]columnID{
+	{colType, colGC, colPID, colRSS, colFootprint, colThreads, colHeapPercent, colMetaspace, colHeapUsed, colHeapCmt, colXmx, colYoungGCTime, colFullGCTime, colConcurrentGCTime, colTotalGCTime, colCPU, colUptime, colProject},
+	{colType, colGC, colPID, colRSS, colFootprint, colXmx, colYoungGCTime, colFullGCTime, colConcurrentGCTime, colTotalGCTime, colCPU, colUptime, colProject},
+	{colType, colGC, colPID, colRSS, colFootprint, colXmx, colCPU, colUptime, colProject},
 	{colType, colGC, colPID, colRSS, colCPU, colProject},
 }
 
@@ -274,10 +293,36 @@ func columnsForWidth(width int) columnSet {
 // columnsFor picks the widest layout that fits width after a row gutter and
 // gives PROJECT whatever space remains.
 func columnsFor(width, gutter int) columnSet {
-	for i, ids := range columnLayouts {
+	return selectColumns(width, gutter, columnLayouts)
+}
+
+func columnsForProcesses(width, gutter int, processes []model.Process) columnSet {
+	if len(processes) == 0 {
+		return selectColumns(width, gutter, columnLayouts)
+	}
+	hasJVM, hasNative := false, false
+	for _, p := range processes {
+		if render.IsJVMProcessType(p.Type) {
+			hasJVM = true
+		} else {
+			hasNative = true
+		}
+	}
+	switch {
+	case !hasJVM:
+		return selectColumns(width, gutter, nativeColumnLayouts)
+	case hasNative:
+		return selectColumns(width, gutter, mixedColumnLayouts)
+	default:
+		return selectColumns(width, gutter, columnLayouts)
+	}
+}
+
+func selectColumns(width, gutter int, layouts [][]columnID) columnSet {
+	for i, ids := range layouts {
 		cols := columnSet{ids: ids}
 		fixed := gutter + cols.fixedWidth()
-		if fixed+minProjectCols <= width || i == len(columnLayouts)-1 {
+		if fixed+minProjectCols <= width || i == len(layouts)-1 {
 			cols.projectWidth = max(minProjectCols, width-fixed)
 			return cols
 		}
@@ -389,6 +434,12 @@ func columnLabel(id columnID) string {
 		return "PID"
 	case colRSS:
 		return "RSS"
+	case colFootprint:
+		return "FOOTPR"
+	case colDiskRead:
+		return "DISK_R"
+	case colDiskWrite:
+		return "DISK_W"
 	case colThreads:
 		return "THR"
 	case colHeapPercent:
@@ -428,7 +479,7 @@ func columnWidth(id columnID) int {
 		return 8
 	case colPID:
 		return 7
-	case colRSS:
+	case colRSS, colFootprint, colDiskRead, colDiskWrite:
 		return 8
 	case colThreads:
 		return 6
@@ -492,6 +543,12 @@ func formatRowStyled(p model.Process, cols columnSet, nowMs int64, noColor, sele
 			cell = fmt.Sprintf("%d", p.PID)
 		case colRSS:
 			cell = render.RSSText(p.RSSMemoryMB)
+		case colFootprint:
+			cell = render.BytesCompactText(p.PhysicalFootprintBytes)
+		case colDiskRead:
+			cell = render.BytesCompactText(p.DiskReadBytes)
+		case colDiskWrite:
+			cell = render.BytesCompactText(p.DiskWriteBytes)
 		case colThreads:
 			cell = optionalInt64Text(p.ThreadCount, "")
 		case colHeapPercent:

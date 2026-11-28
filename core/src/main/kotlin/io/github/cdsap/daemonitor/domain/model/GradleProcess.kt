@@ -21,6 +21,10 @@ enum class ProcessType {
     GRADLE_WORKER,
     UNKNOWN_GRADLE_WORKER,
     JAVA_GRADLE_RELATED,
+    XCODE_BUILD,
+    XCODE_BUILD_SERVICE,
+    XCODE_COMPILER,
+    XCODE_TOOL,
 }
 
 /** JVM memory/GC flags parsed from a process command line (KTD-3). */
@@ -142,6 +146,8 @@ data class GradleProcess(
     val threadCount: Long? = null,
     val readBytes: Long? = null,
     val writeBytes: Long? = null,
+    val diskReadBytes: Long? = null,
+    val diskWriteBytes: Long? = null,
     val readOperations: Long? = null,
     val writeOperations: Long? = null,
     val minorPageFaults: Long? = null,

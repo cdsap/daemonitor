@@ -81,6 +81,10 @@ class LiveMetricLabelsTest {
             ProcessType.GRADLE_WORKER to "Gradle workers",
             ProcessType.UNKNOWN_GRADLE_WORKER to "unknown Gradle workers",
             ProcessType.JAVA_GRADLE_RELATED to "non-daemon JVMs",
+            ProcessType.XCODE_BUILD to "native Xcode builds",
+            ProcessType.XCODE_BUILD_SERVICE to "native Xcode build services",
+            ProcessType.XCODE_COMPILER to "native Xcode compilers",
+            ProcessType.XCODE_TOOL to "native Xcode tools",
         )
         ProcessType.entries.forEach { type ->
             val expected = unprobed[type]?.let { "unavailable (not probed for $it)" } ?: "unavailable"

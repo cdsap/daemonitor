@@ -104,6 +104,8 @@ fun HistoryScreen(
                         "No Bazel builds match the current filters. Bazel history appears when command.profile.gz or BEP is in reach (Daemonitor never enables BEP)."
                     ToolFilter.GRADLE ->
                         "No Gradle builds match the current filters. History is filled from Gradle daemon logs."
+                    ToolFilter.XCODE ->
+                        "No Xcode builds match the current filters. History is captured from observed xcodebuild runs."
                     ToolFilter.ALL ->
                         "No builds match the current filters. Gradle rows come from daemon logs; Bazel rows appear when command.profile.gz or BEP is in reach."
                 },
@@ -156,6 +158,7 @@ fun HistoryScreen(
                 SectionCard(
                     when (selected?.tool) {
                         BuildTool.BAZEL -> "Bazel build detail"
+                        BuildTool.XCODE -> "Xcode build detail"
                         else -> "Gradle build detail"
                     },
                     modifier = Modifier.weight(1f).fillMaxSize(),
@@ -264,6 +267,7 @@ private fun BuildRow(b: Build, selected: Boolean, onSelect: () -> Unit) {
                 ProcessTypeIcon(
                     when (b.tool) {
                         BuildTool.BAZEL -> ProcessType.BAZEL_SERVER
+                        BuildTool.XCODE -> ProcessType.XCODE_BUILD
                         BuildTool.GRADLE -> ProcessType.GRADLE_DAEMON
                     },
                     size = 15.dp,
@@ -319,11 +323,19 @@ private fun HistoryDetail(build: Build?) {
     Column(modifier = Modifier.fillMaxSize()) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
             ProcessTypeIcon(
-                if (bazel) ProcessType.BAZEL_SERVER else ProcessType.GRADLE_DAEMON,
+                when (build.tool) {
+                    BuildTool.BAZEL -> ProcessType.BAZEL_SERVER
+                    BuildTool.XCODE -> ProcessType.XCODE_BUILD
+                    BuildTool.GRADLE -> ProcessType.GRADLE_DAEMON
+                },
                 size = 18.dp,
             )
             Text(
-                if (bazel) "Bazel build ${build.buildId}" else "Gradle build ${build.buildId}",
+                when (build.tool) {
+                    BuildTool.BAZEL -> "Bazel build ${build.buildId}"
+                    BuildTool.XCODE -> "Xcode build ${build.buildId}"
+                    BuildTool.GRADLE -> "Gradle build ${build.buildId}"
+                },
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

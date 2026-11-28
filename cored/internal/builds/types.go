@@ -19,6 +19,7 @@ type Tool string
 const (
 	ToolGradle Tool = "GRADLE"
 	ToolBazel  Tool = "BAZEL"
+	ToolXcode  Tool = "XCODE"
 )
 
 // FinalStatus is the final state of a build invocation (U5).

@@ -130,7 +130,8 @@ func (s *Store) migrate() error {
 // v13: successful JVM acquisition times by family (null for legacy rows).
 // v14: nullable JIT/class metrics and independent cumulative GC seconds.
 // v15: normalized command lines shared by retained process samples.
-const schemaVersion = 15
+// v16: disk_read_bytes and disk_write_bytes on process_samples for native/macOS I/O.
+const schemaVersion = 16
 
 func (s *Store) ensureProcessSamplesAlignedWithApp() error {
 	exists, err := s.tableExists("process_samples")
@@ -190,6 +191,8 @@ CREATE TABLE IF NOT EXISTS process_samples (
 	thread_count INTEGER,
 	read_bytes INTEGER,
 	write_bytes INTEGER,
+	disk_read_bytes INTEGER,
+	disk_write_bytes INTEGER,
 	read_operations INTEGER,
 	write_operations INTEGER,
 	minor_page_faults INTEGER,
@@ -287,6 +290,8 @@ func (s *Store) ensureProcessSamplesAdditiveColumns(cols []string) error {
 		{"thread_count", `ALTER TABLE process_samples ADD COLUMN thread_count INTEGER`},
 		{"read_bytes", `ALTER TABLE process_samples ADD COLUMN read_bytes INTEGER`},
 		{"write_bytes", `ALTER TABLE process_samples ADD COLUMN write_bytes INTEGER`},
+		{"disk_read_bytes", `ALTER TABLE process_samples ADD COLUMN disk_read_bytes INTEGER`},
+		{"disk_write_bytes", `ALTER TABLE process_samples ADD COLUMN disk_write_bytes INTEGER`},
 		{"read_operations", `ALTER TABLE process_samples ADD COLUMN read_operations INTEGER`},
 		{"write_operations", `ALTER TABLE process_samples ADD COLUMN write_operations INTEGER`},
 		{"minor_page_faults", `ALTER TABLE process_samples ADD COLUMN minor_page_faults INTEGER`},
@@ -617,7 +622,7 @@ INSERT INTO process_samples(
 	working_directory, project_path, rss_memory_mb, virtual_memory_mb, swap_memory_mb, resident_bytes, virtual_bytes,
 	private_committed_bytes, proportional_bytes, physical_footprint_bytes, swap_bytes, peak_resident_bytes,
 	proportional_sampled_at_ms, thread_count,
-  read_bytes, write_bytes, read_operations, write_operations, minor_page_faults, major_page_faults,
+  read_bytes, write_bytes, disk_read_bytes, disk_write_bytes, read_operations, write_operations, minor_page_faults, major_page_faults,
   voluntary_context_switches, involuntary_context_switches, open_file_descriptors, cpu_percent,
   cpu_user_seconds_total, cpu_system_seconds_total, cpu_total_seconds_total, cpu_cores_used, logical_processor_count,
   max_heap_mb, heap_used_mb, heap_committed_mb, heap_max_mb, heap_sampled_at_ms, heap_available,
@@ -634,7 +639,7 @@ INSERT INTO process_samples(
  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
  ?, ?, ?, ?, ?, ?, ?, ?, ?,
- ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+ ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -699,7 +704,7 @@ INSERT INTO process_samples(
 			p.WorkingDirectory, p.ProjectPath, p.RSSMemoryMB, p.VirtualMemoryMB, p.SwapMemoryMB, p.ResidentBytes,
 			p.VirtualBytes, p.PrivateCommittedBytes, p.ProportionalBytes, p.PhysicalFootprintBytes, p.SwapBytes,
 			p.PeakResidentBytes, p.ProportionalSampledAtMs, p.ThreadCount,
-			p.ReadBytes, p.WriteBytes, p.ReadOperations, p.WriteOperations, p.MinorPageFaults, p.MajorPageFaults,
+			p.ReadBytes, p.WriteBytes, p.DiskReadBytes, p.DiskWriteBytes, p.ReadOperations, p.WriteOperations, p.MinorPageFaults, p.MajorPageFaults,
 			p.VoluntaryContextSwitches, p.InvoluntaryContextSwitches, p.OpenFileDescriptors, p.CPUPercent,
 			p.CPUUserSecondsTotal, p.CPUSystemSecondsTotal, p.CPUTotalSecondsTotal, p.CPUCoresUsed, p.LogicalProcessorCount,
 			p.MaxHeapMB, p.HeapUsedMB, p.HeapCommittedMB, p.HeapMaxMB, p.HeapSampledAtMs, heapAvail,
@@ -806,7 +811,7 @@ SELECT ps.timestamp, ps.pid, ps.parent_pid, ps.process_type, COALESCE(ps.name, '
 	ps.working_directory, ps.project_path, ps.rss_memory_mb, ps.virtual_memory_mb, ps.swap_memory_mb, ps.resident_bytes, ps.virtual_bytes,
 	ps.private_committed_bytes, ps.proportional_bytes, ps.physical_footprint_bytes, ps.swap_bytes, ps.peak_resident_bytes,
 	ps.proportional_sampled_at_ms, ps.thread_count,
-       ps.read_bytes, ps.write_bytes, ps.read_operations, ps.write_operations, ps.minor_page_faults, ps.major_page_faults,
+       ps.read_bytes, ps.write_bytes, ps.disk_read_bytes, ps.disk_write_bytes, ps.read_operations, ps.write_operations, ps.minor_page_faults, ps.major_page_faults,
        ps.voluntary_context_switches, ps.involuntary_context_switches, ps.open_file_descriptors, ps.cpu_percent,
        ps.cpu_user_seconds_total, ps.cpu_system_seconds_total, ps.cpu_total_seconds_total, ps.cpu_cores_used, ps.logical_processor_count,
        ps.max_heap_mb, ps.min_heap_mb, ps.gc, ps.heap_used_mb, ps.heap_committed_mb, ps.heap_max_mb, ps.heap_sampled_at_ms,
@@ -842,7 +847,7 @@ LIMIT ?`
 			&p.WorkingDirectory, &p.ProjectPath, &p.RSSMemoryMB, &p.VirtualMemoryMB, &p.SwapMemoryMB, &p.ResidentBytes,
 			&p.VirtualBytes, &p.PrivateCommittedBytes, &p.ProportionalBytes, &p.PhysicalFootprintBytes, &p.SwapBytes,
 			&p.PeakResidentBytes, &p.ProportionalSampledAtMs, &p.ThreadCount,
-			&p.ReadBytes, &p.WriteBytes, &p.ReadOperations, &p.WriteOperations, &p.MinorPageFaults, &p.MajorPageFaults,
+			&p.ReadBytes, &p.WriteBytes, &p.DiskReadBytes, &p.DiskWriteBytes, &p.ReadOperations, &p.WriteOperations, &p.MinorPageFaults, &p.MajorPageFaults,
 			&p.VoluntaryContextSwitches, &p.InvoluntaryContextSwitches, &p.OpenFileDescriptors, &p.CPUPercent,
 			&p.CPUUserSecondsTotal, &p.CPUSystemSecondsTotal, &p.CPUTotalSecondsTotal, &p.CPUCoresUsed, &p.LogicalProcessorCount,
 			&p.MaxHeapMB, &p.MinHeapMB, &p.GC, &p.HeapUsedMB, &p.HeapCommittedMB, &p.HeapMaxMB, &p.HeapSampledAtMs,

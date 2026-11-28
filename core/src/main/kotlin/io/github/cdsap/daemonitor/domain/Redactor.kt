@@ -15,7 +15,7 @@ object Redactor {
 
     // Multi-letter tokens match anywhere in a key; bare "key" must be a whole word so it does not
     // over-redact benign keys like "monkey.count" or "keystore.path".
-    private val DENY_MULTI = listOf("password", "secret", "token", "credential", "apikey")
+    private val DENY_MULTI = listOf("password", "secret", "token", "credential", "apikey", "authenticationkey")
     private val KEY_WORD = Regex("""(^|[^a-z])key([^a-z]|$)""")
 
     // -Pkey=value | -Dkey=value | --key=value

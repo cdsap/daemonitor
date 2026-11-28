@@ -290,11 +290,17 @@ internal fun ProcessType.displayLabel(): String = when (this) {
     ProcessType.GRADLE_WORKER -> "Gradle worker"
     ProcessType.UNKNOWN_GRADLE_WORKER -> "Unknown Gradle worker"
     ProcessType.JAVA_GRADLE_RELATED -> "Java (Gradle)"
+    ProcessType.XCODE_BUILD -> "Xcode build"
+    ProcessType.XCODE_BUILD_SERVICE -> "Xcode build service"
+    ProcessType.XCODE_COMPILER -> "Xcode compiler"
+    ProcessType.XCODE_TOOL -> "Xcode tool"
 }
 
 /** Section-card title for Live process detail (mirrors cored TUI detailTitle). */
 internal fun ProcessType.detailPanelTitle(): String = when (this) {
     ProcessType.GRADLE_DAEMON -> "Gradle daemon / Process detail"
     ProcessType.BAZEL_SERVER -> "Bazel server / Process detail"
+    ProcessType.XCODE_BUILD_SERVICE -> "Xcode build service / Process detail"
+    ProcessType.XCODE_BUILD -> "Xcode build / Process detail"
     else -> "Process detail"
 }

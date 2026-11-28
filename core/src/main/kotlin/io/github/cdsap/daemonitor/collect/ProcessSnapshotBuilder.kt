@@ -26,7 +26,11 @@ object ProcessSnapshotBuilder {
         typeOverride: ProcessType? = null,
     ): GradleProcess? {
         val type = typeOverride ?: GradleProcessClassifier.classify(info.commandLine) ?: return null
-        val jvm = JvmArgParser.parse(info.commandLine)
+        val jvm = if (GradleProcessClassifier.isXcodeType(type)) {
+            io.github.cdsap.daemonitor.domain.model.JvmArgs()
+        } else {
+            JvmArgParser.parse(info.commandLine)
+        }
         val cwd = info.workingDirectory.ifBlank { null }
 
         return GradleProcess(
@@ -36,10 +40,12 @@ object ProcessSnapshotBuilder {
             commandLine = Redactor.redactCommandLine(info.commandLine),
             workingDirectory = cwd,
             // Wrapper cwd is the build directory. Bazel servers expose workspace via argv.
-            // Daemon/worker working directories are runtime infrastructure.
+            // Xcode build exposes -workspace/-project/-package-path or cwd.
             projectPath = when (type) {
                 ProcessType.BAZEL_SERVER ->
                     GradleProcessClassifier.bazelWorkspaceDirectory(info.commandLine) ?: cwd
+                ProcessType.XCODE_BUILD ->
+                    GradleProcessClassifier.extractXcodeProjectPath(info.commandLine, cwd)
                 ProcessType.GRADLE_WRAPPER,
                 ProcessType.KOTLIN_TOOLCHAIN,
                 -> cwd

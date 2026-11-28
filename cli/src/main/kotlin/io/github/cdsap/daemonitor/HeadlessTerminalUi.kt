@@ -69,6 +69,24 @@ object HeadlessTerminalRenderer {
 
         if (result.processes.isEmpty()) {
             appendLine("No Gradle-related processes are running.")
+        } else if (result.processes.none { LiveMetricLabels.isJvmProcessType(it.type) }) {
+            appendLine(ansi("TYPE             PID     RSS      FOOTPR    CPU   UPTIME   PROJECT", colorEnabled, BOLD))
+            appendLine("──────────────────────────────────────────────────────────────────")
+            result.processes
+                .sortedWith(compareByDescending<GradleProcess> { it.rssMemoryMb }.thenBy { it.pid })
+                .forEach { process ->
+                    val footprint = process.physicalFootprintBytes?.let { "${it / (1024 * 1024)} MB" }
+                        ?: LiveMetricLabels.HEAP_UNAVAILABLE_COMPACT
+                    appendLine(
+                        "${process.type.displayName().padEnd(16)} " +
+                            "${process.pid.toString().padStart(6)}  " +
+                            "${ansi((process.rssMemoryMb.toString() + " MB").padStart(8), colorEnabled, YELLOW)}  " +
+                            "${ansi(footprint.padStart(8), colorEnabled, CYAN)}  " +
+                            "${cpuText(process.cpuPercent, colorEnabled)}  " +
+                            "${uptime(process.startTimeMs, updatedAtMs).padStart(7)}  " +
+                            projectName(process).take(32),
+                    )
+                }
         } else {
             appendLine(ansi("TYPE             PID     RSS      HEAP USED  HEAP CMT   HEAP LIMIT  CPU   UPTIME   PROJECT", colorEnabled, BOLD))
             appendLine("────────────────────────────────────────────────────────────────────────────────────────")
@@ -134,6 +152,10 @@ object HeadlessTerminalRenderer {
         ProcessType.GRADLE_WORKER -> "Gradle worker"
         ProcessType.UNKNOWN_GRADLE_WORKER -> "Unknown Gradle worker"
         ProcessType.JAVA_GRADLE_RELATED -> "Java (Gradle)"
+        ProcessType.XCODE_BUILD -> "Xcode build"
+        ProcessType.XCODE_BUILD_SERVICE -> "Xcode build svc"
+        ProcessType.XCODE_COMPILER -> "Xcode compiler"
+        ProcessType.XCODE_TOOL -> "Xcode tool"
     }
 
     private fun cpuText(cpuPercent: Double?, colorEnabled: Boolean): String {

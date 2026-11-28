@@ -149,3 +149,21 @@ func TestRedactLogCredentialsParity(t *testing.T) {
 		}
 	}
 }
+
+func TestRedactXcodeAuthFlagsAndBuildSettings(t *testing.T) {
+	cmd := "/usr/bin/xcodebuild -workspace App.xcworkspace -scheme App -configuration Debug " +
+		"-authenticationKeyPath /Users/dev/AuthKey_ABC.p8 -authenticationKeyID KEY123456 " +
+		"-authenticationKeyIssuerID 11111111-2222-3333-4444-555555555555 " +
+		"API_TOKEN=supersecret SIGNING_KEY=mykey DEVELOPMENT_TEAM=TEAM123 CONFIGURATION=Debug"
+	out := poll.RedactCommandLine(cmd)
+	for _, leaked := range []string{"AuthKey_ABC.p8", "KEY123456", "11111111-2222-3333-4444-555555555555", "supersecret", "mykey"} {
+		if strings.Contains(out, leaked) {
+			t.Fatalf("xcode secret %q leaked in %q", leaked, out)
+		}
+	}
+	for _, kept := range []string{"-workspace App.xcworkspace", "DEVELOPMENT_TEAM=TEAM123", "CONFIGURATION=Debug", "API_TOKEN=***", "SIGNING_KEY=***"} {
+		if !strings.Contains(out, kept) {
+			t.Fatalf("expected %q in %q", kept, out)
+		}
+	}
+}

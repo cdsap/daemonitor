@@ -254,3 +254,41 @@ func TestDetailsHeaderAndFooterFitWithoutEllipsis(t *testing.T) {
 		}
 	}
 }
+
+func TestNativeXcodeLayoutOmitsJVMColumnsAndMixedIncludesFootprint(t *testing.T) {
+	fp := int64(512 * 1024 * 1024)
+	xcodeOnly := []model.Process{
+		{PID: 700, Type: "XCODE_BUILD_SERVICE", RSSMemoryMB: 600, PhysicalFootprintBytes: &fp, StartTimeMs: layoutNow.Add(-1 * time.Minute).UnixMilli()},
+		{PID: 701, ParentPID: 700, Type: "XCODE_COMPILER", RSSMemoryMB: 400, PhysicalFootprintBytes: &fp, StartTimeMs: layoutNow.Add(-10 * time.Second).UnixMilli()},
+	}
+	m := NewModel(Config{Now: func() time.Time { return layoutNow }, NoColor: true})
+	m.applySnapshot(model.Snapshot{SampledAtMs: layoutNow.UnixMilli(), Processes: xcodeOnly})
+	m.connected, m.lastUpdated, m.width, m.height = true, layoutNow, 140, 20
+	header := lineWith(t, plainLines(m), "PID")
+	if !strings.Contains(header, "FOOTPR") || !strings.Contains(header, "DISK_R") {
+		t.Fatalf("native Xcode header missing FOOTPR/DISK_R: %q", header)
+	}
+	if strings.Contains(header, "GC") || strings.Contains(header, "XMX") || strings.Contains(header, "HEAP") {
+		t.Fatalf("native Xcode header must omit JVM columns: %q", header)
+	}
+
+	// Mixed Gradle + Xcode keeps JVM columns and adds FOOTPR.
+	mixed := append(layoutProcesses(), xcodeOnly[0])
+	m.applySnapshot(model.Snapshot{SampledAtMs: layoutNow.UnixMilli(), Processes: mixed})
+	m.width = 200
+	mixedHeader := lineWith(t, plainLines(m), "PID")
+	if !strings.Contains(mixedHeader, "FOOTPR") || !strings.Contains(mixedHeader, "XMX") {
+		t.Fatalf("mixed header must include FOOTPR and XMX: %q", mixedHeader)
+	}
+
+	// Details view for Xcode omits JVM/GC/JIT sections.
+	p := xcodeOnly[0]
+	m.detailsOpen, m.detailProcess, m.height = true, &p, 80
+	detailView := strings.Join(plainLines(m), "\n")
+	if strings.Contains(detailView, "JVM MEMORY POOLS") || strings.Contains(detailView, "GC COUNTERS") {
+		t.Fatalf("Xcode detail view must omit JVM sections:\n%s", detailView)
+	}
+	if !strings.Contains(detailView, "Memory & I/O") || !strings.Contains(detailView, "Footprint") {
+		t.Fatalf("Xcode detail view missing native Memory & I/O section:\n%s", detailView)
+	}
+}

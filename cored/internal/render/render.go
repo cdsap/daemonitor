@@ -86,7 +86,7 @@ func WriteProcessesCSV(w io.Writer, snap model.Snapshot) error {
 		"heap_used_mb", "heap_committed_mb", "heap_max_mb", "heap_sampled_at_ms", "heap_available", "metaspace_used_mb",
 		"metaspace_committed_mb", "young_gc_count", "young_gc_time_ms", "young_gc_time_seconds", "full_gc_time_seconds", "concurrent_gc_time_seconds", "total_gc_time_seconds", "old_gc_count", "old_gc_time_ms", "java_version",
 		"java_runtime_version", "java_vendor", "java_vm_name", "java_vm_version", "os_name", "os_arch",
-		"active_processor_count", "start_time_ms", "status", "automated", "jvm_sampled_at_ms",
+		"active_processor_count", "start_time_ms", "status", "automated", "jvm_sampled_at_ms", "disk_read_bytes", "disk_write_bytes",
 	}); err != nil {
 		return err
 	}
@@ -108,6 +108,7 @@ func WriteProcessesCSV(w io.Writer, snap model.Snapshot) error {
 			optionalFloat64(p.YoungGCTimeSeconds), optionalFloat64(p.FullGCTimeSeconds), optionalFloat64(p.ConcurrentGCTimeSeconds), optionalFloat64(p.TotalGCTimeSeconds), optionalInt64(p.OldGCCount), optionalInt64(p.OldGCTimeMs), optionalString(p.JavaVersion), optionalString(p.JavaRuntimeVersion),
 			optionalString(p.JavaVendor), optionalString(p.JavaVMName), optionalString(p.JavaVMVersion), optionalString(p.OSName), optionalString(p.OSArch),
 			optionalInt64(p.ActiveProcessorCount), fmt.Sprint(p.StartTimeMs), p.Status, fmt.Sprint(p.Automated), string(timesJSON),
+			optionalInt64(p.DiskReadBytes), optionalInt64(p.DiskWriteBytes),
 		}
 		if err := c.Write(row); err != nil {
 			return err
@@ -207,13 +208,35 @@ func WriteProcessesPlain(w io.Writer, snap model.Snapshot) {
 		fmt.Fprintln(w, "No Gradle-related processes are currently running.")
 		return
 	}
-	// TYPE is wide enough for the longest TypeDisplay label ("Unknown Gradle worker").
-	fmt.Fprintf(w, "%-21s %-8s %7s %8s %7s %8s %8s  %-24s %s\n",
-		"TYPE", "GC", "PID", "RSS", "CPU", "XMX", "UPTIME", "PROJECT", "SIGNALS")
 	now := snap.SampledAtMs
 	if now == 0 {
 		now = time.Now().UnixMilli()
 	}
+	if !HasAnyJVMProcess(snap.Processes) {
+		fmt.Fprintf(w, "%-21s %7s %8s %8s %7s %8s %8s %8s  %-24s %s\n",
+			"TYPE", "PID", "RSS", "FOOTPR", "CPU", "DISK_R", "DISK_W", "UPTIME", "PROJECT", "SIGNALS")
+		for _, p := range snap.Processes {
+			signals := strings.Join(ProcessSignals(p), " ")
+			if signals == "" {
+				signals = "-"
+			}
+			fmt.Fprintf(w, "%-21s %7d %8s %8s %7s %8s %8s %8s  %-24s %s\n",
+				TypeDisplay(p.Type),
+				p.PID,
+				RSSText(p.RSSMemoryMB),
+				BytesCompactText(p.PhysicalFootprintBytes),
+				CPUText(p.CPUPercent),
+				BytesCompactText(p.DiskReadBytes),
+				BytesCompactText(p.DiskWriteBytes),
+				Uptime(p.StartTimeMs, now),
+				ProjectName(p), signals,
+			)
+		}
+		return
+	}
+	// TYPE is wide enough for the longest TypeDisplay label ("Unknown Gradle worker").
+	fmt.Fprintf(w, "%-21s %-8s %7s %8s %7s %8s %8s  %-24s %s\n",
+		"TYPE", "GC", "PID", "RSS", "CPU", "XMX", "UPTIME", "PROJECT", "SIGNALS")
 	for _, p := range snap.Processes {
 		signals := strings.Join(ProcessSignals(p), " ")
 		if signals == "" {
@@ -265,6 +288,8 @@ func WriteProcessesDetailedPlain(w io.Writer, snap model.Snapshot) {
 		writeProcessMetric(w, "threads", optionalInt64Value(p.ThreadCount))
 		writeProcessMetric(w, "read_bytes", optionalInt64Value(p.ReadBytes))
 		writeProcessMetric(w, "write_bytes", optionalInt64Value(p.WriteBytes))
+		writeProcessMetric(w, "disk_read_bytes", optionalInt64Value(p.DiskReadBytes))
+		writeProcessMetric(w, "disk_write_bytes", optionalInt64Value(p.DiskWriteBytes))
 		writeProcessMetric(w, "read_operations", optionalInt64Value(p.ReadOperations))
 		writeProcessMetric(w, "write_operations", optionalInt64Value(p.WriteOperations))
 		writeProcessMetric(w, "minor_page_faults", optionalInt64Value(p.MinorPageFaults))
@@ -273,33 +298,35 @@ func WriteProcessesDetailedPlain(w io.Writer, snap model.Snapshot) {
 		writeProcessMetric(w, "involuntary_context_switches", optionalInt64Value(p.InvoluntaryContextSwitches))
 		writeProcessMetric(w, "open_file_descriptors", optionalInt64Value(p.OpenFileDescriptors))
 		writeProcessMetric(w, "cpu_percent", CPUText(p.CPUPercent))
-		writeProcessMetric(w, "max_heap_mb", optionalInt64Value(p.MaxHeapMB))
-		writeProcessMetric(w, "min_heap_mb", optionalInt64Value(p.MinHeapMB))
-		writeProcessMetric(w, "gc", GCText(p.GC))
-		writeProcessMetric(w, "heap_used_mb", optionalInt64Value(p.HeapUsedMB))
-		writeProcessMetric(w, "heap_committed_mb", optionalInt64Value(p.HeapCommittedMB))
-		writeProcessMetric(w, "heap_max_mb", optionalInt64Value(p.HeapMaxMB))
-		writeProcessMetric(w, "heap_percent", HeapPercentText(p.HeapUsedMB, p.HeapMaxMB))
-		writeProcessMetric(w, "heap_sampled_at_ms", optionalInt64Value(p.HeapSampledAtMs))
-		writeProcessMetric(w, "heap_available", fmt.Sprint(p.HeapAvailable))
-		writeProcessMetric(w, "metaspace_used_mb", optionalInt64Value(p.MetaspaceUsedMB))
-		writeProcessMetric(w, "metaspace_committed_mb", optionalInt64Value(p.MetaspaceCommittedMB))
-		writeProcessMetric(w, "young_gc_count", optionalInt64Value(p.YoungGCCount))
-		writeProcessMetric(w, "young_gc_time_ms", optionalInt64Value(p.YoungGCTimeMs))
-		writeProcessMetric(w, "young_gc_time_seconds", optionalFloat64Value(p.YoungGCTimeSeconds))
-		writeProcessMetric(w, "full_gc_time_seconds", optionalFloat64Value(p.FullGCTimeSeconds))
-		writeProcessMetric(w, "concurrent_gc_time_seconds", optionalFloat64Value(p.ConcurrentGCTimeSeconds))
-		writeProcessMetric(w, "total_gc_time_seconds", optionalFloat64Value(p.TotalGCTimeSeconds))
-		writeProcessMetric(w, "old_gc_count", optionalInt64Value(p.OldGCCount))
-		writeProcessMetric(w, "old_gc_time_ms", optionalInt64Value(p.OldGCTimeMs))
-		writeProcessMetric(w, "java_version", optionalValue(p.JavaVersion))
-		writeProcessMetric(w, "java_runtime_version", optionalValue(p.JavaRuntimeVersion))
-		writeProcessMetric(w, "java_vendor", optionalValue(p.JavaVendor))
-		writeProcessMetric(w, "java_vm_name", optionalValue(p.JavaVMName))
-		writeProcessMetric(w, "java_vm_version", optionalValue(p.JavaVMVersion))
-		writeProcessMetric(w, "os_name", optionalValue(p.OSName))
-		writeProcessMetric(w, "os_arch", optionalValue(p.OSArch))
-		writeProcessMetric(w, "active_processor_count", optionalInt64Value(p.ActiveProcessorCount))
+		if IsJVMProcessType(p.Type) {
+			writeProcessMetric(w, "max_heap_mb", optionalInt64Value(p.MaxHeapMB))
+			writeProcessMetric(w, "min_heap_mb", optionalInt64Value(p.MinHeapMB))
+			writeProcessMetric(w, "gc", GCText(p.GC))
+			writeProcessMetric(w, "heap_used_mb", optionalInt64Value(p.HeapUsedMB))
+			writeProcessMetric(w, "heap_committed_mb", optionalInt64Value(p.HeapCommittedMB))
+			writeProcessMetric(w, "heap_max_mb", optionalInt64Value(p.HeapMaxMB))
+			writeProcessMetric(w, "heap_percent", HeapPercentText(p.HeapUsedMB, p.HeapMaxMB))
+			writeProcessMetric(w, "heap_sampled_at_ms", optionalInt64Value(p.HeapSampledAtMs))
+			writeProcessMetric(w, "heap_available", fmt.Sprint(p.HeapAvailable))
+			writeProcessMetric(w, "metaspace_used_mb", optionalInt64Value(p.MetaspaceUsedMB))
+			writeProcessMetric(w, "metaspace_committed_mb", optionalInt64Value(p.MetaspaceCommittedMB))
+			writeProcessMetric(w, "young_gc_count", optionalInt64Value(p.YoungGCCount))
+			writeProcessMetric(w, "young_gc_time_ms", optionalInt64Value(p.YoungGCTimeMs))
+			writeProcessMetric(w, "young_gc_time_seconds", optionalFloat64Value(p.YoungGCTimeSeconds))
+			writeProcessMetric(w, "full_gc_time_seconds", optionalFloat64Value(p.FullGCTimeSeconds))
+			writeProcessMetric(w, "concurrent_gc_time_seconds", optionalFloat64Value(p.ConcurrentGCTimeSeconds))
+			writeProcessMetric(w, "total_gc_time_seconds", optionalFloat64Value(p.TotalGCTimeSeconds))
+			writeProcessMetric(w, "old_gc_count", optionalInt64Value(p.OldGCCount))
+			writeProcessMetric(w, "old_gc_time_ms", optionalInt64Value(p.OldGCTimeMs))
+			writeProcessMetric(w, "java_version", optionalValue(p.JavaVersion))
+			writeProcessMetric(w, "java_runtime_version", optionalValue(p.JavaRuntimeVersion))
+			writeProcessMetric(w, "java_vendor", optionalValue(p.JavaVendor))
+			writeProcessMetric(w, "java_vm_name", optionalValue(p.JavaVMName))
+			writeProcessMetric(w, "java_vm_version", optionalValue(p.JavaVMVersion))
+			writeProcessMetric(w, "os_name", optionalValue(p.OSName))
+			writeProcessMetric(w, "os_arch", optionalValue(p.OSArch))
+			writeProcessMetric(w, "active_processor_count", optionalInt64Value(p.ActiveProcessorCount))
+		}
 		writeProcessMetric(w, "start_time_ms", fmt.Sprint(p.StartTimeMs))
 		writeProcessMetric(w, "status", textOrNA(p.Status))
 		writeProcessMetric(w, "automated", fmt.Sprint(p.Automated))
@@ -498,11 +525,64 @@ func TypeDisplay(t string) string {
 		return "Unknown Gradle worker"
 	case "JAVA_GRADLE_RELATED":
 		return "Java (Gradle)"
+	case "XCODE_BUILD":
+		return "Xcode build"
+	case "XCODE_BUILD_SERVICE":
+		return "Xcode build service"
+	case "XCODE_COMPILER":
+		return "Xcode compiler"
+	case "XCODE_TOOL":
+		return "Xcode tool"
 	default:
 		if t == "" {
 			return "n/a"
 		}
 		return t
+	}
+}
+
+// IsJVMProcessType reports whether t represents a JVM process (as opposed to a native Xcode binary).
+func IsJVMProcessType(t string) bool {
+	switch t {
+	case "XCODE_BUILD", "XCODE_BUILD_SERVICE", "XCODE_COMPILER", "XCODE_TOOL":
+		return false
+	default:
+		return true
+	}
+}
+
+// HasAnyJVMProcess reports whether at least one process in the slice is JVM-backed.
+func HasAnyJVMProcess(processes []model.Process) bool {
+	for _, p := range processes {
+		if IsJVMProcessType(p.Type) {
+			return true
+		}
+	}
+	return false
+}
+
+// BytesCompactText formats a byte count compactly (B, KB, MB, GB) or n/a when nil.
+func BytesCompactText(v *int64) string {
+	if v == nil {
+		return "n/a"
+	}
+	b := *v
+	if b < 0 {
+		return "n/a"
+	}
+	switch {
+	case b >= 1024*1024*1024:
+		gb := float64(b) / (1024 * 1024 * 1024)
+		if gb == float64(int64(gb)) {
+			return fmt.Sprintf("%d GB", int64(gb))
+		}
+		return fmt.Sprintf("%.1f GB", gb)
+	case b >= 1024*1024:
+		return fmt.Sprintf("%d MB", b/(1024*1024))
+	case b >= 1024:
+		return fmt.Sprintf("%d KB", b/1024)
+	default:
+		return fmt.Sprintf("%d B", b)
 	}
 }
 

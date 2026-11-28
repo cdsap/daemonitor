@@ -98,6 +98,19 @@ private val WIDE_TABLE_MIN_WIDTH = 920.dp
 private val VIEW_MODE_OPTIONS = listOf("Flat" to false, "Grouped" to true)
 private val RECENT_BUILD_TIME_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault())
 
+private val NATIVE_COLS = listOf(
+    Col("Type", 2.25f),
+    Col("Project", 1.3f),
+    Col("PID", 0.8f, end = true),
+    Col("RSS", 0.95f, end = true),
+    Col("Footprint", 0.95f, end = true),
+    Col("Disk R", 0.85f, end = true),
+    Col("Disk W", 0.85f, end = true),
+    Col("CPU", 0.65f, end = true),
+    Col("Uptime", 0.95f, end = true),
+    Col("Flags", 1.15f),
+)
+
 private val COMPACT_COLS = listOf(
     Col("Type", 2.25f),
     Col("Project", 1.3f),
@@ -186,8 +199,14 @@ fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit) {
                                 }
                             },
                     ) {
-                        val showGcBreakdown = maxWidth >= WIDE_TABLE_MIN_WIDTH
-                        val cols = if (showGcBreakdown) WIDE_COLS else COMPACT_COLS
+                        val nativeOnly = state.processes.isNotEmpty() &&
+                            state.processes.none { LiveMetricLabels.isJvmProcessType(it.type) }
+                        val showGcBreakdown = !nativeOnly && maxWidth >= WIDE_TABLE_MIN_WIDTH
+                        val cols = when {
+                            nativeOnly -> NATIVE_COLS
+                            showGcBreakdown -> WIDE_COLS
+                            else -> COMPACT_COLS
+                        }
                         Column(modifier = Modifier.fillMaxSize()) {
                             TableHeader(cols)
                             LazyColumn(modifier = Modifier.fillMaxSize()) {
@@ -195,6 +214,7 @@ fun LiveMonitorScreen(state: LiveUiState, onSelect: (Long) -> Unit) {
                                     ProcessRow(
                                         row,
                                         cols,
+                                        nativeOnly,
                                         showGcBreakdown,
                                         row.targetPid == selectedPid,
                                         row.process.pid in concurrent,
@@ -287,6 +307,7 @@ private fun SummaryHeader(
 private fun ProcessRow(
     row: LiveProcessRow,
     cols: List<Col>,
+    nativeOnly: Boolean,
     showGcBreakdown: Boolean,
     selected: Boolean,
     concurrent: Boolean,
@@ -319,13 +340,19 @@ private fun ProcessRow(
         Cell(projectLabel ?: "—", cols[colIndex++], muted = projectLabel == null)
         Cell(p.pid.toString(), cols[colIndex++])
         Cell("${p.rssMemoryMb} MB", cols[colIndex++])
-        Cell(LiveMetricLabels.liveHeapUsedCompact(p.liveHeap), cols[colIndex++], muted = p.liveHeap?.available != true)
-        if (showGcBreakdown) {
-            Cell(p.youngGcTimeSeconds.gcTimeCompact(), cols[colIndex++], muted = p.youngGcTimeSeconds == null)
-            Cell(p.fullGcTimeSeconds.gcTimeCompact(), cols[colIndex++], muted = p.fullGcTimeSeconds == null)
-            Cell(p.concurrentGcTimeSeconds.gcTimeCompact(), cols[colIndex++], muted = p.concurrentGcTimeSeconds == null)
+        if (nativeOnly) {
+            Cell(p.physicalFootprintBytes.metricBytesCompact(), cols[colIndex++], muted = p.physicalFootprintBytes == null)
+            Cell(p.diskReadBytes.metricBytesCompact(), cols[colIndex++], muted = p.diskReadBytes == null)
+            Cell(p.diskWriteBytes.metricBytesCompact(), cols[colIndex++], muted = p.diskWriteBytes == null)
+        } else {
+            Cell(LiveMetricLabels.liveHeapUsedCompact(p.liveHeap), cols[colIndex++], muted = p.liveHeap?.available != true)
+            if (showGcBreakdown) {
+                Cell(p.youngGcTimeSeconds.gcTimeCompact(), cols[colIndex++], muted = p.youngGcTimeSeconds == null)
+                Cell(p.fullGcTimeSeconds.gcTimeCompact(), cols[colIndex++], muted = p.fullGcTimeSeconds == null)
+                Cell(p.concurrentGcTimeSeconds.gcTimeCompact(), cols[colIndex++], muted = p.concurrentGcTimeSeconds == null)
+            }
+            Cell(p.totalGcTimeSeconds.gcTimeCompact(), cols[colIndex++], muted = p.totalGcTimeSeconds == null)
         }
-        Cell(p.totalGcTimeSeconds.gcTimeCompact(), cols[colIndex++], muted = p.totalGcTimeSeconds == null)
         Cell(LiveMetricLabels.cpuCompact(p.cpuPercent), cols[colIndex++], muted = p.cpuPercent == null)
         val uptimeCol = cols[colIndex++]
         CellSlot(uptimeCol) {
@@ -424,9 +451,11 @@ private fun ProcessDetailInspector(
     daemonLog: DaemonLog?,
 ) {
     var selectedTab by remember(p.pid) { mutableStateOf(InspectorTab.OVERVIEW) }
+    val isJvm = LiveMetricLabels.isJvmProcessType(p.type)
     val tabs = remember(p.type) {
         InspectorTab.entries.filter {
-            (it != InspectorTab.GRADLE || p.type == ProcessType.GRADLE_DAEMON) &&
+            (it != InspectorTab.JVM || isJvm) &&
+                (it != InspectorTab.GRADLE || p.type == ProcessType.GRADLE_DAEMON) &&
                 (it != InspectorTab.BAZEL || p.type == ProcessType.BAZEL_SERVER)
         }
     }
@@ -448,7 +477,12 @@ private fun ProcessDetailInspector(
                 )
             }
         }
-        Text("RSS ${p.rssMemoryMb} MB · CPU ${LiveMetricLabels.cpuCompact(p.cpuPercent)} · Heap ${LiveMetricLabels.liveHeapUsedCompact(p.liveHeap)}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("process-detail-vitals"))
+        val vitals = if (isJvm) {
+            "RSS ${p.rssMemoryMb} MB · CPU ${LiveMetricLabels.cpuCompact(p.cpuPercent)} · Heap ${LiveMetricLabels.liveHeapUsedCompact(p.liveHeap)}"
+        } else {
+            "RSS ${p.rssMemoryMb} MB · Footprint ${p.physicalFootprintBytes.metricBytesCompact()} · CPU ${LiveMetricLabels.cpuCompact(p.cpuPercent)}"
+        }
+        Text(vitals, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("process-detail-vitals"))
         if (children.isNotEmpty()) {
             Column(Modifier.heightIn(max = 80.dp).verticalScroll(rememberScrollState()).testTag("child-processes")) {
                 children.forEach { child -> ChildProcessRow(child) }
@@ -504,16 +538,18 @@ private fun ProcessDetailInspector(
                     DetailRow("Physical footprint", p.physicalFootprintBytes.metricBytes())
                     DetailRow("Peak resident", p.peakResidentBytes.metricBytes())
                     DetailRow("Swap", p.swapMemoryMb.metric("MB"))
-                    DetailRow("Heap used", LiveMetricLabels.liveHeapUsedDetail(p.liveHeap, p.type))
-                    DetailRow(
-                        "Heap committed",
-                        p.liveHeap?.takeIf { it.available }?.committedMb?.let { "$it MB" } ?: LiveMetricLabels.HEAP_UNAVAILABLE_DETAIL,
-                    )
-                    DetailRow("Heap limit (-Xmx)", p.maxHeapMb?.let { "$it MB" } ?: LiveMetricLabels.HEAP_UNAVAILABLE_DETAIL)
-                    DetailRow(
-                        "Heap max (runtime)",
-                        p.liveHeap?.takeIf { it.available }?.maxMb?.let { "$it MB" } ?: LiveMetricLabels.HEAP_UNAVAILABLE_DETAIL,
-                    )
+                    if (isJvm) {
+                        DetailRow("Heap used", LiveMetricLabels.liveHeapUsedDetail(p.liveHeap, p.type))
+                        DetailRow(
+                            "Heap committed",
+                            p.liveHeap?.takeIf { it.available }?.committedMb?.let { "$it MB" } ?: LiveMetricLabels.HEAP_UNAVAILABLE_DETAIL,
+                        )
+                        DetailRow("Heap limit (-Xmx)", p.maxHeapMb?.let { "$it MB" } ?: LiveMetricLabels.HEAP_UNAVAILABLE_DETAIL)
+                        DetailRow(
+                            "Heap max (runtime)",
+                            p.liveHeap?.takeIf { it.available }?.maxMb?.let { "$it MB" } ?: LiveMetricLabels.HEAP_UNAVAILABLE_DETAIL,
+                        )
+                    }
                     DetailSection("CPU")
                     DetailRow("CPU", LiveMetricLabels.cpuDetail(p.cpuPercent))
                     DetailRow("CPU user time", p.cpuUserSecondsTotal.activityMetric("s"))
@@ -570,6 +606,8 @@ private fun ProcessDetailInspector(
                 }
                 InspectorTab.OS_IO -> {
                     DetailSection("I/O")
+                    DetailRow("Disk read", p.diskReadBytes.metricBytes())
+                    DetailRow("Disk write", p.diskWriteBytes.metricBytes())
                     DetailRow("Read", p.readBytes.metricBytes())
                     DetailRow("Write", p.writeBytes.metricBytes())
                     DetailRow("Read operations", p.readOperations.metric())
@@ -712,13 +750,23 @@ private fun ChildProcessRow(child: GradleProcess) {
             maxLines = 1,
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
         )
-        Text(
-            "Heap ${LiveMetricLabels.liveHeapUsedCompact(child.liveHeap)} · GC ${child.gc ?: "—"}",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-        )
+        if (LiveMetricLabels.isJvmProcessType(child.type)) {
+            Text(
+                "Heap ${LiveMetricLabels.liveHeapUsedCompact(child.liveHeap)} · GC ${child.gc ?: "—"}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+        } else {
+            Text(
+                "Footprint ${child.physicalFootprintBytes.metricBytesCompact()} · Disk R ${child.diskReadBytes.metricBytesCompact()} / W ${child.diskWriteBytes.metricBytesCompact()}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
@@ -752,11 +800,21 @@ private fun Double?.gcTimeCompact(): String = this?.let { String.format(Locale.R
 
 private fun Long?.metricBytes(): String = this?.let {
     when {
+        it >= 1024L * 1024L * 1024L -> String.format(Locale.ROOT, "%.1f GB", it / (1024.0 * 1024.0 * 1024.0))
         it >= 1024L * 1024L -> String.format(Locale.ROOT, "%.1f MB", it / (1024.0 * 1024.0))
         it >= 1024L -> String.format(Locale.ROOT, "%.1f KB", it / 1024.0)
         else -> "$it B"
     }
 } ?: "unavailable"
+
+private fun Long?.metricBytesCompact(): String = this?.let {
+    when {
+        it >= 1024L * 1024L * 1024L -> String.format(Locale.ROOT, "%.1f GB", it / (1024.0 * 1024.0 * 1024.0))
+        it >= 1024L * 1024L -> "${it / (1024L * 1024L)} MB"
+        it >= 1024L -> "${it / 1024L} KB"
+        else -> "$it B"
+    }
+} ?: "n/a"
 
 @Composable
 private fun LogCard(tailState: LogTailState, daemonLog: DaemonLog?, modifier: Modifier = Modifier) {

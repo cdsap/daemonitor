@@ -195,6 +195,8 @@ internal object GoCoreSnapshotParser {
             threadCount = obj.long("thread_count"),
             readBytes = obj.long("read_bytes"),
             writeBytes = obj.long("write_bytes"),
+            diskReadBytes = obj.long("disk_read_bytes"),
+            diskWriteBytes = obj.long("disk_write_bytes"),
             readOperations = obj.long("read_operations"),
             writeOperations = obj.long("write_operations"),
             minorPageFaults = obj.long("minor_page_faults"),
