@@ -272,13 +272,13 @@ func runTUI(ctx context.Context, opts Options, stderr io.Writer) int {
 	res, err := bootstrap.Connect(ctx, bootstrap.Options{
 		Socket:    opts.Socket,
 		Autostart: !opts.NoAutostart,
-		Stderr:    os.Stderr,
+		Stderr:    stderr,
 	})
 	if err != nil {
 		fmt.Fprintln(stderr, err.Error())
 		return 1
 	}
-	if err := tui.Run(tui.Config{
+	if err := tui.Run(ctx, tui.Config{
 		Client:       res.Client,
 		PollInterval: opts.PollInterval,
 		NoColor:      opts.NoColor,
@@ -293,7 +293,7 @@ func runOneShot(ctx context.Context, opts Options, cmd string, args []string, st
 	res, err := bootstrap.Connect(ctx, bootstrap.Options{
 		Socket:    opts.Socket,
 		Autostart: !opts.NoAutostart,
-		Stderr:    os.Stderr,
+		Stderr:    stderr,
 	})
 	if err != nil {
 		fmt.Fprintln(stderr, err.Error())
@@ -835,7 +835,7 @@ func runWatch(ctx context.Context, opts Options, stdout, stderr io.Writer) int {
 	if opts.Until > 0 {
 		deadline = time.Now().Add(opts.Until)
 	}
-	res, err := bootstrap.Connect(ctx, bootstrap.Options{Socket: opts.Socket, Autostart: !opts.NoAutostart, Stderr: os.Stderr})
+	res, err := bootstrap.Connect(ctx, bootstrap.Options{Socket: opts.Socket, Autostart: !opts.NoAutostart, Stderr: stderr})
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1

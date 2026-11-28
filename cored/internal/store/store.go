@@ -3,9 +3,11 @@ package store
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -133,10 +135,10 @@ func (s *Store) ensureProcessSamplesAlignedWithApp() error {
 	if err != nil {
 		return err
 	}
-	if contains(cols, "timestamp_ms") {
+	if slices.Contains(cols, "timestamp_ms") {
 		return s.migrateProcessSamplesLegacyToAppAligned()
 	}
-	if !contains(cols, "timestamp") {
+	if !slices.Contains(cols, "timestamp") {
 		return s.createProcessSamplesAppAligned()
 	}
 	return s.ensureProcessSamplesAdditiveColumns(cols)
@@ -318,7 +320,7 @@ func (s *Store) ensureProcessSamplesAdditiveColumns(cols []string) error {
 		{"automated", `ALTER TABLE process_samples ADD COLUMN automated INTEGER NOT NULL DEFAULT 0`},
 	}
 	for _, a := range alters {
-		if contains(cols, a.col) {
+		if slices.Contains(cols, a.col) {
 			continue
 		}
 		if _, err := s.db.Exec(a.ddl); err != nil {
@@ -416,7 +418,7 @@ func (s *Store) ensureBuildsAlignedWithApp() error {
 	if err != nil {
 		return err
 	}
-	if contains(cols, "start_time_ms") {
+	if slices.Contains(cols, "start_time_ms") {
 		if err := s.migrateBuildsLegacyToAppAligned(); err != nil {
 			return err
 		}
@@ -425,10 +427,10 @@ func (s *Store) ensureBuildsAlignedWithApp() error {
 			return err
 		}
 	}
-	if !contains(cols, "start_time") {
+	if !slices.Contains(cols, "start_time") {
 		return s.createBuildsAppAligned()
 	}
-	if !contains(cols, "command_line") {
+	if !slices.Contains(cols, "command_line") {
 		if _, err := s.db.Exec(`ALTER TABLE builds ADD COLUMN command_line TEXT`); err != nil {
 			return err
 		}
@@ -447,7 +449,7 @@ func (s *Store) ensureBuildsAlignedWithApp() error {
 		{"bazel_profile", `ALTER TABLE builds ADD COLUMN bazel_profile TEXT`},
 		{"window_summaries", `ALTER TABLE builds ADD COLUMN window_summaries TEXT`},
 	} {
-		if contains(cols, a.col) {
+		if slices.Contains(cols, a.col) {
 			continue
 		}
 		if _, err := s.db.Exec(a.ddl); err != nil {
@@ -559,7 +561,7 @@ func (s *Store) tableExists(name string) (bool, error) {
 	err := s.db.QueryRow(
 		`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, name,
 	).Scan(&found)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
 	return err == nil, err
@@ -586,12 +588,7 @@ func (s *Store) tableColumns(table string) ([]string, error) {
 }
 
 func contains(xs []string, want string) bool {
-	for _, x := range xs {
-		if x == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(xs, want)
 }
 
 func (s *Store) InsertSnapshot(snap model.Snapshot) error {
@@ -874,9 +871,7 @@ LIMIT ?`
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
-		out[i], out[j] = out[j], out[i]
-	}
+	slices.Reverse(out)
 	return out, nil
 }
 
