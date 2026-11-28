@@ -47,13 +47,18 @@ class DaemonLogWatcher(
     /** Scan `<gradleUserHome>/daemon/<version>/daemon-<pid>.out.log` for current daemon logs. */
     override fun discover(): List<DaemonLog> {
         val daemonRoot = gradleUserHome.resolve("daemon")
-        if (!daemonRoot.exists() || !daemonRoot.isDirectory()) return emptyList()
-        return daemonRoot.listDirectoryEntries()
+        if (!daemonRoot.exists() || !daemonRoot.isDirectory()) {
+            evictDisappeared(emptySet())
+            return emptyList()
+        }
+        val discovered = daemonRoot.listDirectoryEntries()
             .filter { it.isDirectory() }
             .flatMap { versionDir ->
                 versionDir.listDirectoryEntries("daemon-*.out.log")
                     .mapNotNull { parseLogPath(it) }
             }
+        evictDisappeared(discovered.mapTo(mutableSetOf()) { it.path })
+        return discovered
     }
 
     /**
@@ -69,7 +74,12 @@ class DaemonLogWatcher(
      * boundaries for application-level parsing and correlation.
      */
     fun readNewLines(path: Path): List<DaemonLogLine> {
-        if (!path.exists()) return emptyList()
+        if (!path.exists()) {
+            offsets.remove(path)
+            tails.remove(path)
+            leftovers.remove(path)
+            return emptyList()
+        }
         val size = Files.size(path)
         val initialized = offsets.containsKey(path)
         val from = offsets[path] ?: (size - initialReadBytes.toLong()).coerceAtLeast(0L)
@@ -124,6 +134,12 @@ class DaemonLogWatcher(
 
     /** The last [tailLines] redacted lines seen for a log, for the live tail panel (U7). */
     fun tailFor(path: Path): List<String> = tails[path]?.toList() ?: emptyList()
+
+    private fun evictDisappeared(activePaths: Set<Path>) {
+        offsets.keys.retainAll(activePaths)
+        tails.keys.retainAll(activePaths)
+        leftovers.keys.retainAll(activePaths)
+    }
 
     private fun retainTail(path: Path, lines: List<String>) {
         val deque = tails.getOrPut(path) { ArrayDeque() }

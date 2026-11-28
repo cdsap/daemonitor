@@ -1,5 +1,7 @@
 package io.github.cdsap.daemonitor.domain.model
 
+import java.util.concurrent.ConcurrentHashMap
+
 /** Parsed `builds.bazel_profile` JSON summary written by `cored`. */
 data class BazelProfileSummary(
     val bazelVersion: String? = null,
@@ -159,8 +161,12 @@ object BazelBuildTelemetryParser {
         }
     }
 
+    private val containerKeyRegexes = ConcurrentHashMap<String, Regex>()
+    private val DOUBLE_MAP_PAIR = Regex("\"((?:\\\\.|[^\"\\\\])*)\"\\s*:\\s*(-?\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?)")
+
     private fun extractContainer(json: String, name: String, open: Char, close: Char): String? {
-        val match = Regex("\"${Regex.escape(name)}\"\\s*:\\s*").find(json) ?: return null
+        val regex = containerKeyRegexes.computeIfAbsent(name) { Regex("\"${Regex.escape(it)}\"\\s*:\\s*") }
+        val match = regex.find(json) ?: return null
         val start = match.range.last + 1
         if (start >= json.length || json[start] != open) return null
         var depth = 0
@@ -210,8 +216,7 @@ object BazelBuildTelemetryParser {
 
     private fun parseDoubleMap(body: String): Map<String, Double> {
         val out = linkedMapOf<String, Double>()
-        val pairRegex = Regex("\"((?:\\\\.|[^\"\\\\])*)\"\\s*:\\s*(-?\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?)")
-        for (m in pairRegex.findAll(body)) {
+        for (m in DOUBLE_MAP_PAIR.findAll(body)) {
             val k = m.groupValues[1]
             val v = m.groupValues[2].toDoubleOrNull() ?: continue
             out[k] = v

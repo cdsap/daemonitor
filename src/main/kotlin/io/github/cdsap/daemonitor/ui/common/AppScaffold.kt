@@ -39,7 +39,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.github.cdsap.daemonitor.BuildInfo
@@ -103,7 +102,7 @@ private fun AppHeader(
             horizontalArrangement = Arrangement.spacedBy(Space.sm),
         ) {
             Image(
-                painter = painterResource("icon/daemonitor.png"),
+                painter = classpathBitmapPainter("icon/daemonitor.png"),
                 contentDescription = "Daemonitor logo",
                 modifier = Modifier.size(28.dp),
             )

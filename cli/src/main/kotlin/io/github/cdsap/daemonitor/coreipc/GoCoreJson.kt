@@ -1,8 +1,13 @@
 package io.github.cdsap.daemonitor.coreipc
 
+import java.util.concurrent.ConcurrentHashMap
+
 internal object GoCoreJson {
+    private val containerKeyRegexes = ConcurrentHashMap<String, Regex>()
+
     fun extractContainer(json: String, name: String, open: Char, close: Char): String? {
-        val match = Regex("\"${Regex.escape(name)}\"\\s*:\\s*").find(json) ?: return null
+        val regex = containerKeyRegexes.computeIfAbsent(name) { Regex("\"${Regex.escape(it)}\"\\s*:\\s*") }
+        val match = regex.find(json) ?: return null
         val start = match.range.last + 1
         if (start >= json.length || json[start] != open) return null
         var depth = 0

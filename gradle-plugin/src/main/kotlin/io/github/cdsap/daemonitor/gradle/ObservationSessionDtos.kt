@@ -1,5 +1,7 @@
 package io.github.cdsap.daemonitor.gradle
 
+import java.util.concurrent.ConcurrentHashMap
+
 data class ObservationSummary(
     val name: String,
     val association: String,
@@ -46,18 +48,27 @@ data class ProcessRssSummary(
 )
 
 internal object ObservationSummaryParser {
+    private val PROCESSES_BODY_REGEX = Regex("\\\"processes\\\"\\s*:\\s*\\[(.*)]\\s*,\\s*\\\"builds\\\"", RegexOption.DOT_MATCHES_ALL)
+    private val OBJECT_REGEX = Regex("\\{(.*?)\\}", RegexOption.DOT_MATCHES_ALL)
+    private val BUILDS_OBJECT_REGEX = Regex("\\\"builds\\\"\\s*:\\s*\\{(.*?)\\}", RegexOption.DOT_MATCHES_ALL)
+    private val stringFieldRegexes = ConcurrentHashMap<String, Regex>()
+    private val numberFieldRegexes = ConcurrentHashMap<String, Regex>()
+
     fun parse(json: String): ObservationSummary {
         fun string(name: String, source: String = json): String =
-            Regex("\\\"$name\\\"\\s*:\\s*\\\"((?:\\\\.|[^\\\"])*)\\\"")
+            stringFieldRegexes
+                .computeIfAbsent(name) { Regex("\\\"${Regex.escape(it)}\\\"\\s*:\\s*\\\"((?:\\\\.|[^\\\"])*)\\\"") }
                 .find(source)?.groupValues?.get(1)?.replace("\\\\\\\"", "\\\"")
                 ?: ""
+        fun optionalNumber(name: String, source: String = json): Long? =
+            numberFieldRegexes
+                .computeIfAbsent(name) { Regex("\\\"${Regex.escape(it)}\\\"\\s*:\\s*(-?\\d+)") }
+                .find(source)?.groupValues?.get(1)?.toLongOrNull()
         fun number(name: String, source: String = json): Long =
-            Regex("\\\"$name\\\"\\s*:\\s*(-?\\d+)").find(source)?.groupValues?.get(1)?.toLongOrNull() ?: 0
-        fun optionalNumber(name: String, source: String): Long? =
-            Regex("\\\"$name\\\"\\s*:\\s*(-?\\d+)").find(source)?.groupValues?.get(1)?.toLongOrNull()
-        val processBody = Regex("\\\"processes\\\"\\s*:\\s*\\[(.*)]\\s*,\\s*\\\"builds\\\"", RegexOption.DOT_MATCHES_ALL)
+            optionalNumber(name, source) ?: 0
+        val processBody = PROCESSES_BODY_REGEX
             .find(json)?.groupValues?.get(1).orEmpty()
-        val processes = Regex("\\{(.*?)\\}", RegexOption.DOT_MATCHES_ALL).findAll(processBody).map { match ->
+        val processes = OBJECT_REGEX.findAll(processBody).map { match ->
             val body = match.value
             ProcessRssSummary(
                 hostId = string("host_id", body), pid = number("pid", body), startTimeMs = number("start_time_ms", body),
@@ -89,7 +100,7 @@ internal object ObservationSummaryParser {
                 deltaOldGcTimeMs = optionalNumber("delta_old_gc_time_ms", body),
             )
         }.toList()
-        val builds = Regex("\\\"builds\\\"\\s*:\\s*\\{(.*?)\\}", RegexOption.DOT_MATCHES_ALL).find(json)?.value.orEmpty()
+        val builds = BUILDS_OBJECT_REGEX.find(json)?.value.orEmpty()
         return ObservationSummary(
             name = string("name"), association = string("association"), hostId = string("host_id"), processes = processes,
             buildsCount = number("count", builds).toInt(), buildsSuccessCount = number("success_count", builds).toInt(),

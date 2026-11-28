@@ -281,13 +281,15 @@ object VisualChartModel {
         return RssTimelineChartData(series = series, points = points)
     }
 
+    private val DEFAULT_HIDDEN_METRICS = setOf(TimelineMetric.METASPACE, TimelineMetric.OPEN_FILES)
+
     /** Keep only series that belong to [mode]; totals only when the mode allows them. */
     fun forMode(chart: RssTimelineChartData, mode: VisualMetricMode): RssTimelineChartData {
         val filtered = chart.series.filter { series ->
             series.metric in mode.metrics && (mode.includeTotals || !series.isTotal)
         }.map { series ->
             series.copy(
-                defaultVisible = series.metric !in setOf(TimelineMetric.METASPACE, TimelineMetric.OPEN_FILES),
+                defaultVisible = series.metric !in DEFAULT_HIDDEN_METRICS,
             )
         }
         return chart.copy(series = filtered)

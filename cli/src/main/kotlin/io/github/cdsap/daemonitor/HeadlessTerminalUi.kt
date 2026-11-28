@@ -7,6 +7,7 @@ import io.github.cdsap.daemonitor.domain.model.ProcessType
 import java.io.InputStream
 import java.io.PrintStream
 import java.time.Instant
+import java.util.Locale
 import kotlin.time.Duration
 
 /** Terminal presentation for the UI-independent headless monitoring runtime. */
@@ -115,8 +116,8 @@ object HeadlessTerminalRenderer {
         val seconds = total % 60
         return when {
             days > 0 -> "${days}d ${hours}h"
-            hours > 0 -> "${hours}h %02dm".format(minutes)
-            minutes > 0 -> "${minutes}m %02ds".format(seconds)
+            hours > 0 -> String.format(Locale.ROOT, "%dh %02dm", hours, minutes)
+            minutes > 0 -> String.format(Locale.ROOT, "%dm %02ds", minutes, seconds)
             else -> "${seconds}s"
         }
     }

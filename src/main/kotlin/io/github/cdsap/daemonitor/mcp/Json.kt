@@ -1,5 +1,7 @@
 package io.github.cdsap.daemonitor.mcp
 
+import java.util.Locale
+
 internal sealed interface JsonValue {
     fun stringify(): String
 }
@@ -39,7 +41,7 @@ internal data class JsonString(val value: String) : JsonValue {
                 '\r' -> append("\\r")
                 '\t' -> append("\\t")
                 else -> {
-                    if (ch.code < 0x20) append("\\u%04x".format(ch.code)) else append(ch)
+                    if (ch.code < 0x20) append(String.format(Locale.ROOT, "\\u%04x", ch.code)) else append(ch)
                 }
             }
         }

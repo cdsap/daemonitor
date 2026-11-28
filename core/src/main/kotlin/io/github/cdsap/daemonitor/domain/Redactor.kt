@@ -21,6 +21,8 @@ object Redactor {
 
     // scheme://user:pass@host  (credentials before the @)
     private val URL_CREDS = Regex("""([a-zA-Z][a-zA-Z0-9+.\-]*://)([^/@\s:]+):([^/@\s]+)@""")
+    private val WHITESPACE = Regex("""\s+""")
+    private val WHITESPACE_BOUNDARY = Regex("""(?<=\s)|(?=\s)""")
 
     /** Redact a single argument/token. */
     fun redactToken(token: String): String {
@@ -36,13 +38,13 @@ object Redactor {
     fun redactCommandLine(commandLine: String): String {
         val trimmed = commandLine.trim()
         if (trimmed.isEmpty()) return commandLine
-        return trimmed.split(Regex("""\s+""")).joinToString(" ") { redactToken(it) }
+        return trimmed.split(WHITESPACE).joinToString(" ") { redactToken(it) }
     }
 
     /** Redact a daemon-log line: mask any credentialed URL and any inline `key=value` secret. */
     fun redactLogLine(line: String): String {
         val urlMasked = maskUrlCredentials(line)
-        return urlMasked.split(Regex("""(?<=\s)|(?=\s)""")).joinToString("") { word ->
+        return urlMasked.split(WHITESPACE_BOUNDARY).joinToString("") { word ->
             val prop = PROP_FLAG.matchEntire(word)
             if (prop != null) {
                 val (prefix, key, _) = prop.destructured

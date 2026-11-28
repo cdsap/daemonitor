@@ -24,12 +24,16 @@ import io.github.cdsap.daemonitor.domain.model.JvmRawValue
 import io.github.cdsap.daemonitor.domain.model.ProcessType
 import io.github.cdsap.daemonitor.domain.model.Source
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
 
 internal object GoCoreSnapshotParser {
+    private val hostMetricRegexes = ConcurrentHashMap<String, Regex>()
+
     fun parseHost(json: String): HostContext {
         require(json.trim().startsWith("{") && json.trim().endsWith("}"))
         fun metric(name: String): Double? {
-            val obj = Regex("\"$name\"\\s*:\\s*(\\{[^{}]*})").find(json)?.groupValues?.get(1) ?: return null
+            val regex = hostMetricRegexes.computeIfAbsent(name) { Regex("\"${Regex.escape(it)}\"\\s*:\\s*(\\{[^{}]*})") }
+            val obj = regex.find(json)?.groupValues?.get(1) ?: return null
             return if (stringField(obj, "availability") == "available") numberField(obj, "value") else null
         }
         return HostContext(

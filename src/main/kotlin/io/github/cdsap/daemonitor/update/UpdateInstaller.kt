@@ -10,6 +10,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
+import java.util.Locale
 import java.util.zip.ZipInputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -216,6 +217,8 @@ private fun openWithDesktop(path: Path) {
     desktop.open(path.toFile())
 }
 
+private val SHA256_HEX_REGEX = Regex("[a-fA-F0-9]{64}")
+
 private suspend fun downloadAndVerify(
     candidate: UpdateCandidate,
     updateDirectory: Path,
@@ -223,7 +226,7 @@ private suspend fun downloadAndVerify(
 ): Path = withContext(Dispatchers.IO) {
     val expectedSha256 = candidate.sha256
         ?: error("Release checksum is unavailable; refusing to install ${candidate.assetName}")
-    require(expectedSha256.matches(Regex("[a-fA-F0-9]{64}"))) {
+    require(expectedSha256.matches(SHA256_HEX_REGEX)) {
         "Release checksum is invalid for ${candidate.assetName}"
     }
     require(candidate.downloadUrl.startsWith("https://github.com/cdsap/daemonitor/")) {
@@ -378,4 +381,5 @@ internal object UpdateDownloadVerifier {
         actualDigest.toHex().equals(expectedSha256, ignoreCase = true)
 }
 
-private fun ByteArray.toHex(): String = joinToString(separator = "") { byte -> "%02x".format(byte) }
+private fun ByteArray.toHex(): String =
+    joinToString(separator = "") { byte -> String.format(Locale.ROOT, "%02x", byte) }

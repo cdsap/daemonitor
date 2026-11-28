@@ -13,7 +13,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
@@ -24,6 +23,7 @@ import io.github.cdsap.daemonitor.coreipc.GoCoreResolveResult
 import io.github.cdsap.daemonitor.ui.common.AppScaffold
 import io.github.cdsap.daemonitor.ui.common.StartupLoadingScreen
 import io.github.cdsap.daemonitor.ui.common.WatcherTheme
+import io.github.cdsap.daemonitor.ui.common.classpathBitmapPainter
 import io.github.cdsap.daemonitor.ui.history.HistoryScreen
 import io.github.cdsap.daemonitor.ui.live.LiveMonitorScreen
 import io.github.cdsap.daemonitor.ui.live.ProcessVisualScreen
@@ -70,7 +70,7 @@ private fun launchDesktop(
         onCloseRequest = ::exitApplication,
         state = windowState,
         title = "Daemonitor",
-        icon = painterResource("icon/daemonitor.png"),
+        icon = classpathBitmapPainter("icon/daemonitor.png"),
     ) {
         LaunchedEffect(Unit) {
             service = withContext(Dispatchers.IO) {

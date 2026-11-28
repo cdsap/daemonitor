@@ -91,6 +91,32 @@ class GoCoreDaemonLogSourceTest {
     }
 
     @Test
+    fun `discover evicts tail tracker state for disappeared daemon pids`() {
+        var discoveredLogs = """{"logs":[{"pid":9,"gradle_version":"8.10","path":"/tmp/daemon-9.out.log"}]}"""
+        val source = GoCoreDaemonLogSource(
+            GoCoreClient(Files.createFile(tempDir.resolve("cored-evict.sock"))) { _, path ->
+                when (path) {
+                    "/v1/daemon-logs" -> discoveredLogs
+                    "/v1/daemon-logs/9/tail" -> """{"pid":9,"gradle_version":"8.10","path":"/tmp/daemon-9.out.log","lines":["one","two"]}"""
+                    else -> error("unexpected path $path")
+                }
+            },
+        )
+
+        val log = source.discover().single()
+        assertEquals(listOf("one", "two"), source.readNewLines(log).map { it.text })
+        assertTrue(source.readNewLines(log).isEmpty())
+
+        // PID 9 disappears from discovery -> tracker evicts its tail.
+        discoveredLogs = """{"logs":[]}"""
+        assertTrue(source.discover().isEmpty())
+
+        // If PID 9 reappears later, its lines are treated as fresh.
+        discoveredLogs = """{"logs":[{"pid":9,"gradle_version":"8.10","path":"/tmp/daemon-9.out.log"}]}"""
+        assertEquals(listOf("one", "two"), source.readNewLines(source.discover().single()).map { it.text })
+    }
+
+    @Test
     fun `parses and tails bazel daemon logs with source query`() {
         val responses = mapOf(
             "/v1/daemon-logs" to """
