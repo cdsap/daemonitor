@@ -1152,3 +1152,33 @@ func TestHistoryReturnsMostRecentAndFiltersByPIDAndStartTime(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildListAndSummaryApplyTheSameFilters(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "filters.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	end := int64(400)
+	for _, b := range []builds.Build{
+		{BuildID: "match", DaemonPID: 42, DaemonIdentity: "uid", StartTimeMs: 100, EndTimeMs: &end, Tool: builds.ToolBazel, ProjectPath: `/work/100%_demo`, FinalStatus: builds.StatusFailed},
+		{BuildID: "wildcard", DaemonPID: 42, DaemonIdentity: "uid", StartTimeMs: 300, Tool: builds.ToolBazel, ProjectPath: `/work/100xxdemo`, FinalStatus: builds.StatusFailed},
+		{BuildID: "gradle", DaemonPID: 42, DaemonIdentity: "uid", StartTimeMs: 300, Tool: builds.ToolGradle, ProjectPath: `/work/100%_demo`, FinalStatus: builds.StatusFailed},
+	} {
+		if err := s.InsertBuild(b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	filters := store.BuildFilters{PID: 42, DaemonIdentity: "uid", StartTimeMs: 50, DaemonStartTimeMs: 200, Tool: "bazel", Project: "100%_DEMO", Status: "failed"}
+	rows, err := s.ListBuildsFiltered(filters, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary, err := s.SummarizeBuilds(filters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].BuildID != "match" || rows[0].EndTimeMs == nil || *rows[0].EndTimeMs != end || summary.Count != 1 || summary.FailureCount != 1 || summary.LatestStatus != "FAILED" {
+		t.Fatalf("rows=%+v summary=%+v", rows, summary)
+	}
+}

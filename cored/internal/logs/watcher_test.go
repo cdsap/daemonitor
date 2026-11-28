@@ -195,3 +195,56 @@ func TestPollActivePIDsOnly(t *testing.T) {
 		t.Fatalf("lazy idle tail=%v ok=%v", idle.Lines, ok)
 	}
 }
+
+func TestWatcherResetsAfterRewriteOrReplacement(t *testing.T) {
+	for _, mode := range []string{"truncate", "regrow", "replace", "replace-identical"} {
+		t.Run(mode, func(t *testing.T) {
+			root := t.TempDir()
+			dir := filepath.Join(root, "daemon", "9.0")
+			if err := os.MkdirAll(dir, 0700); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(dir, "daemon-42.out.log")
+			if err := os.WriteFile(path, []byte("old line\nunfinished"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			w := logs.NewWatcher(root)
+			if _, err := w.Poll(nil); err != nil {
+				t.Fatal(err)
+			}
+			content := "new\n"
+			if mode == "regrow" {
+				content = "replacement with longer content\n"
+			}
+			if mode == "replace-identical" {
+				content = "old line\nunfinished"
+			}
+			if strings.HasPrefix(mode, "replace") {
+				replacement := path + ".new"
+				if err := os.WriteFile(replacement, []byte(content), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Rename(replacement, path); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+				t.Fatal(err)
+			}
+			fresh, err := w.Poll(nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			expected := strings.TrimSuffix(content, "\n")
+			if mode == "replace-identical" {
+				expected = "old line"
+			}
+			if !reflect.DeepEqual(fresh[42], []string{expected}) {
+				t.Fatalf("replacement not read: %v", fresh)
+			}
+			tail, ok := w.TailFor(42)
+			if !ok || !reflect.DeepEqual(tail.Lines, []string{expected}) {
+				t.Fatalf("stale tail after %s: %+v", mode, tail)
+			}
+		})
+	}
+}

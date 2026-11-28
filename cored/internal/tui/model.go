@@ -260,20 +260,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 			m.detailsOpen = false
 			m.detailProcess = nil
-			m.detailLog = nil
-			m.detailTail = nil
-			m.detailHistory = nil
-			m.detailBuilds = client.BuildsPayload{}
-			m.detailHost = model.HostMetrics{}
-			m.detailHostError = nil
-			m.detailCapabilities = model.Capabilities{}
-			m.detailCapabilitiesError = nil
-			m.detailError = ""
-			m.detailLoading = false
-			m.detailScroll = 0
-			m.detailPane = detailPaneAttributes
-			m.detailPaneScroll = [4]int{}
-			m.detailPaneScrolled = [4]bool{}
+			m.resetDetails()
 			return m, nil
 		case "ctrl+c":
 			return m, tea.Quit
@@ -380,21 +367,8 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.detailsOpen = true
 			cp := p
 			m.detailProcess = &cp
+			m.resetDetails()
 			m.detailLoading = true
-			m.detailLog = nil
-			m.detailTail = nil
-			m.detailHistory = nil
-			m.detailBuilds = client.BuildsPayload{}
-			m.detailHost = model.HostMetrics{}
-			m.detailHostError = nil
-			m.detailCapabilities = model.Capabilities{}
-			m.detailCapabilitiesError = nil
-			m.detailError = ""
-			m.detailScroll = 0
-			m.detailPane = detailPaneAttributes
-			m.detailPaneScroll = [4]int{}
-			m.detailPaneScrolled = [4]bool{}
-			m.detailPaneHorizontalScroll = [4]int{}
 			return m, m.fetchDetails(p)
 		}
 	case "?":
@@ -698,4 +672,21 @@ func Run(cfg Config) error {
 	return err
 }
 
-// View renders the monitor.
+// resetDetails clears cached pane contents and all viewport offsets.
+func (m *Model) resetDetails() {
+	m.detailLog = nil
+	m.detailTail = nil
+	m.detailHistory = nil
+	m.detailBuilds = client.BuildsPayload{}
+	m.detailHost = model.HostMetrics{}
+	m.detailHostError = nil
+	m.detailCapabilities = model.Capabilities{}
+	m.detailCapabilitiesError = nil
+	m.detailError = ""
+	m.detailLoading = false
+	m.detailScroll = 0
+	m.detailPane = detailPaneAttributes
+	m.detailPaneScroll = [4]int{}
+	m.detailPaneScrolled = [4]bool{}
+	m.detailPaneHorizontalScroll = [4]int{}
+}

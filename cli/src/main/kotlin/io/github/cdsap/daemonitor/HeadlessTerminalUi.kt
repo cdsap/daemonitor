@@ -1,9 +1,11 @@
 package io.github.cdsap.daemonitor
 
 import io.github.cdsap.daemonitor.domain.LiveMetricLabels
+import io.github.cdsap.daemonitor.domain.displayLabel
+import io.github.cdsap.daemonitor.domain.displayProjectLabel
+import io.github.cdsap.daemonitor.domain.formatUptime
 import io.github.cdsap.daemonitor.config.MonitoringConfig
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
-import io.github.cdsap.daemonitor.domain.model.ProcessType
 import java.io.InputStream
 import java.io.PrintStream
 import java.time.Instant
@@ -76,15 +78,15 @@ object HeadlessTerminalRenderer {
                 .forEach { process ->
                     val live = process.liveHeap?.takeIf { it.available }
                     appendLine(
-                        "${process.type.displayName().padEnd(16)} " +
+                        "${process.type.displayLabel().padEnd(16)} " +
                             "${process.pid.toString().padStart(6)}  " +
                         "${ansi((process.rssMemoryMb.toString() + " MB").padStart(8), colorEnabled, YELLOW)}  " +
                             "${ansi(LiveMetricLabels.liveHeapUsedCompact(process.liveHeap).padStart(9), colorEnabled, GREEN)}  " +
                             "${ansi((live?.committedMb?.let { "$it MB" } ?: LiveMetricLabels.HEAP_UNAVAILABLE_COMPACT).padStart(9), colorEnabled, CYAN)}  " +
                             "${ansi((process.maxHeapMb?.let { "$it MB" } ?: LiveMetricLabels.HEAP_UNAVAILABLE_COMPACT).padStart(10), colorEnabled, MAGENTA)}  " +
                             "${cpuText(process.cpuPercent, colorEnabled)}  " +
-                            "${uptime(process.startTimeMs, updatedAtMs).padStart(7)}  " +
-                            projectName(process).take(32),
+                            "${formatUptime(process.startTimeMs, updatedAtMs).padStart(7)}  " +
+                            (displayProjectLabel(process) ?: "—").take(32),
                     )
                 }
         }
@@ -96,43 +98,6 @@ object HeadlessTerminalRenderer {
     private fun formatPollInterval(pollInterval: Duration): String {
         val seconds = pollInterval.inWholeSeconds
         return if (seconds == 1L) "1 second" else "$seconds seconds"
-    }
-
-    private fun projectName(process: GradleProcess): String =
-        process.projectPath?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
-            ?: process.workingDirectory?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
-            ?: "—"
-
-    /**
-     * Compact uptime aligned with the desktop live table: tick seconds under 1h so a 2s
-     * poll interval visibly advances the UPTIME column instead of freezing on whole minutes.
-     */
-    private fun uptime(startTimeMs: Long, nowMs: Long): String {
-        val total = ((nowMs - startTimeMs) / 1_000L).coerceAtLeast(0L)
-        val days = total / 86_400
-        val hours = (total % 86_400) / 3_600
-        val minutes = (total % 3_600) / 60
-        val seconds = total % 60
-        return when {
-            days > 0 -> "${days}d ${hours}h"
-            hours > 0 -> "${hours}h %02dm".format(minutes)
-            minutes > 0 -> "${minutes}m %02ds".format(seconds)
-            else -> "${seconds}s"
-        }
-    }
-
-    private fun ProcessType.displayName(): String = when (this) {
-        ProcessType.GRADLE_DAEMON -> "Gradle daemon"
-        ProcessType.GRADLE_WRAPPER -> "Gradle wrapper"
-        ProcessType.KOTLIN_DAEMON -> "Kotlin daemon"
-        ProcessType.KOTLIN_TOOLCHAIN -> "Kotlin Toolchain"
-        ProcessType.BAZEL_SERVER -> "Bazel server"
-        ProcessType.BAZEL_TEST -> "Bazel test"
-        ProcessType.BAZEL_WORKER -> "Bazel worker"
-        ProcessType.TEST_WORKER -> "Gradle test worker"
-        ProcessType.GRADLE_WORKER -> "Gradle worker"
-        ProcessType.UNKNOWN_GRADLE_WORKER -> "Unknown Gradle worker"
-        ProcessType.JAVA_GRADLE_RELATED -> "Java (Gradle)"
     }
 
     private fun cpuText(cpuPercent: Double?, colorEnabled: Boolean): String {

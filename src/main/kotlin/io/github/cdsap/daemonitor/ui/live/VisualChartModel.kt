@@ -2,6 +2,8 @@ package io.github.cdsap.daemonitor.ui.live
 
 import io.github.cdsap.daemonitor.domain.model.GradleProcess
 import io.github.cdsap.daemonitor.domain.model.ProcessType
+import io.github.cdsap.daemonitor.domain.displayLabel
+import io.github.cdsap.daemonitor.domain.displayProjectLabel
 
 data class ProcessMemoryBars(
     val pid: Long,
@@ -330,26 +332,12 @@ object VisualChartModel {
     fun heapSeriesId(pid: Long): String = heapLimitSeriesId(pid)
 
     private fun GradleProcess.chartLabel(): String {
-        val project = projectPath?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+        val project = displayProjectLabel(this)
         return listOfNotNull(type.displayLabel(), project, "PID $pid").joinToString(" · ")
     }
 
     private fun fraction(value: Long, scaleMb: Long): Float =
         (value.toFloat() / scaleMb.toFloat()).coerceIn(0f, 1f)
-}
-
-internal fun ProcessType.displayLabel(): String = when (this) {
-    ProcessType.GRADLE_DAEMON -> "Gradle daemon"
-    ProcessType.GRADLE_WRAPPER -> "Gradle wrapper"
-    ProcessType.KOTLIN_DAEMON -> "Kotlin daemon"
-    ProcessType.KOTLIN_TOOLCHAIN -> "Kotlin Toolchain"
-    ProcessType.BAZEL_SERVER -> "Bazel server"
-    ProcessType.BAZEL_TEST -> "Bazel test"
-    ProcessType.BAZEL_WORKER -> "Bazel worker"
-    ProcessType.TEST_WORKER -> "Gradle test worker"
-    ProcessType.GRADLE_WORKER -> "Gradle worker"
-    ProcessType.UNKNOWN_GRADLE_WORKER -> "Unknown Gradle worker"
-    ProcessType.JAVA_GRADLE_RELATED -> "Java (Gradle)"
 }
 
 /** Section-card title for Live process detail (mirrors cored TUI detailTitle). */

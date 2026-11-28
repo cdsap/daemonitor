@@ -8,6 +8,7 @@ import (
 	"io"
 
 	"github.com/cdsap/daemonitor/cored/internal/builds"
+	"github.com/cdsap/daemonitor/cored/internal/ptr"
 )
 
 // Match the JSON reader's event limit without pulling in Bazel's generated
@@ -94,8 +95,9 @@ func ConsumeBinaryBytes(state *partial, pending, chunk []byte) (closed []builds.
 
 // The field numbers below are pinned to Bazel 8.4.2 build_event_stream.proto
 // (verified in docs/plans/2026-11-24-bazel-rich-bep-spike.md):
-//   id(1), progress(3), aborted(4), started(5), test_summary(9), finished(14),
-//   last_message(20), structured_command_line(22), build_metrics(24).
+//
+//	id(1), progress(3), aborted(4), started(5), test_summary(9), finished(14),
+//	last_message(20), structured_command_line(22), build_metrics(24).
 func applyBinaryEvent(state *partial, event []byte) (builds.Build, bool, error) {
 	fields, err := decodeWire(event)
 	if err != nil {
@@ -468,9 +470,9 @@ func applyBinaryBuildMetrics(state *partial, data []byte) bool {
 				if kb < 0 {
 					continue
 				}
-				entry.LastMemoryKB = ptrI64(kb)
+				entry.LastMemoryKB = ptr.Int64(kb)
 				if entry.PeakMemoryKB == nil || kb > *entry.PeakMemoryKB {
-					entry.PeakMemoryKB = ptrI64(kb)
+					entry.PeakMemoryKB = ptr.Int64(kb)
 				}
 			}
 		}

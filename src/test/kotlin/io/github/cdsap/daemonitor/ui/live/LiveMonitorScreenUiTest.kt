@@ -34,6 +34,7 @@ import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import io.github.cdsap.daemonitor.domain.LiveMetricLabels
+import io.github.cdsap.daemonitor.domain.displayProjectLabel
 import io.github.cdsap.daemonitor.application.DaemonLog
 import java.nio.file.Path
 import io.github.cdsap.daemonitor.domain.model.Build

@@ -47,7 +47,7 @@ func TestWatcherRecordsPlainBuild(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "command.log"), []byte("INFO: Invocation ID: build-1\nINFO: Build completed successfully, 1 total action\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	processes := []model.Process{{PID: 42, Type: "BAZEL_SERVER", CommandLine: `java -jar /x/A-server.jar --output_base="` + dir + `"`, StartTimeMs: 1795395600100}}
+	processes := []model.Process{{PID: 42, Type: "BAZEL_SERVER", BazelOutputBase: dir, CommandLine: `java -jar /x/A-server.jar --output_base=/incorrect`, StartTimeMs: 1795395600100}}
 	w := NewWatcher()
 	if got := w.Poll(t.Context(), processes); len(got) != 0 {
 		t.Fatal("read before stability check", got)
@@ -166,7 +166,7 @@ func TestInvalidProfiles(t *testing.T) {
 func TestWatcherMissingDisabledAndChanging(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "command.profile.gz")
-	p := []model.Process{{PID: 42, Type: "BAZEL_SERVER", CommandLine: "java --output_base=" + dir}}
+	p := []model.Process{{PID: 42, Type: "BAZEL_SERVER", BazelOutputBase: dir}}
 	w := NewWatcher()
 	if got := w.Poll(t.Context(), p); len(got) != 0 {
 		t.Fatal(got)
@@ -203,7 +203,7 @@ func TestWatcherRecoversFromTruncatedProfileAndLateCompletion(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "command.profile.gz")
 	writeProfile(t, path, trace[:len(trace)-4])
-	p := []model.Process{{PID: 42, Type: "BAZEL_SERVER", CommandLine: `java --output_base="` + dir + `"`}}
+	p := []model.Process{{PID: 42, Type: "BAZEL_SERVER", BazelOutputBase: dir}}
 	w := NewWatcher()
 	w.Poll(t.Context(), p)
 	w.Poll(t.Context(), p)

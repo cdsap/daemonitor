@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/cdsap/daemonitor/cored/internal/model"
+	"github.com/cdsap/daemonitor/cored/internal/ptr"
 	"github.com/shirou/gopsutil/v4/process"
 )
 
@@ -180,7 +181,7 @@ func applyBazelRollups(out, hidden []model.Process, nodes map[int32]processNode)
 		*root.SubtreeRSSMemoryMB += p.RSSMemoryMB
 		if p.CPUPercent != nil {
 			if root.SubtreeCPUPercent == nil {
-				root.SubtreeCPUPercent = ptrFloat64(0)
+				root.SubtreeCPUPercent = ptr.Float64(0)
 			}
 			*root.SubtreeCPUPercent += *p.CPUPercent
 		}

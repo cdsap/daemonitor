@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/cdsap/daemonitor/cored/internal/ptr"
 )
 
 var jinfoGCFlag = regexp.MustCompile(`(?:^|\s)-XX:\+Use([[:alnum:]]+)GC(?:\s|$)`)
@@ -114,7 +116,7 @@ func ParseJinfoSysprops(out string) (version, runtimeVersion, vendor, vmName, vm
 		}
 		decoded, ok := decodeSyspropValue(value)
 		if ok {
-			*target = ptrString(decoded)
+			*target = ptr.String(decoded)
 		}
 	}
 	return
@@ -229,7 +231,7 @@ func ParseJinfoFlags(out string) (gc *string) {
 			"Shenandoah": "Shenandoah", "Z": "ZGC",
 		}[match[1]]
 		if ok {
-			gc = ptrString(name)
+			gc = ptr.String(name)
 		}
 	}
 	return gc
@@ -258,10 +260,10 @@ func ParseJcmdHeapInfo(out string) (Sample, error) {
 	for _, line := range strings.Split(out, "\n") {
 		lower := strings.ToLower(line)
 		if strings.Contains(lower, "garbage-first heap") {
-			gc = ptrString("G1")
+			gc = ptr.String("G1")
 		}
 		if strings.Contains(lower, "psyounggen") || strings.Contains(lower, "paroldgen") {
-			gc = ptrString("Parallel")
+			gc = ptr.String("Parallel")
 			if total, ok := findKBToken(line, "total"); ok {
 				generationTotalKB += total
 			}
@@ -273,7 +275,7 @@ func ParseJcmdHeapInfo(out string) (Sample, error) {
 			}
 		}
 		if strings.Contains(lower, "def new generation") || strings.Contains(lower, "tenured generation") {
-			gc = ptrString("Serial")
+			gc = ptr.String("Serial")
 			if total, ok := findKBToken(line, "total"); ok {
 				generationTotalKB += total
 			}
@@ -285,10 +287,10 @@ func ParseJcmdHeapInfo(out string) (Sample, error) {
 			}
 		}
 		if strings.Contains(lower, "shenandoah") {
-			gc = ptrString("Shenandoah")
+			gc = ptr.String("Shenandoah")
 		}
 		if strings.Contains(lower, "zheap") {
-			gc = ptrString("ZGC")
+			gc = ptr.String("ZGC")
 		}
 		if strings.Contains(lower, "metaspace") {
 			metaspaceUsed = parseJcmdMetaspace(line, "used")
@@ -308,15 +310,15 @@ func ParseJcmdHeapInfo(out string) (Sample, error) {
 		if !okC || !okU {
 			continue
 		}
-		heapUsed, heapCommitted = ptrInt64(kbToMB(usedKB)), ptrInt64(kbToMB(committedKB))
+		heapUsed, heapCommitted = ptr.Int64(kbToMB(usedKB)), ptr.Int64(kbToMB(committedKB))
 		if reservedKB, okR := findKBToken(line, "reserved"); okR {
-			heapMax = ptrInt64(kbToMB(reservedKB))
+			heapMax = ptr.Int64(kbToMB(reservedKB))
 		}
 	}
 	if generationTotalKB > 0 {
-		heapUsed, heapCommitted = ptrInt64(kbToMB(generationUsedKB)), ptrInt64(kbToMB(generationTotalKB))
+		heapUsed, heapCommitted = ptr.Int64(kbToMB(generationUsedKB)), ptr.Int64(kbToMB(generationTotalKB))
 		if heapMax == nil && generationReservedBytes > 0 {
-			heapMax = ptrInt64(int64(generationReservedBytes / (1024 * 1024)))
+			heapMax = ptr.Int64(int64(generationReservedBytes / (1024 * 1024)))
 		}
 	}
 	if heapUsed == nil || heapCommitted == nil {
@@ -359,10 +361,6 @@ func parseGenerationReservedBytes(line string) (uint64, bool) {
 	}
 	return addrs[2] - addrs[0], true
 }
-
-func ptrInt64(v int64) *int64 { return &v }
-
-func ptrString(v string) *string { return &v }
 
 // ParseJstatGC parses one sample of `jstat -gc <pid>` (header + data row).
 // Used ≈ S0U+S1U+EU+OU; committed ≈ S0C+S1C+EC+OC (all KB). Missing columns treated as 0.

@@ -72,7 +72,7 @@ func (m Model) renderTable() string {
 	left := padRight("DAEMONITOR", leftWidth)
 	if !m.noColor {
 		pad := max(0, leftWidth-terminalansi.StringWidth("DAEMONITOR"))
-		left = titleStyle(m.noColor).Render("DAEMONITOR") + strings.Repeat(" ", pad)
+		left = headerStyle(m.noColor).Render("DAEMONITOR") + strings.Repeat(" ", pad)
 	}
 	fmt.Fprintf(&b, "%s%s\n", left, right)
 	rssText, statusText := render.RSSText(totalRSS), status
@@ -493,7 +493,7 @@ func formatRowStyled(p model.Process, cols columnSet, nowMs int64, noColor, sele
 		case colRSS:
 			cell = render.RSSText(p.RSSMemoryMB)
 		case colThreads:
-			cell = optionalInt64Text(p.ThreadCount, "")
+			cell = render.OptionalInt64Text(p.ThreadCount, "")
 		case colHeapPercent:
 			cell = render.HeapPercentText(p.HeapUsedMB, p.HeapMaxMB)
 		case colMetaspace:
@@ -503,7 +503,7 @@ func formatRowStyled(p model.Process, cols columnSet, nowMs int64, noColor, sele
 		case colHeapCmt:
 			cell = render.HeapText(p.HeapCommittedMB)
 		case colXmx:
-			cell = render.HeapLimitText(p.MaxHeapMB)
+			cell = render.HeapText(p.MaxHeapMB)
 		case colYoungGCTime:
 			cell = render.GCTimeText(p.YoungGCTimeSeconds)
 		case colFullGCTime:

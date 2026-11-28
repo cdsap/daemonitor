@@ -3,7 +3,6 @@ package io.github.cdsap.daemonitor.ui.live.charts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.LocalScrollbarStyle
 import androidx.compose.foundation.HorizontalScrollbar
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.horizontalScroll
@@ -55,6 +54,7 @@ import io.github.cdsap.daemonitor.ui.common.LocalAccentColors
 import io.github.cdsap.daemonitor.ui.common.Radius
 import io.github.cdsap.daemonitor.ui.common.SectionCard
 import io.github.cdsap.daemonitor.ui.common.Space
+import io.github.cdsap.daemonitor.ui.common.horizontalScrollbarStyle
 import io.github.cdsap.daemonitor.ui.live.RssTimelineChartData
 import io.github.cdsap.daemonitor.ui.live.RssTimelinePoint
 import io.github.cdsap.daemonitor.ui.live.TimelineMetric
@@ -195,10 +195,7 @@ fun OverallRssTimelineChart(
                 if (legendScrollState.maxValue > 0) {
                     HorizontalScrollbar(
                         adapter = rememberScrollbarAdapter(legendScrollState),
-                        style = LocalScrollbarStyle.current.copy(
-                            unhoverColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                            hoverColor = MaterialTheme.colorScheme.onSurface,
-                        ),
+                        style = horizontalScrollbarStyle(),
                         modifier = Modifier.fillMaxWidth().padding(top = Space.xs).testTag("visual-legend-scrollbar"),
                     )
                 }

@@ -5,14 +5,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/cdsap/daemonitor/cored/internal/builds"
 	"github.com/cdsap/daemonitor/cored/internal/model"
 )
-
-var outputBaseFlag = regexp.MustCompile(`(?:^|\s)--output_base=(?:"([^"]+)"|'([^']+)'|([^\s]+))`)
 
 type fingerprint struct{ profile, log os.FileInfo }
 
@@ -64,17 +61,7 @@ func (w *Watcher) Poll(ctx context.Context, processes []model.Process) []builds.
 		if p.Type != "BAZEL_SERVER" {
 			continue
 		}
-		match := outputBaseFlag.FindStringSubmatch(p.CommandLine)
-		if len(match) == 0 {
-			continue
-		}
-		base := ""
-		for _, g := range match[1:] {
-			if g != "" {
-				base = g
-				break
-			}
-		}
+		base := p.BazelOutputBase
 		if !filepath.IsAbs(base) {
 			continue
 		}
