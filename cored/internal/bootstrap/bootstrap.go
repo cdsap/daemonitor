@@ -115,7 +115,9 @@ func FindCoredBinary() (string, error) {
 	var candidates []string
 
 	if exe, err := os.Executable(); err == nil {
-		exe, _ = filepath.EvalSymlinks(exe)
+		if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+			exe = resolved
+		}
 		dir := filepath.Dir(exe)
 		candidates = append(candidates, filepath.Join(dir, name))
 		// …/libexec/bin/cli → sibling cored in same bin dir (already covered)

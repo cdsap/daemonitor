@@ -649,7 +649,12 @@ func exportTelemetry(ctx context.Context, c *client.Client, opts Options, stdout
 		fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
 		return 1
 	}
-	defer file.Close()
+	closed := false
+	defer func() {
+		if !closed {
+			_ = file.Close()
+		}
+	}()
 	enc := json.NewEncoder(file)
 	start := historySince(opts).UnixMilli()
 	hist, err := c.HistoryFiltered(ctx, client.HistoryQuery{SinceMs: start, Limit: boundedLimit(opts.Limit), PID: opts.PID})
@@ -680,6 +685,11 @@ func exportTelemetry(ctx context.Context, c *client.Client, opts Options, stdout
 		return 1
 	}
 	if err := enc.Encode(map[string]any{"schema_version": 1, "kind": "host", "collection_timestamp_ms": host.SampledAtMs, "source": "daemonitor-cored/host", "host": host}); err != nil {
+		fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
+		return 1
+	}
+	closed = true
+	if err := file.Close(); err != nil {
 		fmt.Fprintf(stderr, "daemonitor-cli: %v\n", err)
 		return 1
 	}
@@ -735,7 +745,7 @@ func writeValue(w io.Writer, v any, output string, plain func()) error {
 	case "json":
 		return render.WriteJSON(w, v)
 	case "jsonl":
-		return render.WriteJSON(w, v)
+		return render.WriteJSONLine(w, v)
 	default:
 		return fmt.Errorf("format %s is not supported for this command", output)
 	}

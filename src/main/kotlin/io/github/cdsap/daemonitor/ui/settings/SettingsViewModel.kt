@@ -8,9 +8,11 @@ import io.github.cdsap.daemonitor.update.StagedUpdate
 import io.github.cdsap.daemonitor.update.UpdateCandidate
 import io.github.cdsap.daemonitor.update.UpdateCheckResult
 import io.github.cdsap.daemonitor.update.UpdateInstallMode
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -113,12 +115,15 @@ class SettingsViewModel(
         if (_state.value.updateState == UpdateUiState.ManagedByAppStore) return
         _state.value = _state.value.copy(updateState = UpdateUiState.Checking)
         scope.launch {
-            val nextState = runCatching { updateService.check().toUiState() }
-                .getOrElse { error ->
-                    UpdateUiState.Failed(
-                        error.message ?: error::class.simpleName ?: "Could not check for updates",
-                    )
-                }
+            val nextState = try {
+                updateService.check().toUiState()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                UpdateUiState.Failed(
+                    error.message ?: error::class.simpleName ?: "Could not check for updates",
+                )
+            }
             _state.value = _state.value.copy(updateState = nextState)
         }
     }
@@ -127,15 +132,16 @@ class SettingsViewModel(
         if (_state.value.updateState is UpdateUiState.Downloading) return
         _state.value = _state.value.copy(updateState = UpdateUiState.Downloading(candidate, 0.0))
         scope.launch {
-            runCatching {
-                updateService.prepare(candidate) { progress ->
+            try {
+                val staged = updateService.prepare(candidate) { progress ->
                     _state.value = _state.value.copy(updateState = UpdateUiState.Downloading(candidate, progress))
                 }
-            }.onSuccess { staged ->
                 _state.value = _state.value.copy(
                     updateState = UpdateUiState.ReadyToInstall(candidate, staged),
                 )
-            }.onFailure { error ->
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
                 _state.value = _state.value.copy(
                     updateState = UpdateUiState.Failed(
                         message = error.message ?: error::class.simpleName ?: "Could not prepare the update",
@@ -144,6 +150,10 @@ class SettingsViewModel(
                 )
             }
         }
+    }
+
+    fun close() {
+        scope.cancel()
     }
 
     fun restartAndUpdate() {

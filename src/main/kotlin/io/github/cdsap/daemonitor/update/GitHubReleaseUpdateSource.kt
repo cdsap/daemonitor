@@ -5,6 +5,7 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -23,7 +24,7 @@ class GitHubReleaseUpdateSource(
             return@withContext UpdateCheckResult.UnsupportedPlatform(platform)
         }
 
-        runCatching {
+        try {
             val request = HttpRequest.newBuilder()
                 .uri(URI("https://api.github.com/repos/$repository/releases/latest"))
                 .header("Accept", "application/vnd.github+json")
@@ -57,7 +58,9 @@ class GitHubReleaseUpdateSource(
                     installation = installation,
                 )
             }
-        }.getOrElse { error ->
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
             UpdateCheckResult.Failed(error.message ?: error::class.simpleName ?: "Update check failed")
         }
     }
