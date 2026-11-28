@@ -51,7 +51,7 @@ func TestBazelSpikeTargetJDKLookup(t *testing.T) {
 			if tc.configured {
 				p.JDKDir = filepath.Join(root, "configured")
 			}
-			p.TargetJDKDir = func(int32) string { return filepath.Join(root, "embedded") }
+			p.TargetJDKDir = func(context.Context, int32) string { return filepath.Join(root, "embedded") }
 			calls := 0
 			p.Runner = func(_ context.Context, name string, _ ...string) (string, error) {
 				calls++

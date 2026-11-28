@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -80,11 +81,11 @@ func (p *Prober) FlagsFor(ctx context.Context, pid int32, start int64) model.JVM
 }
 
 func cloneFlags(m model.JVMFlagsMetadata) model.JVMFlagsMetadata {
-	flags := make(map[string]model.JVMFlag, len(m.Flags))
-	for k, v := range m.Flags {
-		flags[k] = v
+	if m.Flags == nil {
+		m.Flags = map[string]model.JVMFlag{}
+	} else {
+		m.Flags = maps.Clone(m.Flags)
 	}
-	m.Flags = flags
 	return m
 }
 
@@ -96,7 +97,7 @@ func (p *Prober) probeFlags(ctx context.Context, pid int32, start int64) model.J
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	tool, err := p.lookPath(pid, "jcmd")
+	tool, err := p.lookPath(ctx, pid, "jcmd")
 	if err != nil {
 		m.Reason = FailureMissingTool
 		return m
